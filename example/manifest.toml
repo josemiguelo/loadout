@@ -1,0 +1,52 @@
+# Example post-installer config repo manifest.
+# Programs are installed in dependency order; each entry declares how to
+# install it per package manager and how to read its installed version.
+
+[meta]
+name = "example machines"
+min-tool-version = "0.1.0"
+
+[programs.git]
+description = "version control"
+
+[programs.git.version]
+command = "git --version"
+regex = "git version ([0-9.]+)"
+
+[programs.git.install]
+brew = "brew install git"
+dnf = "sudo dnf install -y git"
+apt = "sudo apt-get install -y git"
+pacman = "sudo pacman -S --noconfirm git"
+
+[programs.ripgrep]
+description = "fast grep"
+tags = ["cli"]
+
+[programs.ripgrep.version]
+command = "rg --version"
+regex = "ripgrep ([0-9][0-9a-zA-Z.-]*)"
+
+[programs.ripgrep.install]
+brew = "brew install ripgrep"
+dnf = "sudo dnf install -y ripgrep"
+apt = "sudo apt-get install -y ripgrep"
+pacman = "sudo pacman -S --noconfirm ripgrep"
+
+[programs.rustup]
+description = "rust toolchain manager"
+
+[programs.rustup.version]
+command = "rustup --version"
+regex = "rustup ([0-9.]+)"
+
+# 'script' is the package-manager-independent fallback.
+[programs.rustup.install]
+script = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+
+[scripts.dotfiles]
+description = "clone and link dotfiles"
+run = "scripts/dotfiles.sh"
+os = ["linux", "macos"]
+check = "test -d $HOME/.dotfiles"
+after = ["programs.git"]

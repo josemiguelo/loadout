@@ -1,32 +1,24 @@
 package io.github.josemiguelo.postinstaller
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import com.jakewharton.mosaic.runMosaicBlocking
-import com.jakewharton.mosaic.ui.Text
-import io.github.josemiguelo.postinstaller.core.TOOL_VERSION
-import kotlinx.coroutines.delay
+import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.subcommands
+import io.github.josemiguelo.postinstaller.cli.RootCommand
+import io.github.josemiguelo.postinstaller.cli.StatusCommand
+import io.github.josemiguelo.postinstaller.core.manifest.ManifestException
+import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    if (args.firstOrNull() == "--tui-test") {
-        runMosaicBlocking { Counter() }
-    } else {
-        println("post-installer $TOOL_VERSION")
-    }
-}
-
-@Composable
-private fun Counter() {
-    var count by remember { mutableStateOf(0) }
-    Text("post-installer TUI smoke test: $count / 5")
-    LaunchedEffect(Unit) {
-        while (count < 5) {
-            delay(200)
-            count++
-        }
+    val command = RootCommand()
+        .subcommands(
+            StatusCommand(),
+        )
+    try {
+        command.main(args)
+    } catch (e: ManifestException) {
+        println("error: ${e.message}")
+        exitProcess(1)
+    } catch (e: okio.IOException) {
+        println("error: ${e.message}")
+        exitProcess(1)
     }
 }
