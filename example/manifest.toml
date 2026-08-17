@@ -1,4 +1,4 @@
-# Example post-installer config repo manifest.
+# Example loadout config repo manifest.
 # Programs are installed in dependency order; each entry declares how to
 # install it per package manager and how to read its installed version.
 

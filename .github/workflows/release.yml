@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
+      - name: Build
+        run: ./gradlew :app:linkReleaseExecutableLinuxX64
+      - name: Package
+        run: |
+          mkdir dist
+          cp app/build/bin/linuxX64/releaseExecutable/loadout.kexe dist/loadout
+          strip dist/loadout
+          tar -C dist -czf "loadout-${GITHUB_REF_NAME}-linux-x64.tar.gz" loadout
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: loadout-*.tar.gz
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-macos-${{ hashFiles('gradle/libs.versions.toml') }}
+      - name: Build
+        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64
+      - name: Package
+        run: |
+          for target in macosArm64:macos-arm64 macosX64:macos-x64; do
+            gradle_name="${target%%:*}"; release_name="${target##*:}"
+            mkdir -p "dist-$release_name"
+            cp "app/build/bin/$gradle_name/releaseExecutable/loadout.kexe" "dist-$release_name/loadout"
+            strip "dist-$release_name/loadout"
+            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: loadout-*.tar.gz

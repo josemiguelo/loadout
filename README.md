@@ -1,4 +1,4 @@
-# post-installer
+# loadout
 
 One native binary that sets up your unix-like machines from a shared, git-versioned
 config repo — and tracks which programs (and which versions) every machine has.
@@ -7,10 +7,10 @@ Write a manifest once; on each machine run one command to install what's missing
 one command to publish that machine's state, and one command to see how all your
 machines compare.
 
-**Status: in development.** Working today: `init`, `status`, `install`, `run`,
-`diff`, `sync`, and an interactive TUI dashboard, on Linux (x64/arm64) and
-macOS (builds untested until CI exists). See the [roadmap](#roadmap) for what's
-next: CI/release binaries (Phase 5).
+**Status: feature-complete for v0.1.** All commands (`init`, `status`,
+`install`, `run`, `diff`, `sync`) plus the interactive TUI dashboard work on
+Linux; CI covers Linux and macOS, and tagged releases ship binaries for
+linux-x64, macos-arm64, and macos-x64.
 
 No JVM, no runtime dependencies — Kotlin/Native compiled to a single executable.
 It shells out to your package managers and `git`, so those must be on `PATH`.
@@ -53,7 +53,7 @@ disposable). The two never mix.
 ### 1. Create your config repo
 
 ```console
-$ post-installer init ~/machines
+$ loadout init ~/machines
 Created ~/machines/manifest.toml
 Created ~/machines/scripts/
 Created ~/machines/state/
@@ -64,7 +64,7 @@ Initialized git repository.
 Next steps:
   1. Edit ~/machines/manifest.toml — add your programs and scripts
   2. Map each program to an install key in machines/<your-hostname>.toml
-  3. post-installer --repo ~/machines status
+  3. loadout --repo ~/machines status
   4. Add a remote and push, then clone it on your other machines
 ```
 
@@ -72,7 +72,7 @@ Next steps:
 you're already inside a repository.
 
 All examples below assume you either `cd ~/machines`, pass `--repo ~/machines`,
-or `export POST_INSTALLER_REPO=~/machines`.
+or `export LOADOUT_REPO=~/machines`.
 
 ### 2. Describe a program
 
@@ -137,7 +137,7 @@ pipes, `$HOME`, redirects and `&&` all behave as they would in your terminal.
 **There is no auto-detection.** Every machine has its own file under
 `machines/` declaring, explicitly and per package, which entry of the install
 table it uses. The filename is the machine name — its hostname, or whatever
-you pass with `--machine` / `POST_INSTALLER_MACHINE`:
+you pass with `--machine` / `LOADOUT_MACHINE`:
 
 ```toml
 # machines/laptop.toml — laptop runs Fedora
@@ -173,7 +173,7 @@ when:
   `script-fedora` have no binary to check and are always accepted.
 
 ```console
-$ post-installer install --dry-run
+$ loadout install --dry-run
 error: cannot build install plan:
   - program 'bat' has no pm defined for machine 'laptop' (add it to machines/laptop.toml)
   - package manager 'pacman' (mapped for ripgrep) is not installed on machine 'laptop'
@@ -263,7 +263,7 @@ its own, or you encode the requirement in its `check`.
 ### 5. See where this machine stands: `status`
 
 ```console
-$ post-installer status
+$ loadout status
 Machine: laptop (linux/fedora, x86_64)
 
 PROGRAM  STATUS     VERSION
@@ -294,14 +294,14 @@ What happened:
 Variants:
 
 ```console
-$ post-installer status --json       # print the full state document instead
-$ post-installer status --no-write   # check but don't touch the state file
+$ loadout status --json       # print the full state document instead
+$ loadout status --no-write   # check but don't touch the state file
 ```
 
 ### 6. Install what's missing: `install`
 
 ```console
-$ post-installer install
+$ loadout install
 Checking current state...
 
 Plan for laptop:
@@ -344,23 +344,23 @@ The rules:
 Flags:
 
 ```console
-$ post-installer install --dry-run        # print the plan, do nothing
-$ post-installer install --yes            # skip the confirmation (for automation)
-$ post-installer install --skip-scripts   # programs only
-$ post-installer install ripgrep bat      # specific programs (+ their deps)
+$ loadout install --dry-run        # print the plan, do nothing
+$ loadout install --yes            # skip the confirmation (for automation)
+$ loadout install --skip-scripts   # programs only
+$ loadout install ripgrep bat      # specific programs (+ their deps)
 ```
 
 ### 7. Run scripts on demand: `run`
 
 ```console
-$ post-installer run dotfiles
+$ loadout run dotfiles
 ran dotfiles (exit 0)
 State updated.
 
-$ post-installer run dotfiles
+$ loadout run dotfiles
 skipped dotfiles: already done (check passed; use --force to run anyway)
 
-$ post-installer run dotfiles --force
+$ loadout run dotfiles --force
 ran dotfiles (exit 0)
 ```
 
@@ -372,7 +372,7 @@ failed.
 ### 8. Publish this machine: `sync`
 
 ```console
-$ post-installer sync
+$ loadout sync
 Pulling latest changes...
 Refreshing state for laptop...
 Committed state/laptop.json.
@@ -396,7 +396,7 @@ Pushed.
 Once two or more machines have synced their state:
 
 ```console
-$ post-installer diff
+$ loadout diff
 PROGRAM    laptop    vps
 git        2.55.0    2.43.0    !drift
 ripgrep    15.1.0    15.1.0
@@ -420,14 +420,14 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 10. The dashboard: bare `post-installer` (TUI)
+### 10. The dashboard: bare `loadout` (TUI)
 
-Run `post-installer` with no arguments in a real terminal (or `post-installer
+Run `loadout` with no arguments in a real terminal (or `loadout
 tui` with options) and you get an interactive dashboard instead of help text —
 the same program × machine matrix as `diff`, live:
 
 ```
- post-installer 0.1.0   ~/machines  ·  laptop
+ loadout 0.1.0   ~/machines  ·  laptop
 
  PROGRAM     laptop    vps
  cowsay      3.8.4     missing
@@ -468,11 +468,11 @@ TUI specifics to know:
 - **sudo:** install output is captured for the log view, which would swallow a
   password prompt. If a plan contains `sudo` commands and your credentials
   aren't cached, the TUI refuses with a hint — run `sudo -v` first, or use
-  `post-installer install` in the CLI where prompts work normally.
+  `loadout install` in the CLI where prompts work normally.
 - Command output appears in the log when each step *finishes* (not streamed
   live); the status line shows a spinner plus the latest log line meanwhile.
-- Bare `post-installer` reads `POST_INSTALLER_REPO`/`POST_INSTALLER_MACHINE`;
-  use `post-installer --repo ... tui` to pass flags.
+- Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
+  use `loadout --repo ... tui` to pass flags.
 
 ### 11. Multiple machines in practice
 
@@ -480,8 +480,8 @@ On a new machine:
 
 ```console
 $ git clone git@github.com:you/machines.git ~/machines
-$ export POST_INSTALLER_REPO=~/machines     # put in your shell profile
-$ post-installer install --yes && post-installer sync
+$ export LOADOUT_REPO=~/machines     # put in your shell profile
+$ loadout install --yes && loadout sync
 ```
 
 Don't have a second machine handy? Simulate one — `--machine` changes which
@@ -489,8 +489,8 @@ state file is written (add a `machines/fake-vps.toml` config if you want to
 test installs as it, too):
 
 ```console
-$ post-installer --machine fake-vps status
-$ post-installer diff       # now compares your real machine against fake-vps
+$ loadout --machine fake-vps status
+$ loadout diff       # now compares your real machine against fake-vps
 ```
 
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
@@ -502,9 +502,9 @@ Valid on every command, before the subcommand:
 
 | Option | Env var | Default | Meaning |
 |---|---|---|---|
-| `--repo PATH` | `POST_INSTALLER_REPO` | current directory | Config repo location |
+| `--repo PATH` | `LOADOUT_REPO` | current directory | Config repo location |
 | `--manifest FILE` | — | `manifest.toml` | Manifest file inside the repo |
-| `--machine NAME` | `POST_INSTALLER_MACHINE` | hostname (first label) | Identity for state tracking and mapping lookup |
+| `--machine NAME` | `LOADOUT_MACHINE` | hostname (first label) | Identity for state tracking and mapping lookup |
 | `-v, --verbose` | — | off | Reserved (no effect yet) |
 
 There is deliberately no `--pm` flag and no auto-detection: the only source of
@@ -550,6 +550,22 @@ so newer tool versions can extend the schema.
 
 ---
 
+## Installing
+
+Tagged releases ship prebuilt binaries for **linux-x64**, **macos-arm64**, and
+**macos-x64** (built by the GitHub Actions release workflow):
+
+```console
+$ tar xzf loadout-v0.1.0-linux-x64.tar.gz
+$ mv loadout ~/.local/bin/
+```
+
+CI runs on every push/PR: unit + integration tests on Linux, unit tests +
+release builds + integration on macOS (`.github/workflows/ci.yml`); pushing a
+`v*` tag builds, strips, and attaches all three tarballs to a GitHub Release
+(`.github/workflows/release.yml`). linux-arm64 remains buildable from source
+but isn't released yet.
+
 ## Building from source
 
 Requires a JDK (21 works) and network for the first build; the Gradle wrapper
@@ -557,10 +573,10 @@ fetches everything else.
 
 ```console
 $ ./gradlew :app:linkDebugExecutableLinuxX64     # fast build for development
-$ ./app/build/bin/linuxX64/debugExecutable/post-installer.kexe --help
+$ ./app/build/bin/linuxX64/debugExecutable/loadout.kexe --help
 
 $ ./gradlew :app:linkReleaseExecutableLinuxX64   # optimized binary
-$ cp app/build/bin/linuxX64/releaseExecutable/post-installer.kexe ~/.local/bin/post-installer
+$ cp app/build/bin/linuxX64/releaseExecutable/loadout.kexe ~/.local/bin/loadout
 ```
 
 Declared targets: `linuxX64`, `linuxArm64`, `macosX64`, `macosArm64`. Kotlin/
@@ -602,10 +618,11 @@ Stack: Kotlin/Native 2.4.0 · [Clikt](https://github.com/ajalt/clikt) (CLI) ·
 | Manifest/state models, diff engine | 1 | ✅ done |
 | Detection, version checks, `status` | 2 | ✅ done |
 | `install` / `run` / `diff` / `sync` / `init`, per-machine PM | 3 | ✅ done |
-| Mosaic TUI dashboard — bare `post-installer` opens an interactive program × machine view: navigate, install, refresh, sync, log view | 4 | ✅ done |
-| **CI + releases** — GitHub Actions (Linux + macOS runners), prebuilt binaries per target attached to tagged releases | 5 | ⏳ next |
+| Mosaic TUI dashboard — bare `loadout` opens an interactive program × machine view: navigate, install, refresh, sync, log view | 4 | ✅ done |
+| CI + releases — GitHub Actions (Linux + macOS runners), prebuilt binaries (linux-x64, macos-arm64, macos-x64) attached to tagged releases | 5 | ✅ done |
 
 Known limitations today: no Windows support (unix-like only) · dependency edges
 have no version constraints (`depends-on = ["git"]`, not `git >= 2.40`) ·
-`--verbose` is accepted but unused · macOS binaries build but have never been
-run (no mac hardware here until Phase 5 CI).
+`--verbose` is accepted but unused · linux-arm64 builds but isn't released ·
+macOS binaries are built and integration-tested in CI but haven't been used
+day-to-day yet.

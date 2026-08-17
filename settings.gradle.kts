@@ -12,7 +12,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "post-installer"
+rootProject.name = "loadout"
 
 include(":core")
 include(":app")

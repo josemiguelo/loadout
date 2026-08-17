@@ -14,8 +14,8 @@ kotlin {
         macosArm64(),
     ).forEach { target ->
         target.binaries.executable {
-            baseName = "post-installer"
-            entryPoint = "io.github.josemiguelo.postinstaller.main"
+            baseName = "loadout"
+            entryPoint = "loadout.main"
         }
         // Applies to the run and test binaries alike.
         target.binaries.all {

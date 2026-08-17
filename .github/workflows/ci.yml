@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
+      - name: Unit tests
+        run: ./gradlew :core:linuxX64Test :app:linuxX64Test
+      - name: Build debug binary
+        run: ./gradlew :app:linkDebugExecutableLinuxX64
+      - name: Integration tests
+        run: ./integration/run-tests.sh
+      - name: Build release binary
+        run: ./gradlew :app:linkReleaseExecutableLinuxX64
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-macos-${{ hashFiles('gradle/libs.versions.toml') }}
+      - name: Unit tests (arm64 host)
+        run: ./gradlew :core:macosArm64Test :app:macosArm64Test
+      - name: Build release binaries (arm64 + x64)
+        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64
+      - name: Integration tests
+        run: ./integration/run-tests.sh app/build/bin/macosArm64/releaseExecutable/loadout.kexe

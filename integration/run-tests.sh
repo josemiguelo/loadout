@@ -3,7 +3,7 @@
 # with a local bare git remote. Usage: integration/run-tests.sh [path-to-binary]
 set -eu
 
-BIN=${1:-app/build/bin/linuxX64/debugExecutable/post-installer.kexe}
+BIN=${1:-app/build/bin/linuxX64/debugExecutable/loadout.kexe}
 BIN=$(realpath "$BIN")
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
