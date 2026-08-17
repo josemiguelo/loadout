@@ -1,0 +1,6 @@
+# Per-machine config for "example-laptop" (the filename is the machine name).
+# Maps every program to one entry of its install table.
+[pm]
+git = "dnf"
+ripgrep = "dnf"
+rustup = "script"

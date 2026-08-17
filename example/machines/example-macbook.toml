@@ -1,0 +1,5 @@
+# Per-machine config for "example-macbook" (the filename is the machine name).
+[pm]
+git = "brew"
+ripgrep = "brew"
+rustup = "script"

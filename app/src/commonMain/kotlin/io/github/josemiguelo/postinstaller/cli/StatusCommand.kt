@@ -12,6 +12,13 @@ import io.github.josemiguelo.postinstaller.core.model.ProgramStatus
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+private val stateJson = Json {
+    prettyPrint = true
+    prettyPrintIndent = "  "
+    encodeDefaults = true
+}
+
 class StatusCommand : CliktCommand(name = "status") {
     override fun help(context: Context) =
         "Check installed versions of every manifest program and update this machine's state file"
@@ -24,15 +31,18 @@ class StatusCommand : CliktCommand(name = "status") {
     override fun run() {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
-        val engine = StatusEngine(VersionChecker(app.runner))
 
-        val state = runBlocking {
-            engine.refresh(manifest, system, app.stateStore.read(system.machine))
+        val state = if (noWrite) {
+            runBlocking {
+                StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
+                    .refresh(manifest, system, app.stateStore.read(system.machine))
+            }
+        } else {
+            app.refreshAndWriteState(manifest, system)
         }
-        if (!noWrite) app.stateStore.write(state)
 
         if (json) {
-            echo(Json.encodeToString(MachineState.serializer(), state))
+            echo(stateJson.encodeToString(MachineState.serializer(), state))
         } else {
             printTable(state)
             if (!noWrite) echo("\nState written to ${app.stateStore.pathFor(system.machine)}")
@@ -40,7 +50,7 @@ class StatusCommand : CliktCommand(name = "status") {
     }
 
     private fun printTable(state: MachineState) {
-        echo("Machine: ${state.machine} (${state.os}${state.distro?.let { "/$it" } ?: ""}, ${state.arch}, pm=${state.packageManager ?: "none"})")
+        echo("Machine: ${state.machine} (${state.os}${state.distro?.let { "/$it" } ?: ""}, ${state.arch})")
         echo("")
         val nameWidth = (state.programs.keys.map { it.length } + 7).max()
         echo("PROGRAM".padEnd(nameWidth + 2) + "STATUS".padEnd(11) + "VERSION")

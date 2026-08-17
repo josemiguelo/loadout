@@ -51,10 +51,20 @@ val EXAMPLE_MANIFEST = """
 
     [scripts.dotfiles]
     description = "clone and link dotfiles"
-    run = "scripts/dotfiles.sh"
+    file = "scripts/dotfiles.sh"
     os = ["linux", "macos"]
     check = "test -d ${'$'}HOME/.dotfiles"
     after = ["programs.git"]
+
+    [machines.laptop.pm]
+    git = "dnf"
+    ripgrep = "dnf"
+    rustup = "script"
+
+    [machines.macbook.pm]
+    git = "brew"
+    ripgrep = "brew"
+    rustup = "script"
 """.trimIndent()
 
 class ManifestLoaderTest {
@@ -70,15 +80,15 @@ class ManifestLoaderTest {
         assertEquals(listOf("git"), ripgrep.dependsOn)
         assertEquals("rg --version", ripgrep.version?.command)
         assertEquals("brew install ripgrep", ripgrep.install["brew"])
-        assertEquals("sudo dnf install -y ripgrep", ripgrep.installCommandFor(PackageManager.DNF))
-        assertNull(ripgrep.installCommandFor(PackageManager.PACMAN))
-
-        val rustup = manifest.programs.getValue("rustup")
-        assertEquals("curl -sSf https://sh.rustup.rs | sh -s -- -y", rustup.installCommandFor(PackageManager.PACMAN))
+        assertEquals("sudo dnf install -y ripgrep", ripgrep.install["dnf"])
+        assertNull(ripgrep.install["pacman"])
 
         val dotfiles = manifest.scripts.getValue("dotfiles")
-        assertEquals("scripts/dotfiles.sh", dotfiles.run)
+        assertEquals("scripts/dotfiles.sh", dotfiles.file)
         assertEquals(listOf("programs.git"), dotfiles.after)
+
+        assertEquals("dnf", manifest.machines.getValue("laptop").pm["ripgrep"])
+        assertEquals("script", manifest.machines.getValue("macbook").pm["rustup"])
     }
 
     @Test
@@ -108,11 +118,60 @@ class ManifestLoaderTest {
     fun rejectsUnknownAfterReference() {
         val text = """
             [scripts.s]
-            run = "x.sh"
+            run = "echo x"
             after = ["programs.ghost"]
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("unknown step 'programs.ghost'" in e.message.orEmpty())
+    }
+
+    @Test
+    fun rejectsScriptWithBothFileAndRun() {
+        val text = """
+            [scripts.s]
+            file = "x.sh"
+            run = "echo x"
+        """.trimIndent()
+        val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
+        assertTrue("exactly one of 'file'" in e.message.orEmpty())
+    }
+
+    @Test
+    fun rejectsScriptWithNeitherFileNorRun() {
+        val text = """
+            [scripts.s]
+            description = "does nothing"
+        """.trimIndent()
+        val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
+        assertTrue("exactly one of 'file'" in e.message.orEmpty())
+    }
+
+    @Test
+    fun rejectsMachineMappingToUnknownProgram() {
+        val text = """
+            [programs.a]
+            [programs.a.install]
+            dnf = "sudo dnf install -y a"
+
+            [machines.m.pm]
+            ghost = "dnf"
+        """.trimIndent()
+        val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
+        assertTrue("unknown program 'ghost'" in e.message.orEmpty())
+    }
+
+    @Test
+    fun rejectsMachineMappingToMissingInstallKey() {
+        val text = """
+            [programs.a]
+            [programs.a.install]
+            dnf = "sudo dnf install -y a"
+
+            [machines.m.pm]
+            a = "brew"
+        """.trimIndent()
+        val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
+        assertTrue("no 'brew' entry" in e.message.orEmpty())
     }
 
     @Test

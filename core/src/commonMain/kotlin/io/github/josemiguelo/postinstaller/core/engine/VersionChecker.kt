@@ -12,7 +12,11 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
-class VersionChecker(private val runner: ProcessRunner) {
+class VersionChecker(
+    private val runner: ProcessRunner,
+    /** When set, checks run with this directory as cwd (the config repo root). */
+    private val workDir: String? = null,
+) {
     /**
      * - no version check declared -> UNKNOWN
      * - command exits non-zero (typically 127, not found) -> MISSING
@@ -21,7 +25,7 @@ class VersionChecker(private val runner: ProcessRunner) {
      */
     fun check(program: Program): ProgramState {
         val versionCheck = program.version ?: return ProgramState(ProgramStatus.UNKNOWN)
-        val result = runner.capture(versionCheck.command)
+        val result = runner.capture(versionCheck.command, workDir)
         if (!result.success) return ProgramState(ProgramStatus.MISSING)
 
         val output = result.stdout.ifBlank { result.stderr }

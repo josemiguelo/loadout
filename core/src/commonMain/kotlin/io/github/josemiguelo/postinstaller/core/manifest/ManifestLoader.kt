@@ -2,7 +2,10 @@ package io.github.josemiguelo.postinstaller.core.manifest
 
 import com.akuleshov7.ktoml.Toml
 import com.akuleshov7.ktoml.TomlInputConfig
+import io.github.josemiguelo.postinstaller.core.model.INSTALL_FILE_PREFIX
+import io.github.josemiguelo.postinstaller.core.model.MachineConfig
 import io.github.josemiguelo.postinstaller.core.model.Manifest
+import io.github.josemiguelo.postinstaller.core.model.Meta
 import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
@@ -10,27 +13,118 @@ import okio.Path
 class ManifestException(message: String) : Exception(message)
 
 object ManifestLoader {
+    /** Directory of extra manifest fragments merged into the root manifest. */
+    const val FRAGMENTS_DIR: String = "manifest.d"
+
+    /** Directory of per-machine config files; `<name>.toml` configures machine `<name>`. */
+    const val MACHINES_DIR: String = "machines"
+
     private val toml = Toml(
         inputConfig = TomlInputConfig(ignoreUnknownNames = true),
     )
 
-    fun load(fs: FileSystem, path: Path): Manifest {
-        if (!fs.exists(path)) {
-            throw ManifestException("Manifest not found: $path")
+    /**
+     * Load the repo's full manifest: the root file, plus `.toml` fragments in
+     * `manifest.d` (programs/scripts, no `[meta]`), plus per-machine
+     * `machines/<name>.toml` configs — the only place machine configs may live.
+     * Everything is merged, then validated as one manifest.
+     */
+    fun loadRepo(fs: FileSystem, repoRoot: Path, manifestName: String = "manifest.toml"): Manifest {
+        val rootPath = repoRoot / manifestName
+        if (!fs.exists(rootPath)) {
+            throw ManifestException("Manifest not found: $rootPath")
         }
-        val text = fs.read(path) { readUtf8() }
-        return parse(text)
+        val root = parseRaw(fs.read(rootPath) { readUtf8() }, manifestName)
+
+        val errors = mutableListOf<String>()
+        val programs = root.programs.toMutableMap()
+        val scripts = root.scripts.toMutableMap()
+        val machines = mutableMapOf<String, MachineConfig>()
+
+        if (root.machines.isNotEmpty()) {
+            errors += "$manifestName: [machines.*] sections are not allowed; " +
+                "machine configs live in $MACHINES_DIR/<name>.toml"
+        }
+
+        for (path in tomlFiles(fs, repoRoot / FRAGMENTS_DIR)) {
+            val fragment = parseRaw(fs.read(path) { readUtf8() }, "$FRAGMENTS_DIR/${path.name}")
+            if (fragment.meta != Meta()) {
+                errors += "$FRAGMENTS_DIR/${path.name}: [meta] is only allowed in $manifestName"
+            }
+            if (fragment.machines.isNotEmpty()) {
+                errors += "$FRAGMENTS_DIR/${path.name}: [machines.*] sections are not allowed; " +
+                    "machine configs live in $MACHINES_DIR/<name>.toml"
+            }
+            for ((name, program) in fragment.programs) {
+                if (programs.put(name, program) != null) {
+                    errors += "duplicate program '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
+                }
+            }
+            for ((name, script) in fragment.scripts) {
+                if (scripts.put(name, script) != null) {
+                    errors += "duplicate script '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
+                }
+            }
+        }
+
+        for (path in tomlFiles(fs, repoRoot / MACHINES_DIR)) {
+            val name = path.name.removeSuffix(".toml")
+            machines[name] = try {
+                toml.decodeFromString<MachineConfig>(fs.read(path) { readUtf8() })
+            } catch (e: Exception) {
+                throw ManifestException("Failed to parse $MACHINES_DIR/${path.name}: ${e.message}")
+            }
+        }
+
+        if (errors.isNotEmpty()) {
+            throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
+        }
+
+        val merged = root.copy(programs = programs, scripts = scripts, machines = machines)
+        validate(merged)
+
+        // Referenced files can only be checked against the actual repo, not in parse().
+        val missingFiles = mutableListOf<String>()
+        for ((name, script) in merged.scripts) {
+            if (script.file != null && !fs.exists(repoRoot / script.file!!)) {
+                missingFiles += "  - scripts.$name: file '${script.file}' not found in the repo"
+            }
+        }
+        for ((name, program) in merged.programs) {
+            for ((key, value) in program.install) {
+                if (value.startsWith(INSTALL_FILE_PREFIX)) {
+                    val file = value.removePrefix(INSTALL_FILE_PREFIX)
+                    if (!fs.exists(repoRoot / file)) {
+                        missingFiles += "  - programs.$name.install.$key: file '$file' not found in the repo"
+                    }
+                }
+            }
+        }
+        if (missingFiles.isNotEmpty()) {
+            throw ManifestException("Invalid manifest:\n" + missingFiles.joinToString("\n"))
+        }
+        return merged
     }
 
+    /** Parse and validate a single manifest document (no fragment/machine-file merging). */
     fun parse(text: String): Manifest {
-        val manifest = try {
-            toml.decodeFromString<Manifest>(text)
-        } catch (e: Exception) {
-            throw ManifestException("Failed to parse manifest: ${e.message}")
-        }
+        val manifest = parseRaw(text, "manifest")
         validate(manifest)
         return manifest
     }
+
+    private fun parseRaw(text: String, label: String): Manifest = try {
+        toml.decodeFromString<Manifest>(text)
+    } catch (e: Exception) {
+        throw ManifestException("Failed to parse $label: ${e.message}")
+    }
+
+    private fun tomlFiles(fs: FileSystem, dir: Path): List<Path> =
+        if (fs.exists(dir)) {
+            fs.list(dir).filter { it.name.endsWith(".toml") }.sortedBy { it.name }
+        } else {
+            emptyList()
+        }
 
     private fun validate(manifest: Manifest) {
         val errors = mutableListOf<String>()
@@ -44,6 +138,9 @@ object ManifestLoader {
         }
 
         for ((name, script) in manifest.scripts) {
+            if ((script.file == null) == (script.run == null)) {
+                errors += "scripts.$name must define exactly one of 'file' (repo path) or 'run' (inline command)"
+            }
             for (ref in script.after) {
                 val valid = when {
                     ref.startsWith("programs.") -> ref.removePrefix("programs.") in manifest.programs
@@ -52,6 +149,19 @@ object ManifestLoader {
                 }
                 if (!valid) {
                     errors += "scripts.$name after references unknown step '$ref'"
+                }
+            }
+        }
+
+        for ((machine, config) in manifest.machines) {
+            for ((programName, installKey) in config.pm) {
+                val program = manifest.programs[programName]
+                if (program == null) {
+                    errors += "$MACHINES_DIR/$machine.toml references unknown program '$programName'"
+                } else if (installKey !in program.install) {
+                    errors += "$MACHINES_DIR/$machine.toml maps '$programName' to '$installKey', but " +
+                        "programs.$programName.install has no '$installKey' entry " +
+                        "(has: ${program.install.keys.sorted().joinToString()})"
                 }
             }
         }
@@ -110,6 +220,29 @@ object ManifestLoader {
             if (name in seen || name !in manifest.programs) return
             seen += name
             manifest.programs.getValue(name).dependsOn.forEach(::visit)
+            result += name
+        }
+
+        names.forEach(::visit)
+        return result
+    }
+
+    /**
+     * Scripts ordered so that a script listed in another's `after` runs first.
+     * Only script-to-script edges affect this order; `programs.*` references are
+     * satisfied by installs always running before scripts.
+     */
+    fun scriptOrder(manifest: Manifest, names: Collection<String> = manifest.scripts.keys): List<String> {
+        val result = mutableListOf<String>()
+        val seen = mutableSetOf<String>()
+
+        fun visit(name: String) {
+            if (name in seen || name !in manifest.scripts) return
+            seen += name
+            manifest.scripts.getValue(name).after
+                .filter { it.startsWith("scripts.") }
+                .map { it.removePrefix("scripts.") }
+                .forEach(::visit)
             result += name
         }
 

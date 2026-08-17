@@ -10,7 +10,6 @@ data class MachineState(
     val os: String,
     val distro: String? = null,
     val arch: String,
-    val packageManager: String? = null,
     val toolVersion: String,
     /** ISO-8601 UTC timestamp of the last state refresh. */
     val updatedAt: String,

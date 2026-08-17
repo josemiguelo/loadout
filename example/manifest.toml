@@ -6,6 +6,12 @@
 name = "example machines"
 min-tool-version = "0.1.0"
 
+# Every machine explicitly maps each program to one entry of that program's
+# install table, in its own machines/<name>.toml file (see machines/).
+# Installing errors out if a program is unmapped or if a mapped package
+# manager isn't present on the machine. Large manifests can be split into
+# fragments under manifest.d/ ([programs.*]/[scripts.*] blocks).
+
 [programs.git]
 description = "version control"
 
@@ -46,7 +52,7 @@ script = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -
 
 [scripts.dotfiles]
 description = "clone and link dotfiles"
-run = "scripts/dotfiles.sh"
+file = "scripts/dotfiles.sh"    # a repo file (validated to exist); use `run` for inline commands
 os = ["linux", "macos"]
 check = "test -d $HOME/.dotfiles"
 after = ["programs.git"]

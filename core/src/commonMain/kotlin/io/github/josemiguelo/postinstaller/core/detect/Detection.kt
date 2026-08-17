@@ -13,10 +13,7 @@ class Detection(
     private val runner: ProcessRunner,
     private val fs: FileSystem,
 ) {
-    fun detectSystem(
-        machineOverride: String? = null,
-        pmOverride: PackageManager? = null,
-    ): SystemInfo {
+    fun detectSystem(machineOverride: String? = null): SystemInfo {
         val uname = unameInfo()
         val os = when (uname.sysname) {
             "Darwin" -> OsFamily.MACOS
@@ -27,7 +24,6 @@ class Detection(
             os = os,
             distro = if (os == OsFamily.LINUX) detectDistro() else null,
             arch = uname.machine,
-            packageManager = pmOverride ?: detectPackageManager(),
         )
     }
 
@@ -43,9 +39,7 @@ class Detection(
             ?.ifBlank { null }
     }
 
-    /** First available package manager in priority order, or null if none found. */
-    fun detectPackageManager(): PackageManager? =
-        PackageManager.entries.firstOrNull { pm ->
-            runner.capture("command -v ${pm.probeCommand}").success
-        }
+    /** Whether the package manager's binary exists on this machine. */
+    fun isPmAvailable(pm: PackageManager): Boolean =
+        runner.capture("command -v ${pm.probeCommand}").success
 }

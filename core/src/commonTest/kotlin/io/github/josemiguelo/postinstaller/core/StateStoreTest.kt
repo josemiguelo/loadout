@@ -17,7 +17,6 @@ class StateStoreTest {
         os = "linux",
         distro = "fedora",
         arch = "x86_64",
-        packageManager = "dnf",
         toolVersion = "0.1.0",
         updatedAt = "2026-08-14T12:00:00Z",
         programs = mapOf(

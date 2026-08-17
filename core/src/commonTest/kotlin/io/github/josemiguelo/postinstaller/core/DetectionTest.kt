@@ -4,7 +4,9 @@ import io.github.josemiguelo.postinstaller.core.detect.Detection
 import io.github.josemiguelo.postinstaller.core.model.PackageManager
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 
@@ -43,20 +45,15 @@ class DetectionTest {
     }
 
     @Test
-    fun probesPackageManagersInPriorityOrder() {
+    fun pmAvailabilityProbesTheRightBinary() {
         val runner = FakeProcessRunner()
         runner.onCommand("command -v dnf", stdout = "/usr/bin/dnf")
         runner.onCommand("command -v apt-get", stdout = "/usr/bin/apt-get")
 
         val detection = Detection(runner, FakeFileSystem())
-        // brew is probed first but not present; dnf wins over apt.
-        assertEquals(PackageManager.DNF, detection.detectPackageManager())
-        assertEquals("command -v brew", runner.executed.first())
-    }
-
-    @Test
-    fun noPackageManagerFound() {
-        val detection = Detection(FakeProcessRunner(), FakeFileSystem())
-        assertNull(detection.detectPackageManager())
+        assertTrue(detection.isPmAvailable(PackageManager.DNF))
+        // apt probes apt-get, not apt.
+        assertTrue(detection.isPmAvailable(PackageManager.APT))
+        assertFalse(detection.isPmAvailable(PackageManager.PACMAN))
     }
 }

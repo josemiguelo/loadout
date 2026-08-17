@@ -10,9 +10,10 @@ enum class OsFamily(val id: String) {
 }
 
 /**
- * Package managers the tool knows how to probe for. The manifest's `install`
- * table is an open string map, so users can key commands by managers not
- * listed here; those are only usable via an explicit `--pm` override.
+ * Package managers the tool can verify the presence of. When a machine's
+ * mapping uses one of these ids, install-time validation probes that the
+ * binary actually exists on the machine. Custom install keys (script
+ * variants) are not probed.
  */
 enum class PackageManager(val id: String, val probeCommand: String) {
     BREW("brew", "brew"),
@@ -25,13 +26,9 @@ enum class PackageManager(val id: String, val probeCommand: String) {
     }
 }
 
-/** Key in a program's `install` map for a package-manager-independent command. */
-const val INSTALL_SCRIPT_KEY: String = "script"
-
 data class SystemInfo(
     val machine: String,
     val os: OsFamily,
     val distro: String?,
     val arch: String,
-    val packageManager: PackageManager?,
 )
