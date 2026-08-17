@@ -16,6 +16,9 @@ kotlin {
         target.binaries.executable {
             baseName = "post-installer"
             entryPoint = "io.github.josemiguelo.postinstaller.main"
+        }
+        // Applies to the run and test binaries alike.
+        target.binaries.all {
             @OptIn(KotlinNativeCacheApi::class)
             disableNativeCache(
                 DisableCacheInKotlinVersion.`2_4_0`,

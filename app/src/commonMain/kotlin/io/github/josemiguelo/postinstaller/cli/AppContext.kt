@@ -35,14 +35,14 @@ class AppContext(
      * Re-run all version checks, merge in any script results from this run,
      * write the state file, and return the new state.
      */
-    fun refreshAndWriteState(
+    suspend fun refreshAndWriteState(
         manifest: Manifest,
         system: SystemInfo,
         scriptResults: Map<String, ScriptState> = emptyMap(),
     ): MachineState {
         val previous = stateStore.read(system.machine)
         val engine = StatusEngine(VersionChecker(runner, repoRoot.toString()), runner, repoRoot)
-        val state = runBlocking { engine.refresh(manifest, system, previous, scriptResults) }
+        val state = engine.refresh(manifest, system, previous, scriptResults)
         // Keep updatedAt (and git history) stable when nothing real changed.
         if (previous != null && state.copy(updatedAt = previous.updatedAt) == previous) {
             return previous

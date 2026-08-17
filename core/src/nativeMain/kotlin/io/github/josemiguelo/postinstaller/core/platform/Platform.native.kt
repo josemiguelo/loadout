@@ -39,3 +39,6 @@ actual fun unameInfo(): UnameInfo = memScoped {
 actual fun nowIso(): String = Clock.System.now().toString()
 
 actual val blockingDispatcher: CoroutineDispatcher = Dispatchers.IO
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun envVar(name: String): String? = platform.posix.getenv(name)?.toKString()

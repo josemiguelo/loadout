@@ -35,7 +35,7 @@ class SyncCommand : CliktCommand(name = "sync") {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
         echo("Refreshing state for ${system.machine}...")
-        app.refreshAndWriteState(manifest, system)
+        kotlinx.coroutines.runBlocking { app.refreshAndWriteState(manifest, system) }
 
         val statePath = "state/${system.machine}.json"
         val committed = git.addCommit(statePath, message ?: "${system.machine}: update state")

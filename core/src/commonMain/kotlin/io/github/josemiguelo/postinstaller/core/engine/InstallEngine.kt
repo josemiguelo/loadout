@@ -121,4 +121,24 @@ class InstallEngine(
             val after = checker.check(manifest.programs.getValue(item.program))
             InstallOutcome(item.program, exitCode, after)
         }
+
+    /**
+     * Like [execute], but with captured output delivered to [onOutput] line by
+     * line (per finished command — not streamed live). For UIs that own the
+     * terminal and can't hand stdio to child processes.
+     */
+    fun executeCaptured(
+        manifest: Manifest,
+        plan: List<PlanItem>,
+        onOutput: (String) -> Unit,
+    ): List<InstallOutcome> =
+        plan.filterIsInstance<PlanItem.Install>().map { item ->
+            onOutput("==> installing ${item.program}")
+            val result = runner.capture(item.command, workDir = repoRoot.toString())
+            (result.stdout + result.stderr).lineSequence()
+                .filter { it.isNotBlank() }
+                .forEach { onOutput("    $it") }
+            val after = checker.check(manifest.programs.getValue(item.program))
+            InstallOutcome(item.program, result.exitCode, after)
+        }
 }

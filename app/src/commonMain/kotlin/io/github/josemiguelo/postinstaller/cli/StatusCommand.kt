@@ -32,13 +32,13 @@ class StatusCommand : CliktCommand(name = "status") {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
 
-        val state = if (noWrite) {
-            runBlocking {
+        val state = runBlocking {
+            if (noWrite) {
                 StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
                     .refresh(manifest, system, app.stateStore.read(system.machine))
+            } else {
+                app.refreshAndWriteState(manifest, system)
             }
-        } else {
-            app.refreshAndWriteState(manifest, system)
         }
 
         if (json) {

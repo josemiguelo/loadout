@@ -16,3 +16,6 @@ expect fun nowIso(): String
 
 /** Dispatcher suited to blocking work (process spawning, file IO). */
 expect val blockingDispatcher: kotlinx.coroutines.CoroutineDispatcher
+
+/** Value of the environment variable [name], or null when unset. */
+expect fun envVar(name: String): String?

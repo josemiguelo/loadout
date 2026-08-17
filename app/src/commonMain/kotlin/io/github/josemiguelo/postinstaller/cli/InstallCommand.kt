@@ -96,7 +96,7 @@ class InstallCommand : CliktCommand(name = "install") {
         }
 
         echo("\nUpdating state...")
-        app.refreshAndWriteState(manifest, system, scriptResults)
+        runBlocking { app.refreshAndWriteState(manifest, system, scriptResults) }
 
         val failedInstalls = outcomes.filterNot { it.success }
         val failedScripts = scriptResults.filterValues { it.status == ScriptStatus.FAILED }

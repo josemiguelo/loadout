@@ -8,9 +8,9 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: in development.** Working today: `init`, `status`, `install`, `run`,
-`diff`, `sync` on Linux (x64/arm64) and macOS (builds untested until CI exists).
-See the [roadmap](#roadmap) for what's next: an interactive TUI (Phase 4) and
-CI/release binaries (Phase 5).
+`diff`, `sync`, and an interactive TUI dashboard, on Linux (x64/arm64) and
+macOS (builds untested until CI exists). See the [roadmap](#roadmap) for what's
+next: CI/release binaries (Phase 5).
 
 No JVM, no runtime dependencies — Kotlin/Native compiled to a single executable.
 It shells out to your package managers and `git`, so those must be on `PATH`.
@@ -420,7 +420,61 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 10. Multiple machines in practice
+### 10. The dashboard: bare `post-installer` (TUI)
+
+Run `post-installer` with no arguments in a real terminal (or `post-installer
+tui` with options) and you get an interactive dashboard instead of help text —
+the same program × machine matrix as `diff`, live:
+
+```
+ post-installer 0.1.0   ~/machines  ·  laptop
+
+ PROGRAM     laptop    vps
+ cowsay      3.8.4     missing
+ ripgrep     15.1.0    15.1.0      ← selected row is an inverse-video bar
+
+ SCRIPTS
+ dotfiles    done      pending
+
+ ✔ refreshed
+ ↑↓ move · r refresh · i install/run · a all missing · s sync · d details · l log · q quit
+```
+
+Colors carry the semantics: versions green (yellow on drift), `missing`/`failed`
+red, `pending` yellow, `-` dim.
+
+Keys:
+
+| Key | Action |
+|---|---|
+| `↑`/`↓` (or `k`/`j`) | Move between rows |
+| `d` / `Enter` | Details pane for the selected row: version check, full install table with this machine's mapped key marked, depends-on / check / after |
+| `r` | Re-run all version and script checks, update the state file (spinner while working) |
+| `i` | Install the selected program (same strict plan + errors as the CLI) — or run the selected script |
+| `a` | Install everything missing on this machine |
+| `s` | Sync: pull → refresh → commit state → push |
+| `l` | Toggle the log view (output of installs/scripts/sync; the dashboard itself stays clean) |
+| `y` / `n` | Confirm / cancel a pending install or script run |
+| `q` / `Esc` | Quit (from a pane: back to the dashboard) |
+
+Everything the TUI does goes through the same engines as the CLI — identical
+plans, identical strict-resolution errors (shown in the status line), identical
+state files.
+
+TUI specifics to know:
+
+- **It needs a real terminal.** Piped/redirected output falls back to the CLI
+  (bare invocation prints help); `tui` refuses with a clear error.
+- **sudo:** install output is captured for the log view, which would swallow a
+  password prompt. If a plan contains `sudo` commands and your credentials
+  aren't cached, the TUI refuses with a hint — run `sudo -v` first, or use
+  `post-installer install` in the CLI where prompts work normally.
+- Command output appears in the log when each step *finishes* (not streamed
+  live); the status line shows a spinner plus the latest log line meanwhile.
+- Bare `post-installer` reads `POST_INSTALLER_REPO`/`POST_INSTALLER_MACHINE`;
+  use `post-installer --repo ... tui` to pass flags.
+
+### 11. Multiple machines in practice
 
 On a new machine:
 
@@ -442,7 +496,7 @@ $ post-installer diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 11. Global options
+### 12. Global options
 
 Valid on every command, before the subcommand:
 
@@ -460,7 +514,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 12. The state file
+### 13. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -517,6 +571,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 
 ```console
 $ ./gradlew :core:linuxX64Test     # 55 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
 $ ./integration/run-tests.sh       # 25 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
@@ -528,14 +583,14 @@ $ ./integration/run-tests.sh       # 25 black-box tests driving the real binary
 core/   business logic, no CLI/TUI deps — models, manifest loader (ktoml),
         state store (Okio + kotlinx-serialization), diff engine, install/script
         engines, process runner (kommand), detection, git client
-app/    Clikt CLI commands + entry point (Mosaic TUI lands here in Phase 4)
+app/    Clikt CLI commands, Mosaic TUI (tui/), entry point with TTY dispatch
 ```
 
 Stack: Kotlin/Native 2.4.0 · [Clikt](https://github.com/ajalt/clikt) (CLI) ·
 [ktoml](https://github.com/orchestr7/ktoml) (manifest) · kotlinx-serialization
 (state) · [kommand](https://github.com/kgit2/kommand) (processes) ·
 [Okio](https://square.github.io/okio/) (filesystem) ·
-[Mosaic](https://github.com/JakeWharton/mosaic) (upcoming TUI).
+[Mosaic](https://github.com/JakeWharton/mosaic) (TUI).
 
 ---
 
@@ -547,8 +602,8 @@ Stack: Kotlin/Native 2.4.0 · [Clikt](https://github.com/ajalt/clikt) (CLI) ·
 | Manifest/state models, diff engine | 1 | ✅ done |
 | Detection, version checks, `status` | 2 | ✅ done |
 | `install` / `run` / `diff` / `sync` / `init`, per-machine PM | 3 | ✅ done |
-| **Mosaic TUI dashboard** — bare `post-installer` opens an interactive program × machine view: navigate, install, refresh, sync from the keyboard | 4 | ⏳ next |
-| **CI + releases** — GitHub Actions (Linux + macOS runners), prebuilt binaries per target attached to tagged releases | 5 | ⏳ planned |
+| Mosaic TUI dashboard — bare `post-installer` opens an interactive program × machine view: navigate, install, refresh, sync, log view | 4 | ✅ done |
+| **CI + releases** — GitHub Actions (Linux + macOS runners), prebuilt binaries per target attached to tagged releases | 5 | ⏳ next |
 
 Known limitations today: no Windows support (unix-like only) · dependency edges
 have no version constraints (`depends-on = ["git"]`, not `git >= 2.40`) ·

@@ -47,7 +47,7 @@ class RunCommand : CliktCommand(name = "run") {
         }
 
         if (results.isNotEmpty()) {
-            app.refreshAndWriteState(manifest, system, results)
+            kotlinx.coroutines.runBlocking { app.refreshAndWriteState(manifest, system, results) }
             echo("State updated.")
         }
         if (results.any { it.value.status == ScriptStatus.FAILED }) throw ProgramResult(1)
