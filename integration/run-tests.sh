@@ -259,5 +259,37 @@ OUT=$("$BIN" --repo pmrepo status 2>&1 || true)
 echo "$OUT" | grep -q "no 'brew' entry" || fail "bad-mapping validation message"
 ok "manifest rejects mappings to nonexistent install keys"
 
+# --- versioning ---------------------------------------------------------
+mkdir -p verrepo/state
+cat > verrepo/manifest.toml <<'EOF'
+[meta]
+min-tool-version = "999.0.0"
+
+[programs.git]
+[programs.git.install]
+manual = "false"
+EOF
+OUT=$("$BIN" --repo verrepo status 2>&1 || true)
+echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
+ok "manifest min-tool-version blocks an outdated binary"
+
+cat > verrepo/manifest.toml <<'EOF'
+[programs.git]
+[programs.git.version]
+command = "git --version"
+regex = "git version ([0-9.]+)"
+[programs.git.install]
+manual = "false"
+EOF
+cat > verrepo/state/future.json <<'EOF'
+{"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
+ "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}
+EOF
+"$BIN" --repo verrepo --machine m1 status >/dev/null || fail "status works despite future state file"
+OUT=$("$BIN" --repo verrepo diff 2>&1 || true)
+echo "$OUT" | grep -q "newer loadout" || fail "future state file should warn"
+echo "$OUT" | grep -q "future" && echo "$OUT" | grep -q '"future"' && fail "future machine must not appear as data" || true
+ok "state files from a newer loadout are skipped with a warning"
+
 echo ""
 echo "All $PASS integration tests passed."

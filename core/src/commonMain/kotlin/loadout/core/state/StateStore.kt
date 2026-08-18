@@ -13,7 +13,16 @@ class StateStore(
     private val fs: FileSystem,
     repoRoot: Path,
 ) {
+    companion object {
+        /** Highest state-file schema this build understands. */
+        const val SCHEMA_VERSION: Int = 1
+    }
+
     private val stateDir: Path = repoRoot / "state"
+
+    /** Warnings from the most recent read/readAll (e.g. files written by a newer loadout). */
+    var lastWarnings: List<String> = emptyList()
+        private set
 
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private val json = Json {
@@ -26,13 +35,15 @@ class StateStore(
     fun pathFor(machine: String): Path = stateDir / "$machine.json"
 
     fun read(machine: String): MachineState? {
+        lastWarnings = emptyList()
         val path = pathFor(machine)
         if (!fs.exists(path)) return null
-        return json.decodeFromString<MachineState>(fs.read(path) { readUtf8() })
+        return accept(json.decodeFromString<MachineState>(fs.read(path) { readUtf8() }), path)
     }
 
     /** All machine states in the repo, keyed by machine name, sorted by name. */
     fun readAll(): Map<String, MachineState> {
+        lastWarnings = emptyList()
         if (!fs.exists(stateDir)) return emptyMap()
         return fs.list(stateDir)
             .filter { it.name.endsWith(".json") }
@@ -40,9 +51,23 @@ class StateStore(
             .mapNotNull { path ->
                 runCatching {
                     json.decodeFromString<MachineState>(fs.read(path) { readUtf8() })
-                }.getOrNull()
+                }.getOrNull()?.let { accept(it, path) }
             }
             .associateBy { it.machine }
+    }
+
+    /**
+     * A schemaVersion above ours means a newer loadout wrote the file; skip it
+     * rather than misinterpret it. Older/equal schemas load via defaults and
+     * ignored unknown keys.
+     */
+    private fun accept(state: MachineState, path: Path): MachineState? {
+        if (state.schemaVersion > SCHEMA_VERSION) {
+            lastWarnings = lastWarnings +
+                "state/${path.name} was written by a newer loadout (schema ${state.schemaVersion} > $SCHEMA_VERSION) — ignoring it; upgrade loadout to see this machine"
+            return null
+        }
+        return state
     }
 
     fun write(state: MachineState) {

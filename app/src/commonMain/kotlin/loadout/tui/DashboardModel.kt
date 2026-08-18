@@ -160,6 +160,7 @@ class DashboardModel(private val app: AppContext) {
         manifest = m
         val machine = app.detectSystem().machine
         val states = app.stateStore.readAll()
+        app.stateStore.lastWarnings.forEach { log("warning: $it") }
         val report = DiffEngine.diff(m, states.values)
 
         val programRows = report.rows.map { row ->

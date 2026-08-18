@@ -171,6 +171,51 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun minToolVersionIsEnforced() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [meta]
+                    min-tool-version = "999.0.0"
+
+                    [programs.git]
+                    [programs.git.install]
+                    dnf = "x"
+                """.trimIndent(),
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("requires loadout >= 999.0.0" in e.message.orEmpty())
+        assertTrue("upgrade loadout" in e.message.orEmpty())
+    }
+
+    @Test
+    fun minToolVersionAtOrBelowCurrentLoads() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [meta]
+                    min-tool-version = "0.1.0"
+
+                    [programs.git]
+                    [programs.git.install]
+                    dnf = "x"
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(setOf("git"), ManifestLoader.loadRepo(fs, repo).programs.keys)
+    }
+
+    @Test
+    fun versionComparisonIsNumericNotLexicographic() {
+        assertTrue(ManifestLoader.versionAtLeast("0.10.0", "0.9.0"))
+        assertTrue(ManifestLoader.versionAtLeast("1.0", "0.99.99"))
+        assertTrue(ManifestLoader.versionAtLeast("0.2.0", "0.2"))
+        assertTrue(!ManifestLoader.versionAtLeast("0.2.0", "0.2.1"))
+        assertTrue(ManifestLoader.versionAtLeast("0.2.0", "0.2.0"))
+    }
+
+    @Test
     fun missingRootManifestFails() {
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(FakeFileSystem(), repo) }
         assertTrue("Manifest not found" in e.message.orEmpty())

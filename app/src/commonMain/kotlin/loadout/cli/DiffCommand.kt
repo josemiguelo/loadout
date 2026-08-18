@@ -25,6 +25,7 @@ class DiffCommand : CliktCommand(name = "diff") {
         val states = app.stateStore.readAll()
             .filterKeys { filter == null || it in filter }
             .values
+        app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         if (states.isEmpty()) {
             echo("No machine state files found in ${app.repoRoot / "state"}. Run `status` or `sync` on your machines first.")

@@ -548,6 +548,34 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
+### 14. Version compatibility between the repo and the binary
+
+Mixed fleets happen — machines upgrade loadout at different times. Two guards
+keep that safe:
+
+**The repo declares its floor.** When you start using a manifest feature that
+needs a newer loadout, bump `min-tool-version` in the same commit:
+
+```toml
+[meta]
+min-tool-version = "0.2.0"
+```
+
+A machine running an older binary then refuses *everything* with the right
+instruction — instead of silently ignoring manifest keys it doesn't know:
+
+```
+error: this config repo requires loadout >= 0.2.0 (you have 0.1.0) — upgrade loadout on this machine
+```
+
+**Old repos keep working on new binaries.** The manifest format only evolves
+additively (new optional fields), so a repo created with loadout 0.1 parses
+forever. State files carry a `schemaVersion` and `toolVersion`; a state file
+written by a *newer* loadout than yours is skipped with a warning
+(`state/vps.json was written by a newer loadout … upgrade loadout to see this
+machine`) rather than misread — and state is disposable observation anyway:
+any machine can regenerate its own file with one `status`.
+
 ---
 
 ## Installing
@@ -586,9 +614,9 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 55 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 59 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
-$ ./integration/run-tests.sh       # 25 black-box tests driving the real binary
+$ ./integration/run-tests.sh       # 27 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
 ```

@@ -60,6 +60,29 @@ class StateStoreTest {
     }
 
     @Test
+    fun newerSchemaStateFilesAreSkippedWithWarning() {
+        val fs = FakeFileSystem()
+        val store = StateStore(fs, "/repo".toPath())
+        store.write(sampleState("laptop", "14.1.0"))
+        fs.write("/repo/state/future.json".toPath()) {
+            writeUtf8(
+                """{"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
+                    "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}""",
+            )
+        }
+
+        val all = store.readAll()
+        assertEquals(setOf("laptop"), all.keys)
+        assertEquals(1, store.lastWarnings.size)
+        assertTrue("newer loadout" in store.lastWarnings.single())
+
+        assertNull(store.read("future"))
+        assertTrue(store.lastWarnings.isNotEmpty())
+        store.read("laptop")
+        assertTrue(store.lastWarnings.isEmpty())
+    }
+
+    @Test
     fun writtenJsonUsesLowercaseStatusNames() {
         val fs = FakeFileSystem()
         val store = StateStore(fs, "/repo".toPath())

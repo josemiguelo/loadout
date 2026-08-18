@@ -115,6 +115,14 @@ These came from explicit user decisions; don't "improve" them away:
    exception types get a catch in Main.kt.
 10. **Product code loads manifests via `ManifestLoader.loadRepo`** (merging +
     file validation). `parse()` exists for tests only.
+11. **Versioning contract.** Manifest format evolves ADDITIVELY only (new
+    optional fields; never repurpose existing ones). `[meta] min-tool-version`
+    is enforced at loadRepo — repos requiring newer features declare their
+    floor and old binaries refuse with an "upgrade loadout" error. State files
+    with `schemaVersion > StateStore.SCHEMA_VERSION` are skipped with a
+    warning (surfaced via `StateStore.lastWarnings` — new read paths must
+    echo/log them). Bump SCHEMA_VERSION only with a real schema break, and
+    handle older schemas via defaults.
 
 ## Toolchain facts (hard-won — don't rediscover)
 

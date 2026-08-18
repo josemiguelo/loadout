@@ -2,6 +2,7 @@ package loadout.core.manifest
 
 import com.akuleshov7.ktoml.Toml
 import com.akuleshov7.ktoml.TomlInputConfig
+import loadout.core.TOOL_VERSION
 import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
@@ -35,6 +36,18 @@ object ManifestLoader {
             throw ManifestException("Manifest not found: $rootPath")
         }
         val root = parseRaw(fs.read(rootPath) { readUtf8() }, manifestName)
+
+        // Fail before interpreting anything else: an older binary silently
+        // ignores manifest keys it doesn't know, so the repo's declared floor
+        // is the only guard against misreading a newer config.
+        root.meta.minToolVersion?.let { required ->
+            if (!versionAtLeast(TOOL_VERSION, required)) {
+                throw ManifestException(
+                    "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
+                        "upgrade loadout on this machine",
+                )
+            }
+        }
 
         val errors = mutableListOf<String>()
         val programs = root.programs.toMutableMap()
@@ -119,6 +132,18 @@ object ManifestLoader {
         throw ManifestException("Failed to parse $label: ${e.message}")
     }
 
+    /** Numeric dotted-version comparison: is [current] >= [required]? */
+    internal fun versionAtLeast(current: String, required: String): Boolean {
+        val c = current.split('.').map { it.toIntOrNull() ?: 0 }
+        val r = required.split('.').map { it.toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(c.size, r.size)) {
+            val a = c.getOrElse(i) { 0 }
+            val b = r.getOrElse(i) { 0 }
+            if (a != b) return a > b
+        }
+        return true
+    }
+
     private fun tomlFiles(fs: FileSystem, dir: Path): List<Path> =
         if (fs.exists(dir)) {
             fs.list(dir).filter { it.name.endsWith(".toml") }.sortedBy { it.name }
@@ -128,6 +153,12 @@ object ManifestLoader {
 
     private fun validate(manifest: Manifest) {
         val errors = mutableListOf<String>()
+
+        manifest.meta.minToolVersion?.let {
+            if (!Regex("""\d+(\.\d+)*""").matches(it)) {
+                errors += "meta.min-tool-version '$it' is not a dotted version number (e.g. \"0.2.0\")"
+            }
+        }
 
         for ((name, program) in manifest.programs) {
             for (dep in program.dependsOn) {

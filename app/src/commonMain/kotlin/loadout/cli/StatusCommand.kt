@@ -40,6 +40,7 @@ class StatusCommand : CliktCommand(name = "status") {
                 app.refreshAndWriteState(manifest, system)
             }
         }
+        app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         if (json) {
             echo(stateJson.encodeToString(MachineState.serializer(), state))

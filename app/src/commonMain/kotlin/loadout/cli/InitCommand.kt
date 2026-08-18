@@ -15,6 +15,9 @@ private val STARTER_MANIFEST = """
 
     [meta]
     name = "my machines"
+    # Bump this when the repo starts using features of a newer loadout —
+    # machines running older binaries then refuse with an "upgrade" error:
+    #min-tool-version = "0.1.0"
 
     [programs.ripgrep]
     description = "fast grep"
