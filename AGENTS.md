@@ -222,6 +222,38 @@ release binary). `release.yml` on `v*` tags: strip + tar.gz →
 GitHub Release. linuxArm64 builds but is not released. The repo may not be
 pushed to GitHub yet — workflows are inert until then.
 
+## Adding programs to a config repo — the recipe
+
+Distilled from migrating the user's real repo (README "Recipe: adding a
+program" is the user-facing long form). Match top-down, first fit wins:
+
+1. Standard package → `via = [...]` listing ONLY installers where the claim
+   is true (via is unverified; a false entry = a mappable lie).
+2. Different package id → variant with `pkg` (flatpak app ids, renamed casks).
+3. Special install command, same mechanism → variant with `command`, keyed
+   by the installer so check/probe derive. Key by what it IS: a cask gets
+   `brew-cask`, not `brew`.
+4. Prerequisite step (tap/repo/remote) → its own program + `depends-on`,
+   never `&&`-chained into another program's command.
+5. Repo-script install that lands in a pm's database → variant keyed by that
+   pm with `command = "file:..."`; check/probe derive; override `regex` for
+   odd version formats.
+6. Truth not in a package db (dnf groups, virtual provides) → override
+   `check` (two-mode script or `--whatprovides`), keep the rest derived.
+7. No pm at all → `script` key + program-level `[version]` fallback.
+8. Must precede everything (pm config, e.g. dnf.conf) → make it a program in
+   a first-sorting fragment (`manifest.d/00_…`) — programs precede scripts,
+   and dependency-free programs install in declaration order.
+9. Nothing to "have" (dotfiles, services) → `[scripts.*]` + check, opted in
+   per machine.
+
+Cross-cutting: no `||` chains in checks; versions are the mapped pm's truth
+(rpm's version, not the binary's self-report — expected, not a bug); no
+trailing pipes in checks; `file:` for every repo script (load-time existence
+check); prefer repetition over abstraction in config repos (the user dropped
+templates for explicit per-program `via` — don't reintroduce). Verify loop:
+`show` → map in machines/<name>.toml → `install --dry-run` → `status`.
+
 ## Working agreements with the user
 
 - After completing any phase/feature, end with a **"Try it"** section: exact

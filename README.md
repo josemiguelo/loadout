@@ -245,6 +245,122 @@ Use it whenever you're unsure what a `template`/`via` line produced, which
 command `install` would actually run, or why a mapping fails. (The TUI's `d`
 details pane shows the same data interactively.)
 
+#### Recipe: adding a program
+
+Every program is one question asked repeatedly: *how does each machine get it,
+and how do we verify it's there?* Match your case top-down — the first shape
+that fits is the right one:
+
+**1. Standard package, standard name** → one `via` line, listing only the
+installers where the claim is *actually true* (the tool won't verify it —
+a wrong entry becomes a failed install on whatever machine maps it):
+
+```toml
+[programs.ripgrep]
+description = "fast grep"
+via = ["dnf", "brew"]
+```
+
+**2. Package id differs from the program name** (flatpak reverse-DNS ids,
+renamed casks) → a variant with `pkg`; everything else derives:
+
+```toml
+[programs.obsidian.install.flatpak]
+pkg = "md.obsidian.Obsidian"
+```
+
+**3. Delivered by a mechanism, but the install command is special** (taps,
+extra flags) → a variant with `command`, keyed by the installer so check and
+probe still derive. Name the key after what it truly is (`brew-cask`, not
+`brew`, for a cask):
+
+```toml
+[programs.tpack.install.brew-cask]
+command = "brew install tmuxpack/tpack/tpack"
+```
+
+**4. Install needs a prerequisite step** (a tap, a repo, a remote) → make the
+prerequisite its **own program** and wire `depends-on` — don't chain `&&`
+into one command. Each step then has its own check and shows its own status:
+
+```toml
+[programs.ublue-os-tap.install.brew]
+command = "brew tap ublue-os/tap && brew trust ublue-os/tap"
+check = "brew tap | grep -x ublue-os/tap"
+regex = "(ublue-os/tap)"
+
+[programs.jetbrains-toolbox]
+depends-on = ["ublue-os-tap"]
+
+[programs.jetbrains-toolbox.install.brew-linux]
+installer = "brew-cask"
+pkg = "jetbrains-toolbox-linux"
+```
+
+**5. Install is a repo script that integrates with a package manager**
+(adds a yum repo then dnf-installs, say) → key the variant by that installer:
+the `file:` script overrides only the command, while the rpm check and probe
+still derive. Override `regex` if the version format is unusual:
+
+```toml
+[programs.sublime-text.install.dnf]
+command = "file:scripts/install-sublime-fedora.sh"
+regex = "([0-9]+)"                      # build numbers, not dotted versions
+```
+
+**6. The truth isn't in any package database** (dnf groups, meta-steps) →
+override the `check` with a two-mode script; one list in one script serves
+both modes:
+
+```toml
+[programs.virtualization.install.dnf]
+command = "file:scripts/virtualization.sh install"
+check = "file:scripts/virtualization.sh check"
+```
+
+The same trick handles virtual provides — override just the check
+(`check = "rpm -q --whatprovides zlib-devel"`), keep everything else derived.
+
+**7. No package manager involved at all** (curl-pipe-sh, hand-rolled
+installs) → a `script`-keyed variant with only a `command`, plus a
+program-level `[version]` so status has something to observe:
+
+```toml
+[programs.cursor-agent.version]
+command = "cursor-agent --version 2>/dev/null || $HOME/.local/bin/cursor-agent --version"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+[programs.cursor-agent.install.script]
+command = "curl https://cursor.com/install -fsS | bash"
+```
+
+**8. Must run before everything else** (package-manager config like dnf.conf
+tweaks) → a program (programs precede all scripts) declared in a fragment
+that sorts first (`manifest.d/00_…`), since dependency-free programs install
+in declaration order.
+
+**Not a program at all?** If there's nothing to *have* — dotfiles cloning,
+service enablement, config edits — it's a `[scripts.*]` step with a `check`,
+opted into per machine.
+
+Rules that hold for every shape: never write cross-variant `||` chains in
+checks (the mapped key picks one true check; a chain masks which source owns
+the program — and expect the version to be *the package manager's* truth,
+e.g. rpm's `1.23.2`, not the binary's self-reported number). Never end a
+check in a pipe (the pipeline's exit code would make missing look installed).
+Prefer `file:` for any repo script so a missing file fails at load, not as an
+eternal `pending`.
+
+Then close the loop — every new program needs its machine mapping, and `show`
+tells you what you actually built:
+
+```console
+$ loadout show newprog        # resolved commands/check/probe per key
+$ vi machines/$(hostname).toml   # map it: newprog = "<key>"
+$ loadout install --dry-run   # plan shows the exact command, deps first
+$ loadout status              # observation agrees?
+```
+
 ### 3. Map each machine to its install commands
 
 **There is no auto-detection.** Every machine has its own file under
