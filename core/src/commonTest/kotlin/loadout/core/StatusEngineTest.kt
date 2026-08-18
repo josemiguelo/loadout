@@ -42,6 +42,9 @@ class StatusEngineTest {
 
         [machines.laptop]
         scripts = ["dotfiles", "mac-only", "uncheckable"]
+
+        [machines.laptop.pm]
+        git = "dnf"
         """.trimIndent(),
     )
 

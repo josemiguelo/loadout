@@ -142,6 +142,8 @@ regex = "([0-9.]+)"
 [programs.definitely-not-installed-xyz.install]
 manual = "false"
 EOF
+printf 'definitely-not-installed-xyz = "manual"\n' >> repo/machines/m1.toml
+printf 'definitely-not-installed-xyz = "manual"\n' >> repo/machines/m2.toml
 "$BIN" --repo repo --machine m1 status >/dev/null
 "$BIN" --repo repo --machine m2 status >/dev/null
 "$BIN" --repo repo diff >/dev/null 2>&1 && fail "diff should exit 1 on missing" || true
@@ -179,11 +181,22 @@ OUT=$("$BIN" --repo /nonexistent status 2>&1 || true)
 echo "$OUT" | grep -q "error: Manifest not found" || fail "clean manifest error"
 ok "missing manifest gives a clean error"
 
-# Unmapped program: definitely-not-installed-xyz is not in machines.m1.pm.
-"$BIN" --repo repo --machine m1 install --dry-run >/dev/null 2>&1 && fail "unmapped program should fail" || true
-OUT=$("$BIN" --repo repo --machine m1 install --dry-run 2>&1 || true)
+# Membership: a program no machine maps is skipped by converge, errors when
+# explicitly requested, and is not observed in state.
+cat >> repo/manifest.toml <<'EOF'
+
+[programs.never-mapped]
+[programs.never-mapped.install]
+manual = "false"
+EOF
+OUT=$("$BIN" --repo repo --machine m1 install --dry-run) || fail "converge with unmapped program should succeed"
+echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
+"$BIN" --repo repo --machine m1 install never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
+OUT=$("$BIN" --repo repo --machine m1 install never-mapped --dry-run 2>&1 || true)
 echo "$OUT" | grep -q "no pm defined for machine 'm1'" || fail "unmapped-program error message"
-ok "install fails when a program has no pm mapped for the machine"
+"$BIN" --repo repo --machine m1 status >/dev/null
+grep -q '"never-mapped"' repo/state/m1.json && fail "unmapped program must not be observed" || true
+ok "unmapped programs are not part of the machine's loadout"
 
 # Machine without a config file at all.
 OUT=$("$BIN" --repo repo --machine ghost install --dry-run 2>&1 || true)

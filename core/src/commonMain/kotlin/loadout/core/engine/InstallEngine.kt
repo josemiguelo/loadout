@@ -36,12 +36,15 @@ class InstallEngine(
     private val repoRoot: Path,
 ) {
     /**
-     * Resolve what would happen for [requested] programs (empty = every manifest
-     * program), expanded with their transitive dependencies, in dependency order.
+     * Resolve what would happen for [requested] programs (empty = every program
+     * this machine's mapping opts into), expanded with their transitive
+     * dependencies, in dependency order. A program the machine doesn't map is
+     * simply not part of this machine's loadout — converge skips it.
      *
      * Strict resolution — throws [ResolutionException] (before anything runs) when:
-     * - the manifest has no `[machines.<machine>.pm]` section,
-     * - a planned program has no mapping for this machine,
+     * - the manifest has no `machines/<machine>.toml` config,
+     * - an explicitly [requested] program has no mapping for this machine,
+     * - a mapped program's dependency has no mapping for this machine,
      * - a program that needs installing is mapped to a known package manager
      *   whose binary is not present on this machine ([pmAvailable]).
      */
@@ -57,7 +60,8 @@ class InstallEngine(
                 "machine '$machine' has no config file (machines/$machine.toml) in the repo",
             )
 
-        val targets = requested.ifEmpty { manifest.programs.keys }
+        // Membership: converge covers only mapped programs (declaration order).
+        val targets = requested.ifEmpty { manifest.programs.keys.filter { it in mapping } }
         val ordered = ManifestLoader.installOrder(manifest, targets)
 
         val errors = mutableListOf<String>()
@@ -65,7 +69,12 @@ class InstallEngine(
         for (name in ordered) {
             val installKey = mapping[name]
             if (installKey == null) {
-                errors += "program '$name' has no pm defined for machine '$machine' (add it to machines/$machine.toml)"
+                errors += if (name in requested) {
+                    "program '$name' has no pm defined for machine '$machine' (add it to machines/$machine.toml)"
+                } else {
+                    "program '$name' is required as a dependency but has no pm defined for " +
+                        "machine '$machine' (add it to machines/$machine.toml)"
+                }
                 continue
             }
             val state = currentStates[name]

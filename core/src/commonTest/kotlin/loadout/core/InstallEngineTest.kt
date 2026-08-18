@@ -107,7 +107,7 @@ class InstallEngineTest {
     }
 
     @Test
-    fun failsWhenProgramIsUnmapped() {
+    fun convergeSkipsUnmappedPrograms() {
         val partial = ManifestLoader.parse(
             """
             [programs.a]
@@ -122,10 +122,39 @@ class InstallEngineTest {
             a = "dnf"
             """.trimIndent(),
         )
+        // b is not part of m's loadout: converge plans only a, no error.
+        val plan = engine().plan(partial, "m", emptyList(), emptyMap()) { true }
+        assertEquals(listOf("a"), plan.map { it.program })
+
+        // ...but explicitly requesting it is an error.
+        val e = assertFailsWith<ResolutionException> {
+            engine().plan(partial, "m", listOf("b"), emptyMap()) { true }
+        }
+        assertTrue("program 'b' has no pm defined for machine 'm'" in e.message.orEmpty())
+    }
+
+    @Test
+    fun unmappedDependencyOfMappedProgramFails() {
+        val partial = ManifestLoader.parse(
+            """
+            [programs.base]
+            [programs.base.install]
+            dnf = "sudo dnf install -y base"
+
+            [programs.tool]
+            depends-on = ["base"]
+            [programs.tool.install]
+            dnf = "sudo dnf install -y tool"
+
+            [machines.m.pm]
+            tool = "dnf"
+            """.trimIndent(),
+        )
         val e = assertFailsWith<ResolutionException> {
             engine().plan(partial, "m", emptyList(), emptyMap()) { true }
         }
-        assertTrue("program 'b' has no pm defined for machine 'm'" in e.message.orEmpty())
+        assertTrue("required as a dependency" in e.message.orEmpty())
+        assertTrue("'base'" in e.message.orEmpty())
     }
 
     @Test

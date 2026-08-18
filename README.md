@@ -266,11 +266,17 @@ Machine files also declare which scripts the machine runs (see the
 error, so there is exactly one spot to look for any machine's setup. Provisioning a machine that
 resembles an existing one starts with `cp machines/laptop.toml machines/new.toml`.
 
+**The mapping is also membership**: a program a machine doesn't map is simply
+not part of that machine's loadout — converge skips it, `status` doesn't
+observe it, and `diff` shows `-` for that machine. That's how the same
+manifest serves machines with different subsets.
+
 This is strict by design — `install` refuses to run (before executing anything)
 when:
 
 - the machine has no `machines/<name>.toml` config file at all,
-- any program in the plan has **no mapping** for this machine,
+- an **explicitly requested** program has no mapping for this machine, or a
+  mapped program's **dependency** is unmapped,
 - a mapped entry names a known package manager (`brew`/`dnf`/`apt`/`pacman`)
   whose binary **isn't actually installed** on the machine (probed with
   `command -v`; e.g. `dnf` mapped on an Arch box). Custom keys like
@@ -402,8 +408,8 @@ What happened:
 
 1. The machine was identified — name from the hostname (overridable with
    `--machine`), OS from `uname`, distro from `/etc/os-release`, architecture.
-2. Every program's `version.command` ran (concurrently, 8 at a time) and the
-   regex was applied. Statuses:
+2. Every program **this machine maps** had its `version.command` run
+   (concurrently, 8 at a time) and the regex applied. Statuses:
    - `installed` + version — command succeeded, regex matched
    - `installed`, no version — command succeeded, regex didn't match (fix your regex)
    - `missing` — command failed (exit ≠ 0, typically "command not found")
@@ -454,8 +460,9 @@ installed, showing its version · `~` script that will run. There is no
 
 The rules:
 
-- **`install`** (no names) = converge the whole manifest: every missing program,
-  then every applicable script (in `after` order, `check` gates respected).
+- **`install`** (no names) = converge this machine's loadout: every missing
+  **mapped** program, then every opted-in script (in `after` order, `check`
+  gates respected).
 - **`install NAME...`** = just those programs **plus their transitive
   `depends-on` closure**, dependencies first. Scripts don't run in this mode.
 - Installs stream output directly to your terminal — interactive prompts and

@@ -84,10 +84,13 @@ These came from explicit user decisions; don't "improve" them away:
    only source of install-variant choice is `machines/<name>.toml` (`[pm]`
    table mapping EVERY program to a key of its install table). Inline
    `[machines.*]` in manifest.toml or fragments is a validation error.
-2. **Strict fail-fast resolution.** `install` throws ResolutionException before
-   executing anything if: machine config file missing, any planned program
-   unmapped, or a mapped known PM's binary absent (probed). No silent skips,
-   no automatic `script` fallback — everything explicit.
+2. **Mapping = membership + strict fail-fast resolution.** A program a machine
+   doesn't map is not part of that machine's loadout: converge skips it,
+   status doesn't observe it, diff shows "-". `install` throws
+   ResolutionException before executing anything if: machine config file
+   missing, an EXPLICITLY requested program unmapped, a mapped program's
+   dependency unmapped, or a mapped known PM's binary absent (probed). No
+   automatic `script` fallback — everything explicit.
 3. **Intent vs observation never mix.** `manifest.toml` + `manifest.d/` +
    `machines/` are authored; `state/` is generated and disposable. Nothing
    hand-edited ever goes in `state/`; the tool never writes authored files
