@@ -55,15 +55,18 @@ class InstallCommand : CliktCommand(name = "install") {
         }
 
         val installs = plan.filterIsInstance<PlanItem.Install>()
+        val nameWidth = (plan.map { it.program.length } + scriptNames.map { it.length } + 1).max()
         echo("")
         echo("Plan for ${system.machine}:")
         for (item in plan) {
             when (item) {
-                is PlanItem.Install -> echo("  + ${item.program}  [${item.installKey}]  ->  ${item.command}")
-                is PlanItem.AlreadyInstalled -> echo("  = ${item.program}  (installed${item.version?.let { " $it" } ?: ""})")
+                is PlanItem.Install ->
+                    echo("  + ${item.program.padEnd(nameWidth)}  [${item.installKey}] ${item.command}")
+                is PlanItem.AlreadyInstalled ->
+                    echo("  = ${item.program.padEnd(nameWidth)}  ${item.version ?: "installed"}")
             }
         }
-        for (name in scriptNames) echo("  ~ script ${name}")
+        for (name in scriptNames) echo("  ~ ${name.padEnd(nameWidth)}  script")
 
         if (installs.isEmpty() && scriptNames.isEmpty()) {
             echo("\nNothing to do.")

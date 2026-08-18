@@ -69,7 +69,7 @@ ok "status --json emits the state document"
 # --- install (dry run + already installed) ------------------------------
 OUT=$("$BIN" --repo repo --machine m1 install --dry-run)
 echo "$OUT" | grep -q "git" || fail "dry-run mentions git"
-echo "$OUT" | grep -q "script marker" || fail "dry-run lists the script"
+echo "$OUT" | grep -qE "~ marker +script" || fail "dry-run lists the script"
 [ ! -f repo/marker.txt ] || fail "dry-run must not execute scripts"
 ok "install --dry-run plans without executing"
 

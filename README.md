@@ -362,10 +362,10 @@ $ loadout install
 Checking current state...
 
 Plan for laptop:
-  = git  (installed 2.55.0)
-  = ripgrep  (installed 15.1.0)
-  + rustup  [script]  ->  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  ~ script dotfiles
+  = git       2.55.0
+  = ripgrep   15.1.0
+  + rustup    [script] curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  ~ dotfiles  script
 
 Proceed? [y/N] y
 
@@ -379,8 +379,9 @@ Updating state...
 Done: 1/1 programs installed, 1 scripts run.
 ```
 
-Plan legend: `+` will install, with the machine's mapped install key in
-brackets · `=` already installed · `~` script that will run. There is no
+Plan legend (aligned as a name/detail table): `+` will install, with the
+machine's mapped install key in brackets before the command · `=` already
+installed, showing its version · `~` script that will run. There is no
 "not installable" state — an unmapped program is an error that aborts the plan
 (see [the mapping rules](#3-map-each-machine-to-its-install-commands)).
 
