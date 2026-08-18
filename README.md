@@ -856,11 +856,25 @@ any machine can regenerate its own file with one `status`.
 
 ## Installing
 
-Tagged releases ship prebuilt binaries for **linux-x64**, **macos-arm64**, and
-**macos-x64** (built by the GitHub Actions release workflow):
+On a brand-new machine, one line — no sudo, no dependencies beyond `curl`:
 
 ```console
-$ tar xzf loadout-v0.1.0-linux-x64.tar.gz
+$ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
+```
+
+`install.sh` detects the platform (including Rosetta on Apple Silicon),
+downloads the latest release tarball, sanity-runs the binary, and installs it
+to `~/.local/bin/loadout` — then prints the bootstrap steps (clone your config
+repo, write `machines/<hostname>.toml`, `loadout install`). Pin a version with
+`LOADOUT_VERSION=v0.2.0`, or change the destination with
+`LOADOUT_INSTALL_DIR`.
+
+Tagged releases ship prebuilt binaries for **linux-x64**, **macos-arm64**, and
+**macos-x64** (built by the GitHub Actions release workflow); manual install
+is just:
+
+```console
+$ tar xzf loadout-v0.2.0-linux-x64.tar.gz
 $ mv loadout ~/.local/bin/
 ```
 

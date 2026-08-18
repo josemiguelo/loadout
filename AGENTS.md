@@ -219,7 +219,11 @@ These came from explicit user decisions; don't "improve" them away:
 macos (arm64 unit tests, both mac release links, integration against the
 release binary). `release.yml` on `v*` tags: strip + tar.gz →
 `loadout-<tag>-{linux-x64,macos-arm64,macos-x64}.tar.gz` attached to the
-GitHub Release. linuxArm64 builds but is not released. The repo may not be
+GitHub Release. linuxArm64 builds but is not released. `install.sh` (repo
+root) is the curl|sh bootstrap over those releases — it resolves
+latest via the GitHub API (pin: LOADOUT_VERSION) and installs to
+~/.local/bin; keep its target names in sync with release.yml. Testable
+offline via LOADOUT_DOWNLOAD_BASE=file://… against a local tarball. The repo may not be
 pushed to GitHub yet — workflows are inert until then.
 
 ## Adding programs to a config repo — the recipe
