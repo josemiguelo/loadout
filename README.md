@@ -145,6 +145,50 @@ root as working directory** (installs, script runs, version checks, and
 `check`s alike — deterministic no matter where you invoke the tool from), so
 pipes, `$HOME`, redirects and `&&` all behave as they would in your terminal.
 
+#### Templates: many packages, no boilerplate
+
+Most rpm/brew/apt programs are pure pattern — the name determines every field.
+Declare the pattern once as a **template** (`{name}` is substituted with the
+program name in all string fields), then declare programs by name:
+
+```toml
+[templates.rpm.version]
+command = "{name} --version 2>/dev/null || rpm -q {name}"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+[templates.rpm.install]
+dnf = "sudo dnf install -y {name}"
+```
+
+Two usage forms, freely mixed:
+
+```toml
+# 1. Bulk, where the template is defined — one word per package:
+[templates.rpm]
+packages = ["vlc", "okular", "htop"]
+
+[templates.rpm.overrides.vlc]          # per-package deviations, validated
+description = "VLC media player"       #   (overriding a non-member is an error)
+
+# 2. Per program, anywhere (e.g. spread across manifest.d/ topic fragments):
+[programs.solaar]
+template = "rpm"
+description = "Logitech device manager"
+
+[programs.solaar.install]
+brew = "brew install solaar"           # merged per key on top of the template's table
+```
+
+Every entry expands into a **full standalone program** at manifest load —
+individual status/diff rows, individual versions, individual machine mappings,
+identical validation. Explicit fields win over template fields; `version` is
+replaced whole; `install` tables merge per key. Templates are repo-unique
+(defining the same name twice is an error) and can live in fragments.
+
+One shell footgun to know when writing template version commands: don't end
+them with a pipe (`... --version | head -1`) — a pipeline's exit code is the
+*last* command's, which would make missing programs look installed.
+
 ### 3. Map each machine to its install commands
 
 **There is no auto-detection.** Every machine has its own file under
@@ -627,7 +671,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 61 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 69 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
 $ ./integration/run-tests.sh       # 27 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync

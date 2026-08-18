@@ -7,6 +7,9 @@ import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
 import loadout.core.model.Meta
+import loadout.core.model.Program
+import loadout.core.model.Template
+import loadout.core.model.VersionCheck
 import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
@@ -59,6 +62,8 @@ object ManifestLoader {
                 "machine configs live in $MACHINES_DIR/<name>.toml"
         }
 
+        val templates = root.templates.toMutableMap()
+
         for (path in tomlFiles(fs, repoRoot / FRAGMENTS_DIR)) {
             val fragment = parseRaw(fs.read(path) { readUtf8() }, "$FRAGMENTS_DIR/${path.name}")
             if (fragment.meta != Meta()) {
@@ -78,6 +83,11 @@ object ManifestLoader {
                     errors += "duplicate script '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
                 }
             }
+            for ((name, template) in fragment.templates) {
+                if (templates.put(name, template) != null) {
+                    errors += "duplicate template '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
+                }
+            }
         }
 
         for (path in tomlFiles(fs, repoRoot / MACHINES_DIR)) {
@@ -93,7 +103,9 @@ object ManifestLoader {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
         }
 
-        val merged = root.copy(programs = programs, scripts = scripts, machines = machines)
+        val merged = expandTemplates(
+            root.copy(programs = programs, scripts = scripts, machines = machines, templates = templates),
+        )
         validate(merged)
 
         // Referenced files can only be checked against the actual repo, not in parse().
@@ -122,9 +134,76 @@ object ManifestLoader {
 
     /** Parse and validate a single manifest document (no fragment/machine-file merging). */
     fun parse(text: String): Manifest {
-        val manifest = parseRaw(text, "manifest")
+        val manifest = expandTemplates(parseRaw(text, "manifest"))
         validate(manifest)
         return manifest
+    }
+
+    /**
+     * Resolve templates into full programs: each template's `packages` entry
+     * becomes a program, and every program declaring `template = "<name>"` has
+     * the template's fields merged in. `{name}` is substituted with the
+     * program name in all string fields; explicit/override fields win, with
+     * install tables merged per key.
+     */
+    private fun expandTemplates(manifest: Manifest): Manifest {
+        if (manifest.templates.isEmpty() && manifest.programs.values.none { it.template != null }) {
+            return manifest
+        }
+        val errors = mutableListOf<String>()
+        val programs = mutableMapOf<String, Program>()
+
+        // Programs, expanding `template = ...` references in place.
+        for ((name, program) in manifest.programs) {
+            val templateName = program.template
+            if (templateName == null) {
+                programs[name] = program
+                continue
+            }
+            val template = manifest.templates[templateName]
+            if (template == null) {
+                errors += "programs.$name references unknown template '$templateName'"
+                continue
+            }
+            programs[name] = expandProgram(name, template, program)
+        }
+
+        // Templates' own package lists.
+        for ((templateName, template) in manifest.templates) {
+            for (override in template.overrides.keys) {
+                if (override !in template.packages) {
+                    errors += "templates.$templateName.overrides.$override is not in its packages list"
+                }
+                if (template.overrides.getValue(override).template != null) {
+                    errors += "templates.$templateName.overrides.$override may not set 'template'"
+                }
+            }
+            for (pkg in template.packages) {
+                val expanded = expandProgram(pkg, template, template.overrides[pkg])
+                if (programs.put(pkg, expanded) != null) {
+                    errors += "duplicate program '$pkg' (expanded from template '$templateName')"
+                }
+            }
+        }
+
+        if (errors.isNotEmpty()) {
+            throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
+        }
+        return manifest.copy(programs = programs)
+    }
+
+    private fun expandProgram(name: String, template: Template, override: Program?): Program {
+        fun sub(s: String) = s.replace("{name}", name)
+        return Program(
+            description = override?.description.orEmpty(),
+            template = null,
+            tags = override?.tags.orEmpty(),
+            dependsOn = override?.dependsOn.orEmpty(),
+            version = override?.version?.let { VersionCheck(sub(it.command), sub(it.regex)) }
+                ?: template.version?.let { VersionCheck(sub(it.command), sub(it.regex)) },
+            install = template.install.mapValues { sub(it.value) } +
+                (override?.install.orEmpty()).mapValues { sub(it.value) },
+        )
     }
 
     private fun parseRaw(text: String, label: String): Manifest = try {

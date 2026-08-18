@@ -117,7 +117,14 @@ These came from explicit user decisions; don't "improve" them away:
    exception types get a catch in Main.kt.
 10. **Product code loads manifests via `ManifestLoader.loadRepo`** (merging +
     file validation). `parse()` exists for tests only.
-11. **Versioning contract.** Manifest format evolves ADDITIVELY only (new
+11. **Templates** (`[templates.<name>]`): reusable program patterns with
+    `{name}` substitution; used via the template's `packages` array (+
+    `overrides.<pkg>`, members only) or `template = "<name>"` on a program.
+    Expansion happens in ManifestLoader.expandTemplates before validation —
+    expanded programs are indistinguishable from hand-written ones, and every
+    downstream feature must keep treating them that way. Template names are
+    repo-unique; fragments may define them.
+12. **Versioning contract.** Manifest format evolves ADDITIVELY only (new
     optional fields; never repurpose existing ones). `[meta] min-tool-version`
     is enforced at loadRepo — repos requiring newer features declare their
     floor and old binaries refuse with an "upgrade loadout" error. State files

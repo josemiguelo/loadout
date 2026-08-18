@@ -191,6 +191,36 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun templatesWorkAcrossFragments() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [templates.rpm.version]
+                    command = "rpm -q {name}"
+                    regex = "([0-9.]+)"
+
+                    [templates.rpm.install]
+                    dnf = "sudo dnf install -y {name}"
+                """.trimIndent(),
+                "manifest.d/media.toml" to """
+                    [programs.vlc]
+                    template = "rpm"
+                """.trimIndent(),
+                "manifest.d/office.toml" to """
+                    [templates.local]
+                    packages = ["okular"]
+
+                    [templates.local.install]
+                    dnf = "sudo dnf install -y {name}"
+                """.trimIndent(),
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        assertEquals("rpm -q vlc", manifest.programs.getValue("vlc").version?.command)
+        assertEquals("sudo dnf install -y okular", manifest.programs.getValue("okular").install["dnf"])
+    }
+
+    @Test
     fun minToolVersionIsEnforced() {
         val fs = fs(
             mapOf(

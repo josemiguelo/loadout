@@ -10,6 +10,22 @@ data class Manifest(
     val scripts: Map<String, ScriptStep> = emptyMap(),
     /** Optional per-machine settings, keyed by machine name. */
     val machines: Map<String, MachineConfig> = emptyMap(),
+    /**
+     * Reusable program patterns. `{name}` in a template's string fields is
+     * replaced with the program name at expansion. Used two ways: the
+     * template's own `packages` list, or `template = "<name>"` on a program.
+     */
+    val templates: Map<String, Template> = emptyMap(),
+)
+
+@Serializable
+data class Template(
+    val version: VersionCheck? = null,
+    val install: Map<String, String> = emptyMap(),
+    /** Program names to expand from this template where it is defined. */
+    val packages: List<String> = emptyList(),
+    /** Per-package field overrides; keys must be members of [packages]. */
+    val overrides: Map<String, Program> = emptyMap(),
 )
 
 @Serializable
@@ -37,6 +53,8 @@ const val INSTALL_FILE_PREFIX: String = "file:"
 @Serializable
 data class Program(
     val description: String = "",
+    /** Name of a [Template] this program is expanded from (resolved at manifest load). */
+    val template: String? = null,
     val tags: List<String> = emptyList(),
     @SerialName("depends-on")
     val dependsOn: List<String> = emptyList(),
