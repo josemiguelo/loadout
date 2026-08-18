@@ -4,6 +4,7 @@ import com.akuleshov7.ktoml.Toml
 import com.akuleshov7.ktoml.TomlInputConfig
 import loadout.core.TOOL_VERSION
 import loadout.core.model.INSTALL_FILE_PREFIX
+import loadout.core.model.InstallVariant
 import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
 import loadout.core.model.Meta
@@ -53,6 +54,7 @@ object ManifestLoader {
         }
 
         val errors = mutableListOf<String>()
+        val installers = root.installers.toMutableMap()
         val programs = root.programs.toMutableMap()
         val scripts = root.scripts.toMutableMap()
         val machines = mutableMapOf<String, MachineConfig>()
@@ -75,6 +77,11 @@ object ManifestLoader {
             if (fragment.machines.isNotEmpty()) {
                 errors += "$label: [machines.*] sections are not allowed; " +
                     "machine configs live in $MACHINES_DIR/<name>.toml"
+            }
+            for ((name, installer) in fragment.installers) {
+                if (installers.put(name, installer) != null) {
+                    errors += "duplicate installer '$name' (redefined in $label)"
+                }
             }
             for ((name, program) in fragment.programs) {
                 if (programs.put(name, program) != null) {
@@ -112,8 +119,16 @@ object ManifestLoader {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
         }
 
-        val merged = expandTemplates(
-            root.copy(programs = programs, scripts = scripts, machines = machines, templates = templates),
+        val merged = expandVia(
+            expandTemplates(
+                root.copy(
+                    installers = installers,
+                    programs = programs,
+                    scripts = scripts,
+                    machines = machines,
+                    templates = templates,
+                ),
+            ),
         )
         validate(merged)
 
@@ -125,10 +140,11 @@ object ManifestLoader {
             }
         }
         for ((name, program) in merged.programs) {
-            for ((key, value) in program.install) {
-                if (value.startsWith(INSTALL_FILE_PREFIX)) {
+            for (key in program.install.keys) {
+                val command = merged.resolveInstall(name, key).command ?: continue
+                if (command.startsWith(INSTALL_FILE_PREFIX)) {
                     // Anything after the first space is arguments, not path.
-                    val file = value.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
+                    val file = command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
                     if (!fs.exists(repoRoot / file)) {
                         missingFiles += "  - programs.$name.install.$key: file '$file' not found in the repo"
                     }
@@ -143,9 +159,37 @@ object ManifestLoader {
 
     /** Parse and validate a single manifest document (no fragment/machine-file merging). */
     fun parse(text: String): Manifest {
-        val manifest = expandTemplates(parseRaw(text, "manifest"))
+        val manifest = expandVia(expandTemplates(parseRaw(text, "manifest")))
         validate(manifest)
         return manifest
+    }
+
+    /**
+     * Expand each program's `via` shorthand into install variants: every entry
+     * becomes an install key of the same name using that installer with all
+     * defaults. An explicit `install.<key>` table for the same key wins — it
+     * still resolves through the installer its key names, so it refines rather
+     * than replaces the mechanics.
+     */
+    private fun expandVia(manifest: Manifest): Manifest {
+        if (manifest.programs.values.all { it.via.isEmpty() }) return manifest
+        val errors = mutableListOf<String>()
+        val programs = manifest.programs.mapValues { (name, program) ->
+            if (program.via.isEmpty()) return@mapValues program
+            val expanded = mutableMapOf<String, InstallVariant>()
+            for (entry in program.via) {
+                if (entry !in manifest.installers) {
+                    errors += "programs.$name via references unknown installer '$entry'"
+                } else if (entry !in program.install && expanded.put(entry, InstallVariant(installer = entry)) != null) {
+                    errors += "programs.$name via lists '$entry' twice"
+                }
+            }
+            program.copy(via = emptyList(), install = expanded + program.install)
+        }
+        if (errors.isNotEmpty()) {
+            throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
+        }
+        return manifest.copy(programs = programs)
     }
 
     /**
@@ -203,13 +247,19 @@ object ManifestLoader {
 
     private fun expandProgram(name: String, template: Template, override: Program?): Program {
         fun sub(s: String) = s.replace("{name}", name)
+        fun sub(c: VersionCheck) = VersionCheck(sub(c.command), sub(c.regex))
+        fun sub(v: InstallVariant) = v.copy(
+            pkg = v.pkg?.let(::sub),
+            command = v.command?.let(::sub),
+            check = v.check?.let(::sub),
+        )
         return Program(
             description = override?.description.orEmpty(),
             template = null,
             tags = override?.tags.orEmpty(),
             dependsOn = override?.dependsOn.orEmpty(),
-            version = override?.version?.let { VersionCheck(sub(it.command), sub(it.regex)) }
-                ?: template.version?.let { VersionCheck(sub(it.command), sub(it.regex)) },
+            version = override?.version?.let(::sub) ?: template.version?.let(::sub),
+            via = (template.via + override?.via.orEmpty()).distinct(),
             install = template.install.mapValues { sub(it.value) } +
                 (override?.install.orEmpty()).mapValues { sub(it.value) },
         )
@@ -259,10 +309,31 @@ object ManifestLoader {
             }
         }
 
+        for ((name, installer) in manifest.installers) {
+            if (installer.check != null && installer.regex == null) {
+                errors += "installers.$name has a check but no regex"
+            }
+        }
+
         for ((name, program) in manifest.programs) {
             for (dep in program.dependsOn) {
                 if (dep !in manifest.programs) {
                     errors += "programs.$name depends-on unknown program '$dep'"
+                }
+            }
+            for ((key, variant) in program.install) {
+                if (variant.installer != null && variant.installer !in manifest.installers) {
+                    errors += "programs.$name.install.$key references unknown installer '${variant.installer}'"
+                    continue
+                }
+                val installer = manifest.installers[variant.installer ?: key]
+                if (variant.command == null && installer?.install == null) {
+                    errors += "programs.$name.install.$key resolves to no install command " +
+                        "(set 'command', or reference an installer with an install pattern)"
+                }
+                if (variant.check != null && (variant.regex ?: installer?.regex) == null) {
+                    errors += "programs.$name.install.$key has a check but no regex " +
+                        "(set 'regex', or reference an installer that has one)"
                 }
             }
         }

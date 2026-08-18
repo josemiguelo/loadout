@@ -45,9 +45,12 @@ class InstallCommand : CliktCommand(name = "install") {
         echo("Checking current state...")
         val mapped = manifest.machines[system.machine]?.pm.orEmpty()
         val current = runBlocking {
-            checker.checkAll(manifest.programs.filterKeys { it in mapped || it in names })
+            checker.checkAll(
+                manifest.programs.keys.filter { it in mapped || it in names }
+                    .associateWith { n -> manifest.checkFor(n, mapped[n]) },
+            )
         }
-        val plan = engine.plan(manifest, system.machine, names, current) { app.detection.isPmAvailable(it) }
+        val plan = engine.plan(manifest, system.machine, names, current) { app.detection.isBinaryAvailable(it) }
 
         val scriptRunner = ScriptRunner(app.runner, app.repoRoot)
         val enabledScripts = manifest.machines[system.machine]?.scriptArgs().orEmpty()

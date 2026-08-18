@@ -1,8 +1,8 @@
 package loadout.core.engine
 
 import loadout.core.exec.ProcessRunner
-import loadout.core.model.Program
 import loadout.core.model.ProgramState
+import loadout.core.model.VersionCheck
 import loadout.core.model.ProgramStatus
 import loadout.core.platform.blockingDispatcher
 import kotlinx.coroutines.async
@@ -23,8 +23,8 @@ class VersionChecker(
      * - command succeeds and regex matches -> INSTALLED with the captured version
      * - command succeeds but regex does not match -> INSTALLED without a version
      */
-    fun check(program: Program): ProgramState {
-        val versionCheck = program.version ?: return ProgramState(ProgramStatus.UNKNOWN)
+    fun check(versionCheck: VersionCheck?): ProgramState {
+        if (versionCheck == null) return ProgramState(ProgramStatus.UNKNOWN)
         val result = runner.capture(versionCheck.command, workDir)
         if (!result.success) return ProgramState(ProgramStatus.MISSING)
 
@@ -33,16 +33,16 @@ class VersionChecker(
         return ProgramState(ProgramStatus.INSTALLED, version)
     }
 
-    /** Check all [programs] concurrently with bounded parallelism. */
+    /** Check all [checks] (program name -> version check) concurrently with bounded parallelism. */
     suspend fun checkAll(
-        programs: Map<String, Program>,
+        checks: Map<String, VersionCheck?>,
         parallelism: Int = 8,
     ): Map<String, ProgramState> = withContext(blockingDispatcher) {
         val semaphore = Semaphore(parallelism)
         coroutineScope {
-            programs.map { (name, program) ->
+            checks.map { (name, versionCheck) ->
                 async {
-                    semaphore.withPermit { name to check(program) }
+                    semaphore.withPermit { name to check(versionCheck) }
                 }
             }.awaitAll().toMap()
         }

@@ -59,8 +59,8 @@ class InstallEngineTest {
         val withFile = ManifestLoader.parse(
             """
             [programs.tool]
-            [programs.tool.install]
-            script = "file:scripts/install-tool.sh"
+            [programs.tool.install.script]
+            command = "file:scripts/install-tool.sh"
 
             [machines.m.pm]
             tool = "script"
@@ -78,8 +78,8 @@ class InstallEngineTest {
         val withArgs = ManifestLoader.parse(
             """
             [programs.tool]
-            [programs.tool.install]
-            script = "file:scripts/tool.sh install --verbose"
+            [programs.tool.install.script]
+            command = "file:scripts/tool.sh install --verbose"
 
             [machines.m.pm]
             tool = "script"
@@ -111,12 +111,12 @@ class InstallEngineTest {
         val partial = ManifestLoader.parse(
             """
             [programs.a]
-            [programs.a.install]
-            dnf = "sudo dnf install -y a"
+            [programs.a.install.dnf]
+            command = "sudo dnf install -y a"
 
             [programs.b]
-            [programs.b.install]
-            dnf = "sudo dnf install -y b"
+            [programs.b.install.dnf]
+            command = "sudo dnf install -y b"
 
             [machines.m.pm]
             a = "dnf"
@@ -138,13 +138,13 @@ class InstallEngineTest {
         val partial = ManifestLoader.parse(
             """
             [programs.base]
-            [programs.base.install]
-            dnf = "sudo dnf install -y base"
+            [programs.base.install.dnf]
+            command = "sudo dnf install -y base"
 
             [programs.tool]
             depends-on = ["base"]
-            [programs.tool.install]
-            dnf = "sudo dnf install -y tool"
+            [programs.tool.install.dnf]
+            command = "sudo dnf install -y tool"
 
             [machines.m.pm]
             tool = "dnf"
@@ -162,7 +162,7 @@ class InstallEngineTest {
         val e = assertFailsWith<ResolutionException> {
             engine().plan(manifest, "laptop", listOf("ripgrep"), emptyMap()) { false }
         }
-        assertTrue("package manager 'dnf'" in e.message.orEmpty())
+        assertTrue("required binary 'dnf'" in e.message.orEmpty())
         assertTrue("not installed on machine 'laptop'" in e.message.orEmpty())
     }
 
@@ -180,6 +180,48 @@ class InstallEngineTest {
         // Custom keys (script) are never probed either.
         val scriptOnly = engine().plan(manifest, "laptop", listOf("rustup"), emptyMap()) { false }
         assertEquals("rustup", (scriptOnly.single() as PlanItem.Install).program)
+    }
+
+    @Test
+    fun installerMechanicsResolveByMappedKey() {
+        val m = ManifestLoader.parse(
+            """
+            [installers.brew-cask]
+            probe = "brew"
+            install = "brew install --cask {pkg}"
+            check = "brew list --cask --versions {pkg}"
+            regex = "([0-9.]+)"
+
+            [programs.toolbox.install.brew-linux]
+            installer = "brew-cask"
+            pkg = "toolbox-linux"
+
+            [programs.toolbox.install.brew-macos]
+            installer = "brew-cask"
+
+            [machines.m.pm]
+            toolbox = "brew-linux"
+            """.trimIndent(),
+        )
+        // Probe: the variant inherits its installer's probe binary.
+        val probed = mutableListOf<String>()
+        engine().plan(m, "m", emptyList(), emptyMap()) { probed += it; true }
+        assertEquals(listOf("brew"), probed)
+
+        // Probe failure names the binary.
+        val e = assertFailsWith<ResolutionException> {
+            engine().plan(m, "m", emptyList(), emptyMap()) { false }
+        }
+        assertTrue("required binary 'brew'" in e.message.orEmpty())
+
+        // Post-install re-check uses the mapped key's check, not the default.
+        val runner = FakeProcessRunner()
+        runner.onCommand("brew install --cask toolbox-linux")
+        runner.onCommand("brew list --cask --versions toolbox-linux", stdout = "toolbox-linux 3.5.0")
+        val plan = engine(runner).plan(m, "m", emptyList(), emptyMap()) { true }
+        val outcome = engine(runner).execute(m, plan).single()
+        assertTrue(outcome.success)
+        assertEquals("3.5.0", outcome.stateAfter.version)
     }
 
     @Test

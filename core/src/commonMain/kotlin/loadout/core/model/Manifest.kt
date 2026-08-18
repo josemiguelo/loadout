@@ -6,6 +6,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Manifest(
     val meta: Meta = Meta(),
+    /**
+     * Install mechanisms (`dnf`, `brew-cask`, ...) defined once per repo.
+     * Probe, install/check patterns, and regex are properties of the
+     * mechanism; programs reference installers instead of restating them.
+     */
+    val installers: Map<String, Installer> = emptyMap(),
     val programs: Map<String, Program> = emptyMap(),
     val scripts: Map<String, ScriptStep> = emptyMap(),
     /** Optional per-machine settings, keyed by machine name. */
@@ -16,12 +22,87 @@ data class Manifest(
      * template's own `packages` list, or `template = "<name>"` on a program.
      */
     val templates: Map<String, Template> = emptyMap(),
+) {
+    /**
+     * Everything the [key] variant of program [programName] resolves to.
+     * Assumes the manifest validated (program and key exist).
+     */
+    fun resolveInstall(programName: String, key: String): ResolvedInstall {
+        val program = programs.getValue(programName)
+        val variant = program.install.getValue(key)
+        // An explicit `installer = ...` reference wins; otherwise a variant
+        // whose key names an installer uses it (`via` expands to exactly this).
+        val installer = variant.installer?.let(installers::get)
+            ?: if (variant.installer == null) installers[key] else null
+        val pkg = variant.pkg ?: programName
+        fun sub(s: String) = s.replace("{pkg}", pkg)
+        val checkCommand = variant.check ?: installer?.check
+        val regex = variant.regex ?: installer?.regex
+        return ResolvedInstall(
+            command = (variant.command ?: installer?.install)?.let(::sub),
+            check = if (checkCommand != null && regex != null) {
+                VersionCheck(sub(checkCommand), regex)
+            } else {
+                program.version
+            },
+            probe = variant.probe ?: installer?.probe,
+        )
+    }
+
+    /** The version check to observe [programName] with when mapped to [key] (null = unmapped). */
+    fun checkFor(programName: String, key: String?): VersionCheck? =
+        if (key == null) programs[programName]?.version else resolveInstall(programName, key).check
+}
+
+/** A program's install variant with all installer defaults applied. */
+data class ResolvedInstall(
+    /** Shell command to install (null only in invalid manifests — validation rejects it). */
+    val command: String?,
+    /** Version check for this variant, falling back to the program's `[version]`. */
+    val check: VersionCheck?,
+    /** Binary that must exist before installing, or null for no probe. */
+    val probe: String?,
+)
+
+@Serializable
+data class Installer(
+    /** Binary that must exist (`command -v`) before installing via this mechanism. */
+    val probe: String? = null,
+    /** Install command pattern; `{pkg}` is replaced with the package id. */
+    val install: String? = null,
+    /** Version check command pattern; `{pkg}` is replaced with the package id. */
+    val check: String? = null,
+    /** Regex extracting the version from [check]'s output (capture group 1). */
+    val regex: String? = null,
+)
+
+/**
+ * One entry of a program's install table. Every field is optional: `installer`
+ * (or a key that names one) supplies defaults, and `pkg` defaults to the
+ * program name — so the empty variant means "the standard package".
+ */
+@Serializable
+data class InstallVariant(
+    /** Installer providing defaults; defaults to the variant key when that names one. */
+    val installer: String? = null,
+    /** Package id within the installer's namespace; defaults to the program name. */
+    val pkg: String? = null,
+    /** Full install command, replacing the installer's pattern. `file:` prefix allowed. */
+    val command: String? = null,
+    /** Version check command, replacing the installer's pattern. */
+    val check: String? = null,
+    /** Version regex, replacing the installer's. */
+    val regex: String? = null,
+    /** Probe binary, replacing the installer's. */
+    val probe: String? = null,
 )
 
 @Serializable
 data class Template(
     val version: VersionCheck? = null,
-    val install: Map<String, String> = emptyMap(),
+    /** Installer names expanded into install variants, like [Program.via]. */
+    val via: List<String> = emptyList(),
+    val install: Map<String, InstallVariant> = emptyMap(),
     /** Program names to expand from this template where it is defined. */
     val packages: List<String> = emptyList(),
     /** Per-package field overrides; keys must be members of [packages]. */
@@ -57,7 +138,7 @@ data class Meta(
 )
 
 /**
- * Install values starting with this prefix name a script file relative to the
+ * Install commands starting with this prefix name a script file relative to the
  * repo root (validated to exist at manifest load) instead of an inline command.
  */
 const val INSTALL_FILE_PREFIX: String = "file:"
@@ -70,13 +151,19 @@ data class Program(
     val tags: List<String> = emptyList(),
     @SerialName("depends-on")
     val dependsOn: List<String> = emptyList(),
+    /** Variant-independent version check; the fallback when a variant resolves no check. */
     val version: VersionCheck? = null,
     /**
-     * Install commands keyed by arbitrary labels — package-manager ids
-     * (`brew`, `dnf`, ...) or custom variants (`script`, `script-fedora`, ...).
-     * Each machine's `[machines.<name>.pm]` mapping picks which key to use.
+     * Installer names this program installs through with all defaults —
+     * shorthand expanded into [install] entries at manifest load.
      */
-    val install: Map<String, String> = emptyMap(),
+    val via: List<String> = emptyList(),
+    /**
+     * Install variants keyed by arbitrary labels — installer names (`dnf`) or
+     * custom variants (`script`, `brew-linux`). Each machine's mapping in
+     * `machines/<name>.toml` picks which key to use.
+     */
+    val install: Map<String, InstallVariant> = emptyMap(),
 )
 
 @Serializable

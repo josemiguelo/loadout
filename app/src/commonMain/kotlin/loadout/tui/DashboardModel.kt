@@ -234,7 +234,7 @@ class DashboardModel(private val app: AppContext) {
         val system = app.detectSystem()
         val current = app.stateStore.read(system.machine)?.programs.orEmpty()
         val engine = InstallEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
-        val plan = engine.plan(m, system.machine, requested, current) { app.detection.isPmAvailable(it) }
+        val plan = engine.plan(m, system.machine, requested, current) { app.detection.isBinaryAvailable(it) }
         val installs = plan.filterIsInstance<PlanItem.Install>()
 
         if (installs.isEmpty()) {
@@ -337,9 +337,11 @@ class DashboardModel(private val app: AppContext) {
                 add("program ${row.name}  ${p.description}")
                 if (p.dependsOn.isNotEmpty()) add("  depends-on: ${p.dependsOn.joinToString()}")
                 p.version?.let { add("  version: ${it.command}  =~ /${it.regex}/") }
-                for ((key, cmd) in p.install) {
+                for (key in p.install.keys) {
+                    val resolved = m.resolveInstall(row.name, key)
                     val marker = if (key == mapped) " <- this machine" else ""
-                    add("  install.$key: $cmd$marker")
+                    add("  install.$key: ${resolved.command}$marker")
+                    resolved.check?.takeIf { it != p.version }?.let { add("  check.$key: ${it.command}") }
                 }
                 if (mapped == null) add("  ! no mapping for ${state.machine} (machines/${state.machine}.toml)")
             }

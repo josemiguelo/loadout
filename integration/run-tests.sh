@@ -20,7 +20,7 @@ cd "$WORK"
 [ -d repo/scripts ] && [ -d repo/state ] && [ -d repo/machines ] && [ -d repo/manifest.d ] || fail "init creates dirs"
 [ -f repo/machines/example.toml.sample ] || fail "init creates machine example"
 [ -f repo/manifest.d/example.toml.sample ] || fail "init creates fragment example"
-[ -f repo/manifest.d/00_pkg_template.toml ] || fail "init creates the pkg template fragment"
+[ -f repo/manifest.d/00_installers.toml ] || fail "init creates the installers fragment"
 # .sample files must not be picked up by the loader
 "$BIN" --repo repo status >/dev/null || fail "samples must not break loading"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -40,11 +40,10 @@ cat > repo/manifest.toml <<'EOF'
 [programs.git.version]
 command = "git --version"
 regex = "git version ([0-9.]+)"
-[programs.git.install]
-dnf = "sudo dnf install -y git"
-apt = "sudo apt-get install -y git"
-brew = "brew install git"
-manual = "echo install git yourself && false"
+[programs.git.install.dnf]
+command = "sudo dnf install -y git"
+[programs.git.install.manual]
+command = "echo install git yourself && false"
 
 [scripts.marker]
 file = "scripts/marker.sh"
@@ -139,8 +138,8 @@ cat >> repo/manifest.toml <<'EOF'
 [programs.definitely-not-installed-xyz.version]
 command = "definitely-not-installed-xyz --version"
 regex = "([0-9.]+)"
-[programs.definitely-not-installed-xyz.install]
-manual = "false"
+[programs.definitely-not-installed-xyz.install.manual]
+command = "false"
 EOF
 printf 'definitely-not-installed-xyz = "manual"\n' >> repo/machines/m1.toml
 printf 'definitely-not-installed-xyz = "manual"\n' >> repo/machines/m2.toml
@@ -186,8 +185,8 @@ ok "missing manifest gives a clean error"
 cat >> repo/manifest.toml <<'EOF'
 
 [programs.never-mapped]
-[programs.never-mapped.install]
-manual = "false"
+[programs.never-mapped.install.manual]
+command = "false"
 EOF
 OUT=$("$BIN" --repo repo --machine m1 install --dry-run) || fail "converge with unmapped program should succeed"
 echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
@@ -206,17 +205,19 @@ ok "install fails for a machine with no config file"
 # Mapped pm binary not present on this machine.
 mkdir pmrepo pmrepo/state pmrepo/machines
 cat > pmrepo/manifest.toml <<'EOF'
-[programs.tool]
-[programs.tool.version]
-command = "tool --version"
+[installers.pacman]
+probe = "pacman"
+install = "sudo pacman -S --noconfirm {pkg}"
+check = "pacman -Q {pkg}"
 regex = "([0-9.]+)"
-[programs.tool.install]
-pacman = "sudo pacman -S --noconfirm tool"
+
+[programs.tool]
+via = ["pacman"]
 EOF
 printf '[pm]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
 if ! command -v pacman >/dev/null 2>&1; then
     OUT=$("$BIN" --repo pmrepo --machine m1 install --dry-run 2>&1 || true)
-    echo "$OUT" | grep -q "package manager 'pacman'" || fail "pm-not-installed error message"
+    echo "$OUT" | grep -q "required binary 'pacman'" || fail "pm-not-installed error message"
     ok "install fails when the mapped pm is not installed"
 else
     ok "skipped pm-not-installed check (pacman present on host)"
@@ -229,8 +230,8 @@ cat > repo/manifest.d/extra.toml <<'EOF'
 [programs.splitprog.version]
 command = "git --version"
 regex = "git version ([0-9.]+)"
-[programs.splitprog.install]
-manual = "false"
+[programs.splitprog.install.manual]
+command = "false"
 EOF
 cat > repo/machines/m3.toml <<'EOF'
 [pm]
@@ -262,8 +263,8 @@ cat > filerepo/manifest.toml <<'EOF'
 [programs.filetool.version]
 command = "test -f installed-marker.txt && echo filetool 1.0"
 regex = "filetool ([0-9.]+)"
-[programs.filetool.install]
-script = "file:scripts/install-filetool.sh install"
+[programs.filetool.install.script]
+command = "file:scripts/install-filetool.sh install"
 EOF
 # Requires the "install" argument and writes relative to cwd — proves both
 # argument passing and repo-root cwd.
@@ -296,13 +297,33 @@ ok "script file that doesn't exist is caught at manifest load"
 # Manifest validation: mapping to a nonexistent install key.
 cat > pmrepo/manifest.toml <<'EOF'
 [programs.tool]
-[programs.tool.install]
-dnf = "sudo dnf install -y tool"
+[programs.tool.install.dnf]
+command = "sudo dnf install -y tool"
 EOF
 printf '[pm]\ntool = "brew"\n' > pmrepo/machines/m1.toml
 OUT=$("$BIN" --repo pmrepo status 2>&1 || true)
 echo "$OUT" | grep -q "no 'brew' entry" || fail "bad-mapping validation message"
 ok "manifest rejects mappings to nonexistent install keys"
+
+# Installers: {pkg} substitution in install + check, probe, via shorthand.
+mkdir -p instrepo/state instrepo/machines
+cat > instrepo/manifest.toml <<'TOML'
+[installers.fake]
+probe = "sh"
+install = "echo installed-{pkg} > fake-install.txt"
+check = "test -f fake-install.txt && echo mytool 1.0"
+regex = "mytool ([0-9.]+)"
+
+[programs.mytool]
+via = ["fake"]
+TOML
+printf '[pm]\nmytool = "fake"\n' > instrepo/machines/m1.toml
+OUT=$("$BIN" --repo instrepo --machine m1 install --dry-run)
+echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
+"$BIN" --repo instrepo --machine m1 install --yes >/dev/null || fail "installer-backed install exits 0"
+grep -q "installed-mytool" instrepo/fake-install.txt || fail "installer command ran"
+grep -q '"version": "1.0"' instrepo/state/m1.json || fail "installer check observed the version"
+ok "installers supply install/check/probe mechanics via {pkg}"
 
 # --- show ---------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 show git marker)
@@ -320,8 +341,8 @@ cat > verrepo/manifest.toml <<'EOF'
 min-tool-version = "999.0.0"
 
 [programs.git]
-[programs.git.install]
-manual = "false"
+[programs.git.install.manual]
+command = "false"
 EOF
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
@@ -332,8 +353,8 @@ cat > verrepo/manifest.toml <<'EOF'
 [programs.git.version]
 command = "git --version"
 regex = "git version ([0-9.]+)"
-[programs.git.install]
-manual = "false"
+[programs.git.install.manual]
+command = "false"
 EOF
 cat > verrepo/state/future.json <<'EOF'
 {"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",

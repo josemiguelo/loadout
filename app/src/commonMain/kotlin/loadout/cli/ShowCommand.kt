@@ -40,9 +40,17 @@ class ShowCommand : CliktCommand(name = "show") {
                     if (program.dependsOn.isNotEmpty()) rows += "depends-on" to program.dependsOn.joinToString()
                     if (program.tags.isNotEmpty()) rows += "tags" to program.tags.joinToString()
                     if (program.install.isEmpty()) rows += "install" to "(none — not installable anywhere)"
-                    for ((key, command) in program.install) {
+                    for ((key, variant) in program.install) {
+                        val resolved = manifest.resolveInstall(name, key)
+                        val installerName = variant.installer
+                            ?: key.takeIf { it in manifest.installers && variant.installer == null }
+                        val via = installerName?.let { "  [installer: $it]" }.orEmpty()
                         val marker = if (key == mapping[name]) "   <- ${system.machine}" else ""
-                        rows += "install.$key" to "$command$marker"
+                        rows += "install.$key" to "${resolved.command}$via$marker"
+                        resolved.check?.takeIf { it != program.version }?.let {
+                            rows += "check.$key" to "${it.command}  =~ /${it.regex}/"
+                        }
+                        resolved.probe?.let { rows += "probe.$key" to it }
                     }
                     if (name !in mapping) {
                         notes += "! not mapped for ${system.machine} (add it to machines/${system.machine}.toml)"

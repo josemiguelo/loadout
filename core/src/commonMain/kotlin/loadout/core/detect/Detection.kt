@@ -2,7 +2,6 @@ package loadout.core.detect
 
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.OsFamily
-import loadout.core.model.PackageManager
 import loadout.core.model.SystemInfo
 import loadout.core.platform.currentHostname
 import loadout.core.platform.unameInfo
@@ -39,7 +38,7 @@ class Detection(
             ?.ifBlank { null }
     }
 
-    /** Whether the package manager's binary exists on this machine. */
-    fun isPmAvailable(pm: PackageManager): Boolean =
-        runner.capture("command -v ${pm.probeCommand}").success
+    /** Whether [binary] exists on this machine's PATH. */
+    fun isBinaryAvailable(binary: String): Boolean =
+        runner.capture("command -v $binary").success
 }

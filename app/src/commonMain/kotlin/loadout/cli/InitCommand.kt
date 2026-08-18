@@ -17,15 +17,15 @@ private val STARTER_MANIFEST = """
     name = "my machines"
     # Bump this when the repo starts using features of a newer loadout —
     # machines running older binaries then refuse with an "upgrade" error:
-    #min-tool-version = "0.1.0"
+    #min-tool-version = "0.2.0"
 
-    # A template-based program is 2-3 lines — the pattern lives in
-    # manifest.d/00_pkg_template.toml, and `loadout show ripgrep` prints what
-    # it expands to. Programs that don't fit a template are written in full
-    # form instead (see the README).
+    # Install mechanics (commands, version checks, probes) live once in
+    # manifest.d/00_installers.toml — a standard package is one `via` line,
+    # and `loadout show ripgrep` prints what it resolves to. Programs that
+    # need more declare [programs.<x>.install.<key>] variants (see the README).
     [programs.ripgrep]
-    template = "pkg"
     description = "fast grep"
+    via = ["dnf", "apt", "pacman", "brew"]
 
     # Scripts run after installs; `check` exiting 0 means "already done".
     # Use `file` for a script in the repo (validated to exist) or `run` for
@@ -39,23 +39,39 @@ private val STARTER_MANIFEST = """
     # Large manifests can also be split into manifest.d/*.toml fragments.
 """.trimIndent() + "\n"
 
-private val STARTER_TEMPLATE = """
-    # Reusable pattern for standard native packages: {name} is substituted
-    # with the program name at manifest load. Programs opt in with
-    # template = "pkg"; each machine's machines/<name>.toml picks which
-    # install key it uses.
-    [templates.pkg.version]
-    # Version oracle chain: the tool itself, then each package database in
-    # turn; absent managers fall through. No trailing pipes — a pipeline's
-    # exit code would make missing programs look installed.
-    command = "{name} --version 2>/dev/null || rpm -q {name} 2>/dev/null || dpkg-query -W {name} 2>/dev/null || brew list --versions {name} 2>/dev/null"
+private val STARTER_INSTALLERS = """
+    # Installers: each mechanism's probe, install command, and version check,
+    # defined once. {pkg} is the package id — it defaults to the program name.
+    # Programs use them via `via = ["dnf", ...]` or an
+    # [programs.<x>.install.<key>] variant referencing `installer = "..."`.
+    [installers.dnf]
+    probe = "dnf"
+    install = "sudo dnf install -y {pkg}"
+    check = "rpm -q {pkg}"
     regex = "([0-9]+\\.[0-9][0-9.]*)"
 
-    [templates.pkg.install]
-    dnf = "sudo dnf install -y {name}"
-    apt = "sudo apt-get install -y {name}"
-    pacman = "sudo pacman -S --noconfirm {name}"
-    brew = "brew install {name}"
+    [installers.apt]
+    probe = "apt-get"
+    install = "sudo apt-get install -y {pkg}"
+    check = "dpkg-query -W {pkg}"
+    regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+    [installers.pacman]
+    probe = "pacman"
+    install = "sudo pacman -S --noconfirm {pkg}"
+    check = "pacman -Q {pkg}"
+    regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+    [installers.brew]
+    probe = "brew"
+    install = "brew install {pkg}"
+    check = "brew list --versions {pkg}"
+    regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+    # A template turns a list of standard packages into one program each —
+    # `[templates.pkg] packages = [...]` members expand with these installers:
+    [templates.pkg]
+    via = ["dnf", "apt", "pacman", "brew"]
 """.trimIndent() + "\n"
 
 private val STARTER_MACHINE = """
@@ -80,16 +96,13 @@ private val STARTER_FRAGMENT = """
     #
     #[programs.fzf]
     #description = "fuzzy finder"
+    #via = ["dnf", "apt", "pacman", "brew"]
     #
-    #[programs.fzf.version]
-    #command = "fzf --version"
-    #regex = "([0-9.]+)"
-    #
-    #[programs.fzf.install]
-    #brew = "brew install fzf"
-    #dnf = "sudo dnf install -y fzf"
-    #apt = "sudo apt-get install -y fzf"
-    #pacman = "sudo pacman -S --noconfirm fzf"
+    # Variants override what the installer can't know — a different package
+    # id, a custom command, check, or probe:
+    #[programs.fzf.install.brew-head]
+    #installer = "brew"
+    #command = "brew install --HEAD fzf"
 """.trimIndent() + "\n"
 
 class InitCommand : CliktCommand(name = "init") {
@@ -115,9 +128,9 @@ class InitCommand : CliktCommand(name = "init") {
         app.fs.write(root / "state" / ".gitkeep") { }
         app.fs.write(root / "machines" / "example.toml.sample") { writeUtf8(STARTER_MACHINE) }
         app.fs.write(root / "manifest.d" / "example.toml.sample") { writeUtf8(STARTER_FRAGMENT) }
-        app.fs.write(root / "manifest.d" / "00_pkg_template.toml") { writeUtf8(STARTER_TEMPLATE) }
+        app.fs.write(root / "manifest.d" / "00_installers.toml") { writeUtf8(STARTER_INSTALLERS) }
         echo("Created $manifestPath")
-        echo("Created ${root / "manifest.d" / "00_pkg_template.toml"} (the pkg template)")
+        echo("Created ${root / "manifest.d" / "00_installers.toml"} (installers + the pkg template)")
         echo("Created ${root / "scripts"}/")
         echo("Created ${root / "state"}/")
         echo("Created ${root / "machines"}/ (rename example.toml.sample to <your-machine>.toml)")

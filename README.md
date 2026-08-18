@@ -69,9 +69,10 @@ Next steps:
 ```
 
 `init` refuses to overwrite an existing `manifest.toml`, and skips `git init` if
-you're already inside a repository. The scaffold ships a ready-to-use `pkg`
-[template](#templates-many-packages-no-boilerplate) (dnf/apt/pacman/brew) as
-`manifest.d/00_pkg_template.toml`, so most programs are declared in 2–3 lines
+you're already inside a repository. The scaffold ships ready-to-use
+[installers](#2-describe-a-program) (dnf/apt/pacman/brew) plus a `pkg`
+[template](#templates-many-packages-no-boilerplate) as
+`manifest.d/00_installers.toml`, so most programs are declared in 1–2 lines
 from day one while `manifest.toml` stays a minimal `[meta]`.
 
 All examples below assume you either `cd ~/machines`, pass `--repo ~/machines`,
@@ -79,67 +80,100 @@ or `export LOADOUT_REPO=~/machines`.
 
 ### 2. Describe a program
 
-Open `manifest.toml`. Every program has three parts: metadata, a **version check**,
-and a table of **install commands keyed by arbitrary labels** — package-manager
-names by convention, but any label works:
+Two concepts split the work. **Installers** define each install *mechanism*
+once per repo — its availability probe, install command pattern, and version
+check pattern, with `{pkg}` standing for the package id:
+
+```toml
+[installers.dnf]
+probe = "dnf"                        # binary that must exist before installing
+install = "sudo dnf install -y {pkg}"
+check = "rpm -q {pkg}"               # version check; capture group 1 = the version
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+```
+
+**Programs** then say which mechanisms deliver them. For a standard package —
+same name everywhere, standard commands — that's one line:
 
 ```toml
 [programs.ripgrep]
 description = "fast grep"        # optional
 tags = ["cli"]                   # optional, free-form
 depends-on = []                  # programs that must be installed before this one
-
-[programs.ripgrep.version]
-command = "rg --version"                  # any shell command
-regex = "ripgrep ([0-9][0-9a-zA-Z.-]*)"   # capture group 1 = the version
-
-[programs.ripgrep.install]
-brew = "brew install ripgrep"
-dnf = "sudo dnf install -y ripgrep"
-apt = "sudo apt-get install -y ripgrep"
-pacman = "sudo pacman -S --noconfirm ripgrep"
+via = ["dnf", "apt", "pacman", "brew"]
 ```
 
-The keys are free-form, which covers two important cases. Things no package
-manager provides (a `script` entry by convention):
+`via` expands to one install key per installer, with everything inherited:
+command, check, and probe. `{pkg}` defaults to the program name.
+
+When something deviates, declare an **install variant** — a table keyed by a
+free-form label; the machine's mapping picks which key it uses. Every field is
+optional and falls back to the variant's installer (an explicit `installer =`
+reference, or the installer its key names):
 
 ```toml
-[programs.rustup.install]
-script = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+[programs.jetbrains-toolbox.install.brew-linux]
+installer = "brew-cask"                # mechanics: check + probe from here
+pkg = "jetbrains-toolbox-linux"        # package id differs from the program name
+command = "brew tap ublue-os/tap && brew trust ublue-os/tap && brew install --cask jetbrains-toolbox-linux"
+
+[programs.jetbrains-toolbox.install.brew-macos]
+installer = "brew-cask"                # everything else derived: installs the
+                                       # 'jetbrains-toolbox' cask, checks it, probes brew
 ```
 
-…and programs that install *differently per distro*, even outside a package
-manager — define one key per variant:
+Variants also cover things no package manager provides (a `script` key by
+convention, with no installer at all) and per-distro install flows:
 
 ```toml
-[programs.1password.install]
-script-fedora = "sudo rpm --import https://downloads.1password.com/... && sudo dnf install -y 1password"
-script-ubuntu = "curl -sS https://downloads.1password.com/... | sudo tee ... && sudo apt install -y 1password"
-brew = "brew install --cask 1password"
+[programs.rustup.install.script]
+command = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+
+[programs.1password.install.script-fedora]
+command = "sudo rpm --import https://downloads.1password.com/... && sudo dnf install -y 1password"
+
+[programs.1password.install.script-ubuntu]
+command = "curl -sS https://downloads.1password.com/... | sudo tee ... && sudo apt install -y 1password"
 ```
+
+A variant can override just one piece of its installer's mechanics — the
+classic case is a virtual provide, where only the check deviates:
+
+```toml
+[programs.zlib-devel]
+via = ["dnf"]
+
+[programs.zlib-devel.install.dnf]      # refines via's entry for the same key
+check = "rpm -q --whatprovides zlib-devel"   # regex + probe still inherited
+```
+
+For a program with no resolvable check (script variants without an installer),
+the program-level `[version]` block is the fallback:
+
+```toml
+[programs.rustup.version]
+command = "rustup --version"
+regex = "rustup ([0-9.]+)"
+```
+
+**Resolution per mapped key** — most specific wins, field by field:
+
+| field   | variant | else installer | else            |
+|---------|---------|----------------|-----------------|
+| command | `command` | `install` pattern | error at load |
+| check   | `check` (+ `regex`) | `check` pattern | program `[version]`, else status `unknown` |
+| probe   | `probe` | `probe`        | no probe        |
 
 When install logic outgrows a one-liner, put it in a repo script and reference
-it with the **`file:`** prefix — the file's existence is validated on every
-manifest load, exactly like a `[scripts.*]` `file`:
+it with the **`file:`** prefix in `command` — the file's existence is validated
+on every manifest load, exactly like a `[scripts.*]` `file`. Anything after the
+first space is passed to the script as arguments (so one script can serve
+several roles); the path itself therefore can't contain spaces:
 
 ```toml
-[programs.1password.install]
-script-fedora = "file:scripts/install-1password-fedora.sh"
-script-ubuntu = "file:scripts/install-1password-ubuntu.sh"
-brew = "brew install --cask 1password"
-```
-
-Anything after the first space is passed to the script as arguments (so one
-script can serve several roles — e.g. its `check` mode as the version command
-and its `install` mode as the installer); the path itself therefore can't
-contain spaces:
-
-```toml
-[programs.dev-deps.version]
-command = "sh scripts/dev-deps.sh check"     # plain command — file: isn't needed here
-
-[programs.dev-deps.install]
-dnf = "file:scripts/dev-deps.sh install"     # runs: sh 'scripts/dev-deps.sh' install
+[programs.dev-deps.install.dnf]
+command = "file:scripts/dev-deps.sh install"   # runs: sh 'scripts/dev-deps.sh' install
+check = "sh scripts/dev-deps.sh check"         # plain command — file: isn't needed here
 ```
 
 Which key a given machine uses is decided by that machine's mapping — the next
@@ -150,87 +184,62 @@ pipes, `$HOME`, redirects and `&&` all behave as they would in your terminal.
 
 #### Templates: many packages, no boilerplate
 
-Most rpm/brew/apt programs are pure pattern — the name determines every field.
-Declare the pattern once as a **template** (`{name}` is substituted with the
-program name in all string fields), then declare programs by name:
+With installers carrying the mechanics, a template is mostly a **package
+list**: declare the shared `via` once, then one word per package:
 
 ```toml
-[templates.rpm.version]
-command = "{name} --version 2>/dev/null || rpm -q {name}"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
-
-[templates.rpm.install]
-dnf = "sudo dnf install -y {name}"
-```
-
-Two usage forms, freely mixed:
-
-```toml
-# 1. Bulk, where the template is defined — one word per package:
-[templates.rpm]
+[templates.pkg]
+via = ["dnf", "apt", "pacman", "brew"]
 packages = ["vlc", "okular", "htop"]
 
-[templates.rpm.overrides.vlc]          # per-package deviations, validated
+[templates.pkg.overrides.vlc]          # per-package deviations, validated
 description = "VLC media player"       #   (overriding a non-member is an error)
+```
 
-# 2. Per program, anywhere (e.g. spread across manifest.d/ topic fragments):
+Programs anywhere in the repo (e.g. spread across `manifest.d/` topic
+fragments) can also opt in by reference:
+
+```toml
 [programs.solaar]
-template = "rpm"
+template = "pkg"
 description = "Logitech device manager"
-
-[programs.solaar.install]
-brew = "brew install solaar"           # merged per key on top of the template's table
 ```
 
 **What expansion creates:** every entry becomes a full standalone program at
-manifest load, as if you had written it by hand. This three-line declaration:
+manifest load, as if you had written `via = [...]` (and any other template
+fields) on it by hand. Nothing downstream knows a template was involved:
+individual status/diff rows, individual versions, individual machine mappings,
+identical validation. Explicit fields win over template fields; `version` is
+replaced whole; `install` variant tables merge per key; `{name}` in a
+template's string fields is substituted with the program name. Templates are
+repo-unique (defining the same name twice is an error) and can live in
+fragments.
 
-```toml
-[programs.solaar]
-template = "rpm"
-description = "Logitech device manager"
-```
-
-is exactly equivalent to — and is rewritten by the engine into — this:
-
-```toml
-[programs.solaar]
-description = "Logitech device manager"
-
-[programs.solaar.version]
-command = "solaar --version 2>/dev/null || rpm -q solaar"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
-
-[programs.solaar.install]
-dnf = "sudo dnf install -y solaar"
-```
-
-Nothing downstream knows a template was involved: individual status/diff rows,
-individual versions, individual machine mappings, identical validation.
-Explicit fields win over template fields; `version` is replaced whole;
-`install` tables merge per key. Templates are repo-unique (defining the same
-name twice is an error) and can live in fragments.
-
-One shell footgun to know when writing template version commands: don't end
-them with a pipe (`... --version | head -1`) — a pipeline's exit code is the
-*last* command's, which would make missing programs look installed.
+One shell footgun to know when writing custom check commands: don't end them
+with a pipe (`... --version | head -1`) — a pipeline's exit code is the *last*
+command's, which would make missing programs look installed.
 
 #### Inspecting the expanded manifest: `show`
 
 `loadout show <name>...` prints any program or script **as the engine sees
-it** — templates resolved, every install key listed, this machine's mapped key
-marked, plus the last observed state:
+it** — templates and `via` expanded, every variant fully resolved through its
+installer (command, check, probe), this machine's mapped key marked, plus the
+last observed state:
 
 ```console
 $ loadout show solaar
 program solaar  — Logitech device manager
-  version      solaar --version 2>/dev/null || rpm -q solaar  =~ /([0-9]+\.[0-9][0-9.]*)/
-  install.dnf  sudo dnf install -y solaar   <- laptop
-  install.apt  sudo apt-get install -y solaar
+  version      (none — status will always be 'unknown')
+  install.dnf  sudo dnf install -y solaar  [installer: dnf]   <- laptop
+  check.dnf    rpm -q solaar  =~ /([0-9]+\.[0-9][0-9.]*)/
+  probe.dnf    dnf
+  install.brew  brew install solaar  [installer: brew]
+  check.brew   brew list --versions solaar  =~ /([0-9]+\.[0-9][0-9.]*)/
+  probe.brew   brew
   observed     installed 1.1.20  (state/laptop.json)
 ```
 
-Use it whenever you're unsure what a `template = "..."` line produced, which
+Use it whenever you're unsure what a `template`/`via` line produced, which
 command `install` would actually run, or why a mapping fails. (The TUI's `d`
 details pane shows the same data interactively.)
 
@@ -316,7 +325,7 @@ the full path):
 
 ```
 manifest.d/
-├── 00_pkg_template.toml
+├── 00_installers.toml
 ├── dev/
 │   ├── editors.toml
 │   └── toolchain.toml
@@ -325,11 +334,12 @@ manifest.d/
 
 Fragments use exactly the same syntax as the manifest and are merged into it
 before validation, so cross-file references (a program in one fragment
-depending on a program in another, a machine file mapping them) all work.
-Rules: `[meta]` may only appear in the root `manifest.toml`, machine configs
+depending on a program in another, `via` using an installer defined in a
+different fragment, a machine file mapping them) all work. Rules: `[meta]` may
+only appear in the root `manifest.toml`, machine configs
 may not appear in fragments (they live in `machines/`), and defining the same
-program or script twice is an error naming the offending file — splitting
-never silently overrides anything.
+program, script, template, or installer twice is an error naming the
+offending file — splitting never silently overrides anything.
 
 **Validation**: the manifest is checked on every load. Unknown `depends-on`
 references, unknown `after` references, dependency cycles, and unknown package
@@ -713,9 +723,12 @@ instruction — instead of silently ignoring manifest keys it doesn't know:
 error: this config repo requires loadout >= 0.2.0 (you have 0.1.0) — upgrade loadout on this machine
 ```
 
-**Old repos keep working on new binaries.** The manifest format only evolves
-additively (new optional fields), so a repo created with loadout 0.1 parses
-forever. State files carry a `schemaVersion` and `toolVersion`; a state file
+**Old repos keep working on new binaries.** From 0.2.0 on, the manifest format
+only evolves additively (new optional fields), so a repo stays parseable by
+every later loadout. (0.2.0 itself was the one breaking change: install values
+became variant tables backed by `[installers.*]`; 0.1-era repos need their
+`install` entries converted.) State files carry a `schemaVersion` and
+`toolVersion`; a state file
 written by a *newer* loadout than yours is skipped with a warning
 (`state/vps.json was written by a newer loadout … upgrade loadout to see this
 machine`) rather than misread — and state is disposable observation anyway:
@@ -759,9 +772,9 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 76 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 86 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
-$ ./integration/run-tests.sh       # 30 black-box tests driving the real binary
+$ ./integration/run-tests.sh       # 31 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
 ```

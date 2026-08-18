@@ -2,7 +2,6 @@ package loadout.core
 
 import loadout.core.engine.VersionChecker
 import loadout.core.manifest.ManifestLoader
-import loadout.core.model.Program
 import loadout.core.model.ProgramStatus
 import loadout.core.model.VersionCheck
 import kotlin.test.Test
@@ -11,9 +10,7 @@ import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 
 class VersionCheckerTest {
-    private val ripgrep = Program(
-        version = VersionCheck("rg --version", "ripgrep ([0-9][0-9a-zA-Z.-]*)"),
-    )
+    private val ripgrep = VersionCheck("rg --version", "ripgrep ([0-9][0-9a-zA-Z.-]*)")
 
     @Test
     fun installedWithVersion() {
@@ -41,7 +38,7 @@ class VersionCheckerTest {
 
     @Test
     fun unknownWhenNoVersionCheckDeclared() {
-        val state = VersionChecker(FakeProcessRunner()).check(Program())
+        val state = VersionChecker(FakeProcessRunner()).check(null)
         assertEquals(ProgramStatus.UNKNOWN, state.status)
     }
 
@@ -61,7 +58,7 @@ class VersionCheckerTest {
         runner.onCommand("rg --version", stdout = "ripgrep 14.1.0")
         // rustup unregistered -> exit 127 -> MISSING
 
-        val results = VersionChecker(runner).checkAll(manifest.programs)
+        val results = VersionChecker(runner).checkAll(manifest.programs.mapValues { it.value.version })
         assertEquals(ProgramStatus.INSTALLED, results.getValue("git").status)
         assertEquals("2.46.0", results.getValue("git").version)
         assertEquals(ProgramStatus.INSTALLED, results.getValue("ripgrep").status)

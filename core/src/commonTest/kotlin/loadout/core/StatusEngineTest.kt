@@ -21,8 +21,8 @@ class StatusEngineTest {
         [programs.git.version]
         command = "git --version"
         regex = "git version ([0-9.]+)"
-        [programs.git.install]
-        dnf = "sudo dnf install -y git"
+        [programs.git.install.dnf]
+        command = "sudo dnf install -y git"
 
         [scripts.dotfiles]
         run = "echo setup"

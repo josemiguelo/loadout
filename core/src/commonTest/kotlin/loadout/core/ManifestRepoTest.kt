@@ -32,14 +32,14 @@ class ManifestRepoTest {
                     name = "split repo"
 
                     [programs.git]
-                    [programs.git.install]
-                    dnf = "sudo dnf install -y git"
+                    [programs.git.install.dnf]
+                    command = "sudo dnf install -y git"
                 """.trimIndent(),
                 "manifest.d/cli.toml" to """
                     [programs.ripgrep]
                     depends-on = ["git"]
-                    [programs.ripgrep.install]
-                    dnf = "sudo dnf install -y ripgrep"
+                    [programs.ripgrep.install.dnf]
+                    command = "sudo dnf install -y ripgrep"
 
                     [scripts.marker]
                     run = "true"
@@ -67,13 +67,13 @@ class ManifestRepoTest {
                 "manifest.toml" to "[meta]\nname = \"nested\"",
                 "manifest.d/dev/editors/kitty.toml" to """
                     [programs.kitty]
-                    [programs.kitty.install]
-                    dnf = "sudo dnf install -y kitty"
+                    [programs.kitty.install.dnf]
+                    command = "sudo dnf install -y kitty"
                 """.trimIndent(),
                 "manifest.d/media.toml" to """
                     [programs.vlc]
-                    [programs.vlc.install]
-                    dnf = "sudo dnf install -y vlc"
+                    [programs.vlc.install.dnf]
+                    command = "sudo dnf install -y vlc"
                 """.trimIndent(),
             ),
         )
@@ -86,8 +86,8 @@ class ManifestRepoTest {
         val fs = fs(
             mapOf(
                 "manifest.toml" to "[meta]\nname = \"nested\"",
-                "manifest.d/a/tool.toml" to "[programs.tool]\n[programs.tool.install]\ndnf = \"x\"",
-                "manifest.d/b/tool.toml" to "[programs.tool]\n[programs.tool.install]\ndnf = \"y\"",
+                "manifest.d/a/tool.toml" to "[programs.tool]\n[programs.tool.install.dnf]\ncommand = \"x\"",
+                "manifest.d/b/tool.toml" to "[programs.tool]\n[programs.tool.install.dnf]\ncommand = \"y\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
@@ -99,8 +99,8 @@ class ManifestRepoTest {
     fun duplicateProgramAcrossFragmentsFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install]\ndnf = \"x\"",
-                "manifest.d/extra.toml" to "[programs.git]\n[programs.git.install]\napt = \"y\"",
+                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "manifest.d/extra.toml" to "[programs.git]\n[programs.git.install.apt]\ncommand = \"y\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
@@ -114,8 +114,8 @@ class ManifestRepoTest {
             mapOf(
                 "manifest.toml" to """
                     [programs.git]
-                    [programs.git.install]
-                    dnf = "x"
+                    [programs.git.install.dnf]
+                    command = "x"
 
                     [machines.laptop.pm]
                     git = "dnf"
@@ -130,7 +130,7 @@ class ManifestRepoTest {
     fun inlineMachinesInFragmentFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install]\ndnf = \"x\"",
+                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
                 "manifest.d/extra.toml" to "[machines.laptop.pm]\ngit = \"dnf\"",
             ),
         )
@@ -143,7 +143,7 @@ class ManifestRepoTest {
     fun metaInFragmentFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install]\ndnf = \"x\"",
+                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
                 "manifest.d/extra.toml" to "[meta]\nname = \"nope\"",
             ),
         )
@@ -155,7 +155,7 @@ class ManifestRepoTest {
     fun machineFileMappingIsValidatedAgainstMergedPrograms() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install]\ndnf = \"x\"",
+                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
                 "machines/laptop.toml" to "[pm]\nghost = \"dnf\"",
             ),
         )
@@ -187,8 +187,8 @@ class ManifestRepoTest {
             mapOf(
                 "manifest.toml" to """
                     [programs.tool]
-                    [programs.tool.install]
-                    script = "file:scripts/install-tool.sh"
+                    [programs.tool.install.script]
+                    command = "file:scripts/install-tool.sh"
                 """.trimIndent(),
             ),
         )
@@ -201,7 +201,7 @@ class ManifestRepoTest {
         fs.write(repo / "scripts" / "install-tool.sh") { writeUtf8("#!/bin/sh\n") }
         assertEquals(
             "file:scripts/install-tool.sh",
-            ManifestLoader.loadRepo(fs, repo).programs.getValue("tool").install["script"],
+            ManifestLoader.loadRepo(fs, repo).resolveInstall("tool", "script").command,
         )
     }
 
@@ -211,8 +211,8 @@ class ManifestRepoTest {
             mapOf(
                 "manifest.toml" to """
                     [programs.tool]
-                    [programs.tool.install]
-                    script = "file:scripts/tool.sh install --verbose"
+                    [programs.tool.install.script]
+                    command = "file:scripts/tool.sh install --verbose"
                 """.trimIndent(),
             ),
         )
@@ -234,8 +234,8 @@ class ManifestRepoTest {
                     command = "rpm -q {name}"
                     regex = "([0-9.]+)"
 
-                    [templates.rpm.install]
-                    dnf = "sudo dnf install -y {name}"
+                    [templates.rpm.install.dnf]
+                    command = "sudo dnf install -y {name}"
                 """.trimIndent(),
                 "manifest.d/media.toml" to """
                     [programs.vlc]
@@ -245,14 +245,43 @@ class ManifestRepoTest {
                     [templates.local]
                     packages = ["okular"]
 
-                    [templates.local.install]
-                    dnf = "sudo dnf install -y {name}"
+                    [templates.local.install.dnf]
+                    command = "sudo dnf install -y {name}"
                 """.trimIndent(),
             ),
         )
         val manifest = ManifestLoader.loadRepo(fs, repo)
         assertEquals("rpm -q vlc", manifest.programs.getValue("vlc").version?.command)
-        assertEquals("sudo dnf install -y okular", manifest.programs.getValue("okular").install["dnf"])
+        assertEquals("sudo dnf install -y okular", manifest.resolveInstall("okular", "dnf").command)
+    }
+
+    @Test
+    fun installersMergeFromFragmentsAndDuplicatesFail() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to "[meta]\nname = \"x\"",
+                "manifest.d/00_installers.toml" to """
+                    [installers.dnf]
+                    probe = "dnf"
+                    install = "sudo dnf install -y {pkg}"
+                """.trimIndent(),
+                "manifest.d/cli.toml" to """
+                    [programs.ripgrep]
+                    via = ["dnf"]
+                """.trimIndent(),
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        assertEquals("sudo dnf install -y ripgrep", manifest.resolveInstall("ripgrep", "dnf").command)
+
+        val dup = fs(
+            mapOf(
+                "manifest.toml" to "[installers.dnf]\ninstall = \"a {pkg}\"",
+                "manifest.d/extra.toml" to "[installers.dnf]\ninstall = \"b {pkg}\"",
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(dup, repo) }
+        assertTrue("duplicate installer 'dnf'" in e.message.orEmpty())
     }
 
     @Test
@@ -297,8 +326,8 @@ class ManifestRepoTest {
                     min-tool-version = "999.0.0"
 
                     [programs.git]
-                    [programs.git.install]
-                    dnf = "x"
+                    [programs.git.install.dnf]
+                    command = "x"
                 """.trimIndent(),
             ),
         )
@@ -316,8 +345,8 @@ class ManifestRepoTest {
                     min-tool-version = "0.1.0"
 
                     [programs.git]
-                    [programs.git.install]
-                    dnf = "x"
+                    [programs.git.install.dnf]
+                    command = "x"
                 """.trimIndent(),
             ),
         )
@@ -345,8 +374,8 @@ class ManifestRepoTest {
             mapOf(
                 "manifest.toml" to """
                     [programs.git]
-                    [programs.git.install]
-                    dnf = "x"
+                    [programs.git.install.dnf]
+                    command = "x"
                 """.trimIndent(),
             ),
         )

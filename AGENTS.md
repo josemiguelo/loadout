@@ -8,8 +8,9 @@ Keep both updated when behavior changes — and keep them consistent.
 
 `loadout` is a single Kotlin/Native binary (no JVM at runtime) that sets up
 unix-like machines from a shared git "config repo" and tracks installed program
-versions across machines. Users declare programs (install command variants +
-version-check regex) and scripts (idempotent setup steps) in TOML; each machine
+versions across machines. Users declare installers (mechanism patterns: probe/install/check),
+programs (install variants over those installers) and scripts (idempotent
+setup steps) in TOML; each machine
 maps every program to one install variant; state files record what each machine
 actually has; `diff` compares the fleet. CLI + Mosaic TUI.
 
@@ -54,7 +55,8 @@ macosArm64 — macosX64 is deprecated upstream but kept). Compose plugin only on
 
 ```
 core/  loadout.core
-  model/       Manifest, MachineState, System (@Serializable schemas + PackageManager enum)
+  model/       Manifest, MachineState, System (@Serializable schemas; Manifest
+               owns resolveInstall/checkFor — variant × installer resolution)
   manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d (recursive, subfolders cosmetic)
                + machines/*.toml, validates everything; parse() is single-doc, TEST-ONLY
   state/       StateStore — state/<machine>.json via Okio; pretty JSON, stable order
@@ -96,10 +98,11 @@ These came from explicit user decisions; don't "improve" them away:
    hand-edited ever goes in `state/`; the tool never writes authored files
    (except `init` scaffolding).
 4. **Scripts: exactly one of `file` (repo path) or `run` (inline).** `file`
-   existence is validated at manifest load (loadRepo, not parse). Program
-   install values may use the `file:` prefix for repo scripts — also validated;
-   tokens after the first space are passed as arguments (`file:path args…` →
-   `sh 'path' args…`), so file: paths cannot contain spaces.
+   existence is validated at manifest load (loadRepo, not parse). Variant
+   `command` values may use the `file:` prefix for repo scripts — also
+   validated; tokens after the first space are passed as arguments
+   (`file:path args…` → `sh 'path' args…`), so file: paths cannot contain
+   spaces.
 5. **Every manifest command runs via `sh -c` with the repo root as cwd** —
    installs, script runs, version checks, `check`s. Deterministic regardless of
    invocation directory.
@@ -123,10 +126,10 @@ These came from explicit user decisions; don't "improve" them away:
 11. **Templates** (`[templates.<name>]`): reusable program patterns with
     `{name}` substitution; used via the template's `packages` array (+
     `overrides.<pkg>`, members only) or `template = "<name>"` on a program.
-    Expansion happens in ManifestLoader.expandTemplates before validation —
-    expanded programs are indistinguishable from hand-written ones, and every
-    downstream feature must keep treating them that way. Template names are
-    repo-unique; fragments may define them.
+    Expansion happens in ManifestLoader.expandTemplates (then expandVia)
+    before validation — expanded programs are indistinguishable from
+    hand-written ones, and every downstream feature must keep treating them
+    that way. Template names are repo-unique; fragments may define them.
 12. **Scripts are opt-in per machine**: a machine's top-level `scripts` list
     (in machines/<name>.toml, ABOVE any table header) has entries "name" or
     "name args..." parsed by MachineConfig.scriptArgs(); only opted-in
@@ -135,8 +138,24 @@ These came from explicit user decisions; don't "improve" them away:
     ScriptRunner.withArgs). Args on inline `run` scripts are a validation
     error. No implicit script application; no os/bootc auto-detection to
     decide membership.
-13. **Versioning contract.** Manifest format evolves ADDITIVELY only (new
-    optional fields; never repurpose existing ones). `[meta] min-tool-version`
+13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
+    (probe / install / check / regex patterns, `{pkg}` substituted) define
+    each mechanism once, repo-unique, fragment-definable; core hardcodes NO
+    package-manager knowledge (no canonical probe list). A program's install
+    entry is a variant table `{installer, pkg, command, check, regex, probe}`
+    — every field optional, defaulting from its installer (explicit
+    `installer = ...`, else the installer its key names) with `pkg`
+    defaulting to the program name; `via = [...]` is shorthand for one
+    all-defaults variant per named installer (expandVia; explicit variant for
+    the same key wins). Resolution lives in Manifest.resolveInstall/checkFor
+    — all engines/UIs go through it. Field fallback: command → installer
+    install pattern (else load error); check → installer check (else
+    program `[version]`); probe → installer probe (else none). Never write
+    cross-variant `||` chains in checks.
+14. **Versioning contract.** Since 0.2.0 the manifest format evolves
+    ADDITIVELY only (new optional fields; never repurpose existing ones) —
+    0.2.0 itself broke 0.1 repos (string install values became variant
+    tables). `[meta] min-tool-version`
     is enforced at loadRepo — repos requiring newer features declare their
     floor and old binaries refuse with an "upgrade loadout" error. State files
     with `schemaVersion > StateStore.SCHEMA_VERSION` are skipped with a

@@ -4,7 +4,6 @@ import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
 import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.Manifest
-import loadout.core.model.PackageManager
 import loadout.core.model.ProgramState
 import loadout.core.model.ProgramStatus
 import okio.Path
@@ -45,15 +44,16 @@ class InstallEngine(
      * - the manifest has no `machines/<machine>.toml` config,
      * - an explicitly [requested] program has no mapping for this machine,
      * - a mapped program's dependency has no mapping for this machine,
-     * - a program that needs installing is mapped to a known package manager
-     *   whose binary is not present on this machine ([pmAvailable]).
+     * - a program that needs installing resolves to a probe binary (the
+     *   variant's `probe`, or its installer's) that is not present on this
+     *   machine ([binaryAvailable]).
      */
     fun plan(
         manifest: Manifest,
         machine: String,
         requested: Collection<String>,
         currentStates: Map<String, ProgramState>,
-        pmAvailable: (PackageManager) -> Boolean,
+        binaryAvailable: (String) -> Boolean,
     ): List<PlanItem> {
         val mapping = manifest.machines[machine]?.pm
             ?: throw ResolutionException(
@@ -81,9 +81,9 @@ class InstallEngine(
             if (state?.status == ProgramStatus.INSTALLED) {
                 items += PlanItem.AlreadyInstalled(name, state.version)
             } else {
-                // Key existence in the install table is validated at manifest load,
-                // as is the existence of any file: script.
-                val raw = manifest.programs.getValue(name).install.getValue(installKey)
+                // Key existence and command resolvability are validated at
+                // manifest load, as is the existence of any file: script.
+                val raw = manifest.resolveInstall(name, installKey).command!!
                 val command = if (raw.startsWith(INSTALL_FILE_PREFIX)) {
                     // "file:path args..." -> sh 'path' args...  (path may not contain spaces)
                     val spec = raw.removePrefix(INSTALL_FILE_PREFIX)
@@ -97,13 +97,15 @@ class InstallEngine(
             }
         }
 
-        // Verify that every package manager the plan actually uses exists here.
+        // Verify that every probe binary the plan actually needs exists here.
         items.filterIsInstance<PlanItem.Install>()
-            .mapNotNull { item -> PackageManager.fromId(item.installKey)?.let { it to item.program } }
+            .mapNotNull { item ->
+                manifest.resolveInstall(item.program, item.installKey).probe?.let { it to item.program }
+            }
             .groupBy({ it.first }, { it.second })
-            .forEach { (pm, programs) ->
-                if (!pmAvailable(pm)) {
-                    errors += "package manager '${pm.id}' (mapped for ${programs.joinToString()}) " +
+            .forEach { (binary, programs) ->
+                if (!binaryAvailable(binary)) {
+                    errors += "required binary '$binary' (needed to install ${programs.joinToString()}) " +
                         "is not installed on machine '$machine'"
                 }
             }
@@ -131,7 +133,7 @@ class InstallEngine(
             // Repo root as cwd, so file: scripts and relative paths behave the
             // same regardless of where the tool was invoked from.
             val exitCode = runner.inherit(item.command, workDir = repoRoot.toString())
-            val after = checker.check(manifest.programs.getValue(item.program))
+            val after = checker.check(manifest.checkFor(item.program, item.installKey))
             InstallOutcome(item.program, exitCode, after)
         }
 
@@ -151,7 +153,7 @@ class InstallEngine(
             (result.stdout + result.stderr).lineSequence()
                 .filter { it.isNotBlank() }
                 .forEach { onOutput("    $it") }
-            val after = checker.check(manifest.programs.getValue(item.program))
+            val after = checker.check(manifest.checkFor(item.program, item.installKey))
             InstallOutcome(item.program, result.exitCode, after)
         }
 }

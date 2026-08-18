@@ -17,8 +17,8 @@ class TemplateTest {
         command = "{name} --version 2>/dev/null || rpm -q {name}"
         regex = "([0-9]+\\.[0-9][0-9.]*)"
 
-        [templates.rpm.install]
-        dnf = "sudo dnf install -y {name}"
+        [templates.rpm.install.dnf]
+        command = "sudo dnf install -y {name}"
 
         [templates.rpm.overrides.konsole]
         description = "KDE terminal emulator"
@@ -31,11 +31,11 @@ class TemplateTest {
 
         val vlc = manifest.programs.getValue("vlc")
         assertEquals("vlc --version 2>/dev/null || rpm -q vlc", vlc.version?.command)
-        assertEquals("sudo dnf install -y vlc", vlc.install["dnf"])
+        assertEquals("sudo dnf install -y vlc", manifest.resolveInstall("vlc", "dnf").command)
         assertNull(vlc.template)
 
         assertEquals("KDE terminal emulator", manifest.programs.getValue("konsole").description)
-        assertEquals("sudo dnf install -y konsole", manifest.programs.getValue("konsole").install["dnf"])
+        assertEquals("sudo dnf install -y konsole", manifest.resolveInstall("konsole", "dnf").command)
     }
 
     @Test
@@ -46,23 +46,23 @@ class TemplateTest {
             command = "rpm -q {name}"
             regex = "([0-9.]+)"
 
-            [templates.rpm.install]
-            dnf = "sudo dnf install -y {name}"
+            [templates.rpm.install.dnf]
+            command = "sudo dnf install -y {name}"
 
             [programs.solaar]
             template = "rpm"
             description = "Logitech device manager"
 
-            [programs.solaar.install]
-            brew = "brew install solaar"
+            [programs.solaar.install.brew]
+            command = "brew install solaar"
             """.trimIndent(),
         )
         val solaar = manifest.programs.getValue("solaar")
         assertEquals("rpm -q solaar", solaar.version?.command)
         assertEquals("Logitech device manager", solaar.description)
         // Install tables merge per key: template's dnf + the program's own brew.
-        assertEquals("sudo dnf install -y solaar", solaar.install["dnf"])
-        assertEquals("brew install solaar", solaar.install["brew"])
+        assertEquals("sudo dnf install -y solaar", manifest.resolveInstall("solaar", "dnf").command)
+        assertEquals("brew install solaar", manifest.resolveInstall("solaar", "brew").command)
     }
 
     @Test
@@ -76,8 +76,8 @@ class TemplateTest {
             command = "rpm -q {name}"
             regex = "([0-9.]+)"
 
-            [templates.rpm.install]
-            dnf = "sudo dnf install -y {name}"
+            [templates.rpm.install.dnf]
+            command = "sudo dnf install -y {name}"
 
             [templates.rpm.overrides.weird.version]
             command = "rpm -q --whatprovides '{name}(feature)'"
@@ -88,6 +88,32 @@ class TemplateTest {
             "rpm -q --whatprovides 'weird(feature)'",
             manifest.programs.getValue("weird").version?.command,
         )
+    }
+
+    @Test
+    fun templateViaExpandsThroughInstallers() {
+        val manifest = ManifestLoader.parse(
+            """
+            [installers.dnf]
+            probe = "dnf"
+            install = "sudo dnf install -y {pkg}"
+            check = "rpm -q {pkg}"
+            regex = "([0-9.]+)"
+
+            [templates.pkg]
+            via = ["dnf"]
+            packages = ["vlc"]
+
+            [templates.pkg.overrides.vlc.install.dnf]
+            check = "rpm -q --whatprovides vlc"
+            """.trimIndent(),
+        )
+        // The override's variant replaces via's for that key, but {pkg}
+        // defaulting to the program name keeps the installer's install pattern.
+        val resolved = manifest.resolveInstall("vlc", "dnf")
+        assertEquals("sudo dnf install -y vlc", resolved.command)
+        assertEquals("rpm -q --whatprovides vlc", resolved.check?.command)
+        assertEquals("dnf", resolved.probe)
     }
 
     @Test
@@ -106,8 +132,8 @@ class TemplateTest {
                 [templates.rpm]
                 packages = ["a"]
 
-                [templates.rpm.install]
-                dnf = "sudo dnf install -y {name}"
+                [templates.rpm.install.dnf]
+                command = "sudo dnf install -y {name}"
 
                 [templates.rpm.overrides.b]
                 description = "not a member"
@@ -125,12 +151,12 @@ class TemplateTest {
                 [templates.rpm]
                 packages = ["vlc"]
 
-                [templates.rpm.install]
-                dnf = "sudo dnf install -y {name}"
+                [templates.rpm.install.dnf]
+                command = "sudo dnf install -y {name}"
 
                 [programs.vlc]
-                [programs.vlc.install]
-                dnf = "sudo dnf install -y vlc"
+                [programs.vlc.install.dnf]
+                command = "sudo dnf install -y vlc"
                 """.trimIndent(),
             )
         }
@@ -146,8 +172,8 @@ class TemplateTest {
                 [templates.rpm]
                 packages = ["vlc"]
 
-                [templates.rpm.install]
-                dnf = "sudo dnf install -y {name}"
+                [templates.rpm.install.dnf]
+                command = "sudo dnf install -y {name}"
 
                 [machines.m.pm]
                 vlc = "brew"

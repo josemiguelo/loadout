@@ -35,9 +35,11 @@ class StatusEngine(
         previous: MachineState?,
         scriptRuns: Map<String, ScriptState> = emptyMap(),
     ): MachineState {
-        // Membership: only programs this machine maps are part of its loadout.
+        // Membership: only programs this machine maps are part of its loadout,
+        // each checked with the version check its mapped key resolves to.
         val mapped = manifest.machines[system.machine]?.pm.orEmpty()
-        val observedPrograms = manifest.programs.filterKeys { it in mapped }
+        val observedChecks = manifest.programs.keys.filter { it in mapped }
+            .associateWith { name -> manifest.checkFor(name, mapped[name]) }
 
         val enabled = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         val scripts = mutableMapOf<String, ScriptState>()
@@ -65,7 +67,7 @@ class StatusEngine(
             arch = system.arch,
             toolVersion = TOOL_VERSION,
             updatedAt = nowIso(),
-            programs = checker.checkAll(observedPrograms),
+            programs = checker.checkAll(observedChecks),
             scripts = scripts,
         )
     }
