@@ -74,6 +74,25 @@ class InstallEngineTest {
     }
 
     @Test
+    fun fileInstallValuesPassArgumentsThrough() {
+        val withArgs = ManifestLoader.parse(
+            """
+            [programs.tool]
+            [programs.tool.install]
+            script = "file:scripts/tool.sh install --verbose"
+
+            [machines.m.pm]
+            tool = "script"
+            """.trimIndent(),
+        )
+        val plan = engine().plan(withArgs, "m", emptyList(), emptyMap()) { true }
+        assertEquals(
+            PlanItem.Install("tool", "script", "sh 'scripts/tool.sh' install --verbose"),
+            plan.single(),
+        )
+    }
+
+    @Test
     fun emptyRequestPlansEverything() {
         val plan = engine().plan(manifest, "laptop", emptyList(), emptyMap()) { true }
         assertEquals(setOf("git", "ripgrep", "rustup"), plan.map { it.program }.toSet())

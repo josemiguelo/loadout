@@ -126,6 +126,19 @@ script-ubuntu = "file:scripts/install-1password-ubuntu.sh"
 brew = "brew install --cask 1password"
 ```
 
+Anything after the first space is passed to the script as arguments (so one
+script can serve several roles — e.g. its `check` mode as the version command
+and its `install` mode as the installer); the path itself therefore can't
+contain spaces:
+
+```toml
+[programs.dev-deps.version]
+command = "sh scripts/dev-deps.sh check"     # plain command — file: isn't needed here
+
+[programs.dev-deps.install]
+dnf = "file:scripts/dev-deps.sh install"     # runs: sh 'scripts/dev-deps.sh' install
+```
+
 Which key a given machine uses is decided by that machine's mapping — the next
 section. Every command in the manifest runs through `sh -c` **with the repo
 root as working directory** (installs, script runs, version checks, and
@@ -614,7 +627,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 59 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 61 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
 $ ./integration/run-tests.sh       # 27 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync

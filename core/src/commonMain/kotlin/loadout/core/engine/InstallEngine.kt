@@ -76,7 +76,11 @@ class InstallEngine(
                 // as is the existence of any file: script.
                 val raw = manifest.programs.getValue(name).install.getValue(installKey)
                 val command = if (raw.startsWith(INSTALL_FILE_PREFIX)) {
-                    "sh '${raw.removePrefix(INSTALL_FILE_PREFIX)}'"
+                    // "file:path args..." -> sh 'path' args...  (path may not contain spaces)
+                    val spec = raw.removePrefix(INSTALL_FILE_PREFIX)
+                    val path = spec.substringBefore(' ')
+                    val args = spec.substringAfter(' ', "")
+                    "sh '$path'" + if (args.isNotEmpty()) " $args" else ""
                 } else {
                     raw
                 }

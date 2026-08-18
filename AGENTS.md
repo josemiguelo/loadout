@@ -94,7 +94,9 @@ These came from explicit user decisions; don't "improve" them away:
    (except `init` scaffolding).
 4. **Scripts: exactly one of `file` (repo path) or `run` (inline).** `file`
    existence is validated at manifest load (loadRepo, not parse). Program
-   install values may use the `file:` prefix for repo scripts — also validated.
+   install values may use the `file:` prefix for repo scripts — also validated;
+   tokens after the first space are passed as arguments (`file:path args…` →
+   `sh 'path' args…`), so file: paths cannot contain spaces.
 5. **Every manifest command runs via `sh -c` with the repo root as cwd** —
    installs, script runs, version checks, `check`s. Deterministic regardless of
    invocation directory.

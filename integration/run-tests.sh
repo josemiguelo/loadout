@@ -219,17 +219,18 @@ cat > filerepo/manifest.toml <<'EOF'
 command = "test -f installed-marker.txt && echo filetool 1.0"
 regex = "filetool ([0-9.]+)"
 [programs.filetool.install]
-script = "file:scripts/install-filetool.sh"
+script = "file:scripts/install-filetool.sh install"
 EOF
-# Writes relative to cwd — proves installs run from the repo root.
-printf '#!/bin/sh\necho done > installed-marker.txt\n' > filerepo/scripts/install-filetool.sh
+# Requires the "install" argument and writes relative to cwd — proves both
+# argument passing and repo-root cwd.
+printf '#!/bin/sh\n[ "${1:-}" = "install" ] || exit 9\necho done > installed-marker.txt\n' > filerepo/scripts/install-filetool.sh
 printf '[pm]\nfiletool = "script"\n' > filerepo/machines/m1.toml
 
 OUT=$("$BIN" --repo filerepo --machine m1 install --dry-run)
-echo "$OUT" | grep -q "sh 'scripts/install-filetool.sh'" || fail "file: value translated in plan"
+echo "$OUT" | grep -q "sh 'scripts/install-filetool.sh' install" || fail "file: value with args translated in plan"
 "$BIN" --repo filerepo --machine m1 install --yes >/dev/null || fail "file: install exits 0"
-[ -f filerepo/installed-marker.txt ] || fail "install ran with repo-root cwd"
-ok "file: install values run repo scripts from the repo root"
+[ -f filerepo/installed-marker.txt ] || fail "install ran with repo-root cwd and args"
+ok "file: install values run repo scripts with arguments from the repo root"
 
 rm filerepo/scripts/install-filetool.sh
 OUT=$("$BIN" --repo filerepo --machine m1 status 2>&1 || true)

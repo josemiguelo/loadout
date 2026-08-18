@@ -171,6 +171,26 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun fileInstallValueWithArgumentsValidatesOnlyThePath() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [programs.tool]
+                    [programs.tool.install]
+                    script = "file:scripts/tool.sh install --verbose"
+                """.trimIndent(),
+            ),
+        )
+        // Path token missing -> error names just the path, not the args.
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("file 'scripts/tool.sh' not found" in e.message.orEmpty())
+
+        fs.createDirectories(repo / "scripts")
+        fs.write(repo / "scripts" / "tool.sh") { writeUtf8("#!/bin/sh\n") }
+        ManifestLoader.loadRepo(fs, repo)
+    }
+
+    @Test
     fun minToolVersionIsEnforced() {
         val fs = fs(
             mapOf(

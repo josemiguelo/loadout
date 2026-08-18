@@ -106,7 +106,8 @@ object ManifestLoader {
         for ((name, program) in merged.programs) {
             for ((key, value) in program.install) {
                 if (value.startsWith(INSTALL_FILE_PREFIX)) {
-                    val file = value.removePrefix(INSTALL_FILE_PREFIX)
+                    // Anything after the first space is arguments, not path.
+                    val file = value.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
                     if (!fs.exists(repoRoot / file)) {
                         missingFiles += "  - programs.$name.install.$key: file '$file' not found in the repo"
                     }
