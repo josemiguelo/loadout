@@ -71,7 +71,7 @@ app/   loadout
   Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/install/run/diff/sync/init/tui)
+               one file per subcommand (status/show/install/run/diff/sync/init/tui)
   tui/         DashboardModel (ALL state + logic, no rendering, unit-tested) +
                TuiApp.kt (Mosaic composables only)
 ```

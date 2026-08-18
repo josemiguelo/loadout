@@ -69,7 +69,10 @@ Next steps:
 ```
 
 `init` refuses to overwrite an existing `manifest.toml`, and skips `git init` if
-you're already inside a repository.
+you're already inside a repository. The scaffold ships a ready-to-use `pkg`
+[template](#templates-many-packages-no-boilerplate) (dnf/apt/pacman/brew) as
+`manifest.d/00_pkg_template.toml`, so most programs are declared in 2–3 lines
+from day one while `manifest.toml` stays a minimal `[meta]`.
 
 All examples below assume you either `cd ~/machines`, pass `--repo ~/machines`,
 or `export LOADOUT_REPO=~/machines`.
@@ -179,15 +182,57 @@ description = "Logitech device manager"
 brew = "brew install solaar"           # merged per key on top of the template's table
 ```
 
-Every entry expands into a **full standalone program** at manifest load —
-individual status/diff rows, individual versions, individual machine mappings,
-identical validation. Explicit fields win over template fields; `version` is
-replaced whole; `install` tables merge per key. Templates are repo-unique
-(defining the same name twice is an error) and can live in fragments.
+**What expansion creates:** every entry becomes a full standalone program at
+manifest load, as if you had written it by hand. This three-line declaration:
+
+```toml
+[programs.solaar]
+template = "rpm"
+description = "Logitech device manager"
+```
+
+is exactly equivalent to — and is rewritten by the engine into — this:
+
+```toml
+[programs.solaar]
+description = "Logitech device manager"
+
+[programs.solaar.version]
+command = "solaar --version 2>/dev/null || rpm -q solaar"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+[programs.solaar.install]
+dnf = "sudo dnf install -y solaar"
+```
+
+Nothing downstream knows a template was involved: individual status/diff rows,
+individual versions, individual machine mappings, identical validation.
+Explicit fields win over template fields; `version` is replaced whole;
+`install` tables merge per key. Templates are repo-unique (defining the same
+name twice is an error) and can live in fragments.
 
 One shell footgun to know when writing template version commands: don't end
 them with a pipe (`... --version | head -1`) — a pipeline's exit code is the
 *last* command's, which would make missing programs look installed.
+
+#### Inspecting the expanded manifest: `show`
+
+`loadout show <name>...` prints any program or script **as the engine sees
+it** — templates resolved, every install key listed, this machine's mapped key
+marked, plus the last observed state:
+
+```console
+$ loadout show solaar
+program solaar  — Logitech device manager
+  version      solaar --version 2>/dev/null || rpm -q solaar  =~ /([0-9]+\.[0-9][0-9.]*)/
+  install.dnf  sudo dnf install -y solaar   <- laptop
+  install.apt  sudo apt-get install -y solaar
+  observed     installed 1.1.20  (state/laptop.json)
+```
+
+Use it whenever you're unsure what a `template = "..."` line produced, which
+command `install` would actually run, or why a mapping fails. (The TUI's `d`
+details pane shows the same data interactively.)
 
 ### 3. Map each machine to its install commands
 

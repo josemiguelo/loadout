@@ -19,18 +19,13 @@ private val STARTER_MANIFEST = """
     # machines running older binaries then refuse with an "upgrade" error:
     #min-tool-version = "0.1.0"
 
+    # A template-based program is 2-3 lines — the pattern lives in
+    # manifest.d/00_pkg_template.toml, and `loadout show ripgrep` prints what
+    # it expands to. Programs that don't fit a template are written in full
+    # form instead (see the README).
     [programs.ripgrep]
+    template = "pkg"
     description = "fast grep"
-
-    [programs.ripgrep.version]
-    command = "rg --version"
-    regex = "ripgrep ([0-9][0-9a-zA-Z.-]*)"
-
-    [programs.ripgrep.install]
-    brew = "brew install ripgrep"
-    dnf = "sudo dnf install -y ripgrep"
-    apt = "sudo apt-get install -y ripgrep"
-    pacman = "sudo pacman -S --noconfirm ripgrep"
 
     # Scripts run after installs; `check` exiting 0 means "already done".
     # Use `file` for a script in the repo (validated to exist) or `run` for
@@ -42,6 +37,25 @@ private val STARTER_MANIFEST = """
     # Every machine must map each program to one of its install keys in its
     # own machines/<name>.toml file — installing fails for unmapped programs.
     # Large manifests can also be split into manifest.d/*.toml fragments.
+""".trimIndent() + "\n"
+
+private val STARTER_TEMPLATE = """
+    # Reusable pattern for standard native packages: {name} is substituted
+    # with the program name at manifest load. Programs opt in with
+    # template = "pkg"; each machine's machines/<name>.toml picks which
+    # install key it uses.
+    [templates.pkg.version]
+    # Version oracle chain: the tool itself, then each package database in
+    # turn; absent managers fall through. No trailing pipes — a pipeline's
+    # exit code would make missing programs look installed.
+    command = "{name} --version 2>/dev/null || rpm -q {name} 2>/dev/null || dpkg-query -W {name} 2>/dev/null || brew list --versions {name} 2>/dev/null"
+    regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+    [templates.pkg.install]
+    dnf = "sudo dnf install -y {name}"
+    apt = "sudo apt-get install -y {name}"
+    pacman = "sudo pacman -S --noconfirm {name}"
+    brew = "brew install {name}"
 """.trimIndent() + "\n"
 
 private val STARTER_MACHINE = """
@@ -94,7 +108,9 @@ class InitCommand : CliktCommand(name = "init") {
         app.fs.write(root / "state" / ".gitkeep") { }
         app.fs.write(root / "machines" / "example.toml.sample") { writeUtf8(STARTER_MACHINE) }
         app.fs.write(root / "manifest.d" / "example.toml.sample") { writeUtf8(STARTER_FRAGMENT) }
+        app.fs.write(root / "manifest.d" / "00_pkg_template.toml") { writeUtf8(STARTER_TEMPLATE) }
         echo("Created $manifestPath")
+        echo("Created ${root / "manifest.d" / "00_pkg_template.toml"} (the pkg template)")
         echo("Created ${root / "scripts"}/")
         echo("Created ${root / "state"}/")
         echo("Created ${root / "machines"}/ (rename example.toml.sample to <your-machine>.toml)")

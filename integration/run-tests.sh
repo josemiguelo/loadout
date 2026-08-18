@@ -20,6 +20,7 @@ cd "$WORK"
 [ -d repo/scripts ] && [ -d repo/state ] && [ -d repo/machines ] && [ -d repo/manifest.d ] || fail "init creates dirs"
 [ -f repo/machines/example.toml.sample ] || fail "init creates machine example"
 [ -f repo/manifest.d/example.toml.sample ] || fail "init creates fragment example"
+[ -f repo/manifest.d/00_pkg_template.toml ] || fail "init creates the pkg template fragment"
 # .sample files must not be picked up by the loader
 "$BIN" --repo repo status >/dev/null || fail "samples must not break loading"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -259,6 +260,15 @@ printf '[pm]\ntool = "brew"\n' > pmrepo/machines/m1.toml
 OUT=$("$BIN" --repo pmrepo status 2>&1 || true)
 echo "$OUT" | grep -q "no 'brew' entry" || fail "bad-mapping validation message"
 ok "manifest rejects mappings to nonexistent install keys"
+
+# --- show ---------------------------------------------------------------
+OUT=$("$BIN" --repo repo --machine m1 show git marker)
+echo "$OUT" | grep -q "program git" || fail "show prints the program"
+echo "$OUT" | grep -qE "install\.manual +echo install git yourself && false +<- m1" || fail "show marks this machine's mapped key"
+echo "$OUT" | grep -q "script marker" || fail "show prints the script"
+echo "$OUT" | grep -qE "file +scripts/marker.sh" || fail "show prints the script file"
+"$BIN" --repo repo show ghost-name >/dev/null 2>&1 && fail "show of unknown name should fail" || true
+ok "show prints expanded programs and scripts"
 
 # --- versioning ---------------------------------------------------------
 mkdir -p verrepo/state

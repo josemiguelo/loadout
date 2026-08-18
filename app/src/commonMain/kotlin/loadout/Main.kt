@@ -8,6 +8,7 @@ import loadout.cli.InitCommand
 import loadout.cli.InstallCommand
 import loadout.cli.RootCommand
 import loadout.cli.RunCommand
+import loadout.cli.ShowCommand
 import loadout.cli.StatusCommand
 import loadout.cli.SyncCommand
 import loadout.cli.TuiCommand
@@ -40,6 +41,7 @@ fun main(args: Array<String>) {
         RootCommand()
             .subcommands(
                 StatusCommand(),
+                ShowCommand(),
                 InstallCommand(),
                 RunCommand(),
                 DiffCommand(),
