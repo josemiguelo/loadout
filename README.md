@@ -165,15 +165,17 @@ regex = "rustup ([0-9.]+)"
 | probe   | `probe` | `probe`        | no probe        |
 
 When install logic outgrows a one-liner, put it in a repo script and reference
-it with the **`file:`** prefix in `command` — the file's existence is validated
-on every manifest load, exactly like a `[scripts.*]` `file`. Anything after the
-first space is passed to the script as arguments (so one script can serve
-several roles); the path itself therefore can't contain spaces:
+it with the **`file:`** prefix — the file's existence is validated on every
+manifest load, exactly like a `[scripts.*]` `file`. It works in `command` and
+in every check command (variant `check`, program `[version]`, script `check`)
+alike. Anything after the first space is passed to the script as arguments (so
+one script can serve several roles); the path itself therefore can't contain
+spaces:
 
 ```toml
 [programs.dev-deps.install.dnf]
 command = "file:scripts/dev-deps.sh install"   # runs: sh 'scripts/dev-deps.sh' install
-check = "sh scripts/dev-deps.sh check"         # plain command — file: isn't needed here
+check = "file:scripts/dev-deps.sh check"       # runs: sh 'scripts/dev-deps.sh' check
 ```
 
 Which key a given machine uses is decided by that machine's mapping — the next
@@ -772,9 +774,9 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 86 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 89 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
-$ ./integration/run-tests.sh       # 31 black-box tests driving the real binary
+$ ./integration/run-tests.sh       # 32 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
 ```

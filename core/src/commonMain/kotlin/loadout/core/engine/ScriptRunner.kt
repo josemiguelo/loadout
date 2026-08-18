@@ -5,6 +5,7 @@ import loadout.core.model.OsFamily
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.ScriptStep
+import loadout.core.model.expandFilePrefix
 import loadout.core.platform.nowIso
 import okio.Path
 
@@ -23,9 +24,14 @@ class ScriptRunner(
     private val repoRoot: Path,
 ) {
     companion object {
-        /** Give [command] the machine's script arguments as positional parameters. */
-        fun withArgs(command: String, args: String): String =
-            if (args.isEmpty()) command else "set -- $args; $command"
+        /**
+         * Give [command] (a check, `file:` prefix allowed) the machine's
+         * script arguments as positional parameters.
+         */
+        fun withArgs(command: String, args: String): String {
+            val expanded = expandFilePrefix(command)
+            return if (args.isEmpty()) expanded else "set -- $args; $expanded"
+        }
     }
 
     /**

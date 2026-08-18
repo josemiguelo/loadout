@@ -282,6 +282,21 @@ OUT=$("$BIN" --repo filerepo --machine m1 status 2>&1 || true)
 echo "$OUT" | grep -q "file 'scripts/install-filetool.sh' not found" || fail "missing file: script should error at load"
 ok "missing file: install script is caught at manifest load"
 
+# file: works in check commands too, and missing check files fail at load.
+cat > filerepo/manifest.toml <<'TOML'
+[programs.filetool]
+[programs.filetool.install.script]
+command = "true"
+check = "file:scripts/check-filetool.sh"
+regex = "(done)"
+TOML
+OUT=$("$BIN" --repo filerepo --machine m1 status 2>&1 || true)
+echo "$OUT" | grep -q "file 'scripts/check-filetool.sh' not found" || fail "missing file: check should error at load"
+printf '#!/bin/sh\necho done\n' > filerepo/scripts/check-filetool.sh
+"$BIN" --repo filerepo --machine m1 status >/dev/null || fail "file: check runs"
+grep -q '"version": "done"' filerepo/state/m1.json || fail "file: check observed"
+ok "file: works in check commands and is validated at load"
+
 # Script file that doesn't exist -> caught at manifest load.
 cp repo/manifest.toml repo/manifest.toml.bak
 cat >> repo/manifest.toml <<'EOF'

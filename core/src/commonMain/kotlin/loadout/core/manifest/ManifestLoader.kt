@@ -134,20 +134,28 @@ object ManifestLoader {
 
         // Referenced files can only be checked against the actual repo, not in parse().
         val missingFiles = mutableListOf<String>()
+        fun requireFile(command: String?, label: String) {
+            if (command == null || !command.startsWith(INSTALL_FILE_PREFIX)) return
+            // Anything after the first space is arguments, not path.
+            val file = command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
+            if (!fs.exists(repoRoot / file)) {
+                missingFiles += "  - $label: file '$file' not found in the repo"
+            }
+        }
         for ((name, script) in merged.scripts) {
             if (script.file != null && !fs.exists(repoRoot / script.file!!)) {
                 missingFiles += "  - scripts.$name: file '${script.file}' not found in the repo"
             }
+            requireFile(script.check, "scripts.$name.check")
         }
         for ((name, program) in merged.programs) {
+            requireFile(program.version?.command, "programs.$name.version")
             for (key in program.install.keys) {
-                val command = merged.resolveInstall(name, key).command ?: continue
-                if (command.startsWith(INSTALL_FILE_PREFIX)) {
-                    // Anything after the first space is arguments, not path.
-                    val file = command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
-                    if (!fs.exists(repoRoot / file)) {
-                        missingFiles += "  - programs.$name.install.$key: file '$file' not found in the repo"
-                    }
+                val resolved = merged.resolveInstall(name, key)
+                requireFile(resolved.command, "programs.$name.install.$key")
+                // The version fallback is already validated once above.
+                if (resolved.check != program.version) {
+                    requireFile(resolved.check?.command, "programs.$name.install.$key check")
                 }
             }
         }

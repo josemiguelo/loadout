@@ -33,6 +33,15 @@ class ScriptRunnerTest {
     }
 
     @Test
+    fun fileCheckExpandsToShAndKeepsArgs() {
+        val fake = FakeProcessRunner()
+        fake.onCommand("set -- fedora; sh 'scripts/x.sh' check")
+        val step = ScriptStep(file = "scripts/x.sh", check = "file:scripts/x.sh check")
+        val outcome = runner(fake).run(step, OsFamily.LINUX, args = "fedora")
+        assertIs<ScriptOutcome.AlreadyDone>(outcome)
+    }
+
+    @Test
     fun forceIgnoresCheck() {
         val fake = FakeProcessRunner()
         fake.onCommand("test -d \$HOME/.dotfiles")

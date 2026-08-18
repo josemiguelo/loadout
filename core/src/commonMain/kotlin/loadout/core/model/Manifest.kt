@@ -138,10 +138,21 @@ data class Meta(
 )
 
 /**
- * Install commands starting with this prefix name a script file relative to the
- * repo root (validated to exist at manifest load) instead of an inline command.
+ * Commands starting with this prefix (install variant `command`s and any
+ * check command) name a script file relative to the repo root — validated to
+ * exist at manifest load — instead of an inline command. Tokens after the
+ * first space are arguments, so the path itself can't contain spaces.
  */
 const val INSTALL_FILE_PREFIX: String = "file:"
+
+/** Expand a `file:path args…` command to `sh 'path' args…`; others pass through. */
+fun expandFilePrefix(command: String): String {
+    if (!command.startsWith(INSTALL_FILE_PREFIX)) return command
+    val spec = command.removePrefix(INSTALL_FILE_PREFIX)
+    val path = spec.substringBefore(' ')
+    val args = spec.substringAfter(' ', "")
+    return "sh '$path'" + if (args.isNotEmpty()) " $args" else ""
+}
 
 @Serializable
 data class Program(

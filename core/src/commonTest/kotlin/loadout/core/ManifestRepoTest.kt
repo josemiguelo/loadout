@@ -206,6 +206,33 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun fileCheckCommandsMustExistInRepo() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [programs.tool]
+                    [programs.tool.install.script]
+                    command = "true"
+                    check = "file:scripts/tool-check.sh check"
+                    regex = "([0-9.]+)"
+
+                    [scripts.setup]
+                    run = "true"
+                    check = "file:scripts/setup.sh check"
+                """.trimIndent(),
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("programs.tool.install.script check: file 'scripts/tool-check.sh' not found" in e.message.orEmpty())
+        assertTrue("scripts.setup.check: file 'scripts/setup.sh' not found" in e.message.orEmpty())
+
+        fs.createDirectories(repo / "scripts")
+        fs.write(repo / "scripts" / "tool-check.sh") { writeUtf8("#!/bin/sh\n") }
+        fs.write(repo / "scripts" / "setup.sh") { writeUtf8("#!/bin/sh\n") }
+        ManifestLoader.loadRepo(fs, repo)
+    }
+
+    @Test
     fun fileInstallValueWithArgumentsValidatesOnlyThePath() {
         val fs = fs(
             mapOf(

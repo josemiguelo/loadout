@@ -2,9 +2,9 @@ package loadout.core.engine
 
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
-import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramState
+import loadout.core.model.expandFilePrefix
 import loadout.core.model.ProgramStatus
 import okio.Path
 
@@ -84,16 +84,7 @@ class InstallEngine(
                 // Key existence and command resolvability are validated at
                 // manifest load, as is the existence of any file: script.
                 val raw = manifest.resolveInstall(name, installKey).command!!
-                val command = if (raw.startsWith(INSTALL_FILE_PREFIX)) {
-                    // "file:path args..." -> sh 'path' args...  (path may not contain spaces)
-                    val spec = raw.removePrefix(INSTALL_FILE_PREFIX)
-                    val path = spec.substringBefore(' ')
-                    val args = spec.substringAfter(' ', "")
-                    "sh '$path'" + if (args.isNotEmpty()) " $args" else ""
-                } else {
-                    raw
-                }
-                items += PlanItem.Install(name, installKey, command)
+                items += PlanItem.Install(name, installKey, expandFilePrefix(raw))
             }
         }
 

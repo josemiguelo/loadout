@@ -43,6 +43,14 @@ class VersionCheckerTest {
     }
 
     @Test
+    fun fileCheckCommandsRunAsRepoScripts() {
+        val runner = FakeProcessRunner()
+        runner.onCommand("sh 'scripts/ver.sh' check", stdout = "tool 2.0")
+        val state = VersionChecker(runner).check(VersionCheck("file:scripts/ver.sh check", "tool ([0-9.]+)"))
+        assertEquals("2.0", state.version)
+    }
+
+    @Test
     fun readsVersionFromStderrWhenStdoutEmpty() {
         val runner = FakeProcessRunner()
         runner.onCommand("rg --version", stderr = "ripgrep 13.0.0")

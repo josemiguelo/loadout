@@ -3,6 +3,7 @@ package loadout.core.engine
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.ProgramState
 import loadout.core.model.VersionCheck
+import loadout.core.model.expandFilePrefix
 import loadout.core.model.ProgramStatus
 import loadout.core.platform.blockingDispatcher
 import kotlinx.coroutines.async
@@ -25,7 +26,7 @@ class VersionChecker(
      */
     fun check(versionCheck: VersionCheck?): ProgramState {
         if (versionCheck == null) return ProgramState(ProgramStatus.UNKNOWN)
-        val result = runner.capture(versionCheck.command, workDir)
+        val result = runner.capture(expandFilePrefix(versionCheck.command), workDir)
         if (!result.success) return ProgramState(ProgramStatus.MISSING)
 
         val output = result.stdout.ifBlank { result.stderr }
