@@ -310,6 +310,19 @@ manifest.d/
 └── desktop.toml         # [programs.1password], [scripts.gnome-settings], ...
 ```
 
+Fragments can be nested in **subfolders to any depth** — the folder structure
+is purely organizational (merge order is by full path, and error messages name
+the full path):
+
+```
+manifest.d/
+├── 00_pkg_template.toml
+├── dev/
+│   ├── editors.toml
+│   └── toolchain.toml
+└── apps/office.toml
+```
+
 Fragments use exactly the same syntax as the manifest and are merged into it
 before validation, so cross-file references (a program in one fragment
 depending on a program in another, a machine file mapping them) all work.
@@ -746,7 +759,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 73 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 76 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
 $ ./integration/run-tests.sh       # 30 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync

@@ -55,7 +55,7 @@ macosArm64 — macosX64 is deprecated upstream but kept). Compose plugin only on
 ```
 core/  loadout.core
   model/       Manifest, MachineState, System (@Serializable schemas + PackageManager enum)
-  manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d/*.toml
+  manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d (recursive, subfolders cosmetic)
                + machines/*.toml, validates everything; parse() is single-doc, TEST-ONLY
   state/       StateStore — state/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL process

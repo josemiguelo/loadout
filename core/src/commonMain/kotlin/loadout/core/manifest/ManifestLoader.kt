@@ -64,28 +64,31 @@ object ManifestLoader {
 
         val templates = root.templates.toMutableMap()
 
-        for (path in tomlFiles(fs, repoRoot / FRAGMENTS_DIR)) {
-            val fragment = parseRaw(fs.read(path) { readUtf8() }, "$FRAGMENTS_DIR/${path.name}")
+        // Fragments may be organized into arbitrary subfolders; the folder
+        // structure is purely cosmetic. Deterministic order: sorted by path.
+        for (path in fragmentFiles(fs, repoRoot)) {
+            val label = path.toString().removePrefix(repoRoot.toString()).trimStart('/')
+            val fragment = parseRaw(fs.read(path) { readUtf8() }, label)
             if (fragment.meta != Meta()) {
-                errors += "$FRAGMENTS_DIR/${path.name}: [meta] is only allowed in $manifestName"
+                errors += "$label: [meta] is only allowed in $manifestName"
             }
             if (fragment.machines.isNotEmpty()) {
-                errors += "$FRAGMENTS_DIR/${path.name}: [machines.*] sections are not allowed; " +
+                errors += "$label: [machines.*] sections are not allowed; " +
                     "machine configs live in $MACHINES_DIR/<name>.toml"
             }
             for ((name, program) in fragment.programs) {
                 if (programs.put(name, program) != null) {
-                    errors += "duplicate program '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
+                    errors += "duplicate program '$name' (redefined in $label)"
                 }
             }
             for ((name, script) in fragment.scripts) {
                 if (scripts.put(name, script) != null) {
-                    errors += "duplicate script '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
+                    errors += "duplicate script '$name' (redefined in $label)"
                 }
             }
             for ((name, template) in fragment.templates) {
                 if (templates.put(name, template) != null) {
-                    errors += "duplicate template '$name' (redefined in $FRAGMENTS_DIR/${path.name})"
+                    errors += "duplicate template '$name' (redefined in $label)"
                 }
             }
         }
@@ -95,7 +98,13 @@ object ManifestLoader {
             machines[name] = try {
                 toml.decodeFromString<MachineConfig>(fs.read(path) { readUtf8() })
             } catch (e: Exception) {
-                throw ManifestException("Failed to parse $MACHINES_DIR/${path.name}: ${e.message}")
+                val hint = if (e.message?.contains("Cannot decode the key [scripts]") == true) {
+                    "\nhint: the top-level `scripts = [...]` array must appear ABOVE any table " +
+                        "header like [pm] — TOML assigns later top-level keys to the preceding table"
+                } else {
+                    ""
+                }
+                throw ManifestException("Failed to parse $MACHINES_DIR/${path.name}: ${e.message}$hint")
             }
         }
 
@@ -230,6 +239,16 @@ object ManifestLoader {
         } else {
             emptyList()
         }
+
+    /** All fragment files under manifest.d, any folder depth, path-sorted. */
+    private fun fragmentFiles(fs: FileSystem, repoRoot: Path): List<Path> {
+        val dir = repoRoot / FRAGMENTS_DIR
+        if (!fs.exists(dir)) return emptyList()
+        return fs.listRecursively(dir)
+            .filter { it.name.endsWith(".toml") && fs.metadataOrNull(it)?.isRegularFile == true }
+            .sortedBy { it.toString() }
+            .toList()
+    }
 
     private fun validate(manifest: Manifest) {
         val errors = mutableListOf<String>()

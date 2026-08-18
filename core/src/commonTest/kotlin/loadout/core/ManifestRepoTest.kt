@@ -61,6 +61,41 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun fragmentsInSubfoldersAreMerged() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to "[meta]\nname = \"nested\"",
+                "manifest.d/dev/editors/kitty.toml" to """
+                    [programs.kitty]
+                    [programs.kitty.install]
+                    dnf = "sudo dnf install -y kitty"
+                """.trimIndent(),
+                "manifest.d/media.toml" to """
+                    [programs.vlc]
+                    [programs.vlc.install]
+                    dnf = "sudo dnf install -y vlc"
+                """.trimIndent(),
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        assertEquals(setOf("kitty", "vlc"), manifest.programs.keys)
+    }
+
+    @Test
+    fun duplicateAcrossSubfoldersNamesTheFullPath() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to "[meta]\nname = \"nested\"",
+                "manifest.d/a/tool.toml" to "[programs.tool]\n[programs.tool.install]\ndnf = \"x\"",
+                "manifest.d/b/tool.toml" to "[programs.tool]\n[programs.tool.install]\ndnf = \"y\"",
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("duplicate program 'tool'" in e.message.orEmpty())
+        assertTrue("manifest.d/b/tool.toml" in e.message.orEmpty())
+    }
+
+    @Test
     fun duplicateProgramAcrossFragmentsFails() {
         val fs = fs(
             mapOf(
@@ -218,6 +253,21 @@ class ManifestRepoTest {
         val manifest = ManifestLoader.loadRepo(fs, repo)
         assertEquals("rpm -q vlc", manifest.programs.getValue("vlc").version?.command)
         assertEquals("sudo dnf install -y okular", manifest.programs.getValue("okular").install["dnf"])
+    }
+
+    @Test
+    fun scriptsArrayAfterPmTableGetsPlacementHint() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to "[scripts.s]\nrun = \"echo hi\"",
+                "machines/m.toml" to """
+                    [pm]
+                    scripts = ["s"]
+                """.trimIndent(),
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("hint: the top-level `scripts = [...]` array must appear ABOVE" in e.message.orEmpty())
     }
 
     @Test
