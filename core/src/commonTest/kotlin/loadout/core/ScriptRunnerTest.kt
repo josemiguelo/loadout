@@ -56,6 +56,27 @@ class ScriptRunnerTest {
     }
 
     @Test
+    fun argsReachFileScriptAndCheck() {
+        val fake = FakeProcessRunner()
+        // Check receives args as positional params via `set --`; fails -> script runs.
+        fake.onCommand("set -- fedora; test -f \$HOME/.ssh/\$1", exitCode = 1)
+        fake.onCommand("sh 'scripts/setup-ssh.sh' fedora")
+
+        val step = ScriptStep(file = "scripts/setup-ssh.sh", check = "test -f \$HOME/.ssh/\$1")
+        val outcome = runner(fake).run(step, OsFamily.LINUX, args = "fedora")
+        assertIs<ScriptOutcome.Ran>(outcome)
+        assertTrue("sh 'scripts/setup-ssh.sh' fedora" in fake.executed)
+    }
+
+    @Test
+    fun argsCheckPassingSkipsRun() {
+        val fake = FakeProcessRunner()
+        fake.onCommand("set -- fedora; test -f \$HOME/.ssh/\$1", exitCode = 0)
+        val step = ScriptStep(file = "scripts/setup-ssh.sh", check = "test -f \$HOME/.ssh/\$1")
+        assertIs<ScriptOutcome.AlreadyDone>(runner(fake).run(step, OsFamily.LINUX, args = "fedora"))
+    }
+
+    @Test
     fun recordsFailure() {
         val fake = FakeProcessRunner()
         fake.onCommand("false", exitCode = 1)

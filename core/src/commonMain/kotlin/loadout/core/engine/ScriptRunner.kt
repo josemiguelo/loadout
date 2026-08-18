@@ -22,26 +22,36 @@ class ScriptRunner(
     private val runner: ProcessRunner,
     private val repoRoot: Path,
 ) {
+    companion object {
+        /** Give [command] the machine's script arguments as positional parameters. */
+        fun withArgs(command: String, args: String): String =
+            if (args.isEmpty()) command else "set -- $args; $command"
+    }
+
     /**
      * [captureOutput] runs the script with captured (not inherited) stdio and
      * returns it in [ScriptOutcome.Ran.output] — for UIs that own the terminal.
+     * [args] is the machine's argument string; it reaches both the `check`
+     * (as positional parameters) and a `file` script's argv.
      */
     fun run(
         step: ScriptStep,
         os: OsFamily,
         force: Boolean = false,
         captureOutput: Boolean = false,
+        args: String = "",
     ): ScriptOutcome {
         if (!step.appliesTo(os)) return ScriptOutcome.NotApplicable
 
         if (!force && step.check != null) {
-            if (runner.capture(step.check, workDir = repoRoot.toString()).success) {
+            if (runner.capture(withArgs(step.check!!, args), workDir = repoRoot.toString()).success) {
                 return ScriptOutcome.AlreadyDone
             }
         }
 
-        // Validation guarantees exactly one of file/run is set.
-        val command = step.file?.let { "sh '$it'" } ?: step.run!!
+        // Validation guarantees exactly one of file/run is set, and that args
+        // are only used with file scripts.
+        val command = step.file?.let { "sh '$it'" + if (args.isEmpty()) "" else " $args" } ?: step.run!!
         val workDir = repoRoot.toString()
         val (exitCode, output) = if (captureOutput) {
             val result = runner.capture(command, workDir)

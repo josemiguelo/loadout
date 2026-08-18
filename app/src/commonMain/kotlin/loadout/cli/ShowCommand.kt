@@ -64,6 +64,12 @@ class ShowCommand : CliktCommand(name = "show") {
                     script.check?.let { rows += "check" to it }
                     if (script.os.isNotEmpty()) rows += "os" to script.os.joinToString()
                     if (script.after.isNotEmpty()) rows += "after" to script.after.joinToString()
+                    val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
+                    rows += "enabled" to when {
+                        enabled == null -> "no — add it to the scripts list in machines/${system.machine}.toml"
+                        enabled.isEmpty() -> "yes (${system.machine})"
+                        else -> "yes (${system.machine}, args: $enabled)"
+                    }
                     state?.scripts?.get(name)?.let {
                         val status = when (it.status) {
                             ScriptStatus.DONE -> "done"

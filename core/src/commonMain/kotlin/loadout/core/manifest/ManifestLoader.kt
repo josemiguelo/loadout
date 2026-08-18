@@ -265,6 +265,19 @@ object ManifestLoader {
         }
 
         for ((machine, config) in manifest.machines) {
+            val scriptNames = config.scripts.map { it.substringBefore(' ') }
+            scriptNames.groupBy { it }.filterValues { it.size > 1 }.keys.forEach { dup ->
+                errors += "$MACHINES_DIR/$machine.toml lists script '$dup' more than once"
+            }
+            for ((scriptName, args) in config.scriptArgs()) {
+                val script = manifest.scripts[scriptName]
+                if (script == null) {
+                    errors += "$MACHINES_DIR/$machine.toml scripts references unknown script '$scriptName'"
+                } else if (args.isNotEmpty() && script.file == null) {
+                    errors += "$MACHINES_DIR/$machine.toml passes arguments to script '$scriptName', " +
+                        "which is an inline `run` script — arguments require a `file` script"
+                }
+            }
             for ((programName, installKey) in config.pm) {
                 val program = manifest.programs[programName]
                 if (program == null) {

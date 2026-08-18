@@ -50,7 +50,8 @@ manual = "echo install git yourself && false"
 file = "scripts/marker.sh"
 check = "test -f marker.txt"
 EOF
-printf '[pm]\ngit = "manual"\n' > repo/machines/m1.toml
+printf 'scripts = ["marker"]\n\n[pm]\ngit = "manual"\n' > repo/machines/m1.toml
+# m2 deliberately does NOT opt into any scripts.
 printf '[pm]\ngit = "manual"\n' > repo/machines/m2.toml
 printf '#!/bin/sh\necho created > marker.txt\n' > repo/scripts/marker.sh
 
@@ -91,6 +92,35 @@ ok "run respects the check gate"
 OUT=$("$BIN" --repo repo --machine m1 run marker --force)
 echo "$OUT" | grep -q "ran marker" || fail "--force reruns"
 ok "run --force ignores the check gate"
+
+# m2 never opted into the marker script.
+"$BIN" --repo repo --machine m2 run marker >/dev/null 2>&1 && fail "run without opt-in should fail" || true
+OUT=$("$BIN" --repo repo --machine m2 run marker 2>&1 || true)
+echo "$OUT" | grep -q "not enabled for machine 'm2'" || fail "not-enabled error message"
+grep -q '"marker"' repo/state/m2.json && fail "m2 must not observe un-opted script" || true
+ok "scripts are opt-in per machine"
+
+# Arguments flow to file scripts and their checks as positional params.
+printf '#!/bin/sh\necho "$1" > arg-marker.txt\n' > repo/scripts/argscript.sh
+cat >> repo/manifest.toml <<'EOF'
+
+[scripts.argscript]
+file = "scripts/argscript.sh"
+check = "test -f arg-marker.txt && grep -qx $1 arg-marker.txt"
+EOF
+printf 'scripts = ["argscript fedora"]\n\n[pm]\ngit = "manual"\n' > repo/machines/m2.toml
+"$BIN" --repo repo --machine m2 run argscript >/dev/null || fail "run with args exits 0"
+grep -qx "fedora" repo/arg-marker.txt || fail "argument reached the script"
+OUT=$("$BIN" --repo repo --machine m2 run argscript)
+echo "$OUT" | grep -q "already done" || fail "check with args should pass after run"
+rm repo/arg-marker.txt repo/scripts/argscript.sh
+python3 - <<'PYCLEAN' 2>/dev/null || sed -i '/argscript/d' repo/manifest.toml
+import pathlib
+m = pathlib.Path("repo/manifest.toml")
+m.write_text(m.read_text().split("[scripts.argscript]")[0].rstrip() + "\n")
+PYCLEAN
+printf '[pm]\ngit = "manual"\n' > repo/machines/m2.toml
+ok "script arguments reach the file script and its check"
 
 # --- install runs eligible scripts --------------------------------------
 rm repo/marker.txt

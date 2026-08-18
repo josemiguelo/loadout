@@ -26,7 +26,8 @@ class StatusEngine(
      * - check exits 0 -> done (whether or not the tool ever ran it)
      * - check fails   -> pending (even right after a run — the check is the truth)
      * - no check      -> only actual run history can be recorded
-     * Scripts whose os filter excludes this machine are absent from the state.
+     * Only scripts this machine opted into (its `[scripts]` table) are
+     * observed; the os filter applies on top.
      */
     suspend fun refresh(
         manifest: Manifest,
@@ -34,12 +35,15 @@ class StatusEngine(
         previous: MachineState?,
         scriptRuns: Map<String, ScriptState> = emptyMap(),
     ): MachineState {
+        val enabled = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         val scripts = mutableMapOf<String, ScriptState>()
-        for ((name, step) in manifest.scripts) {
+        for ((name, args) in enabled) {
+            val step = manifest.scripts[name] ?: continue
             if (!step.appliesTo(system.os)) continue
             val history = scriptRuns[name] ?: previous?.scripts?.get(name)
             if (step.check != null) {
-                val done = runner.capture(step.check, workDir = repoRoot.toString()).success
+                val check = ScriptRunner.withArgs(step.check!!, args)
+                val done = runner.capture(check, workDir = repoRoot.toString()).success
                 scripts[name] = ScriptState(
                     status = if (done) ScriptStatus.DONE else ScriptStatus.PENDING,
                     lastRun = history?.lastRun,

@@ -124,7 +124,15 @@ These came from explicit user decisions; don't "improve" them away:
     expanded programs are indistinguishable from hand-written ones, and every
     downstream feature must keep treating them that way. Template names are
     repo-unique; fragments may define them.
-12. **Versioning contract.** Manifest format evolves ADDITIVELY only (new
+12. **Scripts are opt-in per machine**: a machine's top-level `scripts` list
+    (in machines/<name>.toml, ABOVE any table header) has entries "name" or
+    "name args..." parsed by MachineConfig.scriptArgs(); only opted-in
+    scripts converge and are observed, `run` errors otherwise, and args become
+    positional params for the file script AND its check (via `set --` — see
+    ScriptRunner.withArgs). Args on inline `run` scripts are a validation
+    error. No implicit script application; no os/bootc auto-detection to
+    decide membership.
+13. **Versioning contract.** Manifest format evolves ADDITIVELY only (new
     optional fields; never repurpose existing ones). `[meta] min-tool-version`
     is enforced at loadRepo — repos requiring newer features declare their
     floor and old binaries refuse with an "upgrade loadout" error. State files

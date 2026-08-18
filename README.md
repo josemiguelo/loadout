@@ -259,9 +259,11 @@ rustup = "script"
 1password = "script-ubuntu"
 ```
 
-These files are the *only* place machine configs may live — a `[machines.*]`
-section in `manifest.toml` (or a fragment) is a validation error, so there is
-exactly one spot to look for any machine's setup. Provisioning a machine that
+Machine files also declare which scripts the machine runs (see the
+[scripts opt-in](#4-describe-a-setup-script) — a `[scripts]` table next to
+`[pm]`). These files are the *only* place machine configs may live — a
+`[machines.*]` section in `manifest.toml` (or a fragment) is a validation
+error, so there is exactly one spot to look for any machine's setup. Provisioning a machine that
 resembles an existing one starts with `cp machines/laptop.toml machines/new.toml`.
 
 This is strict by design — `install` refuses to run (before executing anything)
@@ -338,6 +340,26 @@ run = "sudo systemctl enable --now fstrim.timer"   # inline command instead
 check = "systemctl is-enabled fstrim.timer"
 ```
 
+- **Scripts run only on machines that opt in.** Each machine's
+  `machines/<name>.toml` lists its scripts as a top-level array — one entry
+  per script, arguments inline after the name:
+
+  ```toml
+  scripts = [
+    "dotfiles",              # opted in, no arguments
+    "setup-ssh fedora",      # rest of the entry becomes $1, $2… in the script AND its check
+  ]
+
+  [pm]
+  # ... (keep `scripts` above any table header — TOML puts later top-level
+  #      keys inside the preceding table)
+  ```
+
+  A script no machine opts into runs nowhere; `run <name>` on a machine that
+  hasn't opted in is an error naming the fix. Arguments are only valid for
+  `file` scripts (validated at manifest load, as are unknown names and
+  duplicates). This mirrors the program mapping: every behavior a machine
+  gets is declared in its machine file.
 - Exactly one of **`file`** or **`run`** per script — never both, never neither:
   - `file` is a path relative to the repo root, executed as `sh '<path>'` with
     the repo root as working directory. **Its existence is validated on every
@@ -717,9 +739,9 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 69 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 73 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
-$ ./integration/run-tests.sh       # 27 black-box tests driving the real binary
+$ ./integration/run-tests.sh       # 30 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
 ```

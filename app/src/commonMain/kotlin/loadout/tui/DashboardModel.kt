@@ -214,6 +214,14 @@ class DashboardModel(private val app: AppContext) {
     private suspend fun prepareSelected() {
         val row = state.selectedRow ?: run { state = state.copy(mode = Mode.NORMAL); return }
         if (row.isScript) {
+            val enabled = manifest?.machines?.get(state.machine)?.scriptArgs()?.containsKey(row.name) == true
+            if (!enabled) {
+                state = state.copy(
+                    mode = Mode.NORMAL,
+                    message = "script '${row.name}' is not enabled for ${state.machine} (scripts list in machines/${state.machine}.toml)",
+                )
+                return
+            }
             pendingScript = row.name
             state = state.copy(mode = Mode.CONFIRM_SCRIPT, confirmText = "run script '${row.name}'? [y/n]")
         } else {
@@ -267,7 +275,8 @@ class DashboardModel(private val app: AppContext) {
         pendingScript = null
         val step = m.scripts.getValue(name)
         val system = app.detectSystem()
-        val outcome = ScriptRunner(app.runner, app.repoRoot).run(step, system.os, captureOutput = true)
+        val args = m.machines[system.machine]?.scriptArgs()?.get(name).orEmpty()
+        val outcome = ScriptRunner(app.runner, app.repoRoot).run(step, system.os, captureOutput = true, args = args)
         val message = when (outcome) {
             ScriptOutcome.NotApplicable -> "script '$name' does not apply to ${system.os.id}"
             ScriptOutcome.AlreadyDone -> "script '$name' already done (check passed)"

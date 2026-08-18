@@ -35,6 +35,13 @@ class StatusEngineTest {
 
         [scripts.uncheckable]
         run = "echo once"
+
+        [scripts.not-opted-in]
+        run = "echo never"
+        check = "true"
+
+        [machines.laptop]
+        scripts = ["dotfiles", "mac-only", "uncheckable"]
         """.trimIndent(),
     )
 
@@ -64,6 +71,12 @@ class StatusEngineTest {
     fun osFilteredScriptIsAbsent() = runTest {
         val state = engine(FakeProcessRunner()).refresh(manifest, system, previous = null)
         assertFalse("mac-only" in state.scripts)
+    }
+
+    @Test
+    fun scriptsWithoutOptInAreNotObserved() = runTest {
+        val state = engine(FakeProcessRunner()).refresh(manifest, system, previous = null)
+        assertFalse("not-opted-in" in state.scripts)
     }
 
     @Test

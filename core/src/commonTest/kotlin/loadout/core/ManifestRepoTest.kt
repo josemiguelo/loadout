@@ -221,6 +221,24 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun machineScriptOptInsAreValidated() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [scripts.inline]
+                    run = "echo hi"
+                """.trimIndent(),
+                "machines/m.toml" to """
+                    scripts = ["ghost", "inline some-arg"]
+                """.trimIndent(),
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("unknown script 'ghost'" in e.message.orEmpty())
+        assertTrue("arguments require a `file` script" in e.message.orEmpty())
+    }
+
+    @Test
     fun minToolVersionIsEnforced() {
         val fs = fs(
             mapOf(

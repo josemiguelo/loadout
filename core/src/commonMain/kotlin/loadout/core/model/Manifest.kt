@@ -35,7 +35,19 @@ data class MachineConfig(
      * keyed by program name. Every program a machine installs must be mapped.
      */
     val pm: Map<String, String> = emptyMap(),
-)
+    /**
+     * Scripts this machine opts into: entries are `"name"` or
+     * `"name args..."` (first word = script name, rest = arguments passed as
+     * positional parameters to `file` scripts and their checks). Scripts run
+     * and are observed only on machines that opt in.
+     */
+    val scripts: List<String> = emptyList(),
+) {
+    /** [scripts] parsed into script name -> argument string. */
+    fun scriptArgs(): Map<String, String> = scripts.associate { entry ->
+        entry.substringBefore(' ') to entry.substringAfter(' ', "").trim()
+    }
+}
 
 @Serializable
 data class Meta(

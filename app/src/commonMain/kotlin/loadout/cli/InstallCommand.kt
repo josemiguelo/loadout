@@ -47,9 +47,10 @@ class InstallCommand : CliktCommand(name = "install") {
         val plan = engine.plan(manifest, system.machine, names, current) { app.detection.isPmAvailable(it) }
 
         val scriptRunner = ScriptRunner(app.runner, app.repoRoot)
+        val enabledScripts = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         val scriptNames = if (names.isEmpty() && !skipScripts) {
-            ManifestLoader.scriptOrder(manifest)
-                .filter { manifest.scripts.getValue(it).appliesTo(system.os) }
+            ManifestLoader.scriptOrder(manifest, enabledScripts.keys)
+                .filter { it in enabledScripts && manifest.scripts.getValue(it).appliesTo(system.os) }
         } else {
             emptyList()
         }
@@ -88,7 +89,7 @@ class InstallCommand : CliktCommand(name = "install") {
         val scriptResults = mutableMapOf<String, ScriptState>()
         for (name in scriptNames) {
             val step = manifest.scripts.getValue(name)
-            when (val outcome = scriptRunner.run(step, system.os)) {
+            when (val outcome = scriptRunner.run(step, system.os, args = enabledScripts.getValue(name))) {
                 is ScriptOutcome.AlreadyDone -> echo("\n==> script $name: already done (check passed)")
                 is ScriptOutcome.NotApplicable -> {}
                 is ScriptOutcome.Ran -> {

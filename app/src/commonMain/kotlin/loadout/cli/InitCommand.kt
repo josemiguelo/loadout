@@ -60,6 +60,13 @@ private val STARTER_TEMPLATE = """
 
 private val STARTER_MACHINE = """
     # Per-machine config for the machine named like this file (machines/<name>.toml).
+
+    # Scripts run only on machines that opt in. Entries are "name" or
+    # "name args..." (args become positional params for file scripts and their
+    # checks). NOTE: keep this line ABOVE [pm] — top-level keys placed after a
+    # table header would belong to that table.
+    #scripts = ["dotfiles", "setup-ssh fedora"]
+
     # Map every program to one entry of its install table:
     #[pm]
     #ripgrep = "dnf"

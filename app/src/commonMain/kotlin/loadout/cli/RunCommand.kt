@@ -30,13 +30,23 @@ class RunCommand : CliktCommand(name = "run") {
         names.filterNot { it in manifest.scripts }.let { unknown ->
             if (unknown.isNotEmpty()) throw UsageError("Unknown scripts: ${unknown.joinToString()}")
         }
+        val enabled = manifest.machines[system.machine]?.scriptArgs().orEmpty()
+        names.filterNot { it in enabled }.let { disabled ->
+            if (disabled.isNotEmpty()) {
+                for (name in disabled) {
+                    echo("error: script '$name' is not enabled for machine '${system.machine}' " +
+                        "(add it to the scripts list in machines/${system.machine}.toml)")
+                }
+                throw ProgramResult(1)
+            }
+        }
 
         val runner = ScriptRunner(app.runner, app.repoRoot)
         val results = mutableMapOf<String, ScriptState>()
         for (name in ManifestLoader.scriptOrder(manifest, names)) {
             if (name !in names) continue
             val step = manifest.scripts.getValue(name)
-            when (val outcome = runner.run(step, system.os, force)) {
+            when (val outcome = runner.run(step, system.os, force, args = enabled.getValue(name))) {
                 is ScriptOutcome.NotApplicable -> echo("skipped $name: not for ${system.os.id}")
                 is ScriptOutcome.AlreadyDone -> echo("skipped $name: already done (check passed; use --force to run anyway)")
                 is ScriptOutcome.Ran -> {
