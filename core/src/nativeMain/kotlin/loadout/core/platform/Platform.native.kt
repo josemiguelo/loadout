@@ -13,10 +13,13 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
 import platform.posix.STDOUT_FILENO
+import platform.posix.TIOCGWINSZ
 import platform.posix.gethostname
+import platform.posix.ioctl
 import platform.posix.isatty
 import platform.posix.uname
 import platform.posix.utsname
+import platform.posix.winsize
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun currentHostname(): String = memScoped {
@@ -42,3 +45,10 @@ actual val blockingDispatcher: CoroutineDispatcher = Dispatchers.IO
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun envVar(name: String): String? = platform.posix.getenv(name)?.toKString()
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun terminalRows(): Int? = memScoped {
+    val ws = alloc<winsize>()
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ.toULong(), ws.ptr) != 0) return null
+    ws.ws_row.toInt().takeIf { it > 0 }
+}

@@ -192,6 +192,12 @@ These came from explicit user decisions; don't "improve" them away:
   ever finishing (caused a q-after-refresh hang). DashboardModel owns its own
   `CoroutineScope(SupervisorJob() + blockingDispatcher)`; UI calls
   `model.dispatch(action)`. Keep it that way.
+- **TUI viewport**: long lists render a window centered on the selection —
+  pure `windowStart()` in DashboardModel.kt (unit-tested). Mosaic 0.18's
+  `LocalTerminalState.size` does NOT report the real TTY size — TuiApp polls
+  `platform.terminalRows()` (TIOCGWINSZ) every 300ms instead, with a 24-row
+  fallback; the polling effect is guarded by `!exit` so quit still works.
+  Keep windowing math in the model file, not composables.
 - **TUI + sudo**: install output is captured for the log pane, which would
   swallow sudo prompts; the model refuses sudo plans unless `sudo -n true`
   succeeds and points users at `sudo -v` or the CLI.

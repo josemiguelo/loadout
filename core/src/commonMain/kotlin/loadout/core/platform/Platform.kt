@@ -19,3 +19,6 @@ expect val blockingDispatcher: kotlinx.coroutines.CoroutineDispatcher
 
 /** Value of the environment variable [name], or null when unset. */
 expect fun envVar(name: String): String?
+
+/** Terminal height in rows (TIOCGWINSZ on stdout), or null when unknown. */
+expect fun terminalRows(): Int?

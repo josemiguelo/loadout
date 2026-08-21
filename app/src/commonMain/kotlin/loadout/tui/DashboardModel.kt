@@ -52,6 +52,14 @@ data class TuiState(
 
 const val KEY_HELP = "ready"
 
+/**
+ * First row of the window to render when only [height] of [total] rows fit:
+ * keeps [selected] centered once the list scrolls, pinned at the edges.
+ */
+fun windowStart(selected: Int, total: Int, height: Int): Int =
+    if (height <= 0 || total <= height) 0
+    else (selected - (height - 1) / 2).coerceIn(0, total - height)
+
 class DashboardModel(private val app: AppContext) {
     var state by mutableStateOf(TuiState(repo = app.repoRoot.toString()))
         private set

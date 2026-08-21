@@ -716,6 +716,12 @@ the same program × machine matrix as `diff`, live:
 Colors carry the semantics: versions green (yellow on drift), `missing`/`failed`
 red, `pending` yellow, `-` dim.
 
+Lists longer than the terminal scroll in a viewport that keeps the selection
+centered: the panel title shows the position (`programs 31/88`) and dim
+`↑ N more` / `↓ N more` indicators mark what's off-screen. The window follows
+the terminal's live height (polled from the TTY; 24-row fallback when it
+can't be read).
+
 Keys:
 
 | Key | Action |
@@ -905,7 +911,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 
 ```console
 $ ./gradlew :core:linuxX64Test     # 89 unit tests (parsing, diffing, engines — no real processes)
-$ ./gradlew :app:linuxX64Test      # 8 TUI-model tests (key reducers, mode transitions)
+$ ./gradlew :app:linuxX64Test      # 13 TUI-model tests (key reducers, viewport math)
 $ ./integration/run-tests.sh       # 32 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote

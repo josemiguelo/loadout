@@ -17,6 +17,7 @@ import com.jakewharton.mosaic.ui.Text
 import com.jakewharton.mosaic.ui.TextStyle
 import loadout.cli.AppContext
 import loadout.core.TOOL_VERSION
+import loadout.core.platform.terminalRows
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 
@@ -108,6 +109,19 @@ private fun App(model: DashboardModel) {
         }
     }
 
+    // Mosaic 0.18 doesn't report the real TTY size; poll TIOCGWINSZ ourselves.
+    // The effect is guarded by !exit so it's torn down on quit — a lingering
+    // effect would keep runMosaic from finishing.
+    var termRows by remember { mutableIntStateOf(terminalRows() ?: 24) }
+    if (!s.exit) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(300)
+                termRows = terminalRows() ?: 24
+            }
+        }
+    }
+
     Column(
         modifier = Modifier.onKeyEvent { event ->
             val key = keyOf(event) ?: return@onKeyEvent false
@@ -120,7 +134,11 @@ private fun App(model: DashboardModel) {
             Mode.LOADING -> Text(" loading…", textStyle = DIM)
             Mode.LOG -> LogPanel(s)
             else -> {
-                MatrixPanel(s)
+                // Budget the list against the real terminal height: fixed
+                // chrome (title, borders, header, status, key bar) plus the
+                // details panel when it's open.
+                val detailsHeight = if (s.mode == Mode.DETAILS) model.detailLines().size + 2 else 0
+                MatrixPanel(s, listHeight = (termRows - 8 - detailsHeight).coerceAtLeast(5))
                 if (s.mode == Mode.DETAILS) DetailsPanel(model)
             }
         }
@@ -157,7 +175,7 @@ private fun cellColor(cell: String, drift: Boolean): Color? = when {
 }
 
 @Composable
-private fun MatrixPanel(s: TuiState) {
+private fun MatrixPanel(s: TuiState, listHeight: Int) {
     if (s.rows.isEmpty()) {
         val message = "No programs in the manifest, or no state files yet — press r to scan."
         val width = message.length + 2
@@ -172,7 +190,15 @@ private fun MatrixPanel(s: TuiState) {
     val inner = nameWidth + (s.machines.size.coerceAtLeast(1)) * colWidth
     val width = inner + 2
 
-    BorderTop("programs", width, Color.Cyan)
+    // Viewport: when the list doesn't fit, render a window centered on the
+    // selection, with more-above/below indicators taking two of its lines.
+    val scrolled = s.rows.size > listHeight
+    val window = if (scrolled) (listHeight - 2).coerceAtLeast(3) else listHeight
+    val start = windowStart(s.selected, s.rows.size, window)
+    val end = (start + window).coerceAtMost(s.rows.size)
+
+    val title = if (scrolled) "programs ${s.selected + 1}/${s.rows.size}" else "programs"
+    BorderTop(title, width, Color.Cyan)
     PanelLine(width) {
         Text("PROGRAM".padEnd(nameWidth), color = Color.Cyan, textStyle = TextStyle.Bold)
         Text(
@@ -181,10 +207,12 @@ private fun MatrixPanel(s: TuiState) {
             textStyle = TextStyle.Bold,
         )
     }
+    if (scrolled) PanelTextLine(width, if (start > 0) "  ↑ $start more" else "", style = DIM)
 
     var scriptsHeaderShown = false
-    s.rows.forEachIndexed { index, row ->
-        if (row.isScript && !scriptsHeaderShown) {
+    for (index in start until end) {
+        val row = s.rows[index]
+        if (row.isScript && !scriptsHeaderShown && (index == start || !s.rows[index - 1].isScript)) {
             BorderMid("scripts", width, Color.Yellow)
             scriptsHeaderShown = true
         }
@@ -209,6 +237,7 @@ private fun MatrixPanel(s: TuiState) {
             }
         }
     }
+    if (scrolled) PanelTextLine(width, if (end < s.rows.size) "  ↓ ${s.rows.size - end} more" else "", style = DIM)
     BorderBottom(width)
 }
 
