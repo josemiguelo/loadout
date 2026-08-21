@@ -38,6 +38,7 @@ data class Manifest(
         fun sub(s: String) = s.replace("{pkg}", pkg)
         val checkCommand = variant.check ?: installer?.check
         val regex = variant.regex ?: installer?.regex
+        val outdatedCommand = variant.outdated ?: installer?.outdated
         return ResolvedInstall(
             command = (variant.command ?: installer?.install)?.let(::sub),
             check = if (checkCommand != null && regex != null) {
@@ -46,6 +47,11 @@ data class Manifest(
                 program.version
             },
             probe = variant.probe ?: installer?.probe,
+            outdated = if (outdatedCommand != null && regex != null) {
+                VersionCheck(sub(outdatedCommand), regex)
+            } else {
+                null
+            },
         )
     }
 
@@ -62,6 +68,12 @@ data class ResolvedInstall(
     val check: VersionCheck?,
     /** Binary that must exist before installing, or null for no probe. */
     val probe: String?,
+    /**
+     * Command reporting the version available from the remote source (its
+     * output should be just the candidate version; the shared regex extracts
+     * it), or null when this variant has no update oracle.
+     */
+    val outdated: VersionCheck?,
 )
 
 @Serializable
@@ -74,6 +86,12 @@ data class Installer(
     val check: String? = null,
     /** Regex extracting the version from [check]'s output (capture group 1). */
     val regex: String? = null,
+    /**
+     * Pattern printing the version available from the remote source for
+     * `{pkg}` (nothing when up to date); [regex] extracts it. Powers
+     * `loadout outdated`.
+     */
+    val outdated: String? = null,
 )
 
 /**
@@ -95,6 +113,8 @@ data class InstallVariant(
     val regex: String? = null,
     /** Probe binary, replacing the installer's. */
     val probe: String? = null,
+    /** Remote-candidate command, replacing the installer's (see [Installer.outdated]). */
+    val outdated: String? = null,
 )
 
 @Serializable

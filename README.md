@@ -8,7 +8,7 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: feature-complete for v0.1.** All commands (`init`, `status`,
-`install`, `run`, `diff`, `sync`) plus the interactive TUI dashboard work on
+`install`, `outdated`, `run`, `diff`, `sync`) plus the interactive TUI dashboard work on
 Linux; CI covers Linux and macOS, and tagged releases ship binaries for
 linux-x64, macos-arm64, and macos-x64.
 
@@ -664,7 +664,48 @@ Pushed.
 - Manifest edits are *your* commits — `sync` never touches anything except this
   machine's state file.
 
-### 9. Compare your fleet: `diff`
+### 9. Ask the remotes for updates: `outdated`
+
+Installers can declare a third mechanic besides `install`/`check`: an
+**`outdated`** pattern — a command that asks the remote source (the dnf
+repos, brew's API, flathub) what version it offers for `{pkg}`, printing just
+the candidate (nothing when current). The shared `regex` extracts it:
+
+```toml
+[installers.dnf]
+outdated = "dnf -q --cacheonly check-update {pkg} | awk 'NF>=3 {print $2}'"
+
+[installers.brew]
+outdated = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose {pkg} | grep '^{pkg} ' | awk '{print $NF}'"
+
+[installers.flatpak]
+outdated = "flatpak --user remote-info --cached flathub {pkg}"   # regex grabs Version:
+```
+
+`loadout outdated` then asks, concurrently, for every program *this machine*
+maps and has installed — each through its own mapped installer's oracle:
+
+```console
+$ loadout outdated
+Checking 45 programs against their remote sources...
+
+  kitty            0.47.1     -> 0.48.2    [dnf]
+  slack            4.51.180   -> 4.51.191  [dnf]
+  tpack            2.0.4      -> 2.0.5     [brew-cask]
+  yq               4.53.3     -> 4.53.6    [brew]
+
+4 update(s) available. `loadout install` won't upgrade — use the package manager, then `loadout status`.
+(3 installed programs have no outdated oracle: asdf, jumpkwapp, ngrok)
+```
+
+The exit code of the oracle is ignored on purpose (`dnf check-update` exits
+100 exactly when updates exist) — only the extracted candidate matters, and a
+candidate equal to the installed version means up to date. Variants can
+override `outdated` per program like any other field; programs whose variant
+resolves no oracle (script installs) are listed as unchecked rather than
+guessed at.
+
+### 10. Compare your fleet: `diff`
 
 Once two or more machines have synced their state:
 
@@ -693,7 +734,7 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 10. The dashboard: bare `loadout` (TUI)
+### 11. The dashboard: bare `loadout` (TUI)
 
 Run `loadout` with no arguments in a real terminal (or `loadout
 tui` with options) and you get an interactive dashboard instead of help text —
@@ -759,7 +800,7 @@ TUI specifics to know:
 - Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
   use `loadout --repo ... tui` to pass flags.
 
-### 11. Multiple machines in practice
+### 12. Multiple machines in practice
 
 On a new machine:
 
@@ -781,7 +822,7 @@ $ loadout diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 12. Global options
+### 13. Global options
 
 Valid on every command, before the subcommand:
 
@@ -799,7 +840,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 13. The state file
+### 14. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -833,7 +874,7 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
-### 14. Version compatibility between the repo and the binary
+### 15. Version compatibility between the repo and the binary
 
 Mixed fleets happen — machines upgrade loadout at different times. Two guards
 keep that safe:
@@ -916,9 +957,9 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ### Tests
 
 ```console
-$ ./gradlew :core:linuxX64Test     # 89 unit tests (parsing, diffing, engines — no real processes)
+$ ./gradlew :core:linuxX64Test     # 93 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 15 TUI-model tests (key reducers, viewport, theme)
-$ ./integration/run-tests.sh       # 32 black-box tests driving the real binary
+$ ./integration/run-tests.sh       # 33 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
 ```

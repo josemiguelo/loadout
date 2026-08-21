@@ -6,6 +6,7 @@ import loadout.cli.AppContext
 import loadout.cli.DiffCommand
 import loadout.cli.InitCommand
 import loadout.cli.InstallCommand
+import loadout.cli.OutdatedCommand
 import loadout.cli.RootCommand
 import loadout.cli.RunCommand
 import loadout.cli.ShowCommand
@@ -43,6 +44,7 @@ fun main(args: Array<String>) {
                 StatusCommand(),
                 ShowCommand(),
                 InstallCommand(),
+                OutdatedCommand(),
                 RunCommand(),
                 DiffCommand(),
                 SyncCommand(),

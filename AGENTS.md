@@ -63,8 +63,10 @@ core/  loadout.core
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL process
                use goes through the interface (tests use FakeProcessRunner)
   detect/      Detection — os/distro/hostname + isPmAvailable probe (`command -v`)
-  engine/      VersionChecker (concurrent checkAll), InstallEngine (plan/execute/
-               executeCaptured), ScriptRunner, StatusEngine (observes programs AND scripts)
+  engine/      VersionChecker (concurrent checkAll), UpdateChecker (outdated
+               oracles; exit code deliberately ignored), InstallEngine (plan/
+               execute/executeCaptured), ScriptRunner, StatusEngine (observes
+               programs AND scripts)
   diff/        DiffEngine — pure function: manifest × states -> DiffReport
   git/         GitClient — shells out to `git`, always cwd = repo root
   platform/    expect/actual posix: hostname, isatty, uname, nowIso, envVar,
@@ -73,7 +75,7 @@ app/   loadout
   Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/show/install/run/diff/sync/init/tui)
+               one file per subcommand (status/show/install/outdated/run/diff/sync/init/tui)
   tui/         DashboardModel (ALL state + logic, no rendering, unit-tested) +
                TuiApp.kt (Mosaic composables only)
 ```
@@ -142,7 +144,7 @@ These came from explicit user decisions; don't "improve" them away:
     error. No implicit script application; no os/bootc auto-detection to
     decide membership.
 13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
-    (probe / install / check / regex patterns, `{pkg}` substituted) define
+    (probe / install / check / outdated / regex patterns, `{pkg}` substituted) define
     each mechanism once, repo-unique, fragment-definable; core hardcodes NO
     package-manager knowledge (no canonical probe list). A program's install
     entry is a variant table `{installer, pkg, command, check, regex, probe}`
@@ -153,7 +155,11 @@ These came from explicit user decisions; don't "improve" them away:
     the same key wins). Resolution lives in Manifest.resolveInstall/checkFor
     — all engines/UIs go through it. Field fallback: command → installer
     install pattern (else load error); check → installer check (else
-    program `[version]`); probe → installer probe (else none). Never write
+    program `[version]`); probe → installer probe (else none); outdated →
+    installer outdated (else no oracle — `loadout outdated` skips and reports
+    it). Outdated oracles print ONLY the candidate version (shape the output
+    in the command; the shared regex extracts) and their exit code is ignored
+    (dnf check-update exits 100 when updates exist). Never write
     cross-variant `||` chains in checks.
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —

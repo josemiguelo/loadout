@@ -340,6 +340,35 @@ grep -q "installed-mytool" instrepo/fake-install.txt || fail "installer command 
 grep -q '"version": "1.0"' instrepo/state/m1.json || fail "installer check observed the version"
 ok "installers supply install/check/probe mechanics via {pkg}"
 
+# outdated: each installer's oracle reports the remote candidate per program.
+cat > instrepo/manifest.toml <<'TOML'
+[installers.fake]
+probe = "sh"
+install = "echo installed-{pkg} > fake-install.txt"
+check = "test -f fake-install.txt && echo mytool 1.0"
+outdated = "echo 2.0"
+regex = "([0-9][0-9.]*)"
+
+[installers.fake2]
+probe = "sh"
+install = "true"
+check = "echo other 1.0"
+outdated = "true"
+regex = "([0-9][0-9.]*)"
+
+[programs.mytool]
+via = ["fake"]
+
+[programs.othertool]
+via = ["fake2"]
+TOML
+printf '[pm]\nmytool = "fake"\nothertool = "fake2"\n' > instrepo/machines/m1.toml
+"$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
+OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated exits 0"
+echo "$OUT" | grep -qE "mytool +1.0 +-> 2.0" || fail "outdated reports the newer candidate"
+echo "$OUT" | grep -q "othertool" && fail "up-to-date program must not be listed" || true
+ok "outdated asks each installer's oracle and reports newer candidates"
+
 # --- show ---------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 show git marker)
 echo "$OUT" | grep -q "program git" || fail "show prints the program"

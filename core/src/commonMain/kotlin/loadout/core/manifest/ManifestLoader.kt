@@ -260,6 +260,7 @@ object ManifestLoader {
             pkg = v.pkg?.let(::sub),
             command = v.command?.let(::sub),
             check = v.check?.let(::sub),
+            outdated = v.outdated?.let(::sub),
         )
         return Program(
             description = override?.description.orEmpty(),
@@ -321,6 +322,9 @@ object ManifestLoader {
             if (installer.check != null && installer.regex == null) {
                 errors += "installers.$name has a check but no regex"
             }
+            if (installer.outdated != null && installer.regex == null) {
+                errors += "installers.$name has an outdated command but no regex"
+            }
         }
 
         for ((name, program) in manifest.programs) {
@@ -341,6 +345,10 @@ object ManifestLoader {
                 }
                 if (variant.check != null && (variant.regex ?: installer?.regex) == null) {
                     errors += "programs.$name.install.$key has a check but no regex " +
+                        "(set 'regex', or reference an installer that has one)"
+                }
+                if (variant.outdated != null && (variant.regex ?: installer?.regex) == null) {
+                    errors += "programs.$name.install.$key has an outdated command but no regex " +
                         "(set 'regex', or reference an installer that has one)"
                 }
             }
