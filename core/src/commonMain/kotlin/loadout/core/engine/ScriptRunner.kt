@@ -32,6 +32,10 @@ class ScriptRunner(
             val expanded = expandFilePrefix(command)
             return if (args.isEmpty()) expanded else "set -- $args; $expanded"
         }
+
+        /** The shell command that executes [step] itself (not its check). */
+        fun commandFor(step: ScriptStep, args: String): String =
+            step.file?.let { "sh '$it'" + if (args.isEmpty()) "" else " $args" } ?: step.run!!
     }
 
     /**
@@ -57,7 +61,7 @@ class ScriptRunner(
 
         // Validation guarantees exactly one of file/run is set, and that args
         // are only used with file scripts.
-        val command = step.file?.let { "sh '$it'" + if (args.isEmpty()) "" else " $args" } ?: step.run!!
+        val command = commandFor(step, args)
         val workDir = repoRoot.toString()
         val (exitCode, output) = if (captureOutput) {
             val result = runner.capture(command, workDir)

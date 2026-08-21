@@ -56,7 +56,7 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
                 )
             }
             echo("")
-            echo("${updates.size} update(s) available. `loadout install` won't upgrade — use the package manager, then `loadout status`.")
+            echo("${updates.size} update(s) available. `loadout setup` won't upgrade — use the package manager, then `loadout status`.")
         }
         if (unchecked.isNotEmpty()) {
             echo("(${unchecked.size} installed programs have no outdated oracle: ${unchecked.sorted().joinToString()})")

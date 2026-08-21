@@ -19,10 +19,10 @@ import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import kotlinx.coroutines.runBlocking
 
-class InstallCommand : CliktCommand(name = "install") {
+class SetupCommand : CliktCommand(name = "setup") {
     override fun help(context: Context) =
-        "Install missing manifest programs (all of them, or just NAMES and their dependencies). " +
-            "With no NAMES, applicable setup scripts run too."
+        "Set up this machine: install missing programs (all of them, or just NAMES and " +
+            "their dependencies). With no NAMES, applicable setup scripts run too."
 
     private val names by argument(name = "names", help = "Programs to install (default: everything missing)")
         .multiple()

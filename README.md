@@ -7,10 +7,10 @@ Write a manifest once; on each machine run one command to install what's missing
 one command to publish that machine's state, and one command to see how all your
 machines compare.
 
-**Status: feature-complete for v0.1.** All commands (`init`, `status`,
-`install`, `outdated`, `check`, `run`, `diff`, `sync`) plus the interactive TUI dashboard work on
-Linux; CI covers Linux and macOS, and tagged releases ship binaries for
-linux-x64, macos-arm64, and macos-x64.
+**Status: feature-complete.** All commands (`init`, `status`, `setup`,
+`outdated`, `check`, `maintain`, `run`, `diff`, `sync`) plus the interactive
+TUI dashboard work on Linux; CI covers Linux and macOS, and tagged releases
+ship binaries for linux-x64, macos-arm64, and macos-x64.
 
 No JVM, no runtime dependencies — Kotlin/Native compiled to a single executable.
 It shells out to your package managers and `git`, so those must be on `PATH`.
@@ -357,7 +357,7 @@ tells you what you actually built:
 ```console
 $ loadout show newprog        # resolved commands/check/probe per key
 $ vi machines/$(hostname).toml   # map it: newprog = "<key>"
-$ loadout install --dry-run   # plan shows the exact command, deps first
+$ loadout setup --dry-run   # plan shows the exact command, deps first
 $ loadout status              # observation agrees?
 ```
 
@@ -410,7 +410,7 @@ when:
   `script-fedora` have no binary to check and are always accepted.
 
 ```console
-$ loadout install --dry-run
+$ loadout setup --dry-run
 error: cannot build install plan:
   - program 'bat' has no pm defined for machine 'laptop' (add it to machines/laptop.toml)
   - package manager 'pacman' (mapped for ripgrep) is not installed on machine 'laptop'
@@ -569,10 +569,10 @@ $ loadout status --json       # print the full state document instead
 $ loadout status --no-write   # check but don't touch the state file
 ```
 
-### 6. Install what's missing: `install`
+### 6. Set the machine up: `setup`
 
 ```console
-$ loadout install
+$ loadout setup
 Checking current state...
 
 Plan for laptop:
@@ -617,10 +617,10 @@ The rules:
 Flags:
 
 ```console
-$ loadout install --dry-run        # print the plan, do nothing
-$ loadout install --yes            # skip the confirmation (for automation)
-$ loadout install --skip-scripts   # programs only
-$ loadout install ripgrep bat      # specific programs (+ their deps)
+$ loadout setup --dry-run        # print the plan, do nothing
+$ loadout setup --yes            # skip the confirmation (for automation)
+$ loadout setup --skip-scripts   # programs only
+$ loadout setup ripgrep bat      # specific programs (+ their deps)
 ```
 
 ### 7. Run scripts on demand: `run`
@@ -694,7 +694,7 @@ Checking 45 programs against their remote sources...
   tpack            2.0.4      -> 2.0.5     [brew-cask]
   yq               4.53.3     -> 4.53.6    [brew]
 
-4 update(s) available. `loadout install` won't upgrade — use the package manager, then `loadout status`.
+4 update(s) available. `loadout setup` won't upgrade — use the package manager, then `loadout status`.
 (3 installed programs have no outdated oracle: asdf, jumpkwapp, ngrok)
 ```
 
@@ -721,14 +721,39 @@ $ loadout check
                            missing: nodejs 18.16.0 npm firebase-tools
   setup-completions      done
 
-1 pending — converge with: loadout run <name>  (or loadout install)
+1 pending — converge with: loadout maintain  (or loadout run <name>)
 ```
 
 Exits 1 when anything is pending (like `diff` on drift). Name scripts to
 check just those: `loadout check asdf-default-packages`. Read-only — it never
-runs the scripts themselves and never writes state.
+runs the scripts themselves and never writes state. Running the fix is the
+next command's job.
 
-### 11. Compare your fleet: `diff`
+### 11. Run maintenance interactively: `maintain`
+
+`maintain` is the hands-on counterpart to `check`: pick which of this
+machine's scripts to run, then watch them run. It opens a picker listing
+every opted-in script (all unselected); `space` toggles, `a`/`n` select
+all/none, and `enter` runs only what you picked — one at a time, each
+script's output streaming live into a collapsible box under its row (the
+accordion collapses when the next script starts), with a ticking elapsed
+counter for quiet stretches. `esc` cancels a stuck script.
+
+Selecting a script means you want it run, so there is no check gate on the
+way in — but after each script finishes, its `check` (when it has one) reruns
+and has the final word: `done` when it now passes, `pending` when it still
+fails. Check-less scripts report their exit code (`done`/`failed`). Results
+are recorded to this machine's state file, like `loadout run`.
+
+When the run finishes, move the cursor onto any row and press `enter` to open
+its **full** log and scroll through it (`↑/↓`, `PgUp`/`PgDn`) — the live view
+only tails, but everything is kept. Every log records the command, its
+output, and the exit code. Scripts that would need a sudo password are
+refused up front (run `sudo -v` first), same as the dashboard. `maintain` is
+TTY-only; for scripting use `loadout run <name>` (execute) or `loadout check`
+(report).
+
+### 12. Compare your fleet: `diff`
 
 Once two or more machines have synced their state:
 
@@ -757,7 +782,7 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 12. The dashboard: bare `loadout` (TUI)
+### 13. The dashboard: bare `loadout` (TUI)
 
 Run `loadout` with no arguments in a real terminal (or `loadout
 tui` with options) and you get an interactive dashboard instead of help text —
@@ -817,20 +842,20 @@ TUI specifics to know:
 - **sudo:** install output is captured for the log view, which would swallow a
   password prompt. If a plan contains `sudo` commands and your credentials
   aren't cached, the TUI refuses with a hint — run `sudo -v` first, or use
-  `loadout install` in the CLI where prompts work normally.
+  `loadout setup` in the CLI where prompts work normally.
 - Command output appears in the log when each step *finishes* (not streamed
   live); the status line shows a spinner plus the latest log line meanwhile.
 - Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
   use `loadout --repo ... tui` to pass flags.
 
-### 13. Multiple machines in practice
+### 14. Multiple machines in practice
 
 On a new machine:
 
 ```console
 $ git clone git@github.com:you/machines.git ~/machines
 $ export LOADOUT_REPO=~/machines     # put in your shell profile
-$ loadout install --yes && loadout sync
+$ loadout setup --yes && loadout sync
 ```
 
 Don't have a second machine handy? Simulate one — `--machine` changes which
@@ -845,7 +870,7 @@ $ loadout diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 14. Global options
+### 15. Global options
 
 Valid on every command, before the subcommand:
 
@@ -863,7 +888,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 15. The state file
+### 16. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -897,7 +922,7 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
-### 16. Version compatibility between the repo and the binary
+### 17. Version compatibility between the repo and the binary
 
 Mixed fleets happen — machines upgrade loadout at different times. Two guards
 keep that safe:
@@ -941,7 +966,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 `install.sh` detects the platform (including Rosetta on Apple Silicon),
 downloads the latest release tarball, sanity-runs the binary, and installs it
 to `~/.local/bin/loadout` — then prints the bootstrap steps (clone your config
-repo, write `machines/<hostname>.toml`, `loadout install`). Pin a version with
+repo, write `machines/<hostname>.toml`, `loadout setup`). Pin a version with
 `LOADOUT_VERSION=v0.2.0`, or change the destination with
 `LOADOUT_INSTALL_DIR`.
 

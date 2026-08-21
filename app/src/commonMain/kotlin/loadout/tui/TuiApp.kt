@@ -391,3 +391,249 @@ private fun KeyBar(s: TuiState) {
         }
     }
 }
+
+// ---------------------------------------------------------------- maintain tui
+
+/**
+ * Interactive `loadout maintain`: select scripts, run them sequentially with
+ * a live log accordion, browse full logs afterwards. Returns the exit code
+ * (1 when any script ended failed, still pending, or cancelled).
+ */
+fun runMaintainTui(app: AppContext): Int {
+    // Model construction + load happen before Mosaic owns the terminal (OSC
+    // theme query) and so manifest errors still reach Main.kt's clean catch.
+    val model = MaintainModel(app)
+    model.load()
+    if (model.state.rows.isEmpty()) {
+        println("No opted-in scripts for this machine.")
+        return 0
+    }
+    runMosaicBlocking { MaintainApp(model) }
+    return model.state.exitCode
+}
+
+private fun maintainKeyOf(event: KeyEvent): MaintainKey? = when (event) {
+    KeyEvent("ArrowUp"), KeyEvent("k") -> MaintainKey.UP
+    KeyEvent("ArrowDown"), KeyEvent("j") -> MaintainKey.DOWN
+    KeyEvent("PageUp") -> MaintainKey.PAGE_UP
+    KeyEvent("PageDown") -> MaintainKey.PAGE_DOWN
+    KeyEvent(" ") -> MaintainKey.SPACE
+    KeyEvent("a") -> MaintainKey.A
+    KeyEvent("n") -> MaintainKey.N
+    KeyEvent("t") -> MaintainKey.T
+    KeyEvent("q") -> MaintainKey.Q
+    KeyEvent("Escape") -> MaintainKey.ESC
+    KeyEvent("Enter") -> MaintainKey.ENTER
+    else -> null
+}
+
+@Composable
+private fun MaintainApp(model: MaintainModel) {
+    val s = model.state
+
+    var spin by remember { mutableIntStateOf(0) }
+    LaunchedEffect(s.phase == MaintainPhase.RUNNING) {
+        while (s.phase == MaintainPhase.RUNNING) {
+            delay(120)
+            spin++
+        }
+    }
+
+    // Per-script elapsed seconds: a script can stay silent for minutes, so
+    // the ticking counter is the visible sign of progress.
+    val runningName = s.rows.firstOrNull { it.status == RunStatus.RUNNING }?.name
+    var elapsed by remember { mutableIntStateOf(0) }
+    LaunchedEffect(runningName) {
+        elapsed = 0
+        if (runningName != null) {
+            while (true) {
+                delay(1000)
+                elapsed++
+            }
+        }
+    }
+
+    // Same TIOCGWINSZ polling as the dashboard (see App).
+    var termRows by remember { mutableIntStateOf(terminalRows() ?: 24) }
+    if (!s.exit) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(300)
+                termRows = terminalRows() ?: 24
+            }
+        }
+    }
+
+    // Log lines an expanded box may use: terminal height minus one line per
+    // script row and the fixed chrome (title, borders, status, key bar).
+    val logHeight = (termRows - s.rows.size - 8).coerceIn(4, 16)
+
+    CompositionLocalProvider(LocalPalette provides if (s.dark) DARK_PALETTE else LIGHT_PALETTE) {
+        Column(
+            modifier = Modifier.onKeyEvent { event ->
+                val key = maintainKeyOf(event) ?: return@onKeyEvent false
+                if (model.handleKey(key, logHeight)) model.startRun()
+                true
+            },
+        ) {
+            MaintainTitleBar(s)
+            MaintainPanel(s, spin, elapsed, logHeight)
+            MaintainStatusLine(s, spin, elapsed)
+            MaintainKeyBar(s)
+        }
+    }
+
+    if (!s.exit) {
+        LaunchedEffect(Unit) { awaitCancellation() }
+    }
+}
+
+@Composable
+private fun MaintainTitleBar(s: MaintainState) {
+    val p = LocalPalette.current
+    Row {
+        Text(" loadout maintain ", color = p.onAccent, background = p.accent, textStyle = BOLD)
+        Text(" │ ", color = p.dim)
+        Text("machine ", color = p.dim)
+        Text(s.machine, color = p.machine, textStyle = BOLD)
+        Text(" │ ", color = p.dim)
+        Text("scripts ", color = p.dim)
+        Text("${s.rows.size}", color = p.accent, textStyle = BOLD)
+    }
+}
+
+private fun runStatusLabel(row: MaintainRow, selectedForRun: Boolean, elapsed: Int): String = when (row.status) {
+    RunStatus.RUNNING -> "running… ${elapsed}s"
+    RunStatus.DONE -> "done"
+    RunStatus.PENDING -> "pending"
+    RunStatus.FAILED -> "failed"
+    RunStatus.CANCELLED -> "cancelled"
+    RunStatus.WAITING -> if (selectedForRun) "queued" else "skipped"
+}
+
+@Composable
+private fun MaintainPanel(s: MaintainState, spin: Int, elapsed: Int, logHeight: Int) {
+    val p = LocalPalette.current
+    val nameWidth = s.rows.maxOf { it.name.length } + 3
+    val inner = (4 + nameWidth + 11).coerceAtLeast(60)
+    val width = inner + 2
+
+    val title = when (s.phase) {
+        MaintainPhase.SELECT -> "scripts ${s.selected.size}/${s.rows.size} selected"
+        else -> "scripts"
+    }
+    BorderTop(title, width, p.accent)
+    for ((index, row) in s.rows.withIndex()) {
+        val selectedForRun = row.name in s.selected
+        val marker = when {
+            s.phase == MaintainPhase.SELECT -> if (selectedForRun) "[x] " else "[ ] "
+            row.status == RunStatus.RUNNING -> " ${SPINNER[spin % SPINNER.size]}  "
+            row.status == RunStatus.DONE -> " ✔  "
+            row.status == RunStatus.PENDING || row.status == RunStatus.FAILED -> " ✘  "
+            row.status == RunStatus.CANCELLED -> " ✘  "
+            else -> " ·  "
+        }
+        val statusLabel = if (s.phase == MaintainPhase.SELECT) "" else runStatusLabel(row, selectedForRun, elapsed)
+        val hasCursor = s.phase != MaintainPhase.RUNNING && index == s.cursor
+        if (hasCursor) {
+            PanelLine(width) {
+                Text(
+                    fit(marker + row.name.padEnd(nameWidth) + statusLabel, inner),
+                    color = p.selectionFg,
+                    background = p.selectionBg,
+                    textStyle = BOLD,
+                )
+            }
+        } else {
+            PanelLine(width) {
+                val markerColor = when (row.status) {
+                    RunStatus.DONE -> p.ok
+                    RunStatus.PENDING, RunStatus.FAILED, RunStatus.CANCELLED -> p.error
+                    RunStatus.RUNNING -> p.accent
+                    RunStatus.WAITING -> if (selectedForRun) p.accent else p.dim
+                }
+                Text(marker, color = markerColor, textStyle = BOLD)
+                Text(row.name.padEnd(nameWidth))
+                val statusColor = when (row.status) {
+                    RunStatus.DONE -> p.ok
+                    RunStatus.PENDING -> p.warn
+                    RunStatus.FAILED, RunStatus.CANCELLED -> p.error
+                    RunStatus.RUNNING -> p.accent
+                    RunStatus.WAITING -> p.dim
+                }
+                Text(fit(statusLabel, inner - 4 - nameWidth), color = statusColor)
+            }
+        }
+        // Accordion: the running row's live tail, or the viewer's window.
+        // The model seeds every run's log with its command, so the box is
+        // never empty while running (a silent script doesn't look frozen).
+        if (s.phase == MaintainPhase.RUNNING && row.status == RunStatus.RUNNING) {
+            MaintainLogLines(row.log.takeLast(logHeight), above = (row.log.size - logHeight).coerceAtLeast(0), below = 0, width = width, inner = inner)
+        } else if (s.phase == MaintainPhase.DONE && s.viewing == row.name) {
+            val start = s.scroll.coerceAtMost((row.log.size - logHeight).coerceAtLeast(0))
+            val window = row.log.drop(start).take(logHeight)
+            MaintainLogLines(window, above = start, below = row.log.size - start - window.size, width = width, inner = inner)
+        }
+    }
+    BorderBottom(width)
+}
+
+@Composable
+private fun MaintainLogLines(lines: List<String>, above: Int, below: Int, width: Int, inner: Int) {
+    val p = LocalPalette.current
+    if (above > 0) PanelTextLine(width, "    ┆ ↑ $above more", color = p.dim)
+    for (line in lines) {
+        PanelLine(width) {
+            Text("    ┆ ", color = p.dim)
+            Text(fit(line, inner - 6), color = p.dim)
+        }
+    }
+    if (below > 0) PanelTextLine(width, "    ┆ ↓ $below more", color = p.dim)
+}
+
+@Composable
+private fun MaintainStatusLine(s: MaintainState, spin: Int, elapsed: Int) {
+    val p = LocalPalette.current
+    if (s.phase == MaintainPhase.RUNNING) {
+        val running = s.rows.firstOrNull { it.status == RunStatus.RUNNING }
+        Row {
+            Text(" ${SPINNER[spin % SPINNER.size]} ", color = p.accent)
+            Text("running ${running?.name ?: "…"} · ${elapsed}s")
+            Text("   full logs open when the run finishes", color = p.dim)
+        }
+        return
+    }
+    val message = s.message ?: if (s.phase == MaintainPhase.SELECT) "select the scripts to run" else ""
+    val (icon, color) = when {
+        "pending" in message || "failed" in message || message.startsWith("cancelled") -> "✘" to p.error
+        "sudo needs" in message || "nothing selected" in message -> "•" to p.warn
+        message.startsWith("all ") -> "✔" to p.ok
+        else -> "•" to p.accent
+    }
+    Row {
+        Text(" $icon ", color = color, textStyle = BOLD)
+        Text(message)
+    }
+}
+
+@Composable
+private fun MaintainKeyBar(s: MaintainState) {
+    val p = LocalPalette.current
+    val keys: List<Pair<String, String>> = when {
+        s.phase == MaintainPhase.SELECT -> listOf(
+            "↑↓" to "move", "space" to "toggle", "a" to "all", "n" to "none",
+            "enter" to "run", "t" to "theme", "q" to "quit",
+        )
+        s.phase == MaintainPhase.RUNNING -> listOf("esc" to "cancel", "t" to "theme")
+        s.viewing != null -> listOf("↑↓" to "scroll", "pgup/pgdn" to "page", "esc" to "close", "q" to "quit")
+        else -> listOf("↑↓" to "move", "enter" to "view log", "t" to "theme", "q" to "quit")
+    }
+    Row {
+        Text(" ")
+        keys.forEachIndexed { index, (key, label) ->
+            if (index > 0) Text("  ·  ", color = p.dim)
+            Text(key, color = p.accent, textStyle = BOLD)
+            Text(" $label", color = p.dim)
+        }
+    }
+}

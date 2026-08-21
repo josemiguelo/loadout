@@ -13,7 +13,8 @@ import loadout.core.manifest.ManifestLoader
 class CheckCommand : CliktCommand(name = "check") {
     override fun help(context: Context) =
         "Run this machine's script checks and show WHAT each failing one reported " +
-            "(status only says pending; this shows the missing items)"
+            "(status only says pending; this shows the missing items). Read-only — " +
+            "`loadout maintain` runs the scripts themselves."
 
     private val names by argument(name = "names", help = "Scripts to check (default: all opted-in)")
         .multiple()
@@ -57,7 +58,7 @@ class CheckCommand : CliktCommand(name = "check") {
         }
         if (pending > 0) {
             echo("")
-            echo("$pending pending — converge with: loadout run <name>  (or loadout install)")
+            echo("$pending pending — converge with: loadout maintain  (or loadout run <name>)")
             throw ProgramResult(1)
         }
     }

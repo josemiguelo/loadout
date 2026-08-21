@@ -29,4 +29,31 @@ class KommandProcessRunner : ProcessRunner {
             .spawn()
             .wait()
     }
+
+    override fun stream(
+        command: String,
+        workDir: String?,
+        onStart: (RunningProcess) -> Unit,
+        onLine: (String) -> Unit,
+    ): Int {
+        // `exec 2>&1` merges stderr into the stdout pipe without a subshell,
+        // so sh can tail-exec the command and kill() reaches the real process.
+        // ponytail: kill() hits the direct child only — a grandchild that
+        // keeps the pipe open delays the reader until it exits; process-group
+        // kill if that ever bites.
+        val child = command("exec 2>&1\n$command", workDir)
+            .stdout(Stdio.Pipe)
+            .stderr(Stdio.Pipe)
+            .spawn()
+        onStart(object : RunningProcess {
+            override fun kill() {
+                runCatching { child.kill() }
+            }
+        })
+        val stdout = child.bufferedStdout()
+        runCatching {
+            while (true) onLine(stdout?.readLine() ?: break)
+        }
+        return runCatching { child.wait() }.getOrDefault(-1)
+    }
 }

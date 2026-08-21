@@ -68,14 +68,14 @@ ok "status detects git, observes script checks, and writes state"
 ok "status --json emits the state document"
 
 # --- install (dry run + already installed) ------------------------------
-OUT=$("$BIN" --repo repo --machine m1 install --dry-run)
+OUT=$("$BIN" --repo repo --machine m1 setup --dry-run)
 echo "$OUT" | grep -q "git" || fail "dry-run mentions git"
 echo "$OUT" | grep -qE "~ marker +script" || fail "dry-run lists the script"
 [ ! -f repo/marker.txt ] || fail "dry-run must not execute scripts"
-ok "install --dry-run plans without executing"
+ok "setup --dry-run plans without executing"
 
-"$BIN" --repo repo --machine m1 install --yes --skip-scripts >/dev/null || fail "install (all installed) exits 0"
-ok "install with everything installed is a no-op"
+"$BIN" --repo repo --machine m1 setup --yes --skip-scripts >/dev/null || fail "install (all installed) exits 0"
+ok "setup with everything installed is a no-op"
 
 # --- run (script + check gate + force) ----------------------------------
 "$BIN" --repo repo --machine m1 run marker >/dev/null || fail "run exits 0"
@@ -123,9 +123,9 @@ ok "script arguments reach the file script and its check"
 
 # --- install runs eligible scripts --------------------------------------
 rm repo/marker.txt
-"$BIN" --repo repo --machine m1 install --yes >/dev/null || fail "install with script exits 0"
+"$BIN" --repo repo --machine m1 setup --yes >/dev/null || fail "install with script exits 0"
 [ -f repo/marker.txt ] || fail "install ran the script"
-ok "install runs eligible scripts"
+ok "setup runs eligible scripts"
 
 # --- diff ---------------------------------------------------------------
 "$BIN" --repo repo --machine m2 status >/dev/null
@@ -188,19 +188,19 @@ cat >> repo/manifest.toml <<'EOF'
 [programs.never-mapped.install.manual]
 command = "false"
 EOF
-OUT=$("$BIN" --repo repo --machine m1 install --dry-run) || fail "converge with unmapped program should succeed"
+OUT=$("$BIN" --repo repo --machine m1 setup --dry-run) || fail "converge with unmapped program should succeed"
 echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
-"$BIN" --repo repo --machine m1 install never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
-OUT=$("$BIN" --repo repo --machine m1 install never-mapped --dry-run 2>&1 || true)
+"$BIN" --repo repo --machine m1 setup never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
+OUT=$("$BIN" --repo repo --machine m1 setup never-mapped --dry-run 2>&1 || true)
 echo "$OUT" | grep -q "no pm defined for machine 'm1'" || fail "unmapped-program error message"
 "$BIN" --repo repo --machine m1 status >/dev/null
 grep -q '"never-mapped"' repo/state/m1.json && fail "unmapped program must not be observed" || true
 ok "unmapped programs are not part of the machine's loadout"
 
 # Machine without a config file at all.
-OUT=$("$BIN" --repo repo --machine ghost install --dry-run 2>&1 || true)
+OUT=$("$BIN" --repo repo --machine ghost setup --dry-run 2>&1 || true)
 echo "$OUT" | grep -q "machines/ghost.toml" || fail "missing machine-config error message"
-ok "install fails for a machine with no config file"
+ok "setup fails for a machine with no config file"
 
 # Mapped pm binary not present on this machine.
 mkdir pmrepo pmrepo/state pmrepo/machines
@@ -216,9 +216,9 @@ via = ["pacman"]
 EOF
 printf '[pm]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
 if ! command -v pacman >/dev/null 2>&1; then
-    OUT=$("$BIN" --repo pmrepo --machine m1 install --dry-run 2>&1 || true)
+    OUT=$("$BIN" --repo pmrepo --machine m1 setup --dry-run 2>&1 || true)
     echo "$OUT" | grep -q "required binary 'pacman'" || fail "pm-not-installed error message"
-    ok "install fails when the mapped pm is not installed"
+    ok "setup fails when the mapped pm is not installed"
 else
     ok "skipped pm-not-installed check (pacman present on host)"
 fi
@@ -241,7 +241,7 @@ definitely-not-installed-xyz = "manual"
 EOF
 "$BIN" --repo repo --machine m3 status >/dev/null || fail "status with split layout"
 grep -q '"splitprog"' repo/state/m3.json || fail "fragment program checked"
-"$BIN" --repo repo --machine m3 install --dry-run >/dev/null || fail "machine file mapping used for plan"
+"$BIN" --repo repo --machine m3 setup --dry-run >/dev/null || fail "machine file mapping used for plan"
 ok "manifest.d fragments and machines/*.toml files are merged"
 
 cp repo/manifest.toml repo/manifest.toml.bak
@@ -271,9 +271,9 @@ EOF
 printf '#!/bin/sh\n[ "${1:-}" = "install" ] || exit 9\necho done > installed-marker.txt\n' > filerepo/scripts/install-filetool.sh
 printf '[pm]\nfiletool = "script"\n' > filerepo/machines/m1.toml
 
-OUT=$("$BIN" --repo filerepo --machine m1 install --dry-run)
+OUT=$("$BIN" --repo filerepo --machine m1 setup --dry-run)
 echo "$OUT" | grep -q "sh 'scripts/install-filetool.sh' install" || fail "file: value with args translated in plan"
-"$BIN" --repo filerepo --machine m1 install --yes >/dev/null || fail "file: install exits 0"
+"$BIN" --repo filerepo --machine m1 setup --yes >/dev/null || fail "file: install exits 0"
 [ -f filerepo/installed-marker.txt ] || fail "install ran with repo-root cwd and args"
 ok "file: install values run repo scripts with arguments from the repo root"
 
@@ -333,9 +333,9 @@ regex = "mytool ([0-9.]+)"
 via = ["fake"]
 TOML
 printf '[pm]\nmytool = "fake"\n' > instrepo/machines/m1.toml
-OUT=$("$BIN" --repo instrepo --machine m1 install --dry-run)
+OUT=$("$BIN" --repo instrepo --machine m1 setup --dry-run)
 echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
-"$BIN" --repo instrepo --machine m1 install --yes >/dev/null || fail "installer-backed install exits 0"
+"$BIN" --repo instrepo --machine m1 setup --yes >/dev/null || fail "installer-backed install exits 0"
 grep -q "installed-mytool" instrepo/fake-install.txt || fail "installer command ran"
 grep -q '"version": "1.0"' instrepo/state/m1.json || fail "installer check observed the version"
 ok "installers supply install/check/probe mechanics via {pkg}"
@@ -389,6 +389,19 @@ echo "$OUT" | grep -q "missing: nodejs 16 npm firebase-tools" || fail "check sur
 OUT=$("$BIN" --repo instrepo --machine m1 check healthy) || fail "check with names exits 0 when those pass"
 echo "$OUT" | grep -q "drifted" && fail "named check must not include others" || true
 ok "check runs script checks and surfaces their detail"
+
+# maintain (interactive): PTY-drive select-all -> run scripts -> view a log.
+# linux-only: macOS `script` has a different syntax; reducers are unit-tested.
+"$BIN" --repo instrepo --machine m1 maintain </dev/null >/dev/null 2>&1 && fail "maintain without a TTY should fail" || true
+if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
+    # select all, run, cursor down to the drifted row, open its log viewer, quit
+    { sleep 2; printf 'a'; sleep 1; printf '\r'; sleep 3; printf '\033[B'; sleep 1; printf '\r'; sleep 1; printf '\033'; sleep 1; printf 'q'; sleep 1; } \
+        | script -qec "\"$BIN\" --repo instrepo --machine m1 maintain" tui-maintain.log >/dev/null \
+        && fail "maintain should exit 1 while drifted's check still fails" || true
+    grep -qa "loadout maintain" tui-maintain.log || fail "maintain renders its title bar"
+    grep -qa "check: still failing" tui-maintain.log || fail "maintain reruns the check after the script and records the verdict"
+    ok "maintain runs selected scripts in a PTY, exits 1 when a check still fails"
+fi
 
 # --- show ---------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 show git marker)

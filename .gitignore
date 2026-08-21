@@ -16,3 +16,6 @@ build/
 
 # Claude Code local state
 .claude/settings.local.json*
+
+# Local debugging screenshots shared in-session
+debugging-images/

@@ -42,7 +42,7 @@ fake one and pipe keys with sleeps:
 A run that doesn't exit usually means a coroutine kept `runMosaic` alive (see
 Gotchas). Rendering changes still need a human check — ask the user to run it.
 
-Manual testing target: the user's live config repo at `~/machines-live`
+Manual testing target: the user's live config repo at `~/.config/machines`
 (machine name `macbook-fedora-kde`, Fedora, dnf + linuxbrew present). Fine to
 run `status`/`diff`/`--dry-run` against it; don't install/remove packages or
 push git without asking.
@@ -61,7 +61,9 @@ core/  loadout.core
                + machines/*.toml, validates everything; parse() is single-doc, TEST-ONLY
   state/       StateStore — state/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL process
-               use goes through the interface (tests use FakeProcessRunner)
+               use goes through the interface (tests use FakeProcessRunner).
+               capture (blocking), inherit (sudo/progress), stream (live
+               line-by-line + kill handle; default impl replays capture)
   detect/      Detection — os/distro/hostname + isPmAvailable probe (`command -v`)
   engine/      VersionChecker (concurrent checkAll), UpdateChecker (outdated
                oracles; exit code deliberately ignored), InstallEngine (plan/
@@ -75,9 +77,10 @@ app/   loadout
   Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/show/install/outdated/check/run/diff/sync/init/tui)
-  tui/         DashboardModel (ALL state + logic, no rendering, unit-tested) +
-               TuiApp.kt (Mosaic composables only)
+               one file per subcommand (status/show/setup/outdated/check/maintain/run/diff/sync/init/tui)
+  tui/         DashboardModel + MaintainModel (ALL state + logic, no
+               rendering, unit-tested) + TuiApp.kt (Mosaic composables only,
+               incl. the maintain screen)
 ```
 
 ## Design contract — do not violate
@@ -90,7 +93,7 @@ These came from explicit user decisions; don't "improve" them away:
    `[machines.*]` in manifest.toml or fragments is a validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a machine
    doesn't map is not part of that machine's loadout: converge skips it,
-   status doesn't observe it, diff shows "-". `install` throws
+   status doesn't observe it, diff shows "-". `setup` throws
    ResolutionException before executing anything if: machine config file
    missing, an EXPLICITLY requested program unmapped, a mapped program's
    dependency unmapped, or a mapped known PM's binary absent (probed). No
@@ -213,7 +216,22 @@ These came from explicit user decisions; don't "improve" them away:
   reintroduce raw ANSI Color.* constants in composables.
 - **TUI + sudo**: install output is captured for the log pane, which would
   swallow sudo prompts; the model refuses sudo plans unless `sudo -n true`
-  succeeds and points users at `sudo -v` or the CLI.
+  succeeds and points users at `sudo -v` or the CLI. The maintain screen
+  applies the same guard before running.
+- **Maintain screen** (`loadout maintain`, TTY-only — UsageError otherwise):
+  MaintainModel drives picker (ALL opted-in scripts, check-less included) ->
+  sequential FORCED runs of the scripts themselves with live-log accordion ->
+  full-log viewer. After each script its `check` (when present) reruns and
+  decides done/pending; check-less scripts report exit code (done/failed);
+  results land in the state file via refreshAndWriteState (skipped on
+  cancel). `check` stays read-only — it runs checks, never scripts. Live
+  output comes from `ProcessRunner.stream`, which prepends `exec 2>&1`
+  (merges stderr without a subshell so sh tail-execs and `kill()` reaches the
+  real process) and reads kommand's `Child.bufferedStdout().readLine()`.
+  Ceiling: kill hits the direct child only; a grandchild holding the pipe
+  open delays the reader. On esc-cancel the model finalizes state immediately
+  and the zombie stream return is guarded off — don't let a late return
+  mutate state.
 - ktoml quirk insurance: manifest schema sticks to plain nested tables (no
   inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
 - `.toml.sample` files in `machines/` and `manifest.d/` are deliberately
@@ -230,7 +248,8 @@ These came from explicit user decisions; don't "improve" them away:
   depend on the host's package managers. Add an `ok "..."` test there for every
   user-visible behavior change.
 - TUI: reducers (`handleKey`) are unit-tested via `setStateForTest`; rendering
-  is verified manually (ask the user) plus PTY smoke probes.
+  is verified manually (ask the user) plus PTY smoke probes; run-tests.sh has
+  a Linux-guarded `script`-driven test of the maintain screen.
 
 ## CI / release
 
@@ -275,7 +294,7 @@ Cross-cutting: no `||` chains in checks; versions are the mapped pm's truth
 trailing pipes in checks; `file:` for every repo script (load-time existence
 check); prefer repetition over abstraction in config repos (the user dropped
 templates for explicit per-program `via` — don't reintroduce). Verify loop:
-`show` → map in machines/<name>.toml → `install --dry-run` → `status`.
+`show` → map in machines/<name>.toml → `setup --dry-run` → `status`.
 
 ## Working agreements with the user
 
