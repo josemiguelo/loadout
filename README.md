@@ -700,7 +700,7 @@ tui` with options) and you get an interactive dashboard instead of help text —
 the same program × machine matrix as `diff`, live:
 
 ```
- loadout 0.1.0   ~/machines  ·  laptop
+ loadout v0.2.0 │ machine laptop │ repo ~/machines │ tracking 2 machines
 
  PROGRAM     laptop    vps
  cowsay      3.8.4     missing
@@ -715,6 +715,11 @@ the same program × machine matrix as `diff`, live:
 
 Colors carry the semantics: versions green (yellow on drift), `missing`/`failed`
 red, `pending` yellow, `-` dim.
+
+The dashboard picks a dark (Tokyo Night) or light palette at startup by
+asking the terminal for its background color (OSC 11), falling back to the
+`COLORFGBG` hint — unknown means dark — and `t` flips it any time. Colors are semantic: in-sync versions calm green,
+drift amber, `missing`/`failed` red, structure dim.
 
 Lists longer than the terminal scroll in a viewport that keeps the selection
 centered: the panel title shows the position (`programs 31/88`) and dim
@@ -733,6 +738,7 @@ Keys:
 | `a` | Install everything missing on this machine |
 | `s` | Sync: pull → refresh → commit state → push |
 | `l` | Toggle the log view (output of installs/scripts/sync; the dashboard itself stays clean) |
+| `t` | Toggle dark/light theme (starts on the detected terminal theme) |
 | `y` / `n` | Confirm / cancel a pending install or script run |
 | `q` / `Esc` | Quit (from a pane: back to the dashboard) |
 
@@ -911,7 +917,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 
 ```console
 $ ./gradlew :core:linuxX64Test     # 89 unit tests (parsing, diffing, engines — no real processes)
-$ ./gradlew :app:linuxX64Test      # 13 TUI-model tests (key reducers, viewport math)
+$ ./gradlew :app:linuxX64Test      # 15 TUI-model tests (key reducers, viewport, theme)
 $ ./integration/run-tests.sh       # 32 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote

@@ -22,3 +22,11 @@ expect fun envVar(name: String): String?
 
 /** Terminal height in rows (TIOCGWINSZ on stdout), or null when unknown. */
 expect fun terminalRows(): Int?
+
+/**
+ * Perceptual luminance (0 = black, 1 = white) of the terminal background,
+ * queried via OSC 11, or null if the terminal doesn't answer. Must be called
+ * BEFORE any TUI takes the terminal over (briefly switches the tty to raw
+ * mode to read the reply).
+ */
+expect fun terminalBackgroundLuma(): Double?

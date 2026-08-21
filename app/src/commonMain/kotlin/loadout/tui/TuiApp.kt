@@ -1,7 +1,9 @@
 package loadout.tui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -17,12 +19,16 @@ import com.jakewharton.mosaic.ui.Text
 import com.jakewharton.mosaic.ui.TextStyle
 import loadout.cli.AppContext
 import loadout.core.TOOL_VERSION
+import loadout.core.platform.envVar
 import loadout.core.platform.terminalRows
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 
 fun runTui(app: AppContext) {
-    runMosaicBlocking { App(DashboardModel(app)) }
+    // Construct the model (and its OSC background query) before Mosaic
+    // switches the terminal into its own modes.
+    val model = DashboardModel(app)
+    runMosaicBlocking { App(model) }
 }
 
 private fun keyOf(event: KeyEvent): Key? = when (event) {
@@ -34,6 +40,7 @@ private fun keyOf(event: KeyEvent): Key? = when (event) {
     KeyEvent("s") -> Key.S
     KeyEvent("d") -> Key.D
     KeyEvent("l") -> Key.L
+    KeyEvent("t") -> Key.T
     KeyEvent("y") -> Key.Y
     KeyEvent("n") -> Key.N
     KeyEvent("q") -> Key.Q
@@ -43,45 +50,90 @@ private fun keyOf(event: KeyEvent): Key? = when (event) {
 }
 
 private val SPINNER = listOf("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-private val DIM = TextStyle.Dim
+private val BOLD = TextStyle.Bold
 
+// ---------------------------------------------------------------- theme
+
+/** Semantic color roles. Terminals get true color; Mosaic downsamples if not. */
+data class Palette(
+    val accent: Color,
+    val onAccent: Color,
+    val machine: Color,
+    val dim: Color,
+    val ok: Color,
+    val warn: Color,
+    val error: Color,
+    val selectionBg: Color,
+    val selectionFg: Color,
+)
+
+/** Tokyo Night. */
+private val DARK_PALETTE = Palette(
+    accent = Color(0x7a, 0xa2, 0xf7),
+    onAccent = Color(0x1a, 0x1b, 0x26),
+    machine = Color(0xbb, 0x9a, 0xf7),
+    dim = Color(0x56, 0x5f, 0x89),
+    ok = Color(0x9e, 0xce, 0x6a),
+    warn = Color(0xe0, 0xaf, 0x68),
+    error = Color(0xf7, 0x76, 0x8e),
+    selectionBg = Color(0x36, 0x4a, 0x82),
+    selectionFg = Color(0xc0, 0xca, 0xf5),
+)
+
+/** Light: vivid-but-readable on white (GitHub-light-like saturation). */
+private val LIGHT_PALETTE = Palette(
+    accent = Color(0x09, 0x69, 0xda),
+    onAccent = Color(0xff, 0xff, 0xff),
+    machine = Color(0x82, 0x50, 0xdf),
+    dim = Color(0x6e, 0x77, 0x81),
+    ok = Color(0x1a, 0x7f, 0x37),
+    warn = Color(0x9a, 0x67, 0x00),
+    error = Color(0xd1, 0x24, 0x2f),
+    selectionBg = Color(0x2e, 0x33, 0x40),
+    selectionFg = Color(0xe5, 0xe9, 0xf0),
+)
+
+private val LocalPalette = compositionLocalOf { DARK_PALETTE }
 
 // ---------------------------------------------------------------- borders
 
 @Composable
 private fun BorderTop(title: String, width: Int, titleColor: Color) {
+    val p = LocalPalette.current
     Row {
-        Text("╭─", textStyle = DIM)
+        Text("╭─", color = p.dim)
         if (title.isNotEmpty()) {
-            Text(" $title ", color = titleColor, textStyle = TextStyle.Bold)
-            Text("─".repeat((width - title.length - 4).coerceAtLeast(0)) + "╮", textStyle = DIM)
+            Text(" $title ", color = titleColor, textStyle = BOLD)
+            Text("─".repeat((width - title.length - 4).coerceAtLeast(0)) + "╮", color = p.dim)
         } else {
-            Text("─".repeat(width - 1) + "╮", textStyle = DIM)
+            Text("─".repeat(width - 1) + "╮", color = p.dim)
         }
     }
 }
 
 @Composable
 private fun BorderMid(title: String, width: Int, titleColor: Color) {
+    val p = LocalPalette.current
     Row {
-        Text("├─", textStyle = DIM)
-        Text(" $title ", color = titleColor, textStyle = TextStyle.Bold)
-        Text("─".repeat((width - title.length - 4).coerceAtLeast(0)) + "┤", textStyle = DIM)
+        Text("├─", color = p.dim)
+        Text(" $title ", color = titleColor, textStyle = BOLD)
+        Text("─".repeat((width - title.length - 4).coerceAtLeast(0)) + "┤", color = p.dim)
     }
 }
 
 @Composable
 private fun BorderBottom(width: Int) {
-    Text("╰" + "─".repeat(width) + "╯", textStyle = DIM)
+    Text("╰" + "─".repeat(width) + "╯", color = LocalPalette.current.dim)
 }
 
 /** One panel content line: border, [spans] (must render exactly [width]-2 cells), border. */
 @Composable
 private fun PanelLine(width: Int, spans: @Composable () -> Unit) {
+    val p = LocalPalette.current
     Row {
-        Text("│ ", textStyle = DIM)
+        Text("│ ", color = p.dim)
         spans()
-        Text(" │", textStyle = DIM)
+        Text(" │", color = p.dim)
     }
 }
 
@@ -122,28 +174,30 @@ private fun App(model: DashboardModel) {
         }
     }
 
-    Column(
-        modifier = Modifier.onKeyEvent { event ->
-            val key = keyOf(event) ?: return@onKeyEvent false
-            model.handleKey(key)?.let(model::dispatch)
-            true
-        },
-    ) {
-        TitleBar(s)
-        when (s.mode) {
-            Mode.LOADING -> Text(" loading…", textStyle = DIM)
-            Mode.LOG -> LogPanel(s)
-            else -> {
-                // Budget the list against the real terminal height: fixed
-                // chrome (title, borders, header, status, key bar) plus the
-                // details panel when it's open.
-                val detailsHeight = if (s.mode == Mode.DETAILS) model.detailLines().size + 2 else 0
-                MatrixPanel(s, listHeight = (termRows - 8 - detailsHeight).coerceAtLeast(5))
-                if (s.mode == Mode.DETAILS) DetailsPanel(model)
+    CompositionLocalProvider(LocalPalette provides if (s.dark) DARK_PALETTE else LIGHT_PALETTE) {
+        Column(
+            modifier = Modifier.onKeyEvent { event ->
+                val key = keyOf(event) ?: return@onKeyEvent false
+                model.handleKey(key)?.let(model::dispatch)
+                true
+            },
+        ) {
+            TitleBar(s)
+            when (s.mode) {
+                Mode.LOADING -> Text(" loading…", color = LocalPalette.current.dim)
+                Mode.LOG -> LogPanel(s)
+                else -> {
+                    // Budget the list against the real terminal height: fixed
+                    // chrome (title, borders, header, status, key bar) plus the
+                    // details panel when it's open.
+                    val detailsHeight = if (s.mode == Mode.DETAILS) model.detailLines().size + 2 else 0
+                    MatrixPanel(s, listHeight = (termRows - 8 - detailsHeight).coerceAtLeast(5))
+                    if (s.mode == Mode.DETAILS) DetailsPanel(model)
+                }
             }
+            StatusLine(s, spin)
+            KeyBar(s)
         }
-        StatusLine(s, spin)
-        KeyBar(s)
     }
 
     if (!s.exit) {
@@ -153,33 +207,46 @@ private fun App(model: DashboardModel) {
 
 @Composable
 private fun TitleBar(s: TuiState) {
+    val p = LocalPalette.current
+    val home = envVar("HOME")
+    val repo = if (home != null && s.repo.startsWith(home)) "~" + s.repo.removePrefix(home) else s.repo
+
+    @Composable
+    fun segment(label: String, value: String, valueColor: Color = Color.Unspecified) {
+        Text(" │ ", color = p.dim)
+        Text("$label ", color = p.dim)
+        Text(value, color = valueColor, textStyle = BOLD)
+    }
+
     Row {
-        Text(" loadout $TOOL_VERSION ", color = Color.Black, background = Color.Cyan, textStyle = TextStyle.Bold)
-        Text("  ${s.repo}", textStyle = DIM)
-        if (s.machine.isNotEmpty()) {
-            Text("  ·  ", textStyle = DIM)
-            Text(s.machine, color = Color.Magenta, textStyle = TextStyle.Bold)
+        Text(" loadout v$TOOL_VERSION ", color = p.onAccent, background = p.accent, textStyle = BOLD)
+        segment("machine", s.machine.ifEmpty { "detecting…" }, p.machine)
+        segment("repo", repo)
+        if (s.machines.isNotEmpty()) {
+            segment("tracking", "${s.machines.size} machine${if (s.machines.size == 1) "" else "s"}", p.accent)
         }
     }
 }
 
 // ---------------------------------------------------------------- matrix
 
-private fun cellColor(cell: String, drift: Boolean): Color? = when {
-    cell == "missing" || cell == "failed" -> Color.Red
-    cell == "pending" -> Color.Yellow
-    cell == "done" -> Color.Green
+/** Semantic color for a matrix cell, or null for the dim neutral "-". */
+private fun cellColor(cell: String, drift: Boolean, p: Palette): Color? = when {
+    cell == "missing" || cell == "failed" -> p.error
+    cell == "pending" -> p.warn
+    cell == "done" -> p.ok
     cell == "-" -> null
-    drift -> Color.Yellow
-    else -> Color.Green
+    drift -> p.warn
+    else -> p.ok
 }
 
 @Composable
 private fun MatrixPanel(s: TuiState, listHeight: Int) {
+    val p = LocalPalette.current
     if (s.rows.isEmpty()) {
         val message = "No programs in the manifest, or no state files yet — press r to scan."
         val width = message.length + 2
-        BorderTop("programs", width, Color.Cyan)
+        BorderTop("programs", width, p.accent)
         PanelTextLine(width, message)
         BorderBottom(width)
         return
@@ -198,46 +265,44 @@ private fun MatrixPanel(s: TuiState, listHeight: Int) {
     val end = (start + window).coerceAtMost(s.rows.size)
 
     val title = if (scrolled) "programs ${s.selected + 1}/${s.rows.size}" else "programs"
-    BorderTop(title, width, Color.Cyan)
+    BorderTop(title, width, p.accent)
     PanelLine(width) {
-        Text("PROGRAM".padEnd(nameWidth), color = Color.Cyan, textStyle = TextStyle.Bold)
+        Text("PROGRAM".padEnd(nameWidth), color = p.accent, textStyle = BOLD)
         Text(
             s.machines.joinToString("") { it.padEnd(colWidth) }.padEnd(inner - nameWidth),
-            color = Color.Cyan,
-            textStyle = TextStyle.Bold,
+            color = p.accent,
+            textStyle = BOLD,
         )
     }
-    if (scrolled) PanelTextLine(width, if (start > 0) "  ↑ $start more" else "", style = DIM)
+    if (scrolled) PanelTextLine(width, if (start > 0) "  ↑ $start more" else "", color = p.dim)
 
     var scriptsHeaderShown = false
     for (index in start until end) {
         val row = s.rows[index]
         if (row.isScript && !scriptsHeaderShown && (index == start || !s.rows[index - 1].isScript)) {
-            BorderMid("scripts", width, Color.Yellow)
+            BorderMid("scripts", width, p.warn)
             scriptsHeaderShown = true
         }
         val drift = "drift" in row.flags
         if (index == s.selected) {
             val line = row.name.padEnd(nameWidth) +
                 s.machines.joinToString("") { (row.cells[it] ?: "-").padEnd(colWidth) }
-            PanelLine(width) { Text(line.padEnd(inner), textStyle = TextStyle.Invert) }
+            PanelLine(width) {
+                Text(line.padEnd(inner), color = p.selectionFg, background = p.selectionBg, textStyle = BOLD)
+            }
         } else {
             PanelLine(width) {
-                Text(row.name.padEnd(nameWidth), textStyle = TextStyle.Bold)
+                Text(row.name.padEnd(nameWidth))
                 for (machine in s.machines) {
                     val cell = row.cells[machine] ?: "-"
-                    val color = cellColor(cell, drift)
-                    Text(
-                        cell.padEnd(colWidth),
-                        color = color ?: Color.Unspecified,
-                        textStyle = if (color == null) DIM else TextStyle.Empty,
-                    )
+                    val color = cellColor(cell, drift, p)
+                    Text(cell.padEnd(colWidth), color = color ?: p.dim)
                 }
-                if (s.machines.isEmpty()) Text("(no state files)".padEnd(inner - nameWidth), textStyle = DIM)
+                if (s.machines.isEmpty()) Text("(no state files)".padEnd(inner - nameWidth), color = p.dim)
             }
         }
     }
-    if (scrolled) PanelTextLine(width, if (end < s.rows.size) "  ↓ ${s.rows.size - end} more" else "", style = DIM)
+    if (scrolled) PanelTextLine(width, if (end < s.rows.size) "  ↓ ${s.rows.size - end} more" else "", color = p.dim)
     BorderBottom(width)
 }
 
@@ -245,22 +310,24 @@ private fun MatrixPanel(s: TuiState, listHeight: Int) {
 
 @Composable
 private fun DetailsPanel(model: DashboardModel) {
+    val p = LocalPalette.current
     val lines = model.detailLines()
     if (lines.isEmpty()) return
     val width = (lines.maxOf { it.length } + 2).coerceAtLeast(20)
-    BorderTop("details", width, Color.Magenta)
+    BorderTop("details", width, p.machine)
     lines.forEachIndexed { index, line ->
-        PanelTextLine(width, line, style = if (index == 0) TextStyle.Bold else TextStyle.Empty)
+        PanelTextLine(width, line, style = if (index == 0) BOLD else TextStyle.Empty)
     }
     BorderBottom(width)
 }
 
 @Composable
 private fun LogPanel(s: TuiState) {
+    val p = LocalPalette.current
     val lines = s.log.takeLast(20).ifEmpty { listOf("nothing logged yet — installs, scripts and syncs write here") }
     val width = (lines.maxOf { it.length } + 2).coerceAtLeast(30)
-    BorderTop("log", width, Color.Yellow)
-    for (line in lines) PanelTextLine(width, line, style = DIM)
+    BorderTop("log", width, p.warn)
+    for (line in lines) PanelTextLine(width, line, color = p.dim)
     BorderBottom(width)
 }
 
@@ -268,28 +335,29 @@ private fun LogPanel(s: TuiState) {
 
 @Composable
 private fun StatusLine(s: TuiState, spin: Int) {
+    val p = LocalPalette.current
     when (s.mode) {
         Mode.BUSY -> Row {
-            Text(" ${SPINNER[spin % SPINNER.size]} ", color = Color.Cyan)
+            Text(" ${SPINNER[spin % SPINNER.size]} ", color = p.accent)
             Text(s.message ?: "working…")
-            s.log.lastOrNull()?.let { Text("   $it", textStyle = DIM) }
+            s.log.lastOrNull()?.let { Text("   $it", color = p.dim) }
         }
         Mode.CONFIRM_PLAN, Mode.CONFIRM_SCRIPT -> Row {
-            Text(" ? ", color = Color.Yellow, textStyle = TextStyle.Bold)
-            Text(s.confirmText, color = Color.Yellow, textStyle = TextStyle.Bold)
+            Text(" ? ", color = p.warn, textStyle = BOLD)
+            Text(s.confirmText, color = p.warn, textStyle = BOLD)
         }
         else -> {
             val message = s.message ?: ""
             val (icon, color) = when {
                 message.startsWith("error") || "FAILED" in message || "failed:" in message ->
-                    "✘" to Color.Red
+                    "✘" to p.error
                 "sudo needs" in message || "nothing to" in message || message == "cancelled" ->
-                    "•" to Color.Yellow
-                message == KEY_HELP || message.isEmpty() -> "•" to Color.Cyan
-                else -> "✔" to Color.Green
+                    "•" to p.warn
+                message == KEY_HELP || message.isEmpty() -> "•" to p.accent
+                else -> "✔" to p.ok
             }
             Row {
-                Text(" $icon ", color = color, textStyle = TextStyle.Bold)
+                Text(" $icon ", color = color, textStyle = BOLD)
                 Text(message.ifEmpty { "ready" })
             }
         }
@@ -298,10 +366,11 @@ private fun StatusLine(s: TuiState, spin: Int) {
 
 @Composable
 private fun KeyBar(s: TuiState) {
+    val p = LocalPalette.current
     val keys: List<Pair<String, String>> = when (s.mode) {
         Mode.NORMAL -> listOf(
             "↑↓" to "move", "r" to "refresh", "i" to "install/run", "a" to "all missing",
-            "s" to "sync", "d" to "details", "l" to "log", "q" to "quit",
+            "s" to "sync", "d" to "details", "l" to "log", "t" to "theme", "q" to "quit",
         )
         Mode.DETAILS -> listOf("↑↓" to "move", "d" to "close details", "q" to "back")
         Mode.LOG -> listOf("l" to "back", "esc" to "back")
@@ -310,15 +379,15 @@ private fun KeyBar(s: TuiState) {
         Mode.LOADING -> emptyList()
     }
     if (keys.isEmpty()) {
-        if (s.mode == Mode.BUSY) Text(" keys are ignored until this finishes", textStyle = DIM)
+        if (s.mode == Mode.BUSY) Text(" keys are ignored until this finishes", color = p.dim)
         return
     }
     Row {
         Text(" ")
         keys.forEachIndexed { index, (key, label) ->
-            if (index > 0) Text("  ·  ", textStyle = DIM)
-            Text(key, color = Color.Cyan, textStyle = TextStyle.Bold)
-            Text(" $label", textStyle = DIM)
+            if (index > 0) Text("  ·  ", color = p.dim)
+            Text(key, color = p.accent, textStyle = BOLD)
+            Text(" $label", color = p.dim)
         }
     }
 }

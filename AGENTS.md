@@ -198,6 +198,13 @@ These came from explicit user decisions; don't "improve" them away:
   `platform.terminalRows()` (TIOCGWINSZ) every 300ms instead, with a 24-row
   fallback; the polling effect is guarded by `!exit` so quit still works.
   Keep windowing math in the model file, not composables.
+- **TUI theme**: true-color `Palette` pairs (Tokyo Night / Day) via a
+  CompositionLocal in TuiApp; `TuiState.dark` toggled with `t`, initial value
+  from `detectDarkTerminal(bgLuma, COLORFGBG)` — bgLuma is a real OSC 11
+  query (`platform.terminalBackgroundLuma()`, raw-mode tty round-trip) that
+  MUST run before runMosaic owns the terminal; COLORFGBG is the fallback
+  (Mosaic 0.18 can't report the terminal theme either). Color = signal: ok/warn/error/dim roles only — never
+  reintroduce raw ANSI Color.* constants in composables.
 - **TUI + sudo**: install output is captured for the log pane, which would
   swallow sudo prompts; the model refuses sudo plans unless `sudo -n true`
   succeeds and points users at `sudo -v` or the CLI.

@@ -15,13 +15,15 @@ import loadout.core.git.GitClient
 import loadout.core.model.Manifest
 import loadout.core.model.ScriptStatus
 import loadout.core.platform.blockingDispatcher
+import loadout.core.platform.envVar
+import loadout.core.platform.terminalBackgroundLuma
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class Key { UP, DOWN, R, I, A, S, D, L, Y, N, Q, ESC, ENTER }
+enum class Key { UP, DOWN, R, I, A, S, D, L, T, Y, N, Q, ESC, ENTER }
 
 enum class Mode { LOADING, NORMAL, DETAILS, LOG, CONFIRM_PLAN, CONFIRM_SCRIPT, BUSY }
 
@@ -46,6 +48,8 @@ data class TuiState(
     val message: String? = null,
     val confirmText: String = "",
     val exit: Boolean = false,
+    /** Dark or light color theme; detected at startup, toggled with `t`. */
+    val dark: Boolean = true,
 ) {
     val selectedRow: RowUi? get() = rows.getOrNull(selected)
 }
@@ -60,8 +64,27 @@ fun windowStart(selected: Int, total: Int, height: Int): Int =
     if (height <= 0 || total <= height) 0
     else (selected - (height - 1) / 2).coerceIn(0, total - height)
 
+/**
+ * Whether the terminal looks dark. Mosaic 0.18 can't report the terminal
+ * theme, so we ask the terminal for its background color (OSC 11 ->
+ * [bgLuma]); when it doesn't answer, fall back to the COLORFGBG convention
+ * ("<fg>;<bg>", bg 7/15 = light). Unknown -> dark, the safer default.
+ */
+fun detectDarkTerminal(bgLuma: Double?, colorFgBg: String?): Boolean {
+    if (bgLuma != null) return bgLuma < 0.5
+    val bg = colorFgBg?.substringAfterLast(';')?.toIntOrNull() ?: return true
+    return bg != 7 && bg != 15
+}
+
 class DashboardModel(private val app: AppContext) {
-    var state by mutableStateOf(TuiState(repo = app.repoRoot.toString()))
+    var state by mutableStateOf(
+        TuiState(
+            repo = runCatching { app.fs.canonicalize(app.repoRoot) }.getOrDefault(app.repoRoot).toString(),
+            // The OSC query must happen before Mosaic owns the terminal, i.e.
+            // the model must be constructed outside runMosaic (see runTui).
+            dark = detectDarkTerminal(terminalBackgroundLuma(), envVar("COLORFGBG")),
+        ),
+    )
         private set
 
     internal fun setStateForTest(s: TuiState) {
@@ -99,6 +122,7 @@ class DashboardModel(private val app: AppContext) {
                 Key.I -> if (s.rows.isEmpty()) null else { busy("planning..."); AsyncAction.PREPARE_SELECTED }
                 Key.A -> { busy("planning..."); AsyncAction.PREPARE_ALL }
                 Key.S -> { busy("syncing..."); AsyncAction.SYNC }
+                Key.T -> { toggleTheme(); null }
                 Key.Q, Key.ESC -> { scope.cancel(); state = s.copy(exit = true); null }
                 else -> null
             }
@@ -106,10 +130,12 @@ class DashboardModel(private val app: AppContext) {
                 Key.D, Key.ESC, Key.ENTER, Key.Q -> { state = s.copy(mode = Mode.NORMAL); null }
                 Key.UP -> { move(-1); null }
                 Key.DOWN -> { move(1); null }
+                Key.T -> { toggleTheme(); null }
                 else -> null
             }
             Mode.LOG -> when (key) {
                 Key.L, Key.ESC, Key.Q -> { state = s.copy(mode = Mode.NORMAL); null }
+                Key.T -> { toggleTheme(); null }
                 else -> null
             }
             Mode.CONFIRM_PLAN -> when (key) {
@@ -142,6 +168,11 @@ class DashboardModel(private val app: AppContext) {
                 message = "error: ${e.message?.lines()?.joinToString(" ")?.take(200)}",
             )
         }
+    }
+
+    private fun toggleTheme() {
+        val dark = !state.dark
+        state = state.copy(dark = dark, message = "theme: ${if (dark) "dark (Tokyo Night)" else "light"}")
     }
 
     private fun move(delta: Int) {

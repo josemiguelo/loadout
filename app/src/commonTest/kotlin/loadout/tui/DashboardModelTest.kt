@@ -41,6 +41,21 @@ class DashboardModelTest {
     }
 
     @Test
+    fun themeTogglesInBrowseModesButNotWhileBusy() {
+        val m = model()
+        val initial = m.state.dark
+        assertNull(m.handleKey(Key.T))
+        assertEquals(!initial, m.state.dark)
+        assertNull(m.handleKey(Key.T))
+        assertEquals(initial, m.state.dark)
+
+        val busy = model(mode = Mode.BUSY)
+        val before = busy.state.dark
+        busy.handleKey(Key.T)
+        assertEquals(before, busy.state.dark)
+    }
+
+    @Test
     fun quitSetsExitOnlyInNormalMode() {
         val m = model(mode = Mode.DETAILS)
         m.handleKey(Key.Q)
