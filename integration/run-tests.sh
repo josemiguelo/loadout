@@ -369,6 +369,27 @@ echo "$OUT" | grep -qE "mytool +1.0 +-> 2.0" || fail "outdated reports the newer
 echo "$OUT" | grep -q "othertool" && fail "up-to-date program must not be listed" || true
 ok "outdated asks each installer's oracle and reports newer candidates"
 
+# check: script checks with their detail output, structured.
+cat >> instrepo/manifest.toml <<'TOML'
+
+[scripts.healthy]
+run = "true"
+check = "true"
+
+[scripts.drifted]
+run = "true"
+check = "echo missing: nodejs 16 npm firebase-tools; false"
+TOML
+printf 'scripts = ["healthy", "drifted"]\n\n[pm]\nmytool = "fake"\nothertool = "fake2"\n' > instrepo/machines/m1.toml
+"$BIN" --repo instrepo --machine m1 check >/dev/null 2>&1 && fail "check should exit 1 on pending" || true
+OUT=$("$BIN" --repo instrepo --machine m1 check || true)
+echo "$OUT" | grep -qE "healthy +done" || fail "check lists passing scripts"
+echo "$OUT" | grep -qE "drifted +pending" || fail "check lists failing scripts"
+echo "$OUT" | grep -q "missing: nodejs 16 npm firebase-tools" || fail "check surfaces the check's detail output"
+OUT=$("$BIN" --repo instrepo --machine m1 check healthy) || fail "check with names exits 0 when those pass"
+echo "$OUT" | grep -q "drifted" && fail "named check must not include others" || true
+ok "check runs script checks and surfaces their detail"
+
 # --- show ---------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 show git marker)
 echo "$OUT" | grep -q "program git" || fail "show prints the program"

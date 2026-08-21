@@ -8,7 +8,7 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: feature-complete for v0.1.** All commands (`init`, `status`,
-`install`, `outdated`, `run`, `diff`, `sync`) plus the interactive TUI dashboard work on
+`install`, `outdated`, `check`, `run`, `diff`, `sync`) plus the interactive TUI dashboard work on
 Linux; CI covers Linux and macOS, and tagged releases ship binaries for
 linux-x64, macos-arm64, and macos-x64.
 
@@ -705,7 +705,30 @@ override `outdated` per program like any other field; programs whose variant
 resolves no oracle (script installs) are listed as unchecked rather than
 guessed at.
 
-### 10. Compare your fleet: `diff`
+### 10. See what script checks are missing: `check`
+
+`status` tells you a script is `pending`; `check` tells you **why**. It runs
+this machine's opted-in script checks and relays each failing check's output —
+so checks that print what's missing (the two-mode list-script pattern) become
+a structured report:
+
+```console
+$ loadout check
+  chezmoi-init           done
+  asdf-tools             done
+  asdf-default-packages  pending
+                           missing: nodejs 16.20.0 npm firebase-tools
+                           missing: nodejs 18.16.0 npm firebase-tools
+  setup-completions      done
+
+1 pending — converge with: loadout run <name>  (or loadout install)
+```
+
+Exits 1 when anything is pending (like `diff` on drift). Name scripts to
+check just those: `loadout check asdf-default-packages`. Read-only — it never
+runs the scripts themselves and never writes state.
+
+### 11. Compare your fleet: `diff`
 
 Once two or more machines have synced their state:
 
@@ -734,7 +757,7 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 11. The dashboard: bare `loadout` (TUI)
+### 12. The dashboard: bare `loadout` (TUI)
 
 Run `loadout` with no arguments in a real terminal (or `loadout
 tui` with options) and you get an interactive dashboard instead of help text —
@@ -800,7 +823,7 @@ TUI specifics to know:
 - Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
   use `loadout --repo ... tui` to pass flags.
 
-### 12. Multiple machines in practice
+### 13. Multiple machines in practice
 
 On a new machine:
 
@@ -822,7 +845,7 @@ $ loadout diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 13. Global options
+### 14. Global options
 
 Valid on every command, before the subcommand:
 
@@ -840,7 +863,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 14. The state file
+### 15. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -874,7 +897,7 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
-### 15. Version compatibility between the repo and the binary
+### 16. Version compatibility between the repo and the binary
 
 Mixed fleets happen — machines upgrade loadout at different times. Two guards
 keep that safe:
@@ -959,7 +982,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 ```console
 $ ./gradlew :core:linuxX64Test     # 93 unit tests (parsing, diffing, engines — no real processes)
 $ ./gradlew :app:linuxX64Test      # 15 TUI-model tests (key reducers, viewport, theme)
-$ ./integration/run-tests.sh       # 33 black-box tests driving the real binary
+$ ./integration/run-tests.sh       # 34 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
 ```

@@ -3,6 +3,7 @@ package loadout
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.subcommands
 import loadout.cli.AppContext
+import loadout.cli.CheckCommand
 import loadout.cli.DiffCommand
 import loadout.cli.InitCommand
 import loadout.cli.InstallCommand
@@ -45,6 +46,7 @@ fun main(args: Array<String>) {
                 ShowCommand(),
                 InstallCommand(),
                 OutdatedCommand(),
+                CheckCommand(),
                 RunCommand(),
                 DiffCommand(),
                 SyncCommand(),
