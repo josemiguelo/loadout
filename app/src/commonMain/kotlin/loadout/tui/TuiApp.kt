@@ -20,6 +20,7 @@ import com.jakewharton.mosaic.ui.TextStyle
 import loadout.cli.AppContext
 import loadout.core.TOOL_VERSION
 import loadout.core.platform.envVar
+import loadout.core.platform.terminalColumns
 import loadout.core.platform.terminalRows
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -441,7 +442,7 @@ private fun MaintainApp(model: MaintainModel) {
 
     // Per-script elapsed seconds: a script can stay silent for minutes, so
     // the ticking counter is the visible sign of progress.
-    val runningName = s.rows.firstOrNull { it.status == RunStatus.RUNNING }?.name
+    val runningName = s.rows.firstOrNull { it.status == RunStatus.RUNNING || it.status == RunStatus.CHECKING }?.name
     var elapsed by remember { mutableIntStateOf(0) }
     LaunchedEffect(runningName) {
         elapsed = 0
@@ -453,20 +454,24 @@ private fun MaintainApp(model: MaintainModel) {
         }
     }
 
-    // Same TIOCGWINSZ polling as the dashboard (see App).
+    // Same TIOCGWINSZ polling as the dashboard (see App), width included —
+    // the maintain screen is borderless and fills the whole terminal.
     var termRows by remember { mutableIntStateOf(terminalRows() ?: 24) }
+    var termCols by remember { mutableIntStateOf(terminalColumns() ?: 80) }
     if (!s.exit) {
         LaunchedEffect(Unit) {
             while (true) {
                 delay(300)
                 termRows = terminalRows() ?: 24
+                termCols = terminalColumns() ?: 80
             }
         }
     }
 
     // Log lines an expanded box may use: terminal height minus one line per
-    // script row and the fixed chrome (title, borders, status, key bar).
-    val logHeight = (termRows - s.rows.size - 8).coerceIn(4, 16)
+    // script row and the fixed chrome (title, blank, status, key bar).
+    val logHeight = (termRows - s.rows.size - 6).coerceAtLeast(3)
+    val width = termCols
 
     CompositionLocalProvider(LocalPalette provides if (s.dark) DARK_PALETTE else LIGHT_PALETTE) {
         Column(
@@ -477,7 +482,11 @@ private fun MaintainApp(model: MaintainModel) {
             },
         ) {
             MaintainTitleBar(s)
-            MaintainPanel(s, spin, elapsed, logHeight)
+            Text("")
+            MaintainPanel(s, spin, elapsed, logHeight, width)
+            // Push the footer to the bottom of the terminal.
+            val used = 4 + s.rows.size + maintainExpandedLines(s, logHeight)
+            repeat((termRows - used - 1).coerceAtLeast(0)) { Text("") }
             MaintainStatusLine(s, spin, elapsed)
             MaintainKeyBar(s)
         }
@@ -486,6 +495,21 @@ private fun MaintainApp(model: MaintainModel) {
     if (!s.exit) {
         LaunchedEffect(Unit) { awaitCancellation() }
     }
+}
+
+/** Lines the expanded accordion/viewer currently occupies (for the filler). */
+private fun maintainExpandedLines(s: MaintainState, logHeight: Int): Int = when {
+    s.phase == MaintainPhase.RUNNING ->
+        s.rows.firstOrNull { it.status == RunStatus.RUNNING || it.status == RunStatus.CHECKING }?.log?.let { log ->
+            minOf(log.size, logHeight) + if (log.size > logHeight) 1 else 0
+        } ?: 0
+    s.phase == MaintainPhase.DONE && s.viewing != null -> {
+        val log = s.rows.first { it.name == s.viewing }.log
+        val start = s.scroll.coerceAtMost((log.size - logHeight).coerceAtLeast(0))
+        val window = minOf(logHeight, log.size - start)
+        window + (if (start > 0) 1 else 0) + (if (log.size - start - window > 0) 1 else 0)
+    }
+    else -> 0
 }
 
 @Composable
@@ -499,11 +523,17 @@ private fun MaintainTitleBar(s: MaintainState) {
         Text(" │ ", color = p.dim)
         Text("scripts ", color = p.dim)
         Text("${s.rows.size}", color = p.accent, textStyle = BOLD)
+        if (s.phase == MaintainPhase.SELECT) {
+            Text(" │ ", color = p.dim)
+            Text("selected ", color = p.dim)
+            Text("${s.selected.size}", color = p.accent, textStyle = BOLD)
+        }
     }
 }
 
 private fun runStatusLabel(row: MaintainRow, selectedForRun: Boolean, elapsed: Int): String = when (row.status) {
     RunStatus.RUNNING -> "running… ${elapsed}s"
+    RunStatus.CHECKING -> "checking… ${elapsed}s"
     RunStatus.DONE -> "done"
     RunStatus.PENDING -> "pending"
     RunStatus.FAILED -> "failed"
@@ -511,23 +541,18 @@ private fun runStatusLabel(row: MaintainRow, selectedForRun: Boolean, elapsed: I
     RunStatus.WAITING -> if (selectedForRun) "queued" else "skipped"
 }
 
+/** Borderless full-width list: one row per script, accordion lines beneath. */
 @Composable
-private fun MaintainPanel(s: MaintainState, spin: Int, elapsed: Int, logHeight: Int) {
+private fun MaintainPanel(s: MaintainState, spin: Int, elapsed: Int, logHeight: Int, width: Int) {
     val p = LocalPalette.current
     val nameWidth = s.rows.maxOf { it.name.length } + 3
-    val inner = (4 + nameWidth + 11).coerceAtLeast(60)
-    val width = inner + 2
 
-    val title = when (s.phase) {
-        MaintainPhase.SELECT -> "scripts ${s.selected.size}/${s.rows.size} selected"
-        else -> "scripts"
-    }
-    BorderTop(title, width, p.accent)
     for ((index, row) in s.rows.withIndex()) {
         val selectedForRun = row.name in s.selected
         val marker = when {
             s.phase == MaintainPhase.SELECT -> if (selectedForRun) "[x] " else "[ ] "
-            row.status == RunStatus.RUNNING -> " ${SPINNER[spin % SPINNER.size]}  "
+            row.status == RunStatus.RUNNING || row.status == RunStatus.CHECKING ->
+                " ${SPINNER[spin % SPINNER.size]}  "
             row.status == RunStatus.DONE -> " ✔  "
             row.status == RunStatus.PENDING || row.status == RunStatus.FAILED -> " ✘  "
             row.status == RunStatus.CANCELLED -> " ✘  "
@@ -536,70 +561,72 @@ private fun MaintainPanel(s: MaintainState, spin: Int, elapsed: Int, logHeight: 
         val statusLabel = if (s.phase == MaintainPhase.SELECT) "" else runStatusLabel(row, selectedForRun, elapsed)
         val hasCursor = s.phase != MaintainPhase.RUNNING && index == s.cursor
         if (hasCursor) {
-            PanelLine(width) {
-                Text(
-                    fit(marker + row.name.padEnd(nameWidth) + statusLabel, inner),
-                    color = p.selectionFg,
-                    background = p.selectionBg,
-                    textStyle = BOLD,
-                )
-            }
+            // Selection bar stretches across the whole terminal.
+            Text(
+                fit(" " + marker + row.name.padEnd(nameWidth) + statusLabel, width),
+                color = p.selectionFg,
+                background = p.selectionBg,
+                textStyle = BOLD,
+            )
         } else {
-            PanelLine(width) {
+            Row {
                 val markerColor = when (row.status) {
                     RunStatus.DONE -> p.ok
                     RunStatus.PENDING, RunStatus.FAILED, RunStatus.CANCELLED -> p.error
-                    RunStatus.RUNNING -> p.accent
+                    RunStatus.RUNNING, RunStatus.CHECKING -> p.accent
                     RunStatus.WAITING -> if (selectedForRun) p.accent else p.dim
                 }
+                Text(" ")
                 Text(marker, color = markerColor, textStyle = BOLD)
                 Text(row.name.padEnd(nameWidth))
                 val statusColor = when (row.status) {
                     RunStatus.DONE -> p.ok
                     RunStatus.PENDING -> p.warn
                     RunStatus.FAILED, RunStatus.CANCELLED -> p.error
-                    RunStatus.RUNNING -> p.accent
+                    RunStatus.RUNNING, RunStatus.CHECKING -> p.accent
                     RunStatus.WAITING -> p.dim
                 }
-                Text(fit(statusLabel, inner - 4 - nameWidth), color = statusColor)
+                Text(fit(statusLabel, (width - 5 - nameWidth).coerceAtLeast(0)), color = statusColor)
             }
         }
         // Accordion: the running row's live tail, or the viewer's window.
         // The model seeds every run's log with its command, so the box is
         // never empty while running (a silent script doesn't look frozen).
-        if (s.phase == MaintainPhase.RUNNING && row.status == RunStatus.RUNNING) {
-            MaintainLogLines(row.log.takeLast(logHeight), above = (row.log.size - logHeight).coerceAtLeast(0), below = 0, width = width, inner = inner)
+        if (s.phase == MaintainPhase.RUNNING && (row.status == RunStatus.RUNNING || row.status == RunStatus.CHECKING)) {
+            MaintainLogLines(row.log.takeLast(logHeight), above = (row.log.size - logHeight).coerceAtLeast(0), below = 0, width = width)
         } else if (s.phase == MaintainPhase.DONE && s.viewing == row.name) {
             val start = s.scroll.coerceAtMost((row.log.size - logHeight).coerceAtLeast(0))
             val window = row.log.drop(start).take(logHeight)
-            MaintainLogLines(window, above = start, below = row.log.size - start - window.size, width = width, inner = inner)
+            MaintainLogLines(window, above = start, below = row.log.size - start - window.size, width = width)
         }
     }
-    BorderBottom(width)
 }
 
 @Composable
-private fun MaintainLogLines(lines: List<String>, above: Int, below: Int, width: Int, inner: Int) {
+private fun MaintainLogLines(lines: List<String>, above: Int, below: Int, width: Int) {
     val p = LocalPalette.current
-    if (above > 0) PanelTextLine(width, "    ┆ ↑ $above more", color = p.dim)
+    if (above > 0) Text(fit("      ↑ $above more", width), color = p.dim)
     for (line in lines) {
-        PanelLine(width) {
-            Text("    ┆ ", color = p.dim)
-            Text(fit(line, inner - 6), color = p.dim)
-        }
+        Text(fit("      $line", width), color = p.dim)
     }
-    if (below > 0) PanelTextLine(width, "    ┆ ↓ $below more", color = p.dim)
+    if (below > 0) Text(fit("      ↓ $below more", width), color = p.dim)
 }
 
 @Composable
 private fun MaintainStatusLine(s: MaintainState, spin: Int, elapsed: Int) {
     val p = LocalPalette.current
     if (s.phase == MaintainPhase.RUNNING) {
-        val running = s.rows.firstOrNull { it.status == RunStatus.RUNNING }
+        val running = s.rows.firstOrNull { it.status == RunStatus.RUNNING || it.status == RunStatus.CHECKING }
         Row {
             Text(" ${SPINNER[spin % SPINNER.size]} ", color = p.accent)
-            Text("running ${running?.name ?: "…"} · ${elapsed}s")
-            Text("   full logs open when the run finishes", color = p.dim)
+            if (running != null) {
+                val verb = if (running.status == RunStatus.CHECKING) "checking" else "running"
+                Text("$verb ${running.name} · ${elapsed}s")
+                Text("   full logs open when the run finishes", color = p.dim)
+            } else {
+                // Between the last script and DONE: the state file is written.
+                Text(s.message ?: "updating state…")
+            }
         }
         return
     }

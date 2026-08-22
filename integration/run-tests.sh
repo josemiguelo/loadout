@@ -400,6 +400,8 @@ if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
         && fail "maintain should exit 1 while drifted's check still fails" || true
     grep -qa "loadout maintain" tui-maintain.log || fail "maintain renders its title bar"
     grep -qa "check: still failing" tui-maintain.log || fail "maintain reruns the check after the script and records the verdict"
+    grep -q '"drifted"' instrepo/state/m1.json || fail "maintain records the run in the state file"
+    grep -q '"status": "pending"' instrepo/state/m1.json || fail "maintain state status comes from the rerun check"
     ok "maintain runs selected scripts in a PTY, exits 1 when a check still fails"
 fi
 

@@ -23,9 +23,25 @@ import kotlinx.coroutines.withContext
 
 enum class MaintainKey { UP, DOWN, PAGE_UP, PAGE_DOWN, SPACE, A, N, T, Q, ESC, ENTER }
 
+private val ANSI_ESCAPES = Regex("\u001b\\[[0-9;?]*[ -/]*[@-~]|\u001b\\][^\u0007\u001b]*(\u0007|\u001b\\\\)?|\u001b.")
+
+/**
+ * Display-safe lines from one raw chunk of process output. Real tools emit
+ * carriage-return progress redraws (`10%\r50%\r100%`), ANSI colors, and tabs
+ * — rendered verbatim they mash into one garbled line. Keep the final state
+ * of a \r-run, strip escapes, expand tabs, split any embedded newlines.
+ */
+internal fun displayLines(raw: String): List<String> =
+    raw.split('\n')
+        .map { chunk ->
+            val settled = chunk.split('\r').lastOrNull { it.isNotBlank() } ?: ""
+            settled.replace(ANSI_ESCAPES, "").replace("\t", "    ")
+        }
+        .filter { it.isNotBlank() }
+
 enum class MaintainPhase { SELECT, RUNNING, DONE }
 
-enum class RunStatus { WAITING, RUNNING, DONE, PENDING, FAILED, CANCELLED }
+enum class RunStatus { WAITING, RUNNING, CHECKING, DONE, PENDING, FAILED, CANCELLED }
 
 data class MaintainRow(
     val name: String,
@@ -187,7 +203,7 @@ class MaintainModel(
                 workDir = app.repoRoot.toString(),
                 onStart = { current = it },
             ) { line ->
-                if (!cancelled && line.isNotBlank()) appendLog(target.name, line)
+                if (!cancelled) displayLines(line).forEach { appendLog(target.name, it) }
             }
             current = null
             // After a cancel the state was already finalized by cancelRun();
@@ -199,18 +215,34 @@ class MaintainModel(
                 exitCode = exit,
             )
             appendLog(target.name, "exit $exit")
-            // The check, when there is one, has the final word on status.
+            // The check, when there is one, has the final word on status. It
+            // can take minutes (asdf probes every version) — surface it as
+            // its own visible state instead of pretending the script still runs.
             val status = when {
                 target.checkCommand == null -> if (exit == 0) RunStatus.DONE else RunStatus.FAILED
-                runner.capture(target.checkCommand, workDir = app.repoRoot.toString()).success -> {
-                    appendLog(target.name, "check: passed")
-                    RunStatus.DONE
-                }
                 else -> {
-                    appendLog(target.name, "check: still failing")
-                    RunStatus.PENDING
+                    // Stream the check too: slow checks (asdf probes every
+                    // version) show their findings live and esc can kill them.
+                    setRow(target.name) { it.copy(status = RunStatus.CHECKING) }
+                    val checkExit = runner.stream(
+                        target.checkCommand,
+                        workDir = app.repoRoot.toString(),
+                        onStart = { current = it },
+                    ) { line ->
+                        if (!cancelled) displayLines(line).forEach { appendLog(target.name, it) }
+                    }
+                    current = null
+                    if (cancelled) return@withContext
+                    if (checkExit == 0) {
+                        appendLog(target.name, "check: passed")
+                        RunStatus.DONE
+                    } else {
+                        appendLog(target.name, "check: still failing")
+                        RunStatus.PENDING
+                    }
                 }
             }
+            if (cancelled) return@withContext
             setRow(target.name) { it.copy(status = status) }
         }
         if (cancelled) return@withContext
@@ -223,7 +255,31 @@ class MaintainModel(
         val sys = system ?: return
         if (results.isEmpty()) return
         state = state.copy(message = "updating state…")
-        runCatching { app.refreshAndWriteState(m, sys, results) }
+        runCatching {
+            val previous = app.stateStore.read(sys.machine)
+            if (previous == null) {
+                // No state file yet — build a complete one the normal way.
+                app.refreshAndWriteState(m, sys, results)
+            } else {
+                // Merge the run's own results: the checks this run just
+                // executed already decided each script's status, so a full
+                // refresh here would only repeat minutes of probing.
+                val statuses = state.rows.associate { it.name to it.status }
+                val merged = previous.copy(
+                    scripts = previous.scripts + results.mapValues { (name, run) ->
+                        run.copy(
+                            status = when (statuses[name]) {
+                                RunStatus.DONE -> ScriptStatus.DONE
+                                RunStatus.PENDING -> ScriptStatus.PENDING
+                                else -> run.status
+                            },
+                        )
+                    },
+                    updatedAt = nowIso(),
+                )
+                if (merged.copy(updatedAt = previous.updatedAt) != previous) app.stateStore.write(merged)
+            }
+        }
     }
 
     private fun cancelRun() {
@@ -231,7 +287,11 @@ class MaintainModel(
         current?.kill()
         state = state.copy(
             rows = state.rows.map {
-                if (it.status == RunStatus.RUNNING) it.copy(status = RunStatus.CANCELLED) else it
+                if (it.status == RunStatus.RUNNING || it.status == RunStatus.CHECKING) {
+                    it.copy(status = RunStatus.CANCELLED)
+                } else {
+                    it
+                }
             },
             phase = MaintainPhase.DONE,
             exitCode = 1,

@@ -71,6 +71,13 @@ actual fun terminalRows(): Int? = memScoped {
 }
 
 @OptIn(ExperimentalForeignApi::class)
+actual fun terminalColumns(): Int? = memScoped {
+    val ws = alloc<winsize>()
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ.toULong(), ws.ptr) != 0) return null
+    ws.ws_col.toInt().takeIf { it > 0 }
+}
+
+@OptIn(ExperimentalForeignApi::class)
 actual fun terminalBackgroundLuma(): Double? = memScoped {
     val fd = open("/dev/tty", O_RDWR)
     if (fd < 0) return null

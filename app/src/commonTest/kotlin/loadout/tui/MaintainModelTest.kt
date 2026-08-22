@@ -19,6 +19,24 @@ private class ScriptedRunner(private val results: Map<String, ExecResult>) : Pro
     override fun inherit(command: String, workDir: String?): Int = capture(command, workDir).exitCode
 }
 
+class DisplayLinesTest {
+    @Test
+    fun carriageReturnProgressCollapsesToFinalState() {
+        assertEquals(listOf("progress 100%"), displayLines("progress 10%\rprogress 50%\rprogress 100%"))
+    }
+
+    @Test
+    fun ansiEscapesAreStrippedAndTabsExpanded() {
+        assertEquals(listOf("colored ok"), displayLines("\u001b[32mcolored ok\u001b[0m"))
+        assertEquals(listOf("a    b    c"), displayLines("a\tb\tc"))
+    }
+
+    @Test
+    fun embeddedNewlinesSplitAndBlanksDrop() {
+        assertEquals(listOf("one", "two"), displayLines("one\n\ntwo\n"))
+    }
+}
+
 class MaintainModelTest {
     private fun model(
         rows: List<MaintainRow>,
@@ -139,7 +157,7 @@ class MaintainModelTest {
         val m = model(
             rows = listOf(
                 MaintainRow("first", "c1", status = RunStatus.DONE),
-                MaintainRow("stuck", "c2", status = RunStatus.RUNNING),
+                MaintainRow("stuck", "c2", status = RunStatus.CHECKING),
                 MaintainRow("later", "c3"),
             ),
             phase = MaintainPhase.RUNNING,

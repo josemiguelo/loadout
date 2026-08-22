@@ -23,6 +23,9 @@ expect fun envVar(name: String): String?
 /** Terminal height in rows (TIOCGWINSZ on stdout), or null when unknown. */
 expect fun terminalRows(): Int?
 
+/** Current terminal width in columns (TIOCGWINSZ), or null when not a tty. */
+expect fun terminalColumns(): Int?
+
 /**
  * Perceptual luminance (0 = black, 1 = white) of the terminal background,
  * queried via OSC 11, or null if the terminal doesn't answer. Must be called

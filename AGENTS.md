@@ -221,10 +221,18 @@ These came from explicit user decisions; don't "improve" them away:
 - **Maintain screen** (`loadout maintain`, TTY-only — UsageError otherwise):
   MaintainModel drives picker (ALL opted-in scripts, check-less included) ->
   sequential FORCED runs of the scripts themselves with live-log accordion ->
-  full-log viewer. After each script its `check` (when present) reruns and
-  decides done/pending; check-less scripts report exit code (done/failed);
-  results land in the state file via refreshAndWriteState (skipped on
-  cancel). `check` stays read-only — it runs checks, never scripts. Live
+  full-log viewer. Rendering is borderless and fills the whole terminal:
+  width from `platform.terminalColumns()` (polled with terminalRows), footer
+  pushed to the bottom with filler lines (user decision — no panel boxes
+  here, unlike the dashboard). After each script its `check` (when present) reruns and
+  decides done/pending — surfaced as its own `checking…` state
+  (RunStatus.CHECKING), since a check can take minutes and "running" after
+  `exit 0` reads as a hang; check-less scripts report exit code (done/failed);
+  results are MERGED into the existing state file directly (the statuses ARE
+  the checks this run just executed; a full refreshAndWriteState here would
+  re-probe everything for minutes — it's used only when no state file exists
+  yet), skipped on cancel. `check` stays read-only — it runs checks, never
+  scripts. Live
   output comes from `ProcessRunner.stream`, which prepends `exec 2>&1`
   (merges stderr without a subshell so sh tail-execs and `kill()` reaches the
   real process) and reads kommand's `Child.bufferedStdout().readLine()`.
