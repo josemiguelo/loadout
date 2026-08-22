@@ -19,7 +19,7 @@ import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import kotlinx.coroutines.runBlocking
 
-class SetupCommand : CliktCommand(name = "setup") {
+class SetupCommand : CliktCommand(name = "setup-new-machine") {
     override fun help(context: Context) =
         "Set up this machine: install missing programs (all of them, or just NAMES and " +
             "their dependencies). With no NAMES, applicable setup scripts run too."

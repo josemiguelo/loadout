@@ -283,7 +283,7 @@ class DashboardModel(private val app: AppContext) {
         if (installs.any { "sudo" in it.command } && !app.runner.capture("sudo -n true").success) {
             state = state.copy(
                 mode = Mode.NORMAL,
-                message = "sudo needs a password — run 'sudo -v' in a terminal first, or use the CLI: loadout setup",
+                message = "sudo needs a password — run 'sudo -v' in a terminal first, or use the CLI: loadout setup-new-machine",
             )
             return
         }

@@ -7,7 +7,7 @@ Write a manifest once; on each machine run one command to install what's missing
 one command to publish that machine's state, and one command to see how all your
 machines compare.
 
-**Status: feature-complete.** All commands (`init`, `status`, `setup`,
+**Status: feature-complete.** All commands (`init`, `status`, `setup-new-machine`,
 `outdated`, `check`, `maintain`, `run`, `diff`, `sync`) plus the interactive
 TUI dashboard work on Linux; CI covers Linux and macOS, and tagged releases
 ship binaries for linux-x64, macos-arm64, and macos-x64.
@@ -343,6 +343,20 @@ in declaration order.
 service enablement, config edits — it's a `[scripts.*]` step with a `check`,
 opted into per machine.
 
+**Where the check lives** — the invariant behind all these shapes: loadout
+never trusts "it ran once"; everything converges against a check it can
+re-ask. But an install script never needs a check *mode* of its own — the
+check is declared where the truth lives, via the resolution chain (variant
+`check` → installer `check` → program `[version]`):
+
+- script keyed under a package manager (shape 5) → the pm database is the
+  truth, the installer's check (`rpm -q {pkg}`) derives;
+- script with no pm behind it (shape 7) → the binary's self-report is the
+  truth, the `[version]` block observes it;
+- truth in neither place (shape 6, and every `[scripts.*]` step) → only then
+  does the check become yours to write: an inline one-liner, or the script's
+  own two-mode `check` argument.
+
 Rules that hold for every shape: never write cross-variant `||` chains in
 checks (the mapped key picks one true check; a chain masks which source owns
 the program — and expect the version to be *the package manager's* truth,
@@ -357,7 +371,7 @@ tells you what you actually built:
 ```console
 $ loadout show newprog        # resolved commands/check/probe per key
 $ vi machines/$(hostname).toml   # map it: newprog = "<key>"
-$ loadout setup --dry-run   # plan shows the exact command, deps first
+$ loadout setup-new-machine --dry-run   # plan shows the exact command, deps first
 $ loadout status              # observation agrees?
 ```
 
@@ -410,7 +424,7 @@ when:
   `script-fedora` have no binary to check and are always accepted.
 
 ```console
-$ loadout setup --dry-run
+$ loadout setup-new-machine --dry-run
 error: cannot build install plan:
   - program 'bat' has no pm defined for machine 'laptop' (add it to machines/laptop.toml)
   - package manager 'pacman' (mapped for ripgrep) is not installed on machine 'laptop'
@@ -569,10 +583,10 @@ $ loadout status --json       # print the full state document instead
 $ loadout status --no-write   # check but don't touch the state file
 ```
 
-### 6. Set the machine up: `setup`
+### 6. Set the machine up: `setup-new-machine`
 
 ```console
-$ loadout setup
+$ loadout setup-new-machine
 Checking current state...
 
 Plan for laptop:
@@ -617,10 +631,10 @@ The rules:
 Flags:
 
 ```console
-$ loadout setup --dry-run        # print the plan, do nothing
-$ loadout setup --yes            # skip the confirmation (for automation)
-$ loadout setup --skip-scripts   # programs only
-$ loadout setup ripgrep bat      # specific programs (+ their deps)
+$ loadout setup-new-machine --dry-run        # print the plan, do nothing
+$ loadout setup-new-machine --yes            # skip the confirmation (for automation)
+$ loadout setup-new-machine --skip-scripts   # programs only
+$ loadout setup-new-machine ripgrep bat      # specific programs (+ their deps)
 ```
 
 ### 7. Run scripts on demand: `run`
@@ -694,7 +708,7 @@ Checking 45 programs against their remote sources...
   tpack            2.0.4      -> 2.0.5     [brew-cask]
   yq               4.53.3     -> 4.53.6    [brew]
 
-4 update(s) available. `loadout setup` won't upgrade — use the package manager, then `loadout status`.
+4 update(s) available. `loadout setup-new-machine` won't upgrade — use the package manager, then `loadout status`.
 (3 installed programs have no outdated oracle: asdf, jumpkwapp, ngrok)
 ```
 
@@ -842,7 +856,7 @@ TUI specifics to know:
 - **sudo:** install output is captured for the log view, which would swallow a
   password prompt. If a plan contains `sudo` commands and your credentials
   aren't cached, the TUI refuses with a hint — run `sudo -v` first, or use
-  `loadout setup` in the CLI where prompts work normally.
+  `loadout setup-new-machine` in the CLI where prompts work normally.
 - Command output appears in the log when each step *finishes* (not streamed
   live); the status line shows a spinner plus the latest log line meanwhile.
 - Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
@@ -855,7 +869,7 @@ On a new machine:
 ```console
 $ git clone git@github.com:you/machines.git ~/machines
 $ export LOADOUT_REPO=~/machines     # put in your shell profile
-$ loadout setup --yes && loadout sync
+$ loadout setup-new-machine --yes && loadout sync
 ```
 
 Don't have a second machine handy? Simulate one — `--machine` changes which
@@ -966,7 +980,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 `install.sh` detects the platform (including Rosetta on Apple Silicon),
 downloads the latest release tarball, sanity-runs the binary, and installs it
 to `~/.local/bin/loadout` — then prints the bootstrap steps (clone your config
-repo, write `machines/<hostname>.toml`, `loadout setup`). Pin a version with
+repo, write `machines/<hostname>.toml`, `loadout setup-new-machine`). Pin a version with
 `LOADOUT_VERSION=v0.2.0`, or change the destination with
 `LOADOUT_INSTALL_DIR`.
 

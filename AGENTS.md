@@ -77,7 +77,7 @@ app/   loadout
   Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/show/setup/outdated/check/maintain/run/diff/sync/init/tui)
+               one file per subcommand (status/show/setup-new-machine/outdated/check/maintain/run/diff/sync/init/tui)
   tui/         DashboardModel + MaintainModel (ALL state + logic, no
                rendering, unit-tested) + TuiApp.kt (Mosaic composables only,
                incl. the maintain screen)
@@ -93,7 +93,7 @@ These came from explicit user decisions; don't "improve" them away:
    `[machines.*]` in manifest.toml or fragments is a validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a machine
    doesn't map is not part of that machine's loadout: converge skips it,
-   status doesn't observe it, diff shows "-". `setup` throws
+   status doesn't observe it, diff shows "-". `setup-new-machine` throws
    ResolutionException before executing anything if: machine config file
    missing, an EXPLICITLY requested program unmapped, a mapped program's
    dependency unmapped, or a mapped known PM's binary absent (probed). No
@@ -302,7 +302,17 @@ Cross-cutting: no `||` chains in checks; versions are the mapped pm's truth
 trailing pipes in checks; `file:` for every repo script (load-time existence
 check); prefer repetition over abstraction in config repos (the user dropped
 templates for explicit per-program `via` — don't reintroduce). Verify loop:
-`show` → map in machines/<name>.toml → `setup --dry-run` → `status`.
+`show` → map in machines/<name>.toml → `setup-new-machine --dry-run` → `status`.
+
+Where the check lives (the invariant): loadout never trusts "it ran once" —
+everything converges against a re-askable check, declared where the truth
+lives via the resolution chain (variant check → installer check → program
+[version]). Program-install scripts are one-mode, install-only — pm-keyed
+scripts get the pm-database check derived (recipe 5), pm-less ones fall back
+to [version] (recipe 7); only when neither holds the truth (dnf groups —
+recipe 6 — and every [scripts.*] step) does a hand-written check exist:
+inline one-liner or the script's own two-mode `check` argument. A script
+file never needs a check mode unless it IS the truth's only oracle.
 
 ## Working agreements with the user
 
