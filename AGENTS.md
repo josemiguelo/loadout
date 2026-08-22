@@ -77,7 +77,7 @@ app/   loadout
   Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/show/setup-new-machine/outdated/check/maintain/run/diff/sync/init/tui)
+               one file per subcommand (status/explain/setup-new-machine/outdated/check/maintain/run/diff/sync/init/tui)
   tui/         DashboardModel + MaintainModel (ALL state + logic, no
                rendering, unit-tested) + TuiApp.kt (Mosaic composables only,
                incl. the maintain screen)
@@ -302,7 +302,7 @@ Cross-cutting: no `||` chains in checks; versions are the mapped pm's truth
 trailing pipes in checks; `file:` for every repo script (load-time existence
 check); prefer repetition over abstraction in config repos (the user dropped
 templates for explicit per-program `via` — don't reintroduce). Verify loop:
-`show` → map in machines/<name>.toml → `setup-new-machine --dry-run` → `status`.
+`explain` → map in machines/<name>.toml → `setup-new-machine --dry-run` → `status`.
 
 Where the check lives (the invariant): loadout never trusts "it ran once" —
 everything converges against a re-askable check, declared where the truth

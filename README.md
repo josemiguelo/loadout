@@ -7,9 +7,9 @@ Write a manifest once; on each machine run one command to install what's missing
 one command to publish that machine's state, and one command to see how all your
 machines compare.
 
-**Status: feature-complete.** All commands (`init`, `status`, `setup-new-machine`,
-`outdated`, `check`, `maintain`, `run`, `diff`, `sync`) plus the interactive
-TUI dashboard work on Linux; CI covers Linux and macOS, and tagged releases
+**Status: feature-complete.** All commands (`init`, `status`, `explain`,
+`setup-new-machine`, `outdated`, `check`, `maintain`, `run`, `diff`, `sync`)
+plus the interactive TUI dashboard work on Linux; CI covers Linux and macOS, and tagged releases
 ship binaries for linux-x64, macos-arm64, and macos-x64.
 
 No JVM, no runtime dependencies — Kotlin/Native compiled to a single executable.
@@ -221,15 +221,16 @@ One shell footgun to know when writing custom check commands: don't end them
 with a pipe (`... --version | head -1`) — a pipeline's exit code is the *last*
 command's, which would make missing programs look installed.
 
-#### Inspecting the expanded manifest: `show`
+#### Inspecting the expanded manifest: `explain`
 
-`loadout show <name>...` prints any program or script **as the engine sees
+`loadout explain <name>...` prints any program or script **as the engine sees
 it** — templates and `via` expanded, every variant fully resolved through its
 installer (command, check, probe), this machine's mapped key marked, plus the
-last observed state:
+last observed state. With no names it explains the **whole manifest**, every
+program and script in declaration order:
 
 ```console
-$ loadout show solaar
+$ loadout explain solaar
 program solaar  — Logitech device manager
   version      (none — status will always be 'unknown')
   install.dnf  sudo dnf install -y solaar  [installer: dnf]   <- laptop
@@ -365,11 +366,11 @@ check in a pipe (the pipeline's exit code would make missing look installed).
 Prefer `file:` for any repo script so a missing file fails at load, not as an
 eternal `pending`.
 
-Then close the loop — every new program needs its machine mapping, and `show`
+Then close the loop — every new program needs its machine mapping, and `explain`
 tells you what you actually built:
 
 ```console
-$ loadout show newprog        # resolved commands/check/probe per key
+$ loadout explain newprog        # resolved commands/check/probe per key
 $ vi machines/$(hostname).toml   # map it: newprog = "<key>"
 $ loadout setup-new-machine --dry-run   # plan shows the exact command, deps first
 $ loadout status              # observation agrees?

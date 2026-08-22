@@ -9,12 +9,13 @@ import com.github.ajalt.clikt.parameters.arguments.multiple
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 
-class ShowCommand : CliktCommand(name = "show") {
+class ExplainCommand : CliktCommand(name = "explain") {
     override fun help(context: Context) =
-        "Print the fully expanded definition of programs or scripts — exactly what the engine sees, templates resolved"
+        "Explain programs or scripts — the fully expanded definition exactly as the " +
+            "engine sees it, templates resolved. With no names, explains the whole manifest."
 
-    private val names by argument(name = "names", help = "Program or script names")
-        .multiple(required = true)
+    private val names by argument(name = "names", help = "Program or script names (default: everything)")
+        .multiple()
 
     private val app by requireObject<AppContext>()
 
@@ -24,7 +25,8 @@ class ShowCommand : CliktCommand(name = "show") {
         val state = app.stateStore.read(system.machine)
         val mapping = manifest.machines[system.machine]?.pm.orEmpty()
 
-        names.forEachIndexed { index, name ->
+        val targets = names.ifEmpty { (manifest.programs.keys + manifest.scripts.keys).toList() }
+        targets.forEachIndexed { index, name ->
             if (index > 0) echo("")
             val program = manifest.programs[name]
             val script = manifest.scripts[name]

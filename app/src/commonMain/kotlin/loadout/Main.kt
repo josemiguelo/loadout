@@ -5,13 +5,13 @@ import com.github.ajalt.clikt.core.subcommands
 import loadout.cli.AppContext
 import loadout.cli.CheckCommand
 import loadout.cli.DiffCommand
+import loadout.cli.ExplainCommand
 import loadout.cli.InitCommand
 import loadout.cli.MaintainCommand
 import loadout.cli.OutdatedCommand
 import loadout.cli.RootCommand
 import loadout.cli.RunCommand
 import loadout.cli.SetupCommand
-import loadout.cli.ShowCommand
 import loadout.cli.StatusCommand
 import loadout.cli.SyncCommand
 import loadout.cli.TuiCommand
@@ -44,7 +44,7 @@ fun main(args: Array<String>) {
         RootCommand()
             .subcommands(
                 StatusCommand(),
-                ShowCommand(),
+                ExplainCommand(),
                 SetupCommand(),
                 OutdatedCommand(),
                 CheckCommand(),

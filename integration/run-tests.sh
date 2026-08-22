@@ -405,14 +405,16 @@ if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
     ok "maintain runs selected scripts in a PTY, exits 1 when a check still fails"
 fi
 
-# --- show ---------------------------------------------------------------
-OUT=$("$BIN" --repo repo --machine m1 show git marker)
-echo "$OUT" | grep -q "program git" || fail "show prints the program"
-echo "$OUT" | grep -qE "install\.manual +echo install git yourself && false +<- m1" || fail "show marks this machine's mapped key"
-echo "$OUT" | grep -q "script marker" || fail "show prints the script"
-echo "$OUT" | grep -qE "file +scripts/marker.sh" || fail "show prints the script file"
-"$BIN" --repo repo show ghost-name >/dev/null 2>&1 && fail "show of unknown name should fail" || true
-ok "show prints expanded programs and scripts"
+# --- explain ------------------------------------------------------------
+OUT=$("$BIN" --repo repo --machine m1 explain git marker)
+echo "$OUT" | grep -q "program git" || fail "explain prints the program"
+echo "$OUT" | grep -qE "install\.manual +echo install git yourself && false +<- m1" || fail "explain marks this machine's mapped key"
+echo "$OUT" | grep -q "script marker" || fail "explain prints the script"
+echo "$OUT" | grep -qE "file +scripts/marker.sh" || fail "explain prints the script file"
+"$BIN" --repo repo explain ghost-name >/dev/null 2>&1 && fail "explain of unknown name should fail" || true
+OUT=$("$BIN" --repo repo --machine m1 explain)
+echo "$OUT" | grep -q "program git" && echo "$OUT" | grep -q "script marker" || fail "bare explain covers the whole manifest"
+ok "explain prints expanded programs and scripts (all of them with no names)"
 
 # --- versioning ---------------------------------------------------------
 mkdir -p verrepo/state
