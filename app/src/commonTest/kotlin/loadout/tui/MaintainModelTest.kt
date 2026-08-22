@@ -19,6 +19,24 @@ private class ScriptedRunner(private val results: Map<String, ExecResult>) : Pro
     override fun inherit(command: String, workDir: String?): Int = capture(command, workDir).exitCode
 }
 
+class ThemeDetectionTest {
+    @Test
+    fun oscLumaWinsOverColorFgBg() {
+        assertEquals(true, detectDarkTerminal(0.08, null))
+        assertEquals(false, detectDarkTerminal(0.93, "15;0"))
+    }
+
+    @Test
+    fun colorFgBgFallbackAndUnknownDefaultsDark() {
+        assertEquals(true, detectDarkTerminal(null, "15;0"))
+        assertEquals(false, detectDarkTerminal(null, "0;15"))
+        assertEquals(false, detectDarkTerminal(null, "0;7"))
+        assertEquals(true, detectDarkTerminal(null, null))
+        assertEquals(true, detectDarkTerminal(null, "garbage"))
+        assertEquals(false, detectDarkTerminal(null, "12;default;15"))
+    }
+}
+
 class DisplayLinesTest {
     @Test
     fun carriageReturnProgressCollapsesToFinalState() {

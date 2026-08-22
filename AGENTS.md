@@ -12,7 +12,9 @@ versions across machines. Users declare installers (mechanism patterns: probe/in
 programs (install variants over those installers) and scripts (idempotent
 setup steps) in TOML; each machine
 maps every program to one install variant; state files record what each machine
-actually has; `diff` compares the fleet. CLI + Mosaic TUI.
+actually has; `diff` compares the fleet. CLI + the Mosaic maintain screen
+(the old dashboard TUI was deleted on 2026-08-21 — every function it had
+lives in a command now; don't reintroduce it).
 
 Renamed from `post-installer` on 2026-08-17 — the working directory and some
 external references may still use the old name. Never reintroduce it in code.
@@ -25,7 +27,7 @@ external references may still use the old name. Never reintroduce it in code.
 ./gradlew :app:linkReleaseExecutableLinuxX64        # optimized (slow)
 
 ./gradlew :core:linuxX64Test                        # core unit tests
-./gradlew :app:linuxX64Test                         # TUI-model unit tests
+./gradlew :app:linuxX64Test                         # maintain-model unit tests
 ./integration/run-tests.sh [path-to-binary]         # black-box suite (default: debug binary)
 ```
 
@@ -36,7 +38,7 @@ builds nothing — link the binary first.
 fake one and pipe keys with sleeps:
 
 ```sh
-(sleep 3; printf 'r'; sleep 5; printf 'q') | script -qec "$BIN --repo <repo> tui" /dev/null
+(sleep 2; printf 'a'; sleep 1; printf '\r'; sleep 3; printf 'q') | script -qec "$BIN --repo <repo> maintain" /dev/null
 ```
 
 A run that doesn't exit usually means a coroutine kept `runMosaic` alive (see
@@ -74,13 +76,12 @@ core/  loadout.core
   platform/    expect/actual posix: hostname, isatty, uname, nowIso, envVar,
                blockingDispatcher (= Dispatchers.IO)
 app/   loadout
-  Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
+  Main.kt      Clikt dispatch (bare invocation prints help). Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/explain/setup-new-machine/outdated/maintain/run/diff/sync/init/tui)
-  tui/         DashboardModel + MaintainModel (ALL state + logic, no
-               rendering, unit-tested) + TuiApp.kt (Mosaic composables only,
-               incl. the maintain screen)
+               one file per subcommand (status/explain/setup-new-machine/outdated/maintain/run/diff/sync/init)
+  tui/         MaintainModel (ALL state + logic, no rendering, unit-tested)
+               + TuiApp.kt (Mosaic composables for the maintain screen only)
 ```
 
 ## Design contract — do not violate
@@ -159,11 +160,17 @@ These came from explicit user decisions; don't "improve" them away:
     — all engines/UIs go through it. Field fallback: command → installer
     install pattern (else load error); check → installer check (else
     program `[version]`); probe → installer probe (else none); outdated →
-    installer outdated (else no oracle — `loadout outdated` skips and reports
-    it). Outdated oracles print ONLY the candidate version (shape the output
-    in the command; the shared regex extracts) and their exit code is ignored
-    (dnf check-update exits 100 when updates exist). Never write
-    cross-variant `||` chains in checks.
+    variant outdated (explicit override), else installer `outdated-all`
+    (batch: ONE command per installer printing `<pkg> <candidate text>`
+    lines, per-program regex extracts the version from the text — 8x faster
+    than per-pkg), else installer outdated per-pkg pattern (else no oracle —
+    `loadout outdated` skips and reports it). Per-pkg oracles print ONLY the
+    candidate version (shape the output in the command; the shared regex
+    extracts); exit codes are ignored either way (dnf check-update exits 100
+    when updates exist). Old binaries ignore `outdated-all`
+    (ignoreUnknownNames) and fall back to per-pkg — keep both in config
+    repos until the fleet upgrades. Never write cross-variant `||` chains in
+    checks.
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —
     0.2.0 itself broke 0.1 repos (string install values became variant
@@ -198,33 +205,31 @@ These came from explicit user decisions; don't "improve" them away:
   `LaunchedEffect` runs — exit = remove the `awaitCancellation()` effect.
 - **TUI coroutine rule**: async work must NOT run on the composition's scope
   (`rememberCoroutineScope`) — a lingering job there keeps `runMosaic` from
-  ever finishing (caused a q-after-refresh hang). DashboardModel owns its own
+  ever finishing (caused a q-after-refresh hang). MaintainModel owns its own
   `CoroutineScope(SupervisorJob() + blockingDispatcher)`; UI calls
   `model.dispatch(action)`. Keep it that way.
-- **TUI viewport**: long lists render a window centered on the selection —
-  pure `windowStart()` in DashboardModel.kt (unit-tested). Mosaic 0.18's
-  `LocalTerminalState.size` does NOT report the real TTY size — TuiApp polls
-  `platform.terminalRows()` (TIOCGWINSZ) every 300ms instead, with a 24-row
-  fallback; the polling effect is guarded by `!exit` so quit still works.
-  Keep windowing math in the model file, not composables.
+- **TUI size**: Mosaic 0.18's `LocalTerminalState.size` does NOT report the
+  real TTY size — TuiApp polls `platform.terminalRows()`/`terminalColumns()`
+  (TIOCGWINSZ) every 300ms instead, with 24x80 fallback; the polling effect
+  is guarded by `!exit` so quit still works. Keep windowing math in the
+  model file, not composables.
 - **TUI theme**: true-color `Palette` pairs (Tokyo Night / Day) via a
-  CompositionLocal in TuiApp; `TuiState.dark` toggled with `t`, initial value
+  CompositionLocal in TuiApp; `MaintainState.dark` toggled with `t`, initial value
   from `detectDarkTerminal(bgLuma, COLORFGBG)` — bgLuma is a real OSC 11
   query (`platform.terminalBackgroundLuma()`, raw-mode tty round-trip) that
   MUST run before runMosaic owns the terminal; COLORFGBG is the fallback
   (Mosaic 0.18 can't report the terminal theme either). Color = signal: ok/warn/error/dim roles only — never
   reintroduce raw ANSI Color.* constants in composables.
-- **TUI + sudo**: install output is captured for the log pane, which would
-  swallow sudo prompts; the model refuses sudo plans unless `sudo -n true`
-  succeeds and points users at `sudo -v` or the CLI. The maintain screen
-  applies the same guard before running.
+- **TUI + sudo**: streamed output would swallow a sudo password prompt; the
+  maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
+  points users at `sudo -v`.
 - **Maintain screen** (`loadout maintain`, TTY-only — UsageError otherwise):
   MaintainModel drives picker (ALL opted-in scripts, check-less included) ->
   sequential FORCED runs of the scripts themselves with live-log accordion ->
   full-log viewer. Rendering is borderless and fills the whole terminal:
   width from `platform.terminalColumns()` (polled with terminalRows), footer
   pushed to the bottom with filler lines (user decision — no panel boxes
-  here, unlike the dashboard). After each script its `check` (when present) reruns and
+  here). After each script its `check` (when present) reruns and
   decides done/pending — surfaced as its own `checking…` state
   (RunStatus.CHECKING), since a check can take minutes and "running" after
   `exit 0` reads as a hang; check-less scripts report exit code (done/failed);

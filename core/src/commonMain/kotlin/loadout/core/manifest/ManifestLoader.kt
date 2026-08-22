@@ -325,6 +325,9 @@ object ManifestLoader {
             if (installer.outdated != null && installer.regex == null) {
                 errors += "installers.$name has an outdated command but no regex"
             }
+            if (installer.outdatedAll != null && installer.regex == null) {
+                errors += "installers.$name has an outdated-all command but no regex"
+            }
         }
 
         for ((name, program) in manifest.programs) {

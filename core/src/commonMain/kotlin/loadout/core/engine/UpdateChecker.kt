@@ -43,4 +43,31 @@ class UpdateChecker(
             }.awaitAll().toMap()
         }
     }
+
+    /**
+     * Run one installer's batch oracle (`outdated-all`): every output line is
+     * `<pkg> <candidate text>` — first whitespace-separated token is the
+     * package id, the rest is the text the per-program regex extracts the
+     * version from. Exit code ignored, like [candidate].
+     */
+    fun batchCandidates(command: String): Map<String, String> {
+        val result = runner.capture(expandFilePrefix(command), workDir)
+        return result.stdout.ifBlank { result.stderr }.lineSequence()
+            .mapNotNull { line ->
+                val trimmed = line.trim()
+                val split = trimmed.indexOfFirst { it.isWhitespace() }
+                if (split <= 0) null else trimmed.take(split) to trimmed.drop(split).trim()
+            }
+            .toMap()
+    }
+
+    /** Run all batch oracles (installer name -> command) concurrently. */
+    suspend fun batchAll(commands: Map<String, String>): Map<String, Map<String, String>> =
+        withContext(blockingDispatcher) {
+            coroutineScope {
+                commands.map { (installer, command) ->
+                    async { installer to batchCandidates(command) }
+                }.awaitAll().toMap()
+            }
+        }
 }

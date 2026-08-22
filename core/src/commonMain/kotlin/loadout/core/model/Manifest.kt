@@ -38,7 +38,13 @@ data class Manifest(
         fun sub(s: String) = s.replace("{pkg}", pkg)
         val checkCommand = variant.check ?: installer?.check
         val regex = variant.regex ?: installer?.regex
-        val outdatedCommand = variant.outdated ?: installer?.outdated
+        // Outdated precedence: explicit per-variant oracle, else the
+        // installer's batch oracle (one command for all its packages), else
+        // the installer's per-package pattern.
+        val explicitOutdated = variant.outdated
+        val batch = if (explicitOutdated == null) installer?.outdatedAll else null
+        val outdatedCommand = explicitOutdated ?: if (batch == null) installer?.outdated else null
+        val installerName = variant.installer ?: key.takeIf { installers.containsKey(it) }
         return ResolvedInstall(
             command = (variant.command ?: installer?.install)?.let(::sub),
             check = if (checkCommand != null && regex != null) {
@@ -49,6 +55,11 @@ data class Manifest(
             probe = variant.probe ?: installer?.probe,
             outdated = if (outdatedCommand != null && regex != null) {
                 VersionCheck(sub(outdatedCommand), regex)
+            } else {
+                null
+            },
+            outdatedAll = if (batch != null && regex != null && installerName != null) {
+                BatchOracle(installerName, batch, pkg, regex)
             } else {
                 null
             },
@@ -74,6 +85,21 @@ data class ResolvedInstall(
      * it), or null when this variant has no update oracle.
      */
     val outdated: VersionCheck?,
+    /** The installer's batch oracle covering this variant, when it has one. */
+    val outdatedAll: BatchOracle? = null,
+)
+
+/**
+ * One installer-wide `outdated-all` command: prints a `<pkg> <candidate>`
+ * line per outdated package, so `loadout outdated` asks each remote once
+ * instead of once per program. [regex] extracts the version from the
+ * candidate token, program by program.
+ */
+data class BatchOracle(
+    val installer: String,
+    val command: String,
+    val pkg: String,
+    val regex: String,
 )
 
 @Serializable
@@ -92,6 +118,14 @@ data class Installer(
      * `loadout outdated`.
      */
     val outdated: String? = null,
+    /**
+     * Batch form of [outdated]: ONE command printing a `<pkg> <candidate>`
+     * line per outdated package this installer manages. When present it
+     * replaces the per-package [outdated] pattern (which older binaries
+     * still fall back to — the field is ignored by them).
+     */
+    @SerialName("outdated-all")
+    val outdatedAll: String? = null,
 )
 
 /**

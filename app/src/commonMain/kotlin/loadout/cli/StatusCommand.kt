@@ -10,11 +10,6 @@ import loadout.core.engine.VersionChecker
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
-import loadout.core.platform.isStdoutTty
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
@@ -39,33 +34,16 @@ class StatusCommand : CliktCommand(name = "status") {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
 
-        val (state, detail) = runBlocking {
-            // Same spinner as the TUI while the checks run; the refresh work
-            // happens on blockingDispatcher, so this loop stays responsive.
-            val spinner = if (isStdoutTty()) launch {
-                val frames = listOf("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-                var frame = 0
-                while (isActive) {
-                    echo("\r${frames[frame++ % frames.size]} checking programs and scripts…", trailingNewline = false)
-                    delay(120)
-                }
+        val (state, detail) = spinning("checking programs and scripts…") {
+            if (noWrite) {
+                val engine =
+                    StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
+                val s = engine.refresh(manifest, system, app.stateStore.read(system.machine))
+                s to engine.lastScriptDetail
             } else {
-                null
-            }
-            try {
-                if (noWrite) {
-                    val engine =
-                        StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
-                    val s = engine.refresh(manifest, system, app.stateStore.read(system.machine))
-                    s to engine.lastScriptDetail
-                } else {
-                    app.refreshAndWriteState(manifest, system) to app.lastScriptDetail
-                }
-            } finally {
-                spinner?.cancelAndJoin()
+                app.refreshAndWriteState(manifest, system) to app.lastScriptDetail
             }
         }
-        if (isStdoutTty()) echo("\r\u001b[K", trailingNewline = false)
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         if (json) {

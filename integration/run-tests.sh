@@ -356,18 +356,33 @@ check = "echo other 1.0"
 outdated = "true"
 regex = "([0-9][0-9.]*)"
 
+[installers.fake3]
+probe = "sh"
+install = "true"
+check = "echo batchtool 1.0"
+outdated-all = "printf 'batchtool 3.0\\nuptodate 1.0\\n'"
+regex = "([0-9][0-9.]*)"
+
 [programs.mytool]
 via = ["fake"]
 
 [programs.othertool]
 via = ["fake2"]
+
+[programs.batchtool]
+via = ["fake3"]
+
+[programs.uptodate]
+via = ["fake3"]
 TOML
-printf '[pm]\nmytool = "fake"\nothertool = "fake2"\n' > instrepo/machines/m1.toml
+printf '[pm]\nmytool = "fake"\nothertool = "fake2"\nbatchtool = "fake3"\nuptodate = "fake3"\n' > instrepo/machines/m1.toml
 "$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated exits 0"
 echo "$OUT" | grep -qE "mytool +1.0 +-> 2.0" || fail "outdated reports the newer candidate"
 echo "$OUT" | grep -q "othertool" && fail "up-to-date program must not be listed" || true
-ok "outdated asks each installer's oracle and reports newer candidates"
+echo "$OUT" | grep -qE "batchtool +1.0 +-> 3.0" || fail "batch oracle (outdated-all) reports its candidate"
+echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must not be listed" || true
+ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
 # check: script checks with their detail output, structured.
 cat >> instrepo/manifest.toml <<'TOML'

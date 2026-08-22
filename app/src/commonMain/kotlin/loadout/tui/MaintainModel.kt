@@ -41,6 +41,18 @@ internal fun displayLines(raw: String): List<String> =
 
 enum class MaintainPhase { SELECT, RUNNING, DONE }
 
+/**
+ * Whether the terminal looks dark. Mosaic 0.18 can't report the terminal
+ * theme, so we ask the terminal for its background color (OSC 11 ->
+ * [bgLuma]); when it doesn't answer, fall back to the COLORFGBG convention
+ * ("<fg>;<bg>", bg 7/15 = light). Unknown -> dark, the safer default.
+ */
+fun detectDarkTerminal(bgLuma: Double?, colorFgBg: String?): Boolean {
+    if (bgLuma != null) return bgLuma < 0.5
+    val bg = colorFgBg?.substringAfterLast(';')?.toIntOrNull() ?: return true
+    return bg != 7 && bg != 15
+}
+
 enum class RunStatus { WAITING, RUNNING, CHECKING, DONE, PENDING, FAILED, CANCELLED }
 
 data class MaintainRow(

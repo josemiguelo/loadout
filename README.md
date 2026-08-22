@@ -8,9 +8,9 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: feature-complete.** All commands (`init`, `status`, `explain`,
-`setup-new-machine`, `outdated`, `maintain`, `run`, `diff`, `sync`)
-plus the interactive TUI dashboard work on Linux; CI covers Linux and macOS, and tagged releases
-ship binaries for linux-x64, macos-arm64, and macos-x64.
+`setup-new-machine`, `outdated`, `maintain`, `run`, `diff`, `sync`) work on
+Linux; CI covers Linux and macOS, and tagged releases ship binaries for
+linux-x64, macos-arm64, and macos-x64.
 
 No JVM, no runtime dependencies — Kotlin/Native compiled to a single executable.
 It shells out to your package managers and `git`, so those must be on `PATH`.
@@ -243,8 +243,7 @@ program solaar  — Logitech device manager
 ```
 
 Use it whenever you're unsure what a `template`/`via` line produced, which
-command `install` would actually run, or why a mapping fails. (The TUI's `d`
-details pane shows the same data interactively.)
+command `install` would actually run, or why a mapping fails.
 
 #### Recipe: adding a program
 
@@ -729,6 +728,21 @@ override `outdated` per program like any other field; programs whose variant
 resolves no oracle (script installs) are listed as unchecked rather than
 guessed at.
 
+For speed, give an installer a **batch oracle** — `outdated-all`, one command
+that asks the remote about *everything* and prints a `<pkg> <candidate>` line
+per outdated package (first token = package id, the rest is text the shared
+regex extracts the version from):
+
+```toml
+[installers.dnf]
+outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'"
+```
+
+When present it replaces the per-package pattern (one process per installer
+instead of one per program — 8x faster on a real repo); an explicit variant
+`outdated` still wins for that program, and older binaries ignore the field
+and fall back to per-package, so keep both while a fleet has mixed versions.
+
 ### 10. Run maintenance interactively: `maintain`
 
 `maintain` is the hands-on counterpart to `status`: where status *reports*
@@ -750,7 +764,8 @@ When the run finishes, move the cursor onto any row and press `enter` to open
 its **full** log and scroll through it (`↑/↓`, `PgUp`/`PgDn`) — the live view
 only tails, but everything is kept. Every log records the command, its
 output, and the exit code. Scripts that would need a sudo password are
-refused up front (run `sudo -v` first), same as the dashboard. `maintain` is
+refused up front (run `sudo -v` first — captured output would swallow the
+prompt). `maintain` is
 TTY-only; for scripting use `loadout run <name>` (execute) or `loadout status`
 (report).
 
@@ -783,73 +798,7 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 12. The dashboard: bare `loadout` (TUI)
-
-Run `loadout` with no arguments in a real terminal (or `loadout
-tui` with options) and you get an interactive dashboard instead of help text —
-the same program × machine matrix as `diff`, live:
-
-```
- loadout v0.2.0 │ machine laptop │ repo ~/machines │ tracking 2 machines
-
- PROGRAM     laptop    vps
- cowsay      3.8.4     missing
- ripgrep     15.1.0    15.1.0      ← selected row is an inverse-video bar
-
- SCRIPTS
- dotfiles    done      pending
-
- ✔ refreshed
- ↑↓ move · r refresh · i install/run · a all missing · s sync · d details · l log · q quit
-```
-
-Colors carry the semantics: versions green (yellow on drift), `missing`/`failed`
-red, `pending` yellow, `-` dim.
-
-The dashboard picks a dark (Tokyo Night) or light palette at startup by
-asking the terminal for its background color (OSC 11), falling back to the
-`COLORFGBG` hint — unknown means dark — and `t` flips it any time. Colors are semantic: in-sync versions calm green,
-drift amber, `missing`/`failed` red, structure dim.
-
-Lists longer than the terminal scroll in a viewport that keeps the selection
-centered: the panel title shows the position (`programs 31/88`) and dim
-`↑ N more` / `↓ N more` indicators mark what's off-screen. The window follows
-the terminal's live height (polled from the TTY; 24-row fallback when it
-can't be read).
-
-Keys:
-
-| Key | Action |
-|---|---|
-| `↑`/`↓` (or `k`/`j`) | Move between rows |
-| `d` / `Enter` | Details pane for the selected row: version check, full install table with this machine's mapped key marked, depends-on / check / after |
-| `r` | Re-run all version and script checks, update the state file (spinner while working) |
-| `i` | Install the selected program (same strict plan + errors as the CLI) — or run the selected script |
-| `a` | Install everything missing on this machine |
-| `s` | Sync: pull → refresh → commit state → push |
-| `l` | Toggle the log view (output of installs/scripts/sync; the dashboard itself stays clean) |
-| `t` | Toggle dark/light theme (starts on the detected terminal theme) |
-| `y` / `n` | Confirm / cancel a pending install or script run |
-| `q` / `Esc` | Quit (from a pane: back to the dashboard) |
-
-Everything the TUI does goes through the same engines as the CLI — identical
-plans, identical strict-resolution errors (shown in the status line), identical
-state files.
-
-TUI specifics to know:
-
-- **It needs a real terminal.** Piped/redirected output falls back to the CLI
-  (bare invocation prints help); `tui` refuses with a clear error.
-- **sudo:** install output is captured for the log view, which would swallow a
-  password prompt. If a plan contains `sudo` commands and your credentials
-  aren't cached, the TUI refuses with a hint — run `sudo -v` first, or use
-  `loadout setup-new-machine` in the CLI where prompts work normally.
-- Command output appears in the log when each step *finishes* (not streamed
-  live); the status line shows a spinner plus the latest log line meanwhile.
-- Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
-  use `loadout --repo ... tui` to pass flags.
-
-### 13. Multiple machines in practice
+### 12. Multiple machines in practice
 
 On a new machine:
 
@@ -871,7 +820,7 @@ $ loadout diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 14. Global options
+### 13. Global options
 
 Valid on every command, before the subcommand:
 
@@ -889,7 +838,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 15. The state file
+### 14. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -923,7 +872,7 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
-### 16. Version compatibility between the repo and the binary
+### 15. Version compatibility between the repo and the binary
 
 Mixed fleets happen — machines upgrade loadout at different times. Two guards
 keep that safe:
@@ -1007,7 +956,7 @@ Native cannot cross-compile macOS binaries from Linux — mac builds need a mac
 
 ```console
 $ ./gradlew :core:linuxX64Test     # 93 unit tests (parsing, diffing, engines — no real processes)
-$ ./gradlew :app:linuxX64Test      # 15 TUI-model tests (key reducers, viewport, theme)
+$ ./gradlew :app:linuxX64Test      # maintain-screen model tests (reducers, logs, theme)
 $ ./integration/run-tests.sh       # 34 black-box tests driving the real binary
                                    # through init/status/install/run/diff/sync
                                    # against a temp repo + local bare git remote
@@ -1019,7 +968,7 @@ $ ./integration/run-tests.sh       # 34 black-box tests driving the real binary
 core/   business logic, no CLI/TUI deps — models, manifest loader (ktoml),
         state store (Okio + kotlinx-serialization), diff engine, install/script
         engines, process runner (kommand), detection, git client
-app/    Clikt CLI commands, Mosaic TUI (tui/), entry point with TTY dispatch
+app/    Clikt CLI commands, the Mosaic maintain screen (tui/), entry point
 ```
 
 Stack: Kotlin/Native 2.4.0 · [Clikt](https://github.com/ajalt/clikt) (CLI) ·
@@ -1038,7 +987,7 @@ Stack: Kotlin/Native 2.4.0 · [Clikt](https://github.com/ajalt/clikt) (CLI) ·
 | Manifest/state models, diff engine | 1 | ✅ done |
 | Detection, version checks, `status` | 2 | ✅ done |
 | `install` / `run` / `diff` / `sync` / `init`, per-machine PM | 3 | ✅ done |
-| Mosaic TUI dashboard — bare `loadout` opens an interactive program × machine view: navigate, install, refresh, sync, log view | 4 | ✅ done |
+| Interactive maintain screen — pick scripts, watch them run with live logs | 4 | ✅ done |
 | CI + releases — GitHub Actions (Linux + macOS runners), prebuilt binaries (linux-x64, macos-arm64, macos-x64) attached to tagged releases | 5 | ✅ done |
 
 Known limitations today: no Windows support (unix-like only) · dependency edges

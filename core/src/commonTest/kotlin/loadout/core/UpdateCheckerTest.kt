@@ -58,6 +58,66 @@ class UpdateCheckerTest {
     }
 
     @Test
+    fun batchCandidatesParsePkgAndCandidateText() {
+        val runner = FakeProcessRunner()
+        runner.onCommand(
+            "list-outdated",
+            stdout = "kitty 0.48.2-1.fc44\nobsidian Version: 1.13.7\n\nmalformed\n",
+            exitCode = 100,
+        )
+        val batch = UpdateChecker(runner).batchCandidates("list-outdated")
+        assertEquals("0.48.2-1.fc44", batch["kitty"])
+        assertEquals("Version: 1.13.7", batch["obsidian"])
+        assertEquals(2, batch.size)
+    }
+
+    @Test
+    fun outdatedAllResolvesPerInstallerAndVariantOverrideWins() {
+        val manifest = ManifestLoader.parse(
+            """
+            [installers.dnf]
+            install = "sudo dnf install -y {pkg}"
+            check = "rpm -q {pkg}"
+            outdated = "dnf -q check-update {pkg}"
+            outdated-all = "dnf -q check-update"
+            regex = "([0-9.]+)"
+
+            [programs.kitty.install.dnf]
+            pkg = "kitty-terminal"
+
+            [programs.special.install.dnf]
+            outdated = "custom-oracle"
+            """.trimIndent(),
+        )
+        // Batch oracle covers the plain variant; per-pkg pattern is not used.
+        val batched = manifest.resolveInstall("kitty", "dnf")
+        assertNull(batched.outdated)
+        assertEquals("dnf", batched.outdatedAll?.installer)
+        assertEquals("dnf -q check-update", batched.outdatedAll?.command)
+        assertEquals("kitty-terminal", batched.outdatedAll?.pkg)
+        assertEquals("([0-9.]+)", batched.outdatedAll?.regex)
+
+        // An explicit variant oracle overrides the batch.
+        val explicit = manifest.resolveInstall("special", "dnf")
+        assertNull(explicit.outdatedAll)
+        assertEquals("custom-oracle", explicit.outdated?.command)
+    }
+
+    @Test
+    fun outdatedAllWithoutRegexIsRejected() {
+        val e = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                """
+                [installers.bad]
+                install = "install {pkg}"
+                outdated-all = "query"
+                """.trimIndent(),
+            )
+        }
+        assertTrue("outdated-all command but no regex" in e.message.orEmpty())
+    }
+
+    @Test
     fun outdatedWithoutRegexIsRejected() {
         val e = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
