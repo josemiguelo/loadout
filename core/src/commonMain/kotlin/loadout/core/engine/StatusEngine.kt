@@ -7,18 +7,35 @@ import loadout.core.model.Manifest
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
+import loadout.core.platform.blockingDispatcher
 import loadout.core.platform.nowIso
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import okio.Path
 
 /**
  * Builds this machine's [MachineState] by observing it: every program's
  * version check runs, and every applicable script's `check` command runs.
+ * All checks are read-only, so they run concurrently (bounded), scripts
+ * overlapping with programs — one slow check no longer serializes `status`.
  */
 class StatusEngine(
     private val checker: VersionChecker,
     private val runner: ProcessRunner,
     private val repoRoot: Path,
 ) {
+    /**
+     * What each failing script check printed during the last [refresh] —
+     * the "missing: ..." detail two-mode checks emit. Same surfacing pattern
+     * as StateStore.lastWarnings: read it right after the call.
+     */
+    var lastScriptDetail: Map<String, String> = emptyMap()
+        private set
+
     /**
      * [scriptRuns] are results of scripts the tool just executed; their
      * lastRun/exitCode history is kept, but a script's `check` has the final
@@ -34,7 +51,7 @@ class StatusEngine(
         system: SystemInfo,
         previous: MachineState?,
         scriptRuns: Map<String, ScriptState> = emptyMap(),
-    ): MachineState {
+    ): MachineState = withContext(blockingDispatcher) {
         // Membership: only programs this machine maps are part of its loadout,
         // each checked with the version check its mapped key resolves to.
         val mapped = manifest.machines[system.machine]?.pm.orEmpty()
@@ -42,33 +59,51 @@ class StatusEngine(
             .associateWith { name -> manifest.checkFor(name, mapped[name]) }
 
         val enabled = manifest.machines[system.machine]?.scriptArgs().orEmpty()
-        val scripts = mutableMapOf<String, ScriptState>()
-        for ((name, args) in enabled) {
-            val step = manifest.scripts[name] ?: continue
-            if (!step.appliesTo(system.os)) continue
-            val history = scriptRuns[name] ?: previous?.scripts?.get(name)
-            if (step.check != null) {
-                val check = ScriptRunner.withArgs(step.check!!, args)
-                val done = runner.capture(check, workDir = repoRoot.toString()).success
-                scripts[name] = ScriptState(
-                    status = if (done) ScriptStatus.DONE else ScriptStatus.PENDING,
-                    lastRun = history?.lastRun,
-                    exitCode = history?.exitCode,
-                )
-            } else if (history != null) {
-                scripts[name] = history
+        coroutineScope {
+            val programs = async { checker.checkAll(observedChecks) }
+            val semaphore = Semaphore(8)
+            val scripts = enabled.mapNotNull { (name, args) ->
+                val step = manifest.scripts[name] ?: return@mapNotNull null
+                if (!step.appliesTo(system.os)) return@mapNotNull null
+                val history = scriptRuns[name] ?: previous?.scripts?.get(name)
+                when {
+                    step.check != null -> {
+                        val check = ScriptRunner.withArgs(step.check!!, args)
+                        name to async {
+                            semaphore.withPermit {
+                                val result = runner.capture(check, workDir = repoRoot.toString())
+                                val state = ScriptState(
+                                    status = if (result.success) ScriptStatus.DONE else ScriptStatus.PENDING,
+                                    lastRun = history?.lastRun,
+                                    exitCode = history?.exitCode,
+                                )
+                                val detail = if (result.success) null else {
+                                    (result.stdout + result.stderr).lineSequence()
+                                        .filter { it.isNotBlank() }
+                                        .joinToString("\n")
+                                        .ifBlank { null }
+                                }
+                                state to detail
+                            }
+                        }
+                    }
+                    history != null -> name to CompletableDeferred(history to null)
+                    else -> null
+                }
             }
-        }
 
-        return MachineState(
-            machine = system.machine,
-            os = system.os.id,
-            distro = system.distro,
-            arch = system.arch,
-            toolVersion = TOOL_VERSION,
-            updatedAt = nowIso(),
-            programs = checker.checkAll(observedChecks),
-            scripts = scripts,
-        )
+            val observed = scripts.map { (name, deferred) -> name to deferred.await() }
+            lastScriptDetail = observed.mapNotNull { (name, pair) -> pair.second?.let { name to it } }.toMap()
+            MachineState(
+                machine = system.machine,
+                os = system.os.id,
+                distro = system.distro,
+                arch = system.arch,
+                toolVersion = TOOL_VERSION,
+                updatedAt = nowIso(),
+                programs = programs.await(),
+                scripts = observed.associate { (name, pair) -> name to pair.first },
+            )
+        }
     }
 }

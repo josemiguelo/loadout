@@ -9,6 +9,12 @@ import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramStatus
+import loadout.core.model.ScriptStatus
+import loadout.core.platform.isStdoutTty
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
@@ -21,7 +27,8 @@ private val stateJson = Json {
 
 class StatusCommand : CliktCommand(name = "status") {
     override fun help(context: Context) =
-        "Check installed versions of every manifest program and update this machine's state file"
+        "Observe this machine — program versions and script checks, with each failing " +
+            "check's detail — and update the state file"
 
     private val json by option("--json", help = "Print the machine state as JSON").flag()
     private val noWrite by option("--no-write", help = "Don't update the state file").flag()
@@ -32,36 +39,70 @@ class StatusCommand : CliktCommand(name = "status") {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
 
-        val state = runBlocking {
-            if (noWrite) {
-                StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
-                    .refresh(manifest, system, app.stateStore.read(system.machine))
+        val (state, detail) = runBlocking {
+            // Same spinner as the TUI while the checks run; the refresh work
+            // happens on blockingDispatcher, so this loop stays responsive.
+            val spinner = if (isStdoutTty()) launch {
+                val frames = listOf("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+                var frame = 0
+                while (isActive) {
+                    echo("\r${frames[frame++ % frames.size]} checking programs and scripts…", trailingNewline = false)
+                    delay(120)
+                }
             } else {
-                app.refreshAndWriteState(manifest, system)
+                null
+            }
+            try {
+                if (noWrite) {
+                    val engine =
+                        StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
+                    val s = engine.refresh(manifest, system, app.stateStore.read(system.machine))
+                    s to engine.lastScriptDetail
+                } else {
+                    app.refreshAndWriteState(manifest, system) to app.lastScriptDetail
+                }
+            } finally {
+                spinner?.cancelAndJoin()
             }
         }
+        if (isStdoutTty()) echo("\r\u001b[K", trailingNewline = false)
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         if (json) {
             echo(stateJson.encodeToString(MachineState.serializer(), state))
         } else {
-            printTable(state)
-            if (!noWrite) echo("\nState written to ${app.stateStore.pathFor(system.machine)}")
+            printTable(state, detail)
+            if (!noWrite) echo(Style.dim("\nState written to ${app.stateStore.pathFor(system.machine)}"))
         }
     }
 
-    private fun printTable(state: MachineState) {
-        echo("Machine: ${state.machine} (${state.os}${state.distro?.let { "/$it" } ?: ""}, ${state.arch})")
+    // Same visual language as the maintain screen: ✔/✘/· markers, color as
+    // signal only (ok/warn/error/dim), dim detail lines under failing rows.
+    private fun printTable(state: MachineState, detail: Map<String, String>) {
+        echo(Style.dim("machine ") + Style.bold(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))
         echo("")
-        val nameWidth = (state.programs.keys.map { it.length } + 7).max()
-        echo("PROGRAM".padEnd(nameWidth + 2) + "STATUS".padEnd(11) + "VERSION")
+        val nameWidth = ((state.programs.keys + state.scripts.keys).map { it.length } + 7).max()
+        echo(Style.bold(" " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(11) + "VERSION"))
         for ((name, program) in state.programs.toList().sortedBy { it.first }) {
-            val status = when (program.status) {
-                ProgramStatus.INSTALLED -> "installed"
-                ProgramStatus.MISSING -> "missing"
-                ProgramStatus.UNKNOWN -> "unknown"
+            val (mark, status) = when (program.status) {
+                ProgramStatus.INSTALLED -> Style.ok("✔") to Style.ok("installed".padEnd(11))
+                ProgramStatus.MISSING -> Style.error("✘") to Style.error("missing".padEnd(11))
+                ProgramStatus.UNKNOWN -> Style.dim("·") to Style.dim("unknown".padEnd(11))
             }
-            echo(name.padEnd(nameWidth + 2) + status.padEnd(11) + (program.version ?: "-"))
+            echo(" $mark  " + name.padEnd(nameWidth + 1) + status + (program.version ?: "-"))
+        }
+        if (state.scripts.isEmpty()) return
+        echo("")
+        echo(Style.bold(" " + "SCRIPT".padEnd(nameWidth + 4) + "STATUS"))
+        for ((name, script) in state.scripts.toList().sortedBy { it.first }) {
+            val (mark, status) = when (script.status) {
+                ScriptStatus.DONE -> Style.ok("✔") to Style.ok("done")
+                ScriptStatus.PENDING -> Style.error("✘") to Style.warn("pending")
+                ScriptStatus.FAILED -> Style.error("✘") to Style.error("failed")
+            }
+            echo(" $mark  " + name.padEnd(nameWidth + 1) + status)
+            // What the failing check reported — the "missing: ..." lines.
+            detail[name]?.lineSequence()?.forEach { echo(Style.dim("".padEnd(nameWidth + 6) + it)) }
         }
     }
 }

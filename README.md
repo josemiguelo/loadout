@@ -8,7 +8,7 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: feature-complete.** All commands (`init`, `status`, `explain`,
-`setup-new-machine`, `outdated`, `check`, `maintain`, `run`, `diff`, `sync`)
+`setup-new-machine`, `outdated`, `maintain`, `run`, `diff`, `sync`)
 plus the interactive TUI dashboard work on Linux; CI covers Linux and macOS, and tagged releases
 ship binaries for linux-x64, macos-arm64, and macos-x64.
 
@@ -552,10 +552,16 @@ its own, or you encode the requirement in its `check`.
 $ loadout status
 Machine: laptop (linux/fedora, x86_64)
 
-PROGRAM  STATUS     VERSION
-git      installed  2.55.0
-ripgrep  installed  15.1.0
-rustup   missing    -
+PROGRAM                STATUS     VERSION
+git                    installed  2.55.0
+ripgrep                installed  15.1.0
+rustup                 missing    -
+
+SCRIPT                 STATUS
+asdf-default-packages  pending
+                         missing: nodejs 16.20.0 npm firebase-tools
+                         missing: nodejs 18.16.0 npm firebase-tools
+dotfiles               done
 
 State written to state/laptop.json
 ```
@@ -570,10 +576,13 @@ What happened:
    - `installed`, no version — command succeeded, regex didn't match (fix your regex)
    - `missing` — command failed (exit ≠ 0, typically "command not found")
    - `unknown` — the program declares no `[programs.x.version]` block
-3. Every applicable script's `check` command ran too, recording each script as
-   `done` (check passed — whether or not the tool ever executed it) or
-   `pending` (check failed). Scripts without a `check` only carry run history;
-   scripts excluded by their `os` filter are absent.
+3. Every applicable script's `check` command ran too (concurrently with the
+   program checks), recording each script as `done` (check passed — whether or
+   not the tool ever executed it) or `pending` (check failed). A failing
+   check's output prints indented under its row — so checks that report what's
+   missing (the two-mode list-script pattern) explain the drift right in the
+   table. Scripts without a `check` only carry run history; scripts excluded
+   by their `os` filter are absent.
 4. `state/laptop.json` was written — unless nothing but the timestamp changed,
    in which case the file is left untouched (keeps git history clean).
 
@@ -720,34 +729,11 @@ override `outdated` per program like any other field; programs whose variant
 resolves no oracle (script installs) are listed as unchecked rather than
 guessed at.
 
-### 10. See what script checks are missing: `check`
+### 10. Run maintenance interactively: `maintain`
 
-`status` tells you a script is `pending`; `check` tells you **why**. It runs
-this machine's opted-in script checks and relays each failing check's output —
-so checks that print what's missing (the two-mode list-script pattern) become
-a structured report:
-
-```console
-$ loadout check
-  chezmoi-init           done
-  asdf-tools             done
-  asdf-default-packages  pending
-                           missing: nodejs 16.20.0 npm firebase-tools
-                           missing: nodejs 18.16.0 npm firebase-tools
-  setup-completions      done
-
-1 pending — converge with: loadout maintain  (or loadout run <name>)
-```
-
-Exits 1 when anything is pending (like `diff` on drift). Name scripts to
-check just those: `loadout check asdf-default-packages`. Read-only — it never
-runs the scripts themselves and never writes state. Running the fix is the
-next command's job.
-
-### 11. Run maintenance interactively: `maintain`
-
-`maintain` is the hands-on counterpart to `check`: pick which of this
-machine's scripts to run, then watch them run. It opens a picker listing
+`maintain` is the hands-on counterpart to `status`: where status *reports*
+script drift (with each failing check's detail), maintain lets you pick which
+of this machine's scripts to run, then watch them run. It opens a picker listing
 every opted-in script (all unselected); `space` toggles, `a`/`n` select
 all/none, and `enter` runs only what you picked — one at a time, each
 script's output streaming live into a collapsible box under its row (the
@@ -765,10 +751,10 @@ its **full** log and scroll through it (`↑/↓`, `PgUp`/`PgDn`) — the live v
 only tails, but everything is kept. Every log records the command, its
 output, and the exit code. Scripts that would need a sudo password are
 refused up front (run `sudo -v` first), same as the dashboard. `maintain` is
-TTY-only; for scripting use `loadout run <name>` (execute) or `loadout check`
+TTY-only; for scripting use `loadout run <name>` (execute) or `loadout status`
 (report).
 
-### 12. Compare your fleet: `diff`
+### 11. Compare your fleet: `diff`
 
 Once two or more machines have synced their state:
 
@@ -797,7 +783,7 @@ into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 To fix what `diff` reports: run `install` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 13. The dashboard: bare `loadout` (TUI)
+### 12. The dashboard: bare `loadout` (TUI)
 
 Run `loadout` with no arguments in a real terminal (or `loadout
 tui` with options) and you get an interactive dashboard instead of help text —
@@ -863,7 +849,7 @@ TUI specifics to know:
 - Bare `loadout` reads `LOADOUT_REPO`/`LOADOUT_MACHINE`;
   use `loadout --repo ... tui` to pass flags.
 
-### 14. Multiple machines in practice
+### 13. Multiple machines in practice
 
 On a new machine:
 
@@ -885,7 +871,7 @@ $ loadout diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 15. Global options
+### 14. Global options
 
 Valid on every command, before the subcommand:
 
@@ -903,7 +889,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 16. The state file
+### 15. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -937,7 +923,7 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
-### 17. Version compatibility between the repo and the binary
+### 16. Version compatibility between the repo and the binary
 
 Mixed fleets happen — machines upgrade loadout at different times. Two guards
 keep that safe:

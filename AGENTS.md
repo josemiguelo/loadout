@@ -68,7 +68,7 @@ core/  loadout.core
   engine/      VersionChecker (concurrent checkAll), UpdateChecker (outdated
                oracles; exit code deliberately ignored), InstallEngine (plan/
                execute/executeCaptured), ScriptRunner, StatusEngine (observes
-               programs AND scripts)
+               programs AND scripts; all checks concurrent — read-only)
   diff/        DiffEngine — pure function: manifest × states -> DiffReport
   git/         GitClient — shells out to `git`, always cwd = repo root
   platform/    expect/actual posix: hostname, isatty, uname, nowIso, envVar,
@@ -77,7 +77,7 @@ app/   loadout
   Main.kt      dispatch: no args + stdout TTY -> TUI; else Clikt. Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/explain/setup-new-machine/outdated/check/maintain/run/diff/sync/init/tui)
+               one file per subcommand (status/explain/setup-new-machine/outdated/maintain/run/diff/sync/init/tui)
   tui/         DashboardModel + MaintainModel (ALL state + logic, no
                rendering, unit-tested) + TuiApp.kt (Mosaic composables only,
                incl. the maintain screen)
@@ -231,8 +231,9 @@ These came from explicit user decisions; don't "improve" them away:
   results are MERGED into the existing state file directly (the statuses ARE
   the checks this run just executed; a full refreshAndWriteState here would
   re-probe everything for minutes — it's used only when no state file exists
-  yet), skipped on cancel. `check` stays read-only — it runs checks, never
-  scripts. Live
+  yet), skipped on cancel. `status` is the report side: it prints script
+  statuses with each failing check's detail (StatusEngine.lastScriptDetail,
+  surfaced like StateStore.lastWarnings). Live
   output comes from `ProcessRunner.stream`, which prepends `exec 2>&1`
   (merges stderr without a subshell so sh tail-execs and `kill()` reaches the
   real process) and reads kommand's `Child.bufferedStdout().readLine()`.
