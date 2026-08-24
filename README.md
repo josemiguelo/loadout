@@ -8,8 +8,8 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: feature-complete.** All commands (`init`, `status`, `explain`,
-`setup-new-machine`, `outdated`, `maintain`, `run`, `diff`, `sync`,
-`upgrade`) work on
+`setup-new-machine`, `install`, `outdated`, `maintain`, `run`, `diff`,
+`sync`, `upgrade`) work on
 Linux; CI covers Linux and macOS, and tagged releases ship binaries for
 linux-x64, macos-arm64, and macos-x64.
 
@@ -244,7 +244,7 @@ program solaar  — Logitech device manager
 ```
 
 Use it whenever you're unsure what a `template`/`via` line produced, which
-command `install` would actually run, or why a mapping fails.
+install command would actually run, or why a mapping fails.
 
 #### Recipe: adding a program
 
@@ -413,7 +413,7 @@ not part of that machine's loadout — converge skips it, `status` doesn't
 observe it, and `diff` shows `-` for that machine. That's how the same
 manifest serves machines with different subsets.
 
-This is strict by design — `install` refuses to run (before executing anything)
+This is strict by design — `setup-new-machine` refuses to run (before executing anything)
 when:
 
 - the machine has no `machines/<name>.toml` config file at all,
@@ -680,11 +680,11 @@ installed, showing its version · `~` script that will run. There is no
 
 The rules:
 
-- **`install`** (no names) = converge this machine's loadout: every missing
-  **mapped** program, then every opted-in script (in `after` order, `check`
-  gates respected).
-- **`install NAME...`** = just those programs **plus their transitive
-  `depends-on` closure**, dependencies first. Scripts don't run in this mode.
+- `setup-new-machine` takes **no arguments** — it always converges this
+  machine's whole loadout: every missing **mapped** program, then every
+  opted-in setup-mode script (in `after` order, `check` gates respected).
+  Specific programs are [`install`](#7-install-specific-programs-install)'s
+  job; specific scripts are `run`'s.
 - Installs stream output directly to your terminal — interactive prompts and
   progress bars work. Installs are sequential (package managers hold locks;
   parallel sudo prompts would be chaos).
@@ -699,10 +699,32 @@ Flags:
 $ loadout setup-new-machine --dry-run        # print the plan, do nothing
 $ loadout setup-new-machine --yes            # skip the confirmation (for automation)
 $ loadout setup-new-machine --skip-scripts   # programs only
-$ loadout setup-new-machine ripgrep bat      # specific programs (+ their deps)
 ```
 
-### 7. Run scripts on demand: `run`
+### 7. Install specific programs: `install`
+
+The targeted installer — the everyday "I just added a program to the
+manifest" command. Named programs **plus their transitive `depends-on`
+closure**, dependencies first, same strict plan/confirm/verify flow as
+`setup-new-machine`. Scripts never run here — that's `run`'s job:
+
+```console
+$ loadout install workmux
+Checking current state...
+
+Plan for laptop:
+  = tmux     3.7
+  + workmux  [brew] brew install raine/workmux/workmux
+
+Proceed? [y/N] y
+...
+```
+
+`--dry-run` and `--yes` work as in `setup-new-machine`. The command trio:
+`setup-new-machine` = everything, `install` = these programs, `run` = these
+scripts.
+
+### 8. Run scripts on demand: `run`
 
 ```console
 $ loadout run dotfiles
@@ -721,7 +743,7 @@ machine are skipped with a note. Script outcomes (status `done`/`failed`, last
 run time, exit code) are recorded in the state file. Exit code 1 if any script
 failed.
 
-### 8. Publish this machine: `sync`
+### 9. Publish this machine: `sync`
 
 ```console
 $ loadout sync
@@ -743,7 +765,7 @@ Pushed.
 - Manifest edits are *your* commits — `sync` never touches anything except this
   machine's state file.
 
-### 9. Ask the remotes for updates: `outdated`
+### 10. Ask the remotes for updates: `outdated`
 
 Installers can declare a third mechanic besides `install`/`check`: an
 **`outdated`** pattern — a command that asks the remote source (the dnf
@@ -803,7 +825,7 @@ The tool itself is a program too: `outdated` always asks GitHub for the
 latest loadout release (uncached — this is the explicit ask-the-network
 command) and lists `loadout <current> -> <latest> [release]` when behind.
 
-### 10. Run maintenance interactively: `maintain`
+### 11. Run maintenance interactively: `maintain`
 
 `maintain` is the hands-on counterpart to `status`: where status *reports*
 script drift (with each failing check's detail), maintain lets you pick which
@@ -831,7 +853,7 @@ prompt). `maintain` is
 TTY-only; for scripting use `loadout run <name>` (execute) or `loadout status`
 (report).
 
-### 11. Compare your fleet: `diff`
+### 12. Compare your fleet: `diff`
 
 Once two or more machines have synced their state:
 
@@ -857,10 +879,10 @@ Row flags: `drift` = two or more machines report *different* versions ·
 The exit code is the point: **0 = fleet in sync, 1 = something's off** — wire it
 into cron or CI to get notified. `--machines laptop,vps` narrows the comparison.
 
-To fix what `diff` reports: run `install` on the machine that's missing things,
+To fix what `diff` reports: run `setup-new-machine` on the machine that's missing things,
 or upgrade through your package manager, then `sync` again.
 
-### 12. Multiple machines in practice
+### 13. Multiple machines in practice
 
 On a new machine:
 
@@ -882,7 +904,7 @@ $ loadout diff       # now compares your real machine against fake-vps
 (Testing without GitHub: `git init --bare ~/origin.git`, add it as a remote, and
 `sync` pushes there.)
 
-### 13. Global options
+### 14. Global options
 
 Valid on every command, before the subcommand:
 
@@ -900,7 +922,7 @@ config file (see
 which config is used. Version checks are unaffected by mappings — they just
 use `PATH`.
 
-### 14. The state file
+### 15. The state file
 
 `state/<machine>.json` — written only by that machine, pretty-printed with
 stable ordering so git diffs stay readable:
@@ -934,7 +956,7 @@ failed) — even for scripts the tool never executed, and even right after a run
 bumps only when actual content changes. Unknown JSON keys are ignored on read,
 so newer tool versions can extend the schema.
 
-### 15. Version compatibility between the repo and the binary
+### 16. Version compatibility between the repo and the binary
 
 Mixed fleets happen — machines upgrade loadout at different times. Two guards
 keep that safe:

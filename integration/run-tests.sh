@@ -77,6 +77,14 @@ ok "setup-new-machine --dry-run plans without executing"
 "$BIN" --repo repo --machine m1 setup-new-machine --yes --skip-scripts >/dev/null || fail "install (all installed) exits 0"
 ok "setup-new-machine with everything installed is a no-op"
 
+# --- install (targeted programs; scripts are run's job) ------------------
+OUT=$("$BIN" --repo repo --machine m1 install git --dry-run) || fail "install with names exits 0"
+echo "$OUT" | grep -q "git" || fail "install plans the named program"
+echo "$OUT" | grep -q "marker" && fail "install must not touch scripts" || true
+"$BIN" --repo repo --machine m1 install ghost-prog --dry-run >/dev/null 2>&1 && fail "unknown program should fail" || true
+"$BIN" --repo repo --machine m1 setup-new-machine git --dry-run >/dev/null 2>&1 && fail "setup-new-machine must not accept names" || true
+ok "install targets named programs; setup-new-machine takes no names"
+
 # --- run (script + check gate + force) ----------------------------------
 "$BIN" --repo repo --machine m1 run marker >/dev/null || fail "run exits 0"
 [ -f repo/marker.txt ] || fail "script created marker.txt"
@@ -190,8 +198,8 @@ command = "false"
 EOF
 OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --dry-run) || fail "converge with unmapped program should succeed"
 echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
-"$BIN" --repo repo --machine m1 setup-new-machine never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
-OUT=$("$BIN" --repo repo --machine m1 setup-new-machine never-mapped --dry-run 2>&1 || true)
+"$BIN" --repo repo --machine m1 install never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
+OUT=$("$BIN" --repo repo --machine m1 install never-mapped --dry-run 2>&1 || true)
 echo "$OUT" | grep -q "no pm defined for machine 'm1'" || fail "unmapped-program error message"
 "$BIN" --repo repo --machine m1 status >/dev/null
 grep -q '"never-mapped"' repo/state/m1.json && fail "unmapped program must not be observed" || true
