@@ -44,7 +44,7 @@ fake one and pipe keys with sleeps:
 A run that doesn't exit usually means a coroutine kept `runMosaic` alive (see
 Gotchas). Rendering changes still need a human check — ask the user to run it.
 
-Manual testing target: the user's live config repo at `~/.config/machines`
+Manual testing target: the user's live config repo at `~/.config/loadouts`
 (machine name `macbook-fedora-kde`, Fedora, dnf + linuxbrew present). Fine to
 run `status`/`diff`/`--dry-run` against it; don't install/remove packages or
 push git without asking.
