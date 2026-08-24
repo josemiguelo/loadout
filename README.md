@@ -8,7 +8,8 @@ one command to publish that machine's state, and one command to see how all your
 machines compare.
 
 **Status: feature-complete.** All commands (`init`, `status`, `explain`,
-`setup-new-machine`, `outdated`, `maintain`, `run`, `diff`, `sync`) work on
+`setup-new-machine`, `outdated`, `maintain`, `run`, `diff`, `sync`,
+`upgrade`) work on
 Linux; CI covers Linux and macOS, and tagged releases ship binaries for
 linux-x64, macos-arm64, and macos-x64.
 
@@ -598,6 +599,12 @@ $ loadout status --json       # print the full state document instead
 $ loadout status --no-write   # check but don't touch the state file
 ```
 
+One self-knowledge extra: when this binary is behind the latest published
+release, the table ends with a warn line — `↑ loadout 0.3.1 — 0.4.0 available
+(run: loadout upgrade)`. It's the sole remote check status makes (loadout is
+infrastructure, not repo payload): cached ~6h, short timeout, silent when
+current or offline.
+
 ### 6. Set the machine up: `setup-new-machine`
 
 ```console
@@ -749,6 +756,10 @@ instead of one per program — 8x faster on a real repo); an explicit variant
 `outdated` still wins for that program, and older binaries ignore the field
 and fall back to per-package, so keep both while a fleet has mixed versions.
 
+The tool itself is a program too: `outdated` always asks GitHub for the
+latest loadout release (uncached — this is the explicit ask-the-network
+command) and lists `loadout <current> -> <latest> [release]` when behind.
+
 ### 10. Run maintenance interactively: `maintain`
 
 `maintain` is the hands-on counterpart to `status`: where status *reports*
@@ -893,11 +904,12 @@ needs a newer loadout, bump `min-tool-version` in the same commit:
 min-tool-version = "0.2.0"
 ```
 
-A machine running an older binary then refuses *everything* with the right
-instruction — instead of silently ignoring manifest keys it doesn't know:
+A machine running an older binary then refuses *everything* with the fix —
+instead of silently ignoring manifest keys it doesn't know. `loadout upgrade`
+never loads the manifest, so it works even under this refusal:
 
 ```
-error: this config repo requires loadout >= 0.2.0 (you have 0.1.0) — upgrade loadout on this machine
+error: this config repo requires loadout >= 0.4.0 (you have 0.3.1) — run: loadout upgrade
 ```
 
 **Old repos keep working on new binaries.** From 0.2.0 on, the manifest format
@@ -926,7 +938,9 @@ downloads the latest release tarball, sanity-runs the binary, and installs it
 to `~/.local/bin/loadout` — then prints the bootstrap steps (clone your config
 repo, write `machines/<hostname>.toml`, `loadout setup-new-machine`). Pin a version with
 `LOADOUT_VERSION=v0.2.0`, or change the destination with
-`LOADOUT_INSTALL_DIR`.
+`LOADOUT_INSTALL_DIR`. On a machine that already has loadout, `loadout
+upgrade` runs the same installer — no repo needed, so it works even when a
+repo's `min-tool-version` refuses the current binary.
 
 Tagged releases ship prebuilt binaries for **linux-x64**, **macos-arm64**, and
 **macos-x64** (built by the GitHub Actions release workflow); manual install

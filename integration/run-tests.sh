@@ -452,7 +452,8 @@ command = "false"
 EOF
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
-echo "$OUT" | grep -q "install.sh | sh" || fail "refusal should include the upgrade one-liner"
+echo "$OUT" | grep -q "run: loadout upgrade" || fail "refusal should point at loadout upgrade"
+"$BIN" --help | grep -q "upgrade" || fail "upgrade command should be registered"
 ok "manifest min-tool-version blocks an outdated binary with recovery hint"
 
 cat > verrepo/manifest.toml <<'EOF'

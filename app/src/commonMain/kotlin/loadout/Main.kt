@@ -13,6 +13,7 @@ import loadout.cli.RunCommand
 import loadout.cli.SetupCommand
 import loadout.cli.StatusCommand
 import loadout.cli.SyncCommand
+import loadout.cli.UpgradeCommand
 import loadout.core.engine.ResolutionException
 import loadout.core.git.GitException
 import loadout.core.manifest.ManifestException
@@ -30,6 +31,7 @@ fun main(args: Array<String>) {
                 RunCommand(),
                 DiffCommand(),
                 SyncCommand(),
+                UpgradeCommand(),
                 InitCommand(),
             )
             .main(args)

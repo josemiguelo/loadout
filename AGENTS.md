@@ -79,7 +79,11 @@ app/   loadout
   Main.kt      Clikt dispatch (bare invocation prints help). Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/explain/setup-new-machine/outdated/maintain/run/diff/sync/init)
+               one file per subcommand (status/explain/setup-new-machine/outdated/maintain/run/diff/sync/upgrade/init).
+               SelfVersion = the one remote-self-check carve-out: status
+               footer (cached 6h, fail-soft) + outdated self-row (fresh);
+               `upgrade` shells to INSTALL_COMMAND and needs no repo, so it
+               works under a min-tool-version refusal (which points at it)
   tui/         MaintainModel (ALL state + logic, no rendering, unit-tested)
                + TuiApp.kt (Mosaic composables for the maintain screen only)
 ```

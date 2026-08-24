@@ -48,8 +48,7 @@ object ManifestLoader {
             if (!versionAtLeast(TOOL_VERSION, required)) {
                 throw ManifestException(
                     "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
-                        "upgrade with: curl -fsSL " +
-                        "https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh",
+                        "run: loadout upgrade",
                 )
             }
         }
@@ -282,7 +281,7 @@ object ManifestLoader {
     }
 
     /** Numeric dotted-version comparison: is [current] >= [required]? */
-    internal fun versionAtLeast(current: String, required: String): Boolean {
+    fun versionAtLeast(current: String, required: String): Boolean {
         val c = current.split('.').map { it.toIntOrNull() ?: 0 }
         val r = required.split('.').map { it.toIntOrNull() ?: 0 }
         for (i in 0 until maxOf(c.size, r.size)) {

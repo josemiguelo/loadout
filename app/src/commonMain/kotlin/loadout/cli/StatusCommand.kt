@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
+import loadout.core.TOOL_VERSION
 import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.model.MachineState
@@ -50,6 +51,11 @@ class StatusCommand : CliktCommand(name = "status") {
             echo(stateJson.encodeToString(MachineState.serializer(), state))
         } else {
             printTable(state, detail)
+            // The one self-knowledge carve-out: is this binary itself behind?
+            SelfVersion.behind(app.runner)?.let { latest ->
+                echo("")
+                echo(" " + Style.warn("↑") + "  loadout $TOOL_VERSION — $latest available " + Style.dim("(run: loadout upgrade)"))
+            }
             if (!noWrite) echo(Style.dim("\nState written to ${app.stateStore.pathFor(system.machine)}"))
         }
     }

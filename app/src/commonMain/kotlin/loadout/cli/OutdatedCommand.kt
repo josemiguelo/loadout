@@ -4,10 +4,13 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
+import loadout.core.TOOL_VERSION
 import loadout.core.engine.UpdateChecker
 import loadout.core.model.ProgramStatus
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+
+private data class UpdateRow(val name: String, val current: String, val candidate: String, val source: String)
 
 class OutdatedCommand : CliktCommand(name = "outdated") {
     override fun help(context: Context) =
@@ -54,23 +57,35 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
             }
         }
 
-        val updates = candidates.mapNotNull { (name, candidate) ->
-            val current = state.programs.getValue(name).version
-            if (candidate != null && candidate != current) Triple(name, current ?: "?", candidate) else null
-        }.sortedBy { it.first }
+        // The tool itself is a program too: ask GitHub for the latest release
+        // (uncached — outdated is the explicit ask-the-network command).
+        val selfRow = SelfVersion.behind(app.runner, cached = false)
+            ?.let { latest -> UpdateRow("loadout", TOOL_VERSION, latest, "release") }
+
+        val updates = (
+            listOfNotNull(selfRow) +
+                candidates.mapNotNull { (name, candidate) ->
+                    val current = state.programs.getValue(name).version
+                    if (candidate != null && candidate != current) {
+                        UpdateRow(name, current ?: "?", candidate, mapped.getValue(name))
+                    } else {
+                        null
+                    }
+                }
+            ).sortedBy { it.name }
 
         // Same visual language as status: markers + color as signal only.
         if (updates.isEmpty()) {
             echo(" " + Style.ok("✔") + "  everything is up to date")
         } else {
-            val nameWidth = updates.maxOf { it.first.length } + 2
-            val currentWidth = updates.maxOf { it.second.length } + 2
-            val candidateWidth = updates.maxOf { it.third.length } + 2
+            val nameWidth = updates.maxOf { it.name.length } + 2
+            val currentWidth = updates.maxOf { it.current.length } + 2
+            val candidateWidth = updates.maxOf { it.candidate.length } + 2
             echo(Style.bold(" " + "PROGRAM".padEnd(nameWidth + 3) + "CURRENT".padEnd(currentWidth + 3) + "CANDIDATE".padEnd(candidateWidth) + "SOURCE"))
-            for ((name, current, candidate) in updates) {
+            for ((name, current, candidate, source) in updates) {
                 echo(
                     " ${Style.warn("↑")}  ${name.padEnd(nameWidth)}${Style.dim(current.padEnd(currentWidth))}" +
-                        "${Style.dim("-> ")}${Style.warn(candidate.padEnd(candidateWidth))}${Style.dim("[${mapped.getValue(name)}]")}",
+                        "${Style.dim("-> ")}${Style.warn(candidate.padEnd(candidateWidth))}${Style.dim("[$source]")}",
                 )
             }
             echo("")
