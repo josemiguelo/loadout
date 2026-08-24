@@ -62,6 +62,7 @@ esac
 
 echo ""
 echo "Next steps:"
-echo "  1. git clone <your config repo> ~/.config/machines"
-echo "  2. Write machines/\$(hostname).toml — map programs, opt into scripts"
-echo "  3. loadout --repo ~/.config/machines install"
+echo "  1. git clone <your config repo> ~/.config/loadouts"
+echo "  2. Write machines/\$(hostname).toml — or just: extends = \"<your-os-base>\""
+echo "  3. loadout --repo ~/.config/loadouts setup-new-machine"
+echo "  4. loadout --repo ~/.config/loadouts sync"
