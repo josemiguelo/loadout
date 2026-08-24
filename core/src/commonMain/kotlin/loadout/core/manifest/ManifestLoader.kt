@@ -48,7 +48,8 @@ object ManifestLoader {
             if (!versionAtLeast(TOOL_VERSION, required)) {
                 throw ManifestException(
                     "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
-                        "upgrade loadout on this machine",
+                        "upgrade with: curl -fsSL " +
+                        "https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh",
                 )
             }
         }
