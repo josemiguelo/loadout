@@ -132,6 +132,46 @@ class ManifestLoaderTest {
     }
 
     @Test
+    fun scriptModesParseValidateAndDefaultToBothSurfaces() {
+        val manifest = ManifestLoader.parse(
+            """
+            [scripts.bootstrap]
+            run = "echo x"
+            modes = ["setup"]
+
+            [scripts.everyday]
+            run = "echo y"
+            """.trimIndent(),
+        )
+        assertTrue(manifest.scripts.getValue("bootstrap").runsIn("setup"))
+        assertTrue(!manifest.scripts.getValue("bootstrap").runsIn("maintain"))
+        assertTrue(manifest.scripts.getValue("everyday").runsIn("setup"))
+        assertTrue(manifest.scripts.getValue("everyday").runsIn("maintain"))
+
+        val unknown = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                """
+                [scripts.s]
+                run = "echo x"
+                modes = ["bogus"]
+                """.trimIndent(),
+            )
+        }
+        assertTrue("unknown mode 'bogus'" in unknown.message.orEmpty())
+
+        val empty = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                """
+                [scripts.s]
+                run = "echo x"
+                modes = []
+                """.trimIndent(),
+            )
+        }
+        assertTrue("empty modes list" in empty.message.orEmpty())
+    }
+
+    @Test
     fun rejectsScriptWithBothFileAndRun() {
         val text = """
             [scripts.s]

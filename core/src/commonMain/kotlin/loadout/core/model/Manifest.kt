@@ -250,6 +250,15 @@ data class ScriptStep(
     val check: String? = null,
     /** Ordering constraints: entries like "programs.git" or "scripts.dotfiles". */
     val after: List<String> = emptyList(),
+    /**
+     * Execution surfaces this script participates in: "setup"
+     * (setup-new-machine's converge) and/or "maintain" (the maintain picker).
+     * Default: both. Governs execution only — `status` observes every opted-in
+     * script regardless, and `run <name>` is the explicit escape hatch.
+     */
+    val modes: List<String> = listOf("setup", "maintain"),
 ) {
     fun appliesTo(osFamily: OsFamily): Boolean = os.isEmpty() || os.contains(osFamily.id)
+
+    fun runsIn(mode: String): Boolean = mode in modes
 }

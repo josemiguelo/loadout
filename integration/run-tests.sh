@@ -395,8 +395,19 @@ check = "true"
 run = "true"
 check = "echo missing: nodejs 16 npm firebase-tools; false"
 TOML
-printf 'scripts = ["healthy", "drifted"]\n\n[pm]\nmytool = "fake"\nothertool = "fake2"\n' > instrepo/machines/m1.toml
+cat >> instrepo/manifest.toml <<'TOML'
+
+[scripts.bootstrap-only]
+run = "echo bootstrapped > bootstrap-marker.txt"
+check = "test -f bootstrap-marker.txt"
+modes = ["setup"]
+TOML
+printf 'scripts = ["healthy", "drifted", "bootstrap-only"]\n\n[pm]\nmytool = "fake"\nothertool = "fake2"\n' > instrepo/machines/m1.toml
+OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
+echo "$OUT" | grep -qE "~ bootstrap-only +script" || fail "setup converges modes=[setup] scripts"
+"$BIN" --repo instrepo --machine m1 run bootstrap-only >/dev/null || fail "run ignores modes"
 OUT=$("$BIN" --repo instrepo --machine m1 status) || fail "status exits 0 even with pending scripts"
+echo "$OUT" | grep -qE "bootstrap-only +done" || fail "status observes modes=[setup] scripts"
 echo "$OUT" | grep -qE "healthy +done" || fail "status lists passing scripts"
 echo "$OUT" | grep -qE "drifted +pending" || fail "status lists failing scripts"
 echo "$OUT" | grep -q "missing: nodejs 16 npm firebase-tools" || fail "status surfaces the failing check's detail"
@@ -411,6 +422,7 @@ if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
         | script -qec "\"$BIN\" --repo instrepo --machine m1 maintain" tui-maintain.log >/dev/null \
         && fail "maintain should exit 1 while drifted's check still fails" || true
     grep -qa "loadout maintain" tui-maintain.log || fail "maintain renders its title bar"
+    grep -qa "bootstrap-only" tui-maintain.log && fail "maintain must not list modes=[setup] scripts" || true
     grep -qa "check: still failing" tui-maintain.log || fail "maintain reruns the check after the script and records the verdict"
     grep -q '"drifted"' instrepo/state/m1.json || fail "maintain records the run in the state file"
     grep -q '"status": "pending"' instrepo/state/m1.json || fail "maintain state status comes from the rerun check"

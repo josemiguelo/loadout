@@ -362,6 +362,12 @@ object ManifestLoader {
             if ((script.file == null) == (script.run == null)) {
                 errors += "scripts.$name must define exactly one of 'file' (repo path) or 'run' (inline command)"
             }
+            if (script.modes.isEmpty()) {
+                errors += "scripts.$name has an empty modes list (it could never run; omit modes for both surfaces)"
+            }
+            script.modes.filterNot { it == "setup" || it == "maintain" }.forEach {
+                errors += "scripts.$name has unknown mode '$it' (valid: setup, maintain)"
+            }
             for (ref in script.after) {
                 val valid = when {
                     ref.startsWith("programs.") -> ref.removePrefix("programs.") in manifest.programs

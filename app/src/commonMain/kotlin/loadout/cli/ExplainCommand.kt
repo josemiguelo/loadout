@@ -74,6 +74,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     script.check?.let { rows += "check" to it }
                     if (script.os.isNotEmpty()) rows += "os" to script.os.joinToString()
                     if (script.after.isNotEmpty()) rows += "after" to script.after.joinToString()
+                    if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
                         enabled == null -> "no — add it to the scripts list in machines/${system.machine}.toml"

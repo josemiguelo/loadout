@@ -118,7 +118,11 @@ class MaintainModel(
         system = sys
         val enabled = m.machines[sys.machine]?.scriptArgs().orEmpty()
         val targets = ManifestLoader.scriptOrder(m, enabled.keys)
-            .filter { name -> name in enabled && m.scripts.getValue(name).appliesTo(sys.os) }
+            .filter { name ->
+                name in enabled &&
+                    m.scripts.getValue(name).appliesTo(sys.os) &&
+                    m.scripts.getValue(name).runsIn("maintain")
+            }
         state = state.copy(
             machine = sys.machine,
             rows = targets.map { name ->

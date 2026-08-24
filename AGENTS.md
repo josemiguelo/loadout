@@ -146,7 +146,11 @@ These came from explicit user decisions; don't "improve" them away:
     positional params for the file script AND its check (via `set --` — see
     ScriptRunner.withArgs). Args on inline `run` scripts are a validation
     error. No implicit script application; no os/bootc auto-detection to
-    decide membership.
+    decide membership. A script's optional `modes` (["setup"], ["maintain"],
+    default both) scopes EXECUTION surfaces only — setup-new-machine converges
+    setup-mode scripts, maintain lists maintain-mode ones; status observes all
+    opted-in scripts regardless and `run` ignores modes (explicit escape
+    hatch). Empty or unknown modes are load errors.
 13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
     (probe / install / check / outdated / regex patterns, `{pkg}` substituted) define
     each mechanism once, repo-unique, fragment-definable; core hardcodes NO

@@ -56,7 +56,11 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
         val enabledScripts = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         val scriptNames = if (names.isEmpty() && !skipScripts) {
             ManifestLoader.scriptOrder(manifest, enabledScripts.keys)
-                .filter { it in enabledScripts && manifest.scripts.getValue(it).appliesTo(system.os) }
+                .filter {
+                    it in enabledScripts &&
+                        manifest.scripts.getValue(it).appliesTo(system.os) &&
+                        manifest.scripts.getValue(it).runsIn("setup")
+                }
         } else {
             emptyList()
         }

@@ -531,6 +531,12 @@ check = "systemctl is-enabled fstrim.timer"
   and skipped (unless `--force`).
 - `after` lists steps that should run first *if they're part of the same run*.
   It's ordering only — it never pulls anything in.
+- `modes` scopes which execution surfaces the script participates in:
+  `["setup"]` = converged by `setup-new-machine` only (a bootstrap step that
+  should never clutter the maintain picker), `["maintain"]` = offered by
+  `maintain` only, omitted = both. Execution only: `status` still observes
+  every opted-in script regardless, and `run <name>` ignores modes — it's the
+  explicit escape hatch. An empty list or unknown mode is a load error.
 
 **`depends-on` vs `after`** — they answer different questions:
 
@@ -748,7 +754,9 @@ and fall back to per-package, so keep both while a fleet has mixed versions.
 `maintain` is the hands-on counterpart to `status`: where status *reports*
 script drift (with each failing check's detail), maintain lets you pick which
 of this machine's scripts to run, then watch them run. It opens a picker listing
-every opted-in script (all unselected); `space` toggles, `a`/`n` select
+every opted-in script whose `modes` include `maintain` (all unselected —
+bootstrap-only steps like a first-time dotfiles clone never appear; see the
+`modes` field in [section 4](#4-describe-a-setup-script)); `space` toggles, `a`/`n` select
 all/none, and `enter` runs only what you picked — one at a time, each
 script's output streaming live into a collapsible box under its row (the
 accordion collapses when the next script starts), with a ticking elapsed
