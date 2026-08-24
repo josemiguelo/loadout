@@ -338,8 +338,12 @@ file never needs a check mode unless it IS the truth's only oracle.
 
 - After completing any phase/feature, end with a **"Try it"** section: exact
   commands, binary path, expected output.
-- Keep **README.md** (tour-style, exhaustive, every capability shown with
-  console examples) and **this file** updated with every change.
+- Docs split (2026-08-24): **README.md** is a concise front door (concept,
+  command table, quickstart, links); the GitHub **wiki** holds the guides
+  (Home = concepts, Writing-Your-Manifest, A-Day-With-Loadout — local clone
+  at ../loadout.wiki). Keep README, the wiki, and **this file** updated with
+  every change; the wiki links into josemiguelo/loadouts as the live example,
+  so renames there may break wiki links.
 - The user prefers explicit over implicit in every design fork — no
   auto-detection, no fallbacks, no heuristics; errors over guesses. Propose
   designs before implementing when the user asks a question ("is this ok?"
