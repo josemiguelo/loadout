@@ -100,9 +100,12 @@ object ManifestLoader {
             }
         }
 
-        for (path in tomlFiles(fs, repoRoot / MACHINES_DIR)) {
+        // Machine files may live in subfolders (purely cosmetic, like
+        // manifest.d); the machine name is always the file name.
+        for (path in machineFiles(fs, repoRoot)) {
             val name = path.name.removeSuffix(".toml")
-            machines[name] = try {
+            val label = path.toString().removePrefix(repoRoot.toString()).trimStart('/')
+            val parsed = try {
                 toml.decodeFromString<MachineConfig>(fs.read(path) { readUtf8() })
             } catch (e: Exception) {
                 val hint = if (e.message?.contains("Cannot decode the key [scripts]") == true) {
@@ -111,9 +114,13 @@ object ManifestLoader {
                 } else {
                     ""
                 }
-                throw ManifestException("Failed to parse $MACHINES_DIR/${path.name}: ${e.message}$hint")
+                throw ManifestException("Failed to parse $label: ${e.message}$hint")
+            }
+            if (machines.put(name, parsed) != null) {
+                errors += "duplicate machine '$name' (redefined in $label — subfolders are cosmetic, names must be unique)"
             }
         }
+        errors += flattenMachines(machines)
 
         if (errors.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
@@ -162,7 +169,9 @@ object ManifestLoader {
         if (missingFiles.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + missingFiles.joinToString("\n"))
         }
-        return merged
+        // Bases are config inheritance, not machines: validated above, but
+        // never observed, diffed, or converged.
+        return merged.copy(machines = merged.machines.filterValues { !it.base })
     }
 
     /** Parse and validate a single manifest document (no fragment/machine-file merging). */
@@ -298,6 +307,68 @@ object ManifestLoader {
         } else {
             emptyList()
         }
+
+    /** All machine files under machines/, any folder depth, path-sorted. */
+    private fun machineFiles(fs: FileSystem, repoRoot: Path): List<Path> {
+        val dir = repoRoot / MACHINES_DIR
+        if (!fs.exists(dir)) return emptyList()
+        return fs.listRecursively(dir)
+            .filter { it.name.endsWith(".toml") && fs.metadataOrNull(it)?.isRegularFile == true }
+            .sortedBy { it.toString() }
+            .toList()
+    }
+
+    /**
+     * Resolve `extends` chains in place: every config becomes its flattened
+     * self ([pm] merged per key, child wins; `scripts` union, a same-named
+     * child entry replaces the base's), then base configs are removed —
+     * downstream nothing knows inheritance existed. Returns errors.
+     */
+    private fun flattenMachines(machines: MutableMap<String, MachineConfig>): List<String> {
+        val errors = mutableListOf<String>()
+        for ((name, config) in machines) {
+            val parent = config.extends ?: continue
+            val target = machines[parent]
+            when {
+                target == null ->
+                    errors += "machine '$name' extends unknown base '$parent'"
+                !target.base ->
+                    errors += "machine '$name' extends '$parent', which is not a base " +
+                        "(shared config must live in a `base = true` file)"
+            }
+        }
+        if (errors.isNotEmpty()) return errors
+
+        val flattened = mutableMapOf<String, MachineConfig>()
+        fun flatten(name: String, seen: List<String>): MachineConfig {
+            flattened[name]?.let { return it }
+            if (name in seen) {
+                errors += "machine base cycle: ${(seen + name).joinToString(" -> ")}"
+                return machines.getValue(name)
+            }
+            val config = machines.getValue(name)
+            val parent = config.extends?.let { flatten(it, seen + name) } ?: run {
+                flattened[name] = config
+                return config
+            }
+            val childScripts = config.scriptArgs().keys
+            val result = config.copy(
+                pm = parent.pm + config.pm,
+                scripts = parent.scripts.filterNot { it.substringBefore(' ') in childScripts } + config.scripts,
+            )
+            flattened[name] = result
+            return result
+        }
+        for (name in machines.keys.toList()) {
+            flatten(name, emptyList())
+        }
+        if (errors.isNotEmpty()) return errors
+        machines.clear()
+        // Bases stay (flattened) so validation covers them too; loadRepo
+        // drops them from the returned manifest after validating.
+        machines += flattened
+        return errors
+    }
 
     /** All fragment files under manifest.d, any folder depth, path-sorted. */
     private fun fragmentFiles(fs: FileSystem, repoRoot: Path): List<Path> {

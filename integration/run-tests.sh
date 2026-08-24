@@ -429,6 +429,26 @@ if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
     ok "maintain runs selected scripts in a PTY, exits 1 when a check still fails"
 fi
 
+# --- machine bases + subfolders -----------------------------------------
+mkdir -p repo/machines/base repo/machines/hosts
+cat > repo/machines/base/testbase.toml <<'EOF'
+base = true
+scripts = ["marker"]
+
+[pm]
+git = "manual"
+EOF
+cat > repo/machines/hosts/m9.toml <<'EOF'
+extends = "testbase"
+EOF
+OUT=$("$BIN" --repo repo --machine m9 setup-new-machine --dry-run) || fail "inherited machine plans"
+echo "$OUT" | grep -q "git" || fail "child inherits the base's pm mapping"
+echo "$OUT" | grep -qE "~ marker +script" || fail "child inherits the base's script opt-ins"
+"$BIN" --repo repo --machine m9 status --no-write >/dev/null || fail "status works for inherited machine"
+"$BIN" --repo repo diff 2>/dev/null | grep -q "testbase" && fail "bases must not appear as machines" || true
+rm -rf repo/machines/base repo/machines/hosts
+ok "machine files inherit from bases and live in subfolders"
+
 # --- explain ------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 explain git marker)
 echo "$OUT" | grep -q "program git" || fail "explain prints the program"

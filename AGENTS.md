@@ -98,7 +98,13 @@ These came from explicit user decisions; don't "improve" them away:
    `[machines.*]` in manifest.toml or fragments is a validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a machine
    doesn't map is not part of that machine's loadout: converge skips it,
-   status doesn't observe it, diff shows "-". `setup-new-machine` throws
+   status doesn't observe it, diff shows "-". Machine files may sit in
+   subfolders (cosmetic; name = file name, unique repo-wide) and may
+   `extends` a `base = true` config (pm merged per key child-wins; scripts
+   union, same-named child entry replaces): bases are flattened at load,
+   validated, then dropped — they are never machines. Machines can't extend
+   machines; no subtraction — a base entry is a promise every child keeps.
+   `setup-new-machine` throws
    ResolutionException before executing anything if: machine config file
    missing, an EXPLICITLY requested program unmapped, a mapped program's
    dependency unmapped, or a mapped known PM's binary absent (probed). No

@@ -152,6 +152,133 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun machineFilesInSubfoldersAndBaseInheritance() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [programs.git]
+                    [programs.git.install.dnf]
+                    command = "x"
+                    [programs.git.install.brew]
+                    command = "y"
+                    [programs.kitty]
+                    [programs.kitty.install.dnf]
+                    command = "z"
+
+                    [scripts.dotfiles]
+                    run = "true"
+                    [scripts.setup-ssh]
+                    file = "scripts/setup-ssh.sh"
+                """.trimIndent(),
+                "scripts/setup-ssh.sh" to "#!/bin/sh\n",
+                "machines/base/fedora.toml" to """
+                    base = true
+                    scripts = ["dotfiles", "setup-ssh generic"]
+
+                    [pm]
+                    git = "dnf"
+                    kitty = "dnf"
+                """.trimIndent(),
+                "machines/linux/laptop.toml" to """
+                    extends = "fedora"
+                    scripts = ["setup-ssh laptopkey"]
+
+                    [pm]
+                    git = "brew"
+                """.trimIndent(),
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        // Bases are not machines.
+        assertEquals(setOf("laptop"), manifest.machines.keys)
+        val laptop = manifest.machines.getValue("laptop")
+        // pm merged per key, child wins.
+        assertEquals("brew", laptop.pm["git"])
+        assertEquals("dnf", laptop.pm["kitty"])
+        // scripts union; same-named child entry replaces the base's (args too).
+        assertEquals(mapOf("dotfiles" to "", "setup-ssh" to "laptopkey"), laptop.scriptArgs())
+    }
+
+    @Test
+    fun baseChainsFlattenThroughIntermediateBases() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [programs.git]
+                    [programs.git.install.dnf]
+                    command = "x"
+                    [programs.git.install.rpm-ostree]
+                    command = "y"
+                """.trimIndent(),
+                "machines/fedora.toml" to "base = true\n\n[pm]\ngit = \"dnf\"",
+                "machines/fedora-atomic.toml" to "base = true\nextends = \"fedora\"\n\n[pm]\ngit = \"rpm-ostree\"",
+                "machines/deck.toml" to "extends = \"fedora-atomic\"",
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        assertEquals(setOf("deck"), manifest.machines.keys)
+        assertEquals("rpm-ostree", manifest.machines.getValue("deck").pm["git"])
+    }
+
+    @Test
+    fun machineInheritanceErrors() {
+        fun repoWith(vararg machineFiles: Pair<String, String>) = fs(
+            mapOf("manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"") +
+                machineFiles.toMap(),
+        )
+
+        val unknown = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(repoWith("machines/laptop.toml" to "extends = \"ghost\""), repo)
+        }
+        assertTrue("extends unknown base 'ghost'" in unknown.message.orEmpty())
+
+        val notABase = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(
+                repoWith(
+                    "machines/laptop.toml" to "[pm]\ngit = \"dnf\"",
+                    "machines/desktop.toml" to "extends = \"laptop\"",
+                ),
+                repo,
+            )
+        }
+        assertTrue("is not a base" in notABase.message.orEmpty())
+
+        val cycle = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(
+                repoWith(
+                    "machines/a.toml" to "base = true\nextends = \"b\"",
+                    "machines/b.toml" to "base = true\nextends = \"a\"",
+                ),
+                repo,
+            )
+        }
+        assertTrue("cycle" in cycle.message.orEmpty())
+
+        val dup = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(
+                repoWith(
+                    "machines/x/laptop.toml" to "[pm]\ngit = \"dnf\"",
+                    "machines/y/laptop.toml" to "[pm]\ngit = \"dnf\"",
+                ),
+                repo,
+            )
+        }
+        assertTrue("duplicate machine 'laptop'" in dup.message.orEmpty())
+    }
+
+    @Test
+    fun baseMappingsAreValidatedEvenWithoutChildren() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "machines/base/fedora.toml" to "base = true\n\n[pm]\nghost = \"dnf\"",
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("unknown program 'ghost'" in e.message.orEmpty())
+    }
+
+    @Test
     fun machineFileMappingIsValidatedAgainstMergedPrograms() {
         val fs = fs(
             mapOf(

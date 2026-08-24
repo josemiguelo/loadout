@@ -166,6 +166,19 @@ data class Template(
 @Serializable
 data class MachineConfig(
     /**
+     * Marks a parent config ("fedora", "macos", ...) that real machines
+     * `extends`-reference. Bases are flattened into their children at load
+     * and are NOT machines: never observed, never diffed, never converged.
+     */
+    val base: Boolean = false,
+    /**
+     * Name of the base config this machine inherits (a `base = true` file).
+     * `[pm]` merges per key (this file wins); `scripts` is a union where a
+     * same-named entry here replaces the base's (args included). Bases may
+     * extend bases; real machines may only extend bases.
+     */
+    val extends: String? = null,
+    /**
      * Which entry of each program's `install` table this machine uses,
      * keyed by program name. Every program a machine installs must be mapped.
      */

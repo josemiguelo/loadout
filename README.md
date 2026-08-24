@@ -439,6 +439,49 @@ error: Invalid manifest:
   - machines/vps.toml maps 'ripgrep' to 'atp', but programs.ripgrep.install has no 'atp' entry (has: apt, brew, dnf)
 ```
 
+#### Machine bases: share config across same-OS machines
+
+Machine files may live in **subfolders** (purely cosmetic — the machine name
+is always the file name, unique repo-wide), and a machine may **extend a
+base**: a `base = true` file holding everything its OS-mates share. Bases are
+config, not machines — never observed, never in `diff`, never converged.
+
+```
+machines/
+├── base/
+│   ├── fedora.toml              # base = true
+│   └── macos.toml               # base = true
+├── linux/laptop.toml            # extends = "fedora"
+└── macos/new-macbook.toml       # extends = "macos"
+```
+
+```toml
+# machines/base/fedora.toml — the shared truth for every Fedora box
+base = true
+scripts = ["dotfiles-bootstrap", "dotfiles-pull", "dotfiles-apply"]
+
+[pm]
+git = "dnf"
+kitty = "dnf"
+```
+
+```toml
+# machines/linux/laptop.toml — only what makes THIS machine different
+extends = "fedora"
+scripts = ["setup-libvirt"]      # union; a same-named entry replaces the
+                                 # base's (arguments included)
+[pm]
+kitty = "brew"                   # merged per key; the machine wins
+```
+
+A brand-new machine of a known OS is one line: `extends = "macos"`.
+Rules: `extends` must name a `base = true` file (bases may extend bases;
+machines may not extend machines — promote shared config to a base instead);
+cycles, unknown bases, and duplicate machine names are load errors. There is
+no subtraction: a base entry is a promise every child keeps — if a machine
+can't keep it, the entry doesn't belong in the base. Everything downstream
+sees only the flattened result.
+
 #### Splitting a growing manifest
 
 When `manifest.toml` gets long, move any subset of `[programs.*]` and
