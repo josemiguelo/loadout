@@ -17,7 +17,7 @@ private val STARTER_MANIFEST = """
     name = "my machines"
     # Bump this when the repo starts using features of a newer loadout —
     # machines running older binaries then refuse with an "upgrade" error:
-    #min-tool-version = "0.3.0"
+    #min-tool-version = "0.3.1"
 
     # Install mechanics (commands, version checks, probes) live once in
     # manifest.d/00_installers.toml — a standard package is one `via` line,
