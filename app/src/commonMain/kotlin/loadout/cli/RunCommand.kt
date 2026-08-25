@@ -16,7 +16,11 @@ import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 
 class RunCommand : CliktCommand(name = "run") {
-    override fun help(context: Context) = "Run the named setup scripts from the manifest"
+    override fun help(context: Context) = commandHelp(
+        "Run the named scripts from the manifest.",
+        "<scripts...>  script names (must be opted in by this machine)",
+        "--force       run even when the check already passes",
+    )
 
     private val names by argument(name = "scripts", help = "Script names from the manifest")
         .multiple(required = true)

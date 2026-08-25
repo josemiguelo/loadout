@@ -19,8 +19,12 @@ import kotlinx.coroutines.runBlocking
  * are `run`'s job; the whole loadout is `setup-new-machine`'s.
  */
 class InstallCommand : CliktCommand(name = "install") {
-    override fun help(context: Context) =
-        "Install the named programs (plus their depends-on closure) on this machine"
+    override fun help(context: Context) = commandHelp(
+        "Install the named programs on this machine, dependencies first.",
+        "<programs...>  programs from the manifest (+ depends-on)",
+        "--dry-run      print the plan, execute nothing",
+        "--yes          skip the confirmation",
+    )
 
     private val names by argument(name = "programs", help = "Programs to install")
         .multiple(required = true)

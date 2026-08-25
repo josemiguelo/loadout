@@ -22,9 +22,11 @@ private val stateJson = Json {
 }
 
 class StatusCommand : CliktCommand(name = "status") {
-    override fun help(context: Context) =
-        "Observe this machine — program versions and script checks, with each failing " +
-            "check's detail — and update the state file"
+    override fun help(context: Context) = commandHelp(
+        "Observe this machine: every program version and script check re-asked, drift explained, state file updated.",
+        "--json      print the full state as JSON",
+        "--no-write  observe without touching the state file",
+    )
 
     private val json by option("--json", help = "Print the machine state as JSON").flag()
     private val noWrite by option("--no-write", help = "Don't update the state file").flag()

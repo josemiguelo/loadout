@@ -13,8 +13,9 @@ import kotlinx.coroutines.coroutineScope
 private data class UpdateRow(val name: String, val current: String, val candidate: String, val source: String)
 
 class OutdatedCommand : CliktCommand(name = "outdated") {
-    override fun help(context: Context) =
-        "Ask each program's remote source (dnf/brew/flatpak/...) whether a newer version exists"
+    override fun help(context: Context) = commandHelp(
+        "Ask each program's remote source (dnf/brew/flathub/...) for newer versions — the loadout binary included.",
+    )
 
     private val app by requireObject<AppContext>()
 

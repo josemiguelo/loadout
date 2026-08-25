@@ -9,9 +9,11 @@ import loadout.core.platform.isStdoutTty
 import loadout.tui.runMaintainTui
 
 class MaintainCommand : CliktCommand(name = "maintain") {
-    override fun help(context: Context) =
-        "Interactively pick this machine's scripts and run them, watching each " +
-            "one's output live (each script's check decides the resulting status)"
+    override fun help(context: Context) = commandHelp(
+        "Interactively pick this machine's maintenance scripts and run them, output streaming live; each script's check delivers the verdict.",
+        "TTY-only  scripting: use run / status",
+        "keys:  space/a/n select, enter run, esc cancel, q quit",
+    )
 
     private val app by requireObject<AppContext>()
 

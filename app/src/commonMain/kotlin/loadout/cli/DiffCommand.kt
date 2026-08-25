@@ -9,8 +9,10 @@ import loadout.core.diff.DiffEngine
 import loadout.core.diff.InstallState
 
 class DiffCommand : CliktCommand(name = "diff") {
-    override fun help(context: Context) =
-        "Compare all machines' state files: what's missing where, and version drift. Exits 1 when something is off."
+    override fun help(context: Context) = commandHelp(
+        "Compare all machines' state files: missing installs and version drift. Exits 1 when something is off.",
+        "--machines a,b  narrow the comparison to those machines",
+    )
 
     private val machines by option(
         "--machines",

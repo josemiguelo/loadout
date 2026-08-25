@@ -8,9 +8,9 @@ import loadout.core.INSTALL_COMMAND
 import loadout.core.TOOL_VERSION
 
 class UpgradeCommand : CliktCommand(name = "upgrade") {
-    override fun help(context: Context) =
-        "Upgrade the loadout binary to the latest release. Needs no config repo, " +
-            "so it works even when a repo's min-tool-version refuses this binary."
+    override fun help(context: Context) = commandHelp(
+        "Upgrade the loadout binary to the latest release. Needs no config repo, so it works even under a min-tool-version refusal.",
+    )
 
     private val app by requireObject<AppContext>()
 

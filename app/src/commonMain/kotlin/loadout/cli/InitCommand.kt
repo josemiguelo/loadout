@@ -106,7 +106,10 @@ private val STARTER_FRAGMENT = """
 """.trimIndent() + "\n"
 
 class InitCommand : CliktCommand(name = "init") {
-    override fun help(context: Context) = "Scaffold a new config repo (manifest, scripts/, state/) and git init it"
+    override fun help(context: Context) = commandHelp(
+        "Scaffold a new config repo (manifest, scripts/, state/, machines/) and git init it.",
+        "[path]  where to scaffold (default: current directory)",
+    )
 
     private val path by argument(name = "path").help("Where to create the repo").default(".")
 

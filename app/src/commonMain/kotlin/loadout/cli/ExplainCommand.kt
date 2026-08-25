@@ -10,9 +10,10 @@ import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 
 class ExplainCommand : CliktCommand(name = "explain") {
-    override fun help(context: Context) =
-        "Explain programs or scripts — the fully expanded definition exactly as the " +
-            "engine sees it, templates resolved. With no names, explains the whole manifest."
+    override fun help(context: Context) = commandHelp(
+        "Explain programs or scripts: the fully expanded definition exactly as the engine sees it.",
+        "[names...]  programs or scripts (default: all)",
+    )
 
     private val names by argument(name = "names", help = "Program or script names (default: everything)")
         .multiple()

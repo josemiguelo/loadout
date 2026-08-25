@@ -9,8 +9,11 @@ import loadout.core.git.GitClient
 import loadout.core.git.GitException
 
 class SyncCommand : CliktCommand(name = "sync") {
-    override fun help(context: Context) =
-        "Pull the config repo, refresh this machine's state file, and commit & push it"
+    override fun help(context: Context) = commandHelp(
+        "Pull the config repo, refresh this machine's state, commit only state/<machine>.json, push.",
+        "--no-push       commit locally, don't push",
+        "-m, --message   override the commit message",
+    )
 
     private val noPush by option("--no-push", help = "Commit locally but don't push").flag()
     private val message by option("-m", "--message", help = "Commit message")

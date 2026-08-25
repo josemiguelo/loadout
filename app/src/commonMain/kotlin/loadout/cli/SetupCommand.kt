@@ -17,9 +17,12 @@ import loadout.core.model.ScriptStatus
 import kotlinx.coroutines.runBlocking
 
 class SetupCommand : CliktCommand(name = "setup-new-machine") {
-    override fun help(context: Context) =
-        "Set up this machine: install every missing program, then run its setup scripts. " +
-            "For specific programs use `install`; for specific scripts use `run`."
+    override fun help(context: Context) = commandHelp(
+        "Set up this machine: install every missing program, then run its setup scripts.",
+        "--dry-run       print the plan, execute nothing",
+        "--yes           skip the confirmation",
+        "--skip-scripts  programs only",
+    )
 
     private val dryRun by option("--dry-run", help = "Show what would run without doing it").flag()
     private val yes by option("-y", "--yes", help = "Don't ask for confirmation").flag()
