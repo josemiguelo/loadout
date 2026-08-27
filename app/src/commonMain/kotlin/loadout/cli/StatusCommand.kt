@@ -65,10 +65,10 @@ class StatusCommand : CliktCommand(name = "status") {
     // Same visual language as the maintain screen: ✔/✘/· markers, color as
     // signal only (ok/warn/error/dim), dim detail lines under failing rows.
     private fun printTable(state: MachineState, detail: Map<String, String>) {
-        echo(Style.dim("machine ") + Style.bold(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))
+        echo(Style.dim("machine ") + Style.machine(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))
         echo("")
         val nameWidth = ((state.programs.keys + state.scripts.keys).map { it.length } + 7).max()
-        echo(Style.bold(" " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(11) + "VERSION"))
+        echo(Style.header(" " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(11) + "VERSION"))
         for ((name, program) in state.programs.toList().sortedBy { it.first }) {
             val (mark, status) = when (program.status) {
                 ProgramStatus.INSTALLED -> Style.ok("✔") to Style.ok("installed".padEnd(11))
@@ -79,7 +79,7 @@ class StatusCommand : CliktCommand(name = "status") {
         }
         if (state.scripts.isEmpty()) return
         echo("")
-        echo(Style.bold(" " + "SCRIPT".padEnd(nameWidth + 4) + "STATUS"))
+        echo(Style.header(" " + "SCRIPT".padEnd(nameWidth + 4) + "STATUS"))
         for ((name, script) in state.scripts.toList().sortedBy { it.first }) {
             val (mark, status) = when (script.status) {
                 ScriptStatus.DONE -> Style.ok("✔") to Style.ok("done")

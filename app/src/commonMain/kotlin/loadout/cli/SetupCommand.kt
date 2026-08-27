@@ -63,16 +63,16 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
         val installs = plan.filterIsInstance<PlanItem.Install>()
         val nameWidth = (plan.map { it.program.length } + scriptNames.map { it.length } + 1).max()
         echo("")
-        echo("Plan for ${system.machine}:")
+        echo(Style.header("Plan for ") + Style.machine(system.machine) + Style.header(":"))
         for (item in plan) {
             when (item) {
                 is PlanItem.Install ->
-                    echo("  + ${item.program.padEnd(nameWidth)}  [${item.installKey}] ${item.command}")
+                    echo("  " + Style.warn("+") + " ${item.program.padEnd(nameWidth)}  " + Style.dim("[${item.installKey}]") + " ${item.command}")
                 is PlanItem.AlreadyInstalled ->
-                    echo("  = ${item.program.padEnd(nameWidth)}  ${item.version ?: "installed"}")
+                    echo("  " + Style.ok("=") + " ${item.program.padEnd(nameWidth)}  " + Style.dim(item.version ?: "installed"))
             }
         }
-        for (name in scriptNames) echo("  ~ ${name.padEnd(nameWidth)}  script")
+        for (name in scriptNames) echo("  " + Style.accent("~") + " ${name.padEnd(nameWidth)}  " + Style.dim("script"))
 
         if (installs.isEmpty() && scriptNames.isEmpty()) {
             echo("\nNothing to do.")
@@ -89,16 +89,16 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
             }
         }
 
-        val outcomes = engine.execute(manifest, plan) { echo("\n==> installing ${it.program}") }
+        val outcomes = engine.execute(manifest, plan) { echo("\n" + Style.accent("==> installing ${it.program}")) }
 
         val scriptResults = mutableMapOf<String, ScriptState>()
         for (name in scriptNames) {
             val step = manifest.scripts.getValue(name)
             when (val outcome = scriptRunner.run(step, system.os, args = enabledScripts.getValue(name))) {
-                is ScriptOutcome.AlreadyDone -> echo("\n==> script $name: already done (check passed)")
+                is ScriptOutcome.AlreadyDone -> echo("\n" + Style.accent("==> script $name:") + " already done " + Style.dim("(check passed)"))
                 is ScriptOutcome.NotApplicable -> {}
                 is ScriptOutcome.Ran -> {
-                    echo("\n==> ran script $name (exit ${outcome.state.exitCode})")
+                    echo("\n" + Style.accent("==> ran script $name") + " (exit ${outcome.state.exitCode})")
                     scriptResults[name] = outcome.state
                 }
             }
@@ -109,9 +109,9 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
 
         val failedInstalls = outcomes.filterNot { it.success }
         val failedScripts = scriptResults.filterValues { it.status == ScriptStatus.FAILED }
-        echo("Done: ${outcomes.count { it.success }}/${outcomes.size} programs installed, ${scriptResults.size} scripts run.")
-        if (failedInstalls.isNotEmpty()) echo("Failed installs: ${failedInstalls.joinToString { it.program }}")
-        if (failedScripts.isNotEmpty()) echo("Failed scripts: ${failedScripts.keys.joinToString()}")
+        echo(" " + Style.ok("\u2714") + "  ${outcomes.count { it.success }}/${outcomes.size} programs installed, ${scriptResults.size} scripts run")
+        if (failedInstalls.isNotEmpty()) echo(" " + Style.error("\u2718") + "  failed installs: ${failedInstalls.joinToString { it.program }}")
+        if (failedScripts.isNotEmpty()) echo(" " + Style.error("\u2718") + "  failed scripts: ${failedScripts.keys.joinToString()}")
         if (failedInstalls.isNotEmpty() || failedScripts.isNotEmpty()) throw ProgramResult(1)
     }
 }

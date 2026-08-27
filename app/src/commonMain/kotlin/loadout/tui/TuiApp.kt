@@ -20,6 +20,10 @@ import com.jakewharton.mosaic.ui.TextStyle
 import loadout.cli.AppContext
 import loadout.core.platform.terminalColumns
 import loadout.core.platform.terminalRows
+import loadout.theme.DARK_THEME
+import loadout.theme.LIGHT_THEME
+import loadout.theme.Rgb
+import loadout.theme.ThemePalette
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 
@@ -41,31 +45,23 @@ data class Palette(
     val selectionFg: Color,
 )
 
-/** Tokyo Night. */
-private val DARK_PALETTE = Palette(
-    accent = Color(0x7a, 0xa2, 0xf7),
-    onAccent = Color(0x1a, 0x1b, 0x26),
-    machine = Color(0xbb, 0x9a, 0xf7),
-    dim = Color(0x56, 0x5f, 0x89),
-    ok = Color(0x9e, 0xce, 0x6a),
-    warn = Color(0xe0, 0xaf, 0x68),
-    error = Color(0xf7, 0x76, 0x8e),
-    selectionBg = Color(0x36, 0x4a, 0x82),
-    selectionFg = Color(0xc0, 0xca, 0xf5),
+// Palettes come from loadout.theme — the CLI styles from the same values.
+private fun Rgb.toColor() = Color(r, g, b)
+
+private fun ThemePalette.toPalette() = Palette(
+    accent = accent.toColor(),
+    onAccent = onAccent.toColor(),
+    machine = machine.toColor(),
+    dim = dim.toColor(),
+    ok = ok.toColor(),
+    warn = warn.toColor(),
+    error = error.toColor(),
+    selectionBg = selectionBg.toColor(),
+    selectionFg = selectionFg.toColor(),
 )
 
-/** Light: vivid-but-readable on white (GitHub-light-like saturation). */
-private val LIGHT_PALETTE = Palette(
-    accent = Color(0x09, 0x69, 0xda),
-    onAccent = Color(0xff, 0xff, 0xff),
-    machine = Color(0x82, 0x50, 0xdf),
-    dim = Color(0x6e, 0x77, 0x81),
-    ok = Color(0x1a, 0x7f, 0x37),
-    warn = Color(0x9a, 0x67, 0x00),
-    error = Color(0xd1, 0x24, 0x2f),
-    selectionBg = Color(0x2e, 0x33, 0x40),
-    selectionFg = Color(0xe5, 0xe9, 0xf0),
-)
+private val DARK_PALETTE = DARK_THEME.toPalette()
+private val LIGHT_PALETTE = LIGHT_THEME.toPalette()
 
 private val LocalPalette = compositionLocalOf { DARK_PALETTE }
 

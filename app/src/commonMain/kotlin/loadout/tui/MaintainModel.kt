@@ -16,6 +16,7 @@ import loadout.core.platform.blockingDispatcher
 import loadout.core.platform.envVar
 import loadout.core.platform.nowIso
 import loadout.core.platform.terminalBackgroundLuma
+import loadout.theme.detectDarkTerminal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -40,18 +41,6 @@ internal fun displayLines(raw: String): List<String> =
         .filter { it.isNotBlank() }
 
 enum class MaintainPhase { SELECT, RUNNING, DONE }
-
-/**
- * Whether the terminal looks dark. Mosaic 0.18 can't report the terminal
- * theme, so we ask the terminal for its background color (OSC 11 ->
- * [bgLuma]); when it doesn't answer, fall back to the COLORFGBG convention
- * ("<fg>;<bg>", bg 7/15 = light). Unknown -> dark, the safer default.
- */
-fun detectDarkTerminal(bgLuma: Double?, colorFgBg: String?): Boolean {
-    if (bgLuma != null) return bgLuma < 0.5
-    val bg = colorFgBg?.substringAfterLast(';')?.toIntOrNull() ?: return true
-    return bg != 7 && bg != 15
-}
 
 enum class RunStatus { WAITING, RUNNING, CHECKING, DONE, PENDING, FAILED, CANCELLED }
 

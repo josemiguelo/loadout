@@ -105,12 +105,12 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
             val nameWidth = updates.maxOf { it.name.length } + 2
             val currentWidth = updates.maxOf { it.current.length } + 2
             val candidateWidth = updates.maxOf { it.candidate.length } + 2
-            echo(Style.bold(" " + "PROGRAM".padEnd(nameWidth + 3) + "CURRENT".padEnd(currentWidth + 3) + "CANDIDATE".padEnd(candidateWidth) + "SOURCE"))
+            echo(Style.header(" " + "PROGRAM".padEnd(nameWidth + 3) + "CURRENT".padEnd(currentWidth + 3) + "CANDIDATE".padEnd(candidateWidth) + "SOURCE"))
             val sourceWidth = updates.maxOf { it.source.length } + 2
             for ((name, current, candidate, source, note) in updates) {
                 val annotation = if (note.isEmpty()) "" else Style.dim("  $note")
                 echo(
-                    " ${Style.warn("\u2191")}  ${name.padEnd(nameWidth)}${Style.dim(current.padEnd(currentWidth))}" +
+                    " ${Style.warn("\u2191")}  ${name.padEnd(nameWidth)}${current.padEnd(currentWidth)}" +
                         "${Style.dim("-> ")}${Style.warn(candidate.padEnd(candidateWidth))}${Style.dim("[$source]".padEnd(sourceWidth))}$annotation",
                 )
             }

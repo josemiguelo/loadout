@@ -35,7 +35,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
             val notes = mutableListOf<String>()
             when {
                 program != null -> {
-                    echo("program $name" + program.description.ifEmpty { null }?.let { "  — $it" }.orEmpty())
+                    echo(Style.header("program ") + Style.bold(name) + program.description.ifEmpty { null }?.let { Style.dim("  — $it") }.orEmpty())
                     rows += "version" to (
                         program.version?.let { "${it.command}  =~ /${it.regex}/" }
                             ?: "(none — status will always be 'unknown')"
@@ -48,7 +48,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         val installerName = variant.installer
                             ?: key.takeIf { it in manifest.installers && variant.installer == null }
                         val via = installerName?.let { "  [installer: $it]" }.orEmpty()
-                        val marker = if (key == mapping[name]) "   <- ${system.machine}" else ""
+                        val marker = if (key == mapping[name]) Style.machine("   <- ${system.machine}") else ""
                         rows += "install.$key" to "${resolved.command}$via$marker"
                         resolved.check?.takeIf { it != program.version }?.let {
                             rows += "check.$key" to "${it.command}  =~ /${it.regex}/"
@@ -69,7 +69,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     }
                 }
                 script != null -> {
-                    echo("script $name" + script.description.ifEmpty { null }?.let { "  — $it" }.orEmpty())
+                    echo(Style.header("script ") + Style.bold(name) + script.description.ifEmpty { null }?.let { Style.dim("  — $it") }.orEmpty())
                     script.file?.let { rows += "file" to it }
                     script.run?.let { rows += "run" to it }
                     script.check?.let { rows += "check" to it }
@@ -97,8 +97,8 @@ class ExplainCommand : CliktCommand(name = "explain") {
                 }
             }
             val width = rows.maxOf { it.first.length }
-            for ((label, value) in rows) echo("  ${label.padEnd(width)}  $value")
-            for (note in notes) echo("  $note")
+            for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
+            for (note in notes) echo("  " + Style.warn(note))
         }
     }
 }

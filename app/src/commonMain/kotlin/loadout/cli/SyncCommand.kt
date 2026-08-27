@@ -28,32 +28,32 @@ class SyncCommand : CliktCommand(name = "sync") {
 
         val hasUpstream = git.hasUpstream()
         if (hasUpstream) {
-            echo("Pulling latest changes...")
+            echo(Style.dim("Pulling latest changes..."))
             git.pullRebase()
         } else {
-            echo("No upstream configured; skipping pull.")
+            echo(Style.dim("No upstream configured; skipping pull."))
         }
 
         // Load after pulling so we see the latest manifest.
         val manifest = app.loadManifest()
         val system = app.detectSystem()
-        echo("Refreshing state for ${system.machine}...")
+        echo(Style.dim("Refreshing state for ") + Style.machine(system.machine) + Style.dim("..."))
         kotlinx.coroutines.runBlocking { app.refreshAndWriteState(manifest, system) }
 
         val statePath = "state/${system.machine}.json"
         val committed = git.addCommit(statePath, message ?: "${system.machine}: update state")
         if (!committed) {
-            echo("State unchanged; nothing to commit.")
+            echo(" " + Style.ok("\u2714") + "  state unchanged; nothing to commit")
             return
         }
-        echo("Committed $statePath.")
+        echo(" " + Style.ok("\u2714") + "  committed $statePath")
 
         when {
-            noPush -> echo("Skipping push (--no-push).")
+            noPush -> echo(Style.dim("Skipping push (--no-push)."))
             !hasUpstream -> echo("No upstream configured; not pushing. Add a remote and run `git push -u`.")
             else -> {
                 git.push()
-                echo("Pushed.")
+                echo(" " + Style.ok("\u2714") + "  pushed")
             }
         }
     }

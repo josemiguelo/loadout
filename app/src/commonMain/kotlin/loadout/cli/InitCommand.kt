@@ -148,7 +148,7 @@ class InitCommand : CliktCommand(name = "init") {
         }
 
         echo("")
-        echo("Next steps:")
+        echo(Style.header("Next steps:"))
         echo("  1. Edit ${manifestPath} — add your programs and scripts")
         echo("  2. Map each program to an install key in machines/<your-hostname>.toml")
         echo("  3. loadout --repo $root status")

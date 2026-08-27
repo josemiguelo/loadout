@@ -1,7 +1,13 @@
 package loadout.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
+import loadout.core.platform.envVar
 import loadout.core.platform.isStdoutTty
+import loadout.core.platform.terminalBackgroundLuma
+import loadout.theme.DARK_THEME
+import loadout.theme.LIGHT_THEME
+import loadout.theme.Rgb
+import loadout.theme.detectDarkTerminal
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -9,23 +15,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 /**
- * Minimal ANSI styling for CLI tables, mirroring the TUI's color roles
- * (ok/warn/error/dim — color is signal, never decoration). Standard 4-bit
- * colors so the user's terminal theme decides the exact shades; disabled
- * automatically when stdout is piped, so scripted output stays plain.
+ * ANSI styling for CLI screens, using the SAME Tokyo Night / Day palette as
+ * the maintain TUI (loadout.theme) so every surface speaks one visual
+ * language — same roles too: ok/warn/error/dim as statuses, accent for
+ * headers/actions, machine for machine identity. Color is signal, never
+ * decoration. Dark vs light is detected once like the TUI does (OSC 11
+ * background query, COLORFGBG fallback, dark default) — only when stdout is
+ * a TTY, so piped output stays plain and never touches the terminal.
  * Style AFTER padding — escape codes would break padEnd widths.
  */
 object Style {
     private val enabled = isStdoutTty()
+    private val palette =
+        if (enabled && !detectDarkTerminal(terminalBackgroundLuma(), envVar("COLORFGBG"))) LIGHT_THEME else DARK_THEME
 
-    fun ok(text: String) = wrap(text, "32")
-    fun warn(text: String) = wrap(text, "33")
-    fun error(text: String) = wrap(text, "31")
-    fun dim(text: String) = wrap(text, "2")
-    fun bold(text: String) = wrap(text, "1")
+    fun ok(text: String) = fg(text, palette.ok)
+    fun warn(text: String) = fg(text, palette.warn)
+    fun error(text: String) = fg(text, palette.error)
+    fun dim(text: String) = fg(text, palette.dim)
+    fun accent(text: String) = fg(text, palette.accent)
+    fun machine(text: String) = fg(text, palette.machine)
+    fun bold(text: String) = if (enabled) "\u001b[1m$text\u001b[0m" else text
 
-    private fun wrap(text: String, code: String) =
-        if (enabled) "\u001b[${code}m$text\u001b[0m" else text
+    /** Bold accent — section headers, mirroring the TUI's title styling. */
+    fun header(text: String) = bold(accent(text))
+
+    private fun fg(text: String, c: Rgb) =
+        if (enabled) "\u001b[38;2;${c.r};${c.g};${c.b}m$text\u001b[0m" else text
 }
 
 

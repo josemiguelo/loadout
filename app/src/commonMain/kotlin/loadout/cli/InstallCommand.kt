@@ -56,13 +56,13 @@ class InstallCommand : CliktCommand(name = "install") {
 
         val nameWidth = (plan.map { it.program.length } + 1).max()
         echo("")
-        echo("Plan for ${system.machine}:")
+        echo(Style.header("Plan for ") + Style.machine(system.machine) + Style.header(":"))
         for (item in plan) {
             when (item) {
                 is PlanItem.Install ->
-                    echo("  + ${item.program.padEnd(nameWidth)}  [${item.installKey}] ${item.command}")
+                    echo("  " + Style.warn("+") + " ${item.program.padEnd(nameWidth)}  " + Style.dim("[${item.installKey}]") + " ${item.command}")
                 is PlanItem.AlreadyInstalled ->
-                    echo("  = ${item.program.padEnd(nameWidth)}  ${item.version ?: "installed"}")
+                    echo("  " + Style.ok("=") + " ${item.program.padEnd(nameWidth)}  " + Style.dim(item.version ?: "installed"))
             }
         }
 
@@ -81,15 +81,15 @@ class InstallCommand : CliktCommand(name = "install") {
             }
         }
 
-        val outcomes = engine.execute(manifest, plan) { echo("\n==> installing ${it.program}") }
+        val outcomes = engine.execute(manifest, plan) { echo("\n" + Style.accent("==> installing ${it.program}")) }
 
         echo("\nUpdating state...")
         runBlocking { app.refreshAndWriteState(manifest, system) }
 
         val failed = outcomes.filterNot { it.success }
-        echo("Done: ${outcomes.count { it.success }}/${outcomes.size} programs installed.")
+        echo(" " + Style.ok("\u2714") + "  ${outcomes.count { it.success }}/${outcomes.size} programs installed")
         if (failed.isNotEmpty()) {
-            echo("Failed installs: ${failed.joinToString { it.program }}")
+            echo(" " + Style.error("\u2718") + "  failed installs: ${failed.joinToString { it.program }}")
             throw ProgramResult(1)
         }
     }

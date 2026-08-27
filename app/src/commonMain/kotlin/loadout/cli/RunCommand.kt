@@ -51,10 +51,10 @@ class RunCommand : CliktCommand(name = "run") {
             if (name !in names) continue
             val step = manifest.scripts.getValue(name)
             when (val outcome = runner.run(step, system.os, force, args = enabled.getValue(name))) {
-                is ScriptOutcome.NotApplicable -> echo("skipped $name: not for ${system.os.id}")
-                is ScriptOutcome.AlreadyDone -> echo("skipped $name: already done (check passed; use --force to run anyway)")
+                is ScriptOutcome.NotApplicable -> echo(" " + Style.dim("\u00b7") + "  skipped $name " + Style.dim("(not for ${system.os.id})"))
+                is ScriptOutcome.AlreadyDone -> echo(" " + Style.ok("\u2714") + "  skipped $name " + Style.dim("(already done; use --force to run anyway)"))
                 is ScriptOutcome.Ran -> {
-                    echo("ran $name (exit ${outcome.state.exitCode})")
+                    echo(" " + (if (outcome.state.exitCode == 0) Style.ok("\u2714") else Style.error("\u2718")) + "  ran $name (exit ${outcome.state.exitCode})")
                     results[name] = outcome.state
                 }
             }
@@ -62,7 +62,7 @@ class RunCommand : CliktCommand(name = "run") {
 
         if (results.isNotEmpty()) {
             kotlinx.coroutines.runBlocking { app.refreshAndWriteState(manifest, system, results) }
-            echo("State updated.")
+            echo(Style.dim("State updated."))
         }
         if (results.any { it.value.status == ScriptStatus.FAILED }) throw ProgramResult(1)
     }

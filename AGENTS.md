@@ -232,13 +232,19 @@ These came from explicit user decisions; don't "improve" them away:
   (TIOCGWINSZ) every 300ms instead, with 24x80 fallback; the polling effect
   is guarded by `!exit` so quit still works. Keep windowing math in the
   model file, not composables.
-- **TUI theme**: true-color `Palette` pairs (Tokyo Night / Day) via a
-  CompositionLocal in TuiApp; `MaintainState.dark` toggled with `t`, initial value
-  from `detectDarkTerminal(bgLuma, COLORFGBG)` — bgLuma is a real OSC 11
-  query (`platform.terminalBackgroundLuma()`, raw-mode tty round-trip) that
-  MUST run before runMosaic owns the terminal; COLORFGBG is the fallback
-  (Mosaic 0.18 can't report the terminal theme either). Color = signal: ok/warn/error/dim roles only — never
-  reintroduce raw ANSI Color.* constants in composables.
+- **Theme is ONE source of truth**: `app/.../theme/Theme.kt` (package
+  `loadout.theme`) holds the Tokyo Night / Day `ThemePalette` pairs and
+  `detectDarkTerminal(bgLuma, COLORFGBG)`; the TUI maps it to Mosaic colors
+  (TuiApp `toPalette()`), the CLI emits it as 24-bit ANSI (`Style` — Mordant
+  may re-encode the SGR codes on output; that's normal). `MaintainState.dark`
+  toggled with `t`; bgLuma is a real OSC 11 query
+  (`platform.terminalBackgroundLuma()`, raw-mode /dev/tty round-trip,
+  150ms fail-soft) that MUST run before runMosaic owns the terminal — CLI
+  `Style` runs it lazily at first styled output, TTY-gated so piped output
+  stays plain AND never queries the terminal. Color = signal: ok/warn/error/dim
+  statuses, accent = headers/actions (`Style.header` = bold accent),
+  machine = machine identity — never reintroduce raw ANSI codes or
+  Color.* constants outside Theme.kt/Style.kt. Style AFTER padding.
 - **TUI + sudo**: streamed output would swallow a sudo password prompt; the
   maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
   points users at `sudo -v`.

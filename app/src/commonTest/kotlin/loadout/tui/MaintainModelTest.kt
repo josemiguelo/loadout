@@ -3,6 +3,7 @@ package loadout.tui
 import loadout.cli.AppContext
 import loadout.core.exec.ExecResult
 import loadout.core.exec.ProcessRunner
+import loadout.theme.detectDarkTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
