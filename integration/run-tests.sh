@@ -392,6 +392,20 @@ echo "$OUT" | grep -qE "batchtool +1.0 +-> 3.0" || fail "batch oracle (outdated-
 echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must not be listed" || true
 ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
+# custom [outdated.*] sources: arbitrary rows with the source as the tag
+cat >> instrepo/manifest.toml <<'TOML'
+
+[outdated.plugin-pins]
+command = "printf 'javaplug aaa1111 bbb2222\n'"
+TOML
+OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with custom source exits 0"
+echo "$OUT" | grep -qE "javaplug +aaa1111 +-> bbb2222" || fail "custom source rows appear"
+echo "$OUT" | grep -q "plugin-pins" || fail "custom source name is the row tag"
+prog_line=$(echo "$OUT" | grep -n "mytool" | cut -d: -f1 | head -1)
+custom_line=$(echo "$OUT" | grep -n "javaplug" | cut -d: -f1 | head -1)
+[ "$prog_line" -lt "$custom_line" ] || fail "installer rows must sort before custom oracle rows"
+ok "outdated includes custom [outdated.*] source rows, ordered after installers"
+
 # check: script checks with their detail output, structured.
 cat >> instrepo/manifest.toml <<'TOML'
 

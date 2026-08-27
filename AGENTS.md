@@ -183,8 +183,13 @@ These came from explicit user decisions; don't "improve" them away:
     extracts); exit codes are ignored either way (dnf check-update exits 100
     when updates exist). Old binaries ignore `outdated-all`
     (ignoreUnknownNames) and fall back to per-pkg — keep both in config
-    repos until the fleet upgrades. Never write cross-variant `||` chains in
-    checks.
+    repos until the fleet upgrades. Repos may also declare custom
+    `[outdated.<name>]` sources (command prints `<item> <current>
+    <candidate> [note…]` lines — the optional tail renders as a dim
+    annotation; `file:` allowed, fragment-definable, repo-unique) —
+    outdated runs them concurrently and tags rows with the source name; the
+    hardcoded self-version row is conceptually the first of these. Never
+    write cross-variant `||` chains in checks.
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —
     0.2.0 itself broke 0.1 repos (string install values became variant

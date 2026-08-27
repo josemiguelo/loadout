@@ -1,5 +1,6 @@
 package loadout.core
 
+import loadout.core.engine.SourceRow
 import loadout.core.engine.UpdateChecker
 import loadout.core.manifest.ManifestException
 import loadout.core.manifest.ManifestLoader
@@ -101,6 +102,33 @@ class UpdateCheckerTest {
         val explicit = manifest.resolveInstall("special", "dnf")
         assertNull(explicit.outdatedAll)
         assertEquals("custom-oracle", explicit.outdated?.command)
+    }
+
+    @Test
+    fun customSourceRowsParseAndValidate() {
+        val runner = FakeProcessRunner()
+        runner.onCommand("plugin-sweep", stdout = "java 9bd89aa ea1fe99\nruby fa85ede 498c76f extra\nmalformed line\n")
+        val rows = UpdateChecker(runner).sourceRows("plugin-sweep")
+        assertEquals(2, rows.size)
+        assertEquals(SourceRow("java", "9bd89aa", "ea1fe99"), rows[0])
+        assertEquals(SourceRow("ruby", "fa85ede", "498c76f", "extra"), rows[1])
+
+        val manifest = ManifestLoader.parse(
+            """
+            [outdated.asdf-plugins]
+            command = "sh sweep.sh"
+            """.trimIndent(),
+        )
+        assertEquals("sh sweep.sh", manifest.outdated.getValue("asdf-plugins").command)
+
+        val e = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                """
+                [outdated.broken]
+                """.trimIndent(),
+            )
+        }
+        assertTrue("outdated.broken needs a command" in e.message.orEmpty())
     }
 
     @Test

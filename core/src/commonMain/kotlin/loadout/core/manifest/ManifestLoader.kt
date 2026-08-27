@@ -65,6 +65,7 @@ object ManifestLoader {
         }
 
         val templates = root.templates.toMutableMap()
+        val outdatedSources = root.outdated.toMutableMap()
 
         // Fragments may be organized into arbitrary subfolders; the folder
         // structure is purely cosmetic. Deterministic order: sorted by path.
@@ -96,6 +97,11 @@ object ManifestLoader {
             for ((name, template) in fragment.templates) {
                 if (templates.put(name, template) != null) {
                     errors += "duplicate template '$name' (redefined in $label)"
+                }
+            }
+            for ((name, source) in fragment.outdated) {
+                if (outdatedSources.put(name, source) != null) {
+                    errors += "duplicate outdated source '$name' (redefined in $label)"
                 }
             }
         }
@@ -134,6 +140,7 @@ object ManifestLoader {
                     scripts = scripts,
                     machines = machines,
                     templates = templates,
+                    outdated = outdatedSources,
                 ),
             ),
         )
@@ -154,6 +161,9 @@ object ManifestLoader {
                 missingFiles += "  - scripts.$name: file '${script.file}' not found in the repo"
             }
             requireFile(script.check, "scripts.$name.check")
+        }
+        for ((name, source) in merged.outdated) {
+            requireFile(source.command, "outdated.$name")
         }
         for ((name, program) in merged.programs) {
             requireFile(program.version?.command, "programs.$name.version")
@@ -398,6 +408,12 @@ object ManifestLoader {
             }
             if (installer.outdatedAll != null && installer.regex == null) {
                 errors += "installers.$name has an outdated-all command but no regex"
+            }
+        }
+
+        for ((name, source) in manifest.outdated) {
+            if (source.command.isNullOrBlank()) {
+                errors += "outdated.$name needs a command (prints '<item> <current> <candidate>' lines)"
             }
         }
 

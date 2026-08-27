@@ -22,6 +22,14 @@ data class Manifest(
      * template's own `packages` list, or `template = "<name>"` on a program.
      */
     val templates: Map<String, Template> = emptyMap(),
+    /**
+     * Custom `loadout outdated` oracles beyond the installer ones —
+     * `[outdated.<name>]` entries whose command prints one
+     * `<item> <current> <candidate>` line per outdated item (nothing when
+     * current). The entry name becomes the row's source tag. The built-in
+     * self-version row is conceptually the first of these, hardcoded.
+     */
+    val outdated: Map<String, OutdatedSource> = emptyMap(),
 ) {
     /**
      * Everything the [key] variant of program [programName] resolves to.
@@ -275,3 +283,10 @@ data class ScriptStep(
 
     fun runsIn(mode: String): Boolean = mode in modes
 }
+
+/** One `[outdated.<name>]` custom oracle; see [Manifest.outdated]. */
+@Serializable
+data class OutdatedSource(
+    /** Command printing `<item> <current> <candidate>` lines. `file:` allowed. */
+    val command: String? = null,
+)

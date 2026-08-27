@@ -70,4 +70,37 @@ class UpdateChecker(
                 }.awaitAll().toMap()
             }
         }
+
+    /**
+     * Run one custom `[outdated.<name>]` source: each output line is
+     * `<item> <current> <candidate> [note...]` (whitespace-separated; the
+     * optional tail renders as a dim annotation, short lines are skipped).
+     * Exit code ignored, like the rest.
+     */
+    fun sourceRows(command: String): List<SourceRow> {
+        val result = runner.capture(expandFilePrefix(command), workDir)
+        return result.stdout.ifBlank { result.stderr }.lineSequence()
+            .mapNotNull { line ->
+                val tokens = line.trim().split(Regex("\\s+"))
+                if (tokens.size >= 3) {
+                    SourceRow(tokens[0], tokens[1], tokens[2], tokens.drop(3).joinToString(" "))
+                } else {
+                    null
+                }
+            }
+            .toList()
+    }
+
+    /** Run all custom sources (name -> command) concurrently. */
+    suspend fun sourcesAll(commands: Map<String, String>): Map<String, List<SourceRow>> =
+        withContext(blockingDispatcher) {
+            coroutineScope {
+                commands.map { (name, command) ->
+                    async { name to sourceRows(command) }
+                }.awaitAll().toMap()
+            }
+        }
 }
+
+/** One row from a custom outdated source; [note] is an optional annotation. */
+data class SourceRow(val name: String, val current: String, val candidate: String, val note: String = "")
