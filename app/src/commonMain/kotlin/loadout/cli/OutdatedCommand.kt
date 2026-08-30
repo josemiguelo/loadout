@@ -66,8 +66,13 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
         val selfRow = SelfVersion.behind(app.runner, cached = false)
             ?.let { latest -> UpdateRow("loadout", TOOL_VERSION, latest, "release") }
 
-        val sourceRows = sourceResults.flatMap { (label, rows) ->
-            rows.map { UpdateRow(it.name, it.current, it.candidate, label, it.note) }
+        val sourceRows = sourceResults.flatMap { (label, res) ->
+            res.rows.map { UpdateRow(it.name, it.current, it.candidate, label, it.note) }
+        }
+        // Custom sources that failed (non-zero exit): surfaced loud so a broken
+        // oracle can never masquerade as "nothing outdated". Declaration order.
+        val sourceErrors = manifest.outdated.keys.mapNotNull { label ->
+            sourceResults[label]?.error?.let { label to it }
         }
         val programRows = candidates.mapNotNull { (name, candidate) ->
             val current = state.programs.getValue(name).version
@@ -99,9 +104,9 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
             .sortedWith(compareBy({ rank(it).first }, { rank(it).second }, { it.name }))
 
         // Same visual language as status: markers + color as signal only.
-        if (updates.isEmpty()) {
+        if (updates.isEmpty() && sourceErrors.isEmpty()) {
             echo(" " + Style.ok("✔") + "  everything is up to date")
-        } else {
+        } else if (updates.isNotEmpty()) {
             val nameWidth = updates.maxOf { it.name.length } + 2
             val currentWidth = updates.maxOf { it.current.length } + 2
             val candidateWidth = updates.maxOf { it.candidate.length } + 2
@@ -118,6 +123,12 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
             echo(
                 " " + Style.warn("↑") + "  ${updates.size} update(s) available" +
                     Style.dim(" — `loadout setup-new-machine` won't upgrade; use the package manager, then `loadout status`"),
+            )
+        }
+        for ((label, err) in sourceErrors) {
+            echo(
+                " " + Style.error("✖") + "  outdated source [$label] failed: $err" +
+                    Style.dim(" — its results are missing this run"),
             )
         }
         if (unchecked.isNotEmpty()) {

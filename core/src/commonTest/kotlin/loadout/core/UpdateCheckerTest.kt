@@ -108,7 +108,9 @@ class UpdateCheckerTest {
     fun customSourceRowsParseAndValidate() {
         val runner = FakeProcessRunner()
         runner.onCommand("plugin-sweep", stdout = "java 9bd89aa ea1fe99\nruby fa85ede 498c76f extra\nmalformed line\n")
-        val rows = UpdateChecker(runner).sourceRows("plugin-sweep")
+        val result = UpdateChecker(runner).sourceRows("plugin-sweep")
+        assertNull(result.error)
+        val rows = result.rows
         assertEquals(2, rows.size)
         assertEquals(SourceRow("java", "9bd89aa", "ea1fe99"), rows[0])
         assertEquals(SourceRow("ruby", "fa85ede", "498c76f", "extra"), rows[1])
@@ -129,6 +131,30 @@ class UpdateCheckerTest {
             )
         }
         assertTrue("outdated.broken needs a command" in e.message.orEmpty())
+    }
+
+    @Test
+    fun customSourceNonZeroExitIsReportedAsErrorNotEmptyRows() {
+        // A crashed/failing source must NOT look like "nothing outdated": its
+        // exit code and last stderr line become a surfaced error, no rows.
+        val runner = FakeProcessRunner()
+        runner.onCommand(
+            "flaky-oracle",
+            exitCode = 1,
+            stdout = "java 9bd89aa ea1fe99\n",
+            stderr = "warming up\nfatal: could not fetch remote\n",
+        )
+        val result = UpdateChecker(runner).sourceRows("flaky-oracle")
+        assertTrue(result.rows.isEmpty())
+        assertEquals("exited 1: fatal: could not fetch remote", result.error)
+    }
+
+    @Test
+    fun customSourceMissingBinaryIsReportedAsError() {
+        // Unregistered command = exit 127 (missing binary) -> loud error.
+        val result = UpdateChecker(FakeProcessRunner()).sourceRows("no-such-oracle")
+        assertTrue(result.rows.isEmpty())
+        assertTrue(result.error.orEmpty().startsWith("exited 127"))
     }
 
     @Test

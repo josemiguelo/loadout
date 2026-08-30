@@ -406,6 +406,18 @@ custom_line=$(echo "$OUT" | grep -n "javaplug" | cut -d: -f1 | head -1)
 [ "$prog_line" -lt "$custom_line" ] || fail "installer rows must sort before custom oracle rows"
 ok "outdated includes custom [outdated.*] source rows, ordered after installers"
 
+# a custom source that FAILS (non-zero exit) must fail LOUD, never masquerade
+# as "nothing outdated" — loadout can't tell a crash from an empty result.
+cat >> instrepo/manifest.toml <<'TOML'
+
+[outdated.flaky]
+command = "echo boom >&2; exit 3"
+TOML
+OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a failing source still exits 0"
+echo "$OUT" | grep -qE "outdated source \[flaky\] failed: exited 3" || fail "failing custom source is surfaced loud"
+echo "$OUT" | grep -q "boom" || fail "failing source shows its stderr detail"
+ok "outdated surfaces a failing custom [outdated.*] source instead of silence"
+
 # check: script checks with their detail output, structured.
 cat >> instrepo/manifest.toml <<'TOML'
 

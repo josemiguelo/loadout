@@ -75,11 +75,27 @@ class UpdateChecker(
      * Run one custom `[outdated.<name>]` source: each output line is
      * `<item> <current> <candidate> [note...]` (whitespace-separated; the
      * optional tail renders as a dim annotation, short lines are skipped).
-     * Exit code ignored, like the rest.
+     *
+     * Unlike the installer oracles above (which ignore exit codes because
+     * `dnf check-update` exits 100 on updates), a custom source is a plain
+     * user script and MUST exit 0 when it ran fine — otherwise loadout can't
+     * tell a crashed source from one honestly reporting "nothing outdated",
+     * and a persistent failure would silently hide updates forever. So a
+     * non-zero exit is reported as [SourceResult.error] (no rows trusted),
+     * which the CLI surfaces as a loud line instead of empty output.
      */
-    fun sourceRows(command: String): List<SourceRow> {
+    fun sourceRows(command: String): SourceResult {
         val result = runner.capture(expandFilePrefix(command), workDir)
-        return result.stdout.ifBlank { result.stderr }.lineSequence()
+        if (!result.success) {
+            val detail = result.stderr.ifBlank { result.stdout }
+                .lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
+            val message = buildString {
+                append("exited ${result.exitCode}")
+                if (!detail.isNullOrEmpty()) append(": ${detail.take(200)}")
+            }
+            return SourceResult(emptyList(), message)
+        }
+        val rows = result.stdout.ifBlank { result.stderr }.lineSequence()
             .mapNotNull { line ->
                 val tokens = line.trim().split(Regex("\\s+"))
                 if (tokens.size >= 3) {
@@ -89,10 +105,11 @@ class UpdateChecker(
                 }
             }
             .toList()
+        return SourceResult(rows)
     }
 
     /** Run all custom sources (name -> command) concurrently. */
-    suspend fun sourcesAll(commands: Map<String, String>): Map<String, List<SourceRow>> =
+    suspend fun sourcesAll(commands: Map<String, String>): Map<String, SourceResult> =
         withContext(blockingDispatcher) {
             coroutineScope {
                 commands.map { (name, command) ->
@@ -104,3 +121,9 @@ class UpdateChecker(
 
 /** One row from a custom outdated source; [note] is an optional annotation. */
 data class SourceRow(val name: String, val current: String, val candidate: String, val note: String = "")
+
+/**
+ * Outcome of running one custom source: parsed [rows] on success, or an
+ * [error] one-liner (exit code + last stderr line) when the command failed.
+ */
+data class SourceResult(val rows: List<SourceRow>, val error: String? = null)

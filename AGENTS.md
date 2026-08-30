@@ -188,8 +188,14 @@ These came from explicit user decisions; don't "improve" them away:
     <candidate> [note…]` lines — the optional tail renders as a dim
     annotation; `file:` allowed, fragment-definable, repo-unique) —
     outdated runs them concurrently and tags rows with the source name; the
-    hardcoded self-version row is conceptually the first of these. Never
-    write cross-variant `||` chains in checks.
+    hardcoded self-version row is conceptually the first of these. UNLIKE the
+    installer oracles, a custom source's exit code is NOT ignored: it is a
+    plain user script and MUST exit 0 when it ran fine, so a non-zero exit is
+    surfaced as a loud `outdated source [name] failed: exited N: <last
+    stderr>` line (UpdateChecker.sourceRows returns SourceResult{rows,error};
+    OutdatedCommand prints errors even when no updates exist) — a crashing
+    oracle can't masquerade as "nothing outdated" and silently hide updates
+    forever. Never write cross-variant `||` chains in checks.
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —
     0.2.0 itself broke 0.1 repos (string install values became variant
