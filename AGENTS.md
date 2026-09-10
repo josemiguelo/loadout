@@ -146,13 +146,14 @@ These came from explicit user decisions; don't "improve" them away:
    exception types get a catch in Main.kt.
 10. **Product code loads manifests via `ManifestLoader.loadRepo`** (merging +
     file validation). `parse()` exists for tests only.
-11. **Templates** (`[templates.<name>]`): reusable program patterns with
-    `{name}` substitution; used via the template's `packages` array (+
-    `overrides.<pkg>`, members only) or `template = "<name>"` on a program.
-    Expansion happens in ManifestLoader.expandTemplates (then expandVia)
-    before validation — expanded programs are indistinguishable from
-    hand-written ones, and every downstream feature must keep treating them
-    that way. Template names are repo-unique; fragments may define them.
+11. **No templates.** `[templates.<name>]` (reusable program patterns with
+    `{name}` substitution) existed through 0.8.0 and was REMOVED in 0.9.0 —
+    the only real config repo never used it, and the recipe below prefers
+    explicit repetition over abstraction. `template = "..."` and
+    `[templates.*]` are now unknown keys (ktoml ignores them, so an old
+    manifest silently loses those programs — the removal note in contract 14
+    is what tells a repo to bump its floor). Don't reintroduce it; a program
+    that repeats another is fine.
 12. **Scripts are opt-in per machine**: a machine's top-level `scripts` list
     (in machines/<name>.toml, ABOVE any table header) has entries "name" or
     "name args..." parsed by MachineConfig.scriptArgs(); only opted-in
@@ -214,7 +215,10 @@ These came from explicit user decisions; don't "improve" them away:
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —
     0.2.0 itself broke 0.1 repos (string install values became variant
-    tables). `[meta] min-tool-version`
+    tables), and 0.9.0 removed `[templates.*]` (contract 11), the second and
+    so far last deliberate break. A removal is a decision to make once,
+    loudly, in the release notes — never a silent one, because ktoml drops
+    unknown keys instead of failing. `[meta] min-tool-version`
     is enforced at loadRepo — repos requiring newer features declare their
     floor and old binaries refuse with an "upgrade loadout" error. State files
     with `schemaVersion > StateStore.SCHEMA_VERSION` are skipped with a
@@ -377,8 +381,9 @@ program" is the user-facing long form). Match top-down, first fit wins:
 Cross-cutting: no `||` chains in checks; versions are the mapped pm's truth
 (rpm's version, not the binary's self-report — expected, not a bug); no
 trailing pipes in checks; `file:` for every repo script (load-time existence
-check); prefer repetition over abstraction in config repos (the user dropped
-templates for explicit per-program `via` — don't reintroduce). Verify loop:
+check); prefer repetition over abstraction in config repos (templates were dropped
+for explicit per-program `via`, then removed from the format in 0.9.0 —
+don't reintroduce). Verify loop:
 `explain` → map in machines/<name>.toml → `setup-new-machine --dry-run` → `status`.
 
 Where the check lives (the invariant): loadout never trusts "it ran once" —

@@ -10,7 +10,6 @@ import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
 import loadout.core.model.Meta
 import loadout.core.model.Program
-import loadout.core.model.Template
 import loadout.core.model.VersionCheck
 import kotlinx.serialization.decodeFromString
 import okio.FileSystem
@@ -68,7 +67,6 @@ object ManifestLoader {
                 "machine configs live in $MACHINES_DIR/<name>.toml"
         }
 
-        val templates = root.templates.toMutableMap()
         val outdatedSources = root.outdated.toMutableMap()
 
         // Fragments may be organized into arbitrary subfolders; the folder
@@ -96,11 +94,6 @@ object ManifestLoader {
             for ((name, script) in fragment.scripts) {
                 if (scripts.put(name, script) != null) {
                     errors += "duplicate script '$name' (redefined in $label)"
-                }
-            }
-            for ((name, template) in fragment.templates) {
-                if (templates.put(name, template) != null) {
-                    errors += "duplicate template '$name' (redefined in $label)"
                 }
             }
             for ((name, source) in fragment.outdated) {
@@ -138,16 +131,13 @@ object ManifestLoader {
 
         val builtins = InstallerLibrary.installers
         val merged = expandVia(
-            expandTemplates(
-                root.copy(
-                    installers = builtins + installers,
-                    builtinInstallers = builtins.keys - installers.keys,
-                    programs = programs,
-                    scripts = scripts,
-                    machines = machines,
-                    templates = templates,
-                    outdated = outdatedSources,
-                ),
+            root.copy(
+                installers = builtins + installers,
+                builtinInstallers = builtins.keys - installers.keys,
+                programs = programs,
+                scripts = scripts,
+                machines = machines,
+                outdated = outdatedSources,
             ),
         )
         validate(merged)
@@ -192,7 +182,7 @@ object ManifestLoader {
 
     /** Parse and validate a single manifest document (no fragment/machine-file merging). */
     fun parse(text: String): Manifest {
-        val manifest = expandVia(expandTemplates(parseRaw(text, "manifest")))
+        val manifest = expandVia(parseRaw(text, "manifest"))
         validate(manifest)
         return manifest
     }
@@ -225,84 +215,25 @@ object ManifestLoader {
         return manifest.copy(programs = programs)
     }
 
-    /**
-     * Resolve templates into full programs: each template's `packages` entry
-     * becomes a program, and every program declaring `template = "<name>"` has
-     * the template's fields merged in. `{name}` is substituted with the
-     * program name in all string fields; explicit/override fields win, with
-     * install tables merged per key.
-     */
-    private fun expandTemplates(manifest: Manifest): Manifest {
-        if (manifest.templates.isEmpty() && manifest.programs.values.none { it.template != null }) {
-            return manifest
-        }
-        val errors = mutableListOf<String>()
-        val programs = mutableMapOf<String, Program>()
-
-        // Programs, expanding `template = ...` references in place.
-        for ((name, program) in manifest.programs) {
-            val templateName = program.template
-            if (templateName == null) {
-                programs[name] = program
-                continue
-            }
-            val template = manifest.templates[templateName]
-            if (template == null) {
-                errors += "programs.$name references unknown template '$templateName'"
-                continue
-            }
-            programs[name] = expandProgram(name, template, program)
-        }
-
-        // Templates' own package lists.
-        for ((templateName, template) in manifest.templates) {
-            for (override in template.overrides.keys) {
-                if (override !in template.packages) {
-                    errors += "templates.$templateName.overrides.$override is not in its packages list"
-                }
-                if (template.overrides.getValue(override).template != null) {
-                    errors += "templates.$templateName.overrides.$override may not set 'template'"
-                }
-            }
-            for (pkg in template.packages) {
-                val expanded = expandProgram(pkg, template, template.overrides[pkg])
-                if (programs.put(pkg, expanded) != null) {
-                    errors += "duplicate program '$pkg' (expanded from template '$templateName')"
-                }
-            }
-        }
-
-        if (errors.isNotEmpty()) {
-            throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
-        }
-        return manifest.copy(programs = programs)
-    }
-
-    private fun expandProgram(name: String, template: Template, override: Program?): Program {
-        fun sub(s: String) = s.replace("{name}", name)
-        fun sub(c: VersionCheck) = VersionCheck(sub(c.command), sub(c.regex))
-        fun sub(v: InstallVariant) = v.copy(
-            pkg = v.pkg?.let(::sub),
-            command = v.command?.let(::sub),
-            check = v.check?.let(::sub),
-            outdated = v.outdated?.let(::sub),
-        )
-        return Program(
-            description = override?.description.orEmpty(),
-            template = null,
-            tags = override?.tags.orEmpty(),
-            dependsOn = override?.dependsOn.orEmpty(),
-            version = override?.version?.let(::sub) ?: template.version?.let(::sub),
-            via = (template.via + override?.via.orEmpty()).distinct(),
-            install = template.install.mapValues { sub(it.value) } +
-                (override?.install.orEmpty()).mapValues { sub(it.value) },
-        )
-    }
-
     /** The installers in a standalone TOML document — used for the built-in library. */
     fun parseInstallers(text: String): Map<String, Installer> = parseRaw(text, "built-in installers").installers
 
-    private fun parseRaw(text: String, label: String): Manifest = try {
+    // Removed in 0.9.0. ktoml drops unknown keys, so without this a templated
+    // manifest would load as an EMPTY program list — a machine's whole loadout
+    // silently vanishing. Loud beats convenient.
+    private val REMOVED_TEMPLATES = Regex("^\\s*\\[templates\\.|^\\s*template\\s*=", RegexOption.MULTILINE)
+
+    private fun parseRaw(text: String, label: String): Manifest {
+        if (REMOVED_TEMPLATES.containsMatchIn(text)) {
+            throw ManifestException(
+                "$label uses templates, removed in loadout 0.9.0 — declare each program " +
+                    "explicitly (see the wiki), or pin an older loadout",
+            )
+        }
+        return parseDocument(text, label)
+    }
+
+    private fun parseDocument(text: String, label: String): Manifest = try {
         toml.decodeFromString<Manifest>(text)
     } catch (e: Exception) {
         throw ManifestException("Failed to parse $label: ${e.message}")

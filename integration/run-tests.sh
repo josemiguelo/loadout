@@ -29,6 +29,14 @@ ok "init scaffolds a repo"
 "$BIN" init repo >/dev/null 2>&1 && fail "init refuses to overwrite" || true
 ok "init refuses to overwrite an existing manifest"
 
+# --- templates were removed: a repo using them must not load empty --------
+mkdir -p tmplrepo
+printf '[templates.rpm]\npackages = ["vlc"]\n[templates.rpm.install.dnf]\ncommand = "sudo dnf install -y {name}"\n' > tmplrepo/manifest.toml
+OUT=$("$BIN" --repo tmplrepo explain 2>&1 || true)
+echo "$OUT" | grep -q "removed in loadout 0.9.0" || fail "a templated manifest must fail loudly"
+rm -rf tmplrepo
+ok "templates are gone, and a manifest still using them says so"
+
 # --- built-in installers -------------------------------------------------
 OUT=$("$BIN" --repo repo installers) || fail "installers exits 0"
 echo "$OUT" | grep -q "dnf" || fail "installers lists the built-in dnf"

@@ -381,36 +381,6 @@ class ManifestRepoTest {
     }
 
     @Test
-    fun templatesWorkAcrossFragments() {
-        val fs = fs(
-            mapOf(
-                "manifest.toml" to """
-                    [templates.rpm.version]
-                    command = "rpm -q {name}"
-                    regex = "([0-9.]+)"
-
-                    [templates.rpm.install.dnf]
-                    command = "sudo dnf install -y {name}"
-                """.trimIndent(),
-                "manifest.d/media.toml" to """
-                    [programs.vlc]
-                    template = "rpm"
-                """.trimIndent(),
-                "manifest.d/office.toml" to """
-                    [templates.local]
-                    packages = ["okular"]
-
-                    [templates.local.install.dnf]
-                    command = "sudo dnf install -y {name}"
-                """.trimIndent(),
-            ),
-        )
-        val manifest = ManifestLoader.loadRepo(fs, repo)
-        assertEquals("rpm -q vlc", manifest.programs.getValue("vlc").version?.command)
-        assertEquals("sudo dnf install -y okular", manifest.resolveInstall("okular", "dnf").command)
-    }
-
-    @Test
     fun installersMergeFromFragmentsAndDuplicatesFail() {
         val fs = fs(
             mapOf(
@@ -602,5 +572,21 @@ class ManifestRepoTest {
             assertTrue(installer.check?.contains("{pkg}") == true, "$name check ignores {pkg}")
             assertTrue(installer.regex != null, "$name has no regex")
         }
+    }
+
+    @Test
+    fun aTemplatedManifestFailsLoudlyInsteadOfLoadingEmpty() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [templates.rpm]
+                    packages = ["vlc"]
+                    [templates.rpm.install.dnf]
+                    command = "sudo dnf install -y {name}"
+                """.trimIndent(),
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue(e.message!!.contains("removed in loadout 0.9.0"), e.message!!)
     }
 }
