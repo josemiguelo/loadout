@@ -122,7 +122,9 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
             echo("")
             echo(
                 " " + Style.warn("↑") + "  ${updates.size} update(s) available" +
-                    Style.dim(" — `loadout setup-new-machine` won't upgrade; use the package manager, then `loadout status`"),
+                    // Converge adds what's MISSING; a newer version of something
+                    // already installed is the package manager's business.
+                    Style.dim(" — neither `setup-new-machine` nor `install --all` upgrades them; both only install what's MISSING. Upgrade with the package manager, then `loadout status`"),
             )
         }
         for ((label, err) in sourceErrors) {

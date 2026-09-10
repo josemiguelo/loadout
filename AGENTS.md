@@ -286,6 +286,12 @@ These came from explicit user decisions; don't "improve" them away:
   either way; box width is measured with ANSI codes stripped. Boxed today:
   diff's drift (amber) / incomplete (red), status' missing programs (red)
   and pending (amber) / failed (red) scripts.
+- **One converge pipeline**: `cli/Converge.kt` owns the program half of
+  converging — `planPrograms` (re-check + `engine.plan`), `echoPlan`
+  (plan table, `extraRows` for setup's scripts), `confirmOrAbort`,
+  `installPrograms`. `install` and `setup-new-machine` are thin shells over
+  it; scripts are setup's alone. Add a converge behavior here, not in one
+  command (that's how `--all` nearly became install-only).
 - **Slow steps wear the spinner**: any step that can look like a hang —
   version checks, state refresh/write, git pull/push — goes through
   `Style.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
