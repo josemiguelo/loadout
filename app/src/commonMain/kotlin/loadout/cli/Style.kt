@@ -8,6 +8,9 @@ import loadout.theme.DARK_THEME
 import loadout.theme.LIGHT_THEME
 import loadout.theme.Rgb
 import loadout.theme.detectDarkTerminal
+import com.github.ajalt.mordant.rendering.Theme
+import com.github.ajalt.mordant.rendering.TextStyle
+import com.github.ajalt.mordant.rendering.TextColors
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -26,7 +29,7 @@ import kotlinx.coroutines.runBlocking
  */
 object Style {
     private val enabled = isStdoutTty()
-    private val palette =
+    internal val palette =
         if (enabled && !detectDarkTerminal(terminalBackgroundLuma(), envVar("COLORFGBG"))) LIGHT_THEME else DARK_THEME
 
     fun ok(text: String) = fg(text, palette.ok)
@@ -42,6 +45,21 @@ object Style {
 
     private fun fg(text: String, c: Rgb) =
         if (enabled) "\u001b[38;2;${c.r};${c.g};${c.b}m$text\u001b[0m" else text
+
+    /**
+     * Clikt renders `--help` through Mordant's own theme, whose defaults are
+     * tuned for dark terminals (pale yellow titles, light blue names) — washed
+     * out on a light background. Map our detected palette onto the style keys
+     * Clikt uses so help obeys the same detection as every other screen.
+     */
+    fun cliktTheme() = Theme(Theme.Default) {
+        styles["warning"] = mordant(palette.warn) // section titles
+        styles["info"] = mordant(palette.accent) // option / argument / command names
+        styles["muted"] = mordant(palette.dim) // metavars, tags
+        styles["danger"] = mordant(palette.error) // errors, required markers
+    }
+
+    private fun mordant(c: Rgb): TextStyle = TextColors.rgb(c.r / 255f, c.g / 255f, c.b / 255f)
 }
 
 

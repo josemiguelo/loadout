@@ -8,13 +8,18 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.versionOption
+import com.github.ajalt.clikt.core.terminal
+import com.github.ajalt.mordant.terminal.Terminal
 import loadout.core.TOOL_VERSION
 import okio.Path.Companion.toPath
 
 class RootCommand : CliktCommand(name = "loadout") {
     init {
         versionOption(TOOL_VERSION, names = setOf("--version", "-V"))
-        context { helpFormatter = { LoadoutHelpFormatter(it) } }
+        context {
+            terminal = Terminal(theme = Style.cliktTheme())
+            helpFormatter = { LoadoutHelpFormatter(it) }
+        }
     }
 
     override fun help(context: Context) =

@@ -37,7 +37,9 @@ val DARK_THEME = ThemePalette(
 
 /** Light: vivid-but-readable on white (GitHub-light-like saturation). */
 val LIGHT_THEME = ThemePalette(
-    accent = Rgb(0x09, 0x69, 0xda),
+    // Navy, not GitHub's #0969da: on white the lighter blue sat too close to
+    // the dark palette's pastel accent to read as a different mode.
+    accent = Rgb(0x03, 0x3a, 0x85),
     onAccent = Rgb(0xff, 0xff, 0xff),
     machine = Rgb(0x82, 0x50, 0xdf),
     dim = Rgb(0x6e, 0x77, 0x81),

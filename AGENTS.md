@@ -251,6 +251,13 @@ These came from explicit user decisions; don't "improve" them away:
   statuses, accent = headers/actions (`Style.header` = bold accent),
   machine = machine identity — never reintroduce raw ANSI codes or
   Color.* constants outside Theme.kt/Style.kt. Style AFTER padding.
+  `--help` is rendered by Clikt/Mordant, not by `Style`, so RootCommand
+  installs `Terminal(theme = Style.cliktTheme())` — the same detected palette
+  mapped onto Mordant's style keys (warning = section titles, info = option/
+  argument/command names, muted = metavars/tags, danger = errors) — the
+  yellow-title/blue-name look Mordant ships, in whichever palette was
+  detected. Without it help keeps Mordant's dark-only defaults and washes
+  out on light terminals.
 - **TUI + sudo**: streamed output would swallow a sudo password prompt; the
   maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
   points users at `sudo -v`.
