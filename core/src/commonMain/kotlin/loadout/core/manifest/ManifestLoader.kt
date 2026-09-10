@@ -5,6 +5,7 @@ import com.akuleshov7.ktoml.TomlInputConfig
 import loadout.core.TOOL_VERSION
 import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.InstallVariant
+import loadout.core.model.Installer
 import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
 import loadout.core.model.Meta
@@ -54,6 +55,9 @@ object ManifestLoader {
         }
 
         val errors = mutableListOf<String>()
+        // Repo installers are collected on their own so duplicate detection
+        // stays repo-vs-repo; the built-in library is merged under them at
+        // the end (a repo definition of the same name replaces it).
         val installers = root.installers.toMutableMap()
         val programs = root.programs.toMutableMap()
         val scripts = root.scripts.toMutableMap()
@@ -132,10 +136,12 @@ object ManifestLoader {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
         }
 
+        val builtins = InstallerLibrary.installers
         val merged = expandVia(
             expandTemplates(
                 root.copy(
-                    installers = installers,
+                    installers = builtins + installers,
+                    builtinInstallers = builtins.keys - installers.keys,
                     programs = programs,
                     scripts = scripts,
                     machines = machines,
@@ -292,6 +298,9 @@ object ManifestLoader {
                 (override?.install.orEmpty()).mapValues { sub(it.value) },
         )
     }
+
+    /** The installers in a standalone TOML document — used for the built-in library. */
+    fun parseInstallers(text: String): Map<String, Installer> = parseRaw(text, "built-in installers").installers
 
     private fun parseRaw(text: String, label: String): Manifest = try {
         toml.decodeFromString<Manifest>(text)

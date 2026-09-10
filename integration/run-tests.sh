@@ -20,7 +20,7 @@ cd "$WORK"
 [ -d repo/scripts ] && [ -d repo/state ] && [ -d repo/machines ] && [ -d repo/manifest.d ] || fail "init creates dirs"
 [ -f repo/machines/example.toml.sample ] || fail "init creates machine example"
 [ -f repo/manifest.d/example.toml.sample ] || fail "init creates fragment example"
-[ -f repo/manifest.d/00_installers.toml ] || fail "init creates the installers fragment"
+[ -f repo/manifest.d/00_installers.toml ] && fail "init must not scaffold installers (they ship with loadout)" || true
 # .sample files must not be picked up by the loader
 "$BIN" --repo repo status >/dev/null || fail "samples must not break loading"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -28,6 +28,28 @@ ok "init scaffolds a repo"
 
 "$BIN" init repo >/dev/null 2>&1 && fail "init refuses to overwrite" || true
 ok "init refuses to overwrite an existing manifest"
+
+# --- built-in installers -------------------------------------------------
+OUT=$("$BIN" --repo repo installers) || fail "installers exits 0"
+echo "$OUT" | grep -q "dnf" || fail "installers lists the built-in dnf"
+echo "$OUT" | grep -q "built-in" || fail "installers marks built-ins"
+OUT=$("$BIN" --repo repo installers dnf)
+echo "$OUT" | grep -q "rpm -q {pkg}" || fail "installers <name> shows the definition"
+"$BIN" --repo repo installers ghost-installer >/dev/null 2>&1 && fail "unknown installer should fail" || true
+# The scaffold declares no installers, yet `via` resolves against the library.
+OUT=$("$BIN" --repo repo explain ripgrep)
+echo "$OUT" | grep -q "sudo dnf install -y ripgrep" || fail "via resolves to a built-in installer"
+echo "$OUT" | grep -q "installer: dnf (built-in)" || fail "explain marks a built-in installer"
+ok "installers ship with loadout and resolve without being declared"
+
+"$BIN" --repo repo installers --eject >/dev/null || fail "installers --eject exits 0"
+[ -f repo/manifest.d/00_installers.toml ] || fail "--eject writes the fragment"
+"$BIN" --repo repo installers --eject >/dev/null 2>&1 && fail "--eject must not clobber" || true
+"$BIN" --repo repo installers --eject --force >/dev/null || fail "--eject --force overwrites"
+OUT=$("$BIN" --repo repo explain ripgrep)
+echo "$OUT" | grep -q "installer: dnf (repo)" || fail "an ejected installer is the repo's"
+rm repo/manifest.d/00_installers.toml
+ok "installers --eject hands the built-ins to the repo"
 
 git -C repo config user.email test@example.com
 git -C repo config user.name "Integration Test"

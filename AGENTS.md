@@ -60,7 +60,9 @@ core/  loadout.core
   model/       Manifest, MachineState, System (@Serializable schemas; Manifest
                owns resolveInstall/checkFor — variant × installer resolution)
   manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d (recursive, subfolders cosmetic)
-               + machines/*.toml, validates everything; parse() is single-doc, TEST-ONLY
+               + machines/*.toml + InstallerLibrary under the repo's own
+               installers, validates everything; parse() is single-doc, TEST-ONLY
+               InstallerLibrary — the built-in installers, as TOML text
   state/       StateStore — state/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL process
                use goes through the interface (tests use FakeProcessRunner).
@@ -79,7 +81,7 @@ app/   loadout
   Main.kt      Clikt dispatch (bare invocation prints help). Catches
                Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/explain/setup-new-machine/install/outdated/maintain/run/diff/sync/upgrade/init).
+               one file per subcommand (status/explain/installers/setup-new-machine/install/outdated/maintain/run/diff/sync/upgrade/init).
                SelfVersion = the one remote-self-check carve-out: status
                footer (cached 6h, fail-soft) + outdated self-row (fresh);
                `upgrade` shells to INSTALL_COMMAND and needs no repo, so it
@@ -112,7 +114,9 @@ These came from explicit user decisions; don't "improve" them away:
 3. **Intent vs observation never mix.** `manifest.toml` + `manifest.d/` +
    `machines/` are authored; `state/` is generated and disposable. Nothing
    hand-edited ever goes in `state/`; the tool never writes authored files
-   (except `init` scaffolding).
+   (except `init` scaffolding and `installers --eject`, which writes exactly
+   `manifest.d/00_installers.toml` and refuses to clobber it without
+   `--force`).
 4. **Scripts: exactly one of `file` (repo path) or `run` (inline).** `file`
    existence is validated at manifest load (loadRepo, not parse). Variant
    `command` values AND all check commands (variant `check`, program
@@ -163,8 +167,19 @@ These came from explicit user decisions; don't "improve" them away:
     hatch). Empty or unknown modes are load errors.
 13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
     (probe / install / check / outdated / regex patterns, `{pkg}` substituted) define
-    each mechanism once, repo-unique, fragment-definable; core hardcodes NO
-    package-manager knowledge (no canonical probe list). A program's install
+    each mechanism once, repo-unique, fragment-definable. Core SHIPS a
+    library of them (`core/manifest/InstallerLibrary.kt`, since 0.8.0: dnf,
+    brew, brew-cask, flatpak with oracles; apt, pacman install/check only)
+    as TOML **text**, parsed once and merged UNDER the repo's own in
+    `loadRepo` — a repo `[installers.<name>]` replaces the built-in of that
+    name outright, `Manifest.builtinInstallers` (a `@Transient` field, never
+    a manifest key) records which survived so `explain`/`installers` can say
+    `(built-in)` vs `(repo)`. This is knowledge, never DETECTION: nothing
+    probes the machine to pick an installer, mapping still decides
+    everything, and `loadout installers --eject` writes the library into the
+    repo when you want to own it. A repo that relies on built-ins should
+    declare `[meta] min-tool-version` — an older binary fails with "unknown
+    installer". A program's install
     entry is a variant table `{installer, pkg, command, check, regex, probe}`
     — every field optional, defaulting from its installer (explicit
     `installer = ...`, else the installer its key names) with `pkg`
@@ -337,7 +352,10 @@ Distilled from migrating the user's real repo (README "Recipe: adding a
 program" is the user-facing long form). Match top-down, first fit wins:
 
 1. Standard package → `via = [...]` listing ONLY installers where the claim
-   is true (via is unverified; a false entry = a mappable lie).
+   is true (via is unverified; a false entry = a mappable lie). The named
+   installer usually needs no declaration — it ships with loadout
+   (`loadout installers`); declare one only to add a mechanism or replace a
+   built-in.
 2. Different package id → variant with `pkg` (flatpak app ids, renamed casks).
 3. Special install command, same mechanism → variant with `command`, keyed
    by the installer so check/probe derive. Key by what it IS: a cask gets

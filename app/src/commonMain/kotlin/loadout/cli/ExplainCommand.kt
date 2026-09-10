@@ -47,7 +47,11 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         val resolved = manifest.resolveInstall(name, key)
                         val installerName = variant.installer
                             ?: key.takeIf { it in manifest.installers && variant.installer == null }
-                        val via = installerName?.let { "  [installer: $it]" }.orEmpty()
+                        // Where the mechanics came from: loadout's library or this repo.
+                        val via = installerName?.let {
+                            val origin = if (it in manifest.builtinInstallers) "built-in" else "repo"
+                            "  [installer: $it ($origin)]"
+                        }.orEmpty()
                         val marker = if (key == mapping[name]) Style.machine("   <- ${system.machine}") else ""
                         rows += "install.$key" to "${resolved.command}$via$marker"
                         resolved.check?.takeIf { it != program.version }?.let {

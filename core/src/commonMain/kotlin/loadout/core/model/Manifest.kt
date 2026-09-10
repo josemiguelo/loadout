@@ -2,6 +2,7 @@ package loadout.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class Manifest(
@@ -30,6 +31,12 @@ data class Manifest(
      * self-version row is conceptually the first of these, hardcoded.
      */
     val outdated: Map<String, OutdatedSource> = emptyMap(),
+    /**
+     * Which of [installers] came from [loadout.core.manifest.InstallerLibrary]
+     * rather than the repo — provenance for `explain`/`installers`, never
+     * behavior. Not a manifest field: loadRepo fills it in.
+     */
+    @Transient val builtinInstallers: Set<String> = emptySet(),
 ) {
     /**
      * Everything the [key] variant of program [programName] resolves to.

@@ -1,6 +1,7 @@
 package loadout.core
 
 import loadout.core.manifest.ManifestException
+import loadout.core.manifest.InstallerLibrary
 import loadout.core.manifest.ManifestLoader
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -536,5 +537,70 @@ class ManifestRepoTest {
         val manifest = ManifestLoader.loadRepo(fs, repo)
         assertEquals(setOf("git"), manifest.programs.keys)
         assertTrue(manifest.machines.isEmpty())
+    }
+
+    @Test
+    fun builtInInstallersResolveWithoutBeingDeclared() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [programs.ripgrep]
+                    via = ["dnf"]
+                """.trimIndent(),
+                "machines/laptop.toml" to """
+                    [pm]
+                    ripgrep = "dnf"
+                """.trimIndent(),
+            ),
+        )
+
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        val resolved = manifest.resolveInstall("ripgrep", "dnf")
+        assertEquals("sudo dnf install -y ripgrep", resolved.command)
+        assertEquals("rpm -q ripgrep", resolved.check?.command)
+        assertEquals("dnf", resolved.probe)
+        assertTrue("dnf" in manifest.builtinInstallers)
+    }
+
+    @Test
+    fun repoInstallerReplacesTheBuiltInOfTheSameName() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [installers.dnf]
+                    probe = "dnf5"
+                    install = "sudo dnf5 install -y {pkg}"
+                    check = "rpm -q {pkg}"
+                    regex = "([0-9.]+)"
+
+                    [programs.ripgrep]
+                    via = ["dnf"]
+                """.trimIndent(),
+                "machines/laptop.toml" to """
+                    [pm]
+                    ripgrep = "dnf"
+                """.trimIndent(),
+            ),
+        )
+
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        assertEquals("sudo dnf5 install -y ripgrep", manifest.resolveInstall("ripgrep", "dnf").command)
+        // Overridden: no longer reported as built-in, and the built-in's
+        // outdated oracle is gone with it (replaced outright, not merged).
+        assertTrue("dnf" !in manifest.builtinInstallers)
+        assertEquals(null, manifest.installers.getValue("dnf").outdatedAll)
+        assertTrue("brew" in manifest.builtinInstallers)
+    }
+
+    @Test
+    fun theShippedLibraryParsesAndIsUsable() {
+        val installers = InstallerLibrary.installers
+        assertTrue(installers.keys.containsAll(setOf("dnf", "apt", "pacman", "brew", "brew-cask", "flatpak")))
+        for ((name, installer) in installers) {
+            assertTrue(installer.probe != null, "$name has no probe")
+            assertTrue(installer.install?.contains("{pkg}") == true, "$name install ignores {pkg}")
+            assertTrue(installer.check?.contains("{pkg}") == true, "$name check ignores {pkg}")
+            assertTrue(installer.regex != null, "$name has no regex")
+        }
     }
 }
