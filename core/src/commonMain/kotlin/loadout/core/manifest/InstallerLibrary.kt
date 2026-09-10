@@ -29,14 +29,15 @@ object InstallerLibrary {
 # want to pin or patch it.
 #
 # `outdated-all` asks the remote ONCE for everything ("<pkg> <candidate>"
-# lines); the per-pkg `outdated` stays as the fallback for older binaries.
+# lines) — that is the only oracle these need. The per-pkg `outdated` key
+# still exists for repos to use, but a batch oracle always wins over it
+# (Manifest.resolveInstall), so spelling one out here would be dead config.
 
 # --- exercised on the maintainer's fleet ---------------------------------
 [installers.dnf]
 probe = "dnf"
 install = "sudo dnf install -y {pkg}"
 check = "rpm -q {pkg}"
-outdated = "dnf -q --cacheonly check-update {pkg} | awk 'NF>=3 {print $2}'"
 outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 
@@ -44,7 +45,6 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 probe = "brew"
 install = "brew install {pkg}"
 check = "brew list --versions {pkg}"
-outdated = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose {pkg} | grep '^{pkg} ' | awk '{print ${'$'}NF}'"
 outdated-all = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=${'$'}NF; gsub(/[()]/, \"\", v); print n, v}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 
@@ -52,7 +52,6 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 probe = "brew"
 install = "brew install --cask {pkg}"
 check = "brew list --cask --versions {pkg}"
-outdated = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose {pkg} | grep '^{pkg} ' | awk '{print ${'$'}NF}'"
 outdated-all = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=${'$'}NF; gsub(/[()]/, \"\", v); print n, v}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 
@@ -62,7 +61,6 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 probe = "flatpak"
 install = "flatpak --user install -y flathub {pkg}"
 check = "flatpak --user info {pkg}"
-outdated = "flatpak --user remote-info --cached flathub {pkg}"
 outdated-all = "flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk '{print $1, \"Version:\", $2}'"
 regex = "Version: ([0-9][0-9.]*)"
 

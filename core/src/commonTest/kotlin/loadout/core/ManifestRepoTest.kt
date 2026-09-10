@@ -563,6 +563,18 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun theShippedLibraryCarriesNoDeadPerPackageOracle() {
+        // A batch oracle always wins over the per-pkg one (resolveInstall),
+        // so an installer declaring both would ship a command that can never
+        // run. Repos may still keep both — old binaries ignore outdated-all.
+        for ((name, installer) in InstallerLibrary.installers) {
+            if (installer.outdatedAll != null) {
+                assertEquals(null, installer.outdated, "$name declares an unreachable per-pkg oracle")
+            }
+        }
+    }
+
+    @Test
     fun theShippedLibraryParsesAndIsUsable() {
         val installers = InstallerLibrary.installers
         assertTrue(installers.keys.containsAll(setOf("dnf", "apt", "pacman", "brew", "brew-cask", "flatpak")))
