@@ -12,7 +12,6 @@ import com.github.ajalt.clikt.parameters.options.option
 import loadout.core.engine.InstallEngine
 import loadout.core.engine.PlanItem
 import loadout.core.engine.VersionChecker
-import kotlinx.coroutines.runBlocking
 
 /**
  * The targeted installer: named programs only, dependencies first. Scripts
@@ -43,9 +42,8 @@ class InstallCommand : CliktCommand(name = "install") {
         val checker = VersionChecker(app.runner, app.repoRoot.toString())
         val engine = InstallEngine(app.runner, checker, app.repoRoot)
 
-        echo("Checking current state...")
         val mapped = manifest.machines[system.machine]?.pm.orEmpty()
-        val current = runBlocking {
+        val current = spinning("checking current state…") {
             checker.checkAll(
                 manifest.programs.keys.filter { it in mapped || it in names }
                     .associateWith { n -> manifest.checkFor(n, mapped[n]) },
@@ -83,8 +81,8 @@ class InstallCommand : CliktCommand(name = "install") {
 
         val outcomes = engine.execute(manifest, plan) { echo("\n" + Style.accent("==> installing ${it.program}")) }
 
-        echo("\nUpdating state...")
-        runBlocking { app.refreshAndWriteState(manifest, system) }
+        echo("")
+        spinning("updating state…") { app.refreshAndWriteState(manifest, system) }
 
         val failed = outcomes.filterNot { it.success }
         echo(" " + Style.ok("\u2714") + "  ${outcomes.count { it.success }}/${outcomes.size} programs installed")

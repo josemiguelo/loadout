@@ -11,7 +11,6 @@ import loadout.core.engine.VersionChecker
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)

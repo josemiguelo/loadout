@@ -16,6 +16,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import loadout.core.platform.blockingDispatcher
 
 /**
  * ANSI styling for CLI screens, using the SAME Tokyo Night / Day palette as
@@ -65,9 +67,9 @@ object Style {
 
 /**
  * Run [work] under a braille spinner line (TTY only — piped output sees
- * nothing), clearing the line when done. The work runs on whatever
- * dispatcher it chooses (engines use blockingDispatcher), so the spinner
- * loop stays responsive.
+ * nothing), clearing the line when done. The work always runs on
+ * blockingDispatcher so the spinner loop keeps ticking — wrap every step
+ * slow enough to look like a hang (checks, state writes, git) in this.
  */
 fun <T> CliktCommand.spinning(message: String, work: suspend () -> T): T {
     val result = runBlocking {
@@ -84,7 +86,9 @@ fun <T> CliktCommand.spinning(message: String, work: suspend () -> T): T {
             null
         }
         try {
-            work()
+            // On blockingDispatcher, not runBlocking's single thread: a
+            // blocking call here (git, state write) would freeze the spinner.
+            withContext(blockingDispatcher) { work() }
         } finally {
             spinner?.cancelAndJoin()
         }

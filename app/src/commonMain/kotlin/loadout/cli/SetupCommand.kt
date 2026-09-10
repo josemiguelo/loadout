@@ -14,7 +14,6 @@ import loadout.core.engine.VersionChecker
 import loadout.core.manifest.ManifestLoader
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
-import kotlinx.coroutines.runBlocking
 
 class SetupCommand : CliktCommand(name = "setup-new-machine") {
     override fun help(context: Context) = commandHelp(
@@ -37,9 +36,8 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
         val checker = VersionChecker(app.runner, app.repoRoot.toString())
         val engine = InstallEngine(app.runner, checker, app.repoRoot)
 
-        echo("Checking current state...")
         val mapped = manifest.machines[system.machine]?.pm.orEmpty()
-        val current = runBlocking {
+        val current = spinning("checking current state…") {
             checker.checkAll(
                 manifest.programs.keys.filter { it in mapped }
                     .associateWith { n -> manifest.checkFor(n, mapped[n]) },
@@ -104,8 +102,8 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
             }
         }
 
-        echo("\nUpdating state...")
-        runBlocking { app.refreshAndWriteState(manifest, system, scriptResults) }
+        echo("")
+        spinning("updating state…") { app.refreshAndWriteState(manifest, system, scriptResults) }
 
         val failedInstalls = outcomes.filterNot { it.success }
         val failedScripts = scriptResults.filterValues { it.status == ScriptStatus.FAILED }

@@ -258,6 +258,12 @@ These came from explicit user decisions; don't "improve" them away:
   yellow-title/blue-name look Mordant ships, in whichever palette was
   detected. Without it help keeps Mordant's dark-only defaults and washes
   out on light terminals.
+- **Slow steps wear the spinner**: any step that can look like a hang —
+  version checks, state refresh/write, git pull/push — goes through
+  `Style.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
+  `echo("Doing x...")` + `runBlocking`. It runs the work on
+  `blockingDispatcher` (a blocking call on runBlocking's own thread would
+  freeze the spinner) and draws nothing when stdout isn't a TTY.
 - **TUI + sudo**: streamed output would swallow a sudo password prompt; the
   maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
   points users at `sudo -v`.
