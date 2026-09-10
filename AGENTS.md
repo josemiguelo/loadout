@@ -188,7 +188,15 @@ These came from explicit user decisions; don't "improve" them away:
     entry is a variant table `{installer, pkg, command, check, regex, probe}`
     — every field optional, defaulting from its installer (explicit
     `installer = ...`, else the installer its key names) with `pkg`
-    defaulting to the program name; `via = [...]` is shorthand for one
+    defaulting to the program name. An installer may also declare
+    `params = ["copr", ...]`: named values it needs per program, supplied by
+    each variant in a nested `[...install.<key>.with]` table and substituted
+    like `{pkg}` into every pattern. Declared, never inferred — a missing
+    declared param, an undeclared `with` key, and a `with` on a variant with
+    no installer are all load errors, so an unsubstituted `{placeholder}`
+    can never reach a shell. `pkg` is reserved. This is what lets one
+    `dnf-repo`/`dnf-copr` mechanism replace a pile of near-identical install
+    scripts (recipe 5); `via = [...]` is shorthand for one
     all-defaults variant per named installer (expandVia; explicit variant for
     the same key wins). Resolution lives in Manifest.resolveInstall/checkFor
     — all engines/UIs go through it. Field fallback: command → installer
@@ -378,7 +386,10 @@ program" is the user-facing long form). Match top-down, first fit wins:
    never `&&`-chained into another program's command.
 5. Repo-script install that lands in a pm's database → variant keyed by that
    pm with `command = "file:..."`; check/probe derive; override `regex` for
-   odd version formats.
+   odd version formats. When several programs need the SAME shaped script
+   (rpm repo + key + install, say), make it an installer with `params` and
+   one `file:` pattern instead of one script per program — the variants then
+   carry only their values in `with`.
 6. Truth not in a package db (dnf groups, virtual provides) → override
    `check` (two-mode script or `--whatprovides`), keep the rest derived.
 7. No pm at all → `script` key + program-level `[version]` fallback.

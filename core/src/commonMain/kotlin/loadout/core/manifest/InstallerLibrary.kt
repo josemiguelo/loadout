@@ -64,6 +64,15 @@ check = "flatpak --user info {pkg}"
 outdated-all = "flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk '{print $1, \"Version:\", $2}'"
 regex = "Version: ([0-9][0-9.]*)"
 
+# A COPR is dnf plus one enable step; `copr` names it (params).
+[installers.dnf-copr]
+probe = "dnf"
+params = ["copr"]
+install = "sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}"
+check = "rpm -q {pkg}"
+outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
 # --- best effort: install/check only, no update oracle -------------------
 # Not exercised by the maintainer; `loadout outdated` reports "no oracle"
 # for programs mapped here. Override in your repo to add one.

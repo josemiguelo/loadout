@@ -360,4 +360,53 @@ class ManifestLoaderTest {
         assertTrue(all.indexOf("git") < all.indexOf("ripgrep"))
         assertEquals(setOf("git", "ripgrep", "rustup"), all.toSet())
     }
+
+    @Test
+    fun installerParamsSubstituteIntoEveryPattern() {
+        val manifest = ManifestLoader.parse(
+            """
+            [installers.copr]
+            probe = "dnf"
+            params = ["copr"]
+            install = "sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}"
+            check = "rpm -q {pkg} && echo {copr}"
+            regex = "([0-9.]+)"
+
+            [programs.kitty]
+            [programs.kitty.install.copr]
+            [programs.kitty.install.copr.with]
+            copr = "solopasha/kitty"
+            """.trimIndent(),
+        )
+        val resolved = manifest.resolveInstall("kitty", "copr")
+        assertEquals("sudo dnf copr enable -y solopasha/kitty && sudo dnf install -y kitty", resolved.command)
+        assertEquals("rpm -q kitty && echo solopasha/kitty", resolved.check?.command)
+    }
+
+    @Test
+    fun aMissingOrUndeclaredParamIsALoadError() {
+        val installer = """
+            [installers.copr]
+            params = ["copr"]
+            install = "install {copr} {pkg}"
+
+        """.trimIndent()
+        val missing = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(installer + "[programs.kitty]\n[programs.kitty.install.copr]\n")
+        }
+        assertTrue("needs a value for 'copr'" in missing.message.orEmpty(), missing.message.orEmpty())
+
+        val undeclared = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                installer + """
+                [programs.kitty]
+                [programs.kitty.install.copr]
+                [programs.kitty.install.copr.with]
+                copr = "a/b"
+                repo = "nope"
+                """.trimIndent(),
+            )
+        }
+        assertTrue("does not declare in params" in undeclared.message.orEmpty(), undeclared.message.orEmpty())
+    }
 }

@@ -51,6 +51,7 @@ class InstallersCommand : CliktCommand(name = "installers") {
             echo(Style.header("installer ") + Style.bold(single) + "  " + source(single))
             val rows = listOfNotNull(
                 installer.probe?.let { "probe" to it },
+                installer.params.takeIf { it.isNotEmpty() }?.let { "params" to it.joinToString() },
                 installer.install?.let { "install" to it },
                 installer.check?.let { "check" to it },
                 installer.regex?.let { "regex" to it },

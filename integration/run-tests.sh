@@ -29,6 +29,29 @@ ok "init scaffolds a repo"
 "$BIN" init repo >/dev/null 2>&1 && fail "init refuses to overwrite" || true
 ok "init refuses to overwrite an existing manifest"
 
+# --- installer params ----------------------------------------------------
+mkdir -p paramrepo/machines
+cat > paramrepo/manifest.toml <<'PARAM'
+[installers.faux]
+params = ["flavor"]
+install = "echo installing {pkg} from {flavor}"
+check = "echo {pkg} 1.0"
+regex = "([0-9.]+)"
+
+[programs.tool]
+[programs.tool.install.faux]
+[programs.tool.install.faux.with]
+flavor = "vanilla"
+PARAM
+printf '[pm]\ntool = "faux"\n' > paramrepo/machines/m1.toml
+OUT=$("$BIN" --repo paramrepo --machine m1 explain tool)
+echo "$OUT" | grep -q "echo installing tool from vanilla" || fail "installer params substitute"
+printf '[installers.faux]\nparams = ["flavor"]\ninstall = "echo {flavor}"\n\n[programs.tool]\n[programs.tool.install.faux]\n' > paramrepo/manifest.toml
+OUT=$("$BIN" --repo paramrepo --machine m1 explain tool 2>&1 || true)
+echo "$OUT" | grep -q "needs a value for 'flavor'" || fail "a missing param must fail the load"
+rm -rf paramrepo
+ok "installers take declared params, and a missing one is a load error"
+
 # --- templates were removed: a repo using them must not load empty --------
 mkdir -p tmplrepo
 printf '[templates.rpm]\npackages = ["vlc"]\n[templates.rpm.install.dnf]\ncommand = "sudo dnf install -y {name}"\n' > tmplrepo/manifest.toml

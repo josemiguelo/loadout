@@ -368,6 +368,9 @@ object ManifestLoader {
             if (installer.outdatedAll != null && installer.regex == null) {
                 errors += "installers.$name has an outdated-all command but no regex"
             }
+            if ("pkg" in installer.params) {
+                errors += "installers.$name declares param 'pkg', which is always available"
+            }
         }
 
         for ((name, source) in manifest.outdated) {
@@ -399,6 +402,21 @@ object ManifestLoader {
                 if (variant.outdated != null && (variant.regex ?: installer?.regex) == null) {
                     errors += "programs.$name.install.$key has an outdated command but no regex " +
                         "(set 'regex', or reference an installer that has one)"
+                }
+                // Params are a contract between installer and variant: every
+                // declared one must be supplied, and nothing else may be.
+                val params = installer?.params.orEmpty()
+                for (missing in params - variant.with.keys) {
+                    errors += "programs.$name.install.$key needs a value for '$missing' " +
+                        "(add it under [programs.$name.install.$key.with])"
+                }
+                for (extra in variant.with.keys - params.toSet()) {
+                    errors += if (installer == null) {
+                        "programs.$name.install.$key sets with.$extra but resolves to no installer"
+                    } else {
+                        "programs.$name.install.$key sets with.$extra, which installer " +
+                            "'${variant.installer ?: key}' does not declare in params"
+                    }
                 }
             }
         }

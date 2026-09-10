@@ -44,7 +44,10 @@ data class Manifest(
         val installer = variant.installer?.let(installers::get)
             ?: if (variant.installer == null) installers[key] else null
         val pkg = variant.pkg ?: programName
-        fun sub(s: String) = s.replace("{pkg}", pkg)
+        // {pkg} plus whatever the installer declared as params — validated at
+        // load, so an unsubstituted placeholder can't reach a shell here.
+        val values = mapOf("pkg" to pkg) + variant.with
+        fun sub(s: String) = values.entries.fold(s) { acc, (key, value) -> acc.replace("{$key}", value) }
         val checkCommand = variant.check ?: installer?.check
         val regex = variant.regex ?: installer?.regex
         // Outdated precedence: explicit per-variant oracle, else the
@@ -115,6 +118,14 @@ data class BatchOracle(
 data class Installer(
     /** Binary that must exist (`command -v`) before installing via this mechanism. */
     val probe: String? = null,
+    /**
+     * Named values this mechanism needs per program, beyond the package id:
+     * `params = ["copr"]` makes `{copr}` substitutable in every pattern
+     * below, and every variant using this installer must supply it in its
+     * `with` table. Declared, never inferred — an undeclared `with` key and
+     * a missing declared one are both load errors. "pkg" is reserved.
+     */
+    val params: List<String> = emptyList(),
     /** Install command pattern; `{pkg}` is replaced with the package id. */
     val install: String? = null,
     /** Version check command pattern; `{pkg}` is replaced with the package id. */
@@ -158,6 +169,12 @@ data class InstallVariant(
     val probe: String? = null,
     /** Remote-candidate command, replacing the installer's (see [Installer.outdated]). */
     val outdated: String? = null,
+    /**
+     * Values for the installer's [Installer.params], as a nested table:
+     * `[programs.kitty.install.dnf-copr.with]` / `copr = "solopasha/kitty"`.
+     * Each becomes `{copr}` in the resolved commands.
+     */
+    val with: Map<String, String> = emptyMap(),
 )
 
 @Serializable
