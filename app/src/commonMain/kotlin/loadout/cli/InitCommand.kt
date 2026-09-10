@@ -17,7 +17,7 @@ private val STARTER_MANIFEST = """
     name = "my machines"
     # Bump this when the repo starts using features of a newer loadout —
     # machines running older binaries then refuse with an "upgrade" error:
-    #min-tool-version = "0.9.0"
+    #min-tool-version = "0.9.1"
 
     # Install mechanics (commands, version checks, probes) ship with loadout:
     # `loadout installers` lists them, `via` names the ones that apply, and

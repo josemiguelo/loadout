@@ -63,6 +63,7 @@ ok "templates are gone, and a manifest still using them says so"
 # --- built-in installers -------------------------------------------------
 OUT=$("$BIN" --repo repo installers) || fail "installers exits 0"
 echo "$OUT" | grep -q "dnf" || fail "installers lists the built-in dnf"
+echo "$OUT" | grep -q "dnf-repo" || fail "installers lists the parameterized dnf-repo"
 echo "$OUT" | grep -q "built-in" || fail "installers marks built-ins"
 OUT=$("$BIN" --repo repo installers dnf)
 echo "$OUT" | grep -q "rpm -q {pkg}" || fail "installers <name> shows the definition"

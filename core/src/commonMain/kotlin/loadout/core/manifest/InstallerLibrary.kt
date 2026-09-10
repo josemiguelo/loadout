@@ -64,6 +64,18 @@ check = "flatpak --user info {pkg}"
 outdated-all = "flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk '{print $1, \"Version:\", $2}'"
 regex = "Version: ([0-9][0-9.]*)"
 
+# A vendor rpm repository: `repofile` is its .repo file — a URL the vendor
+# publishes, or a path in your config repo (commands run with the repo root
+# as cwd). dnf imports the key the file names at install time. dnf5 only
+# (`config-manager addrepo`); on dnf4 declare your own installer.
+[installers.dnf-repo]
+probe = "dnf"
+params = ["repofile"]
+install = "sudo dnf config-manager addrepo --overwrite --from-repofile={repofile} && sudo dnf install -y {pkg}"
+check = "rpm -q {pkg}"
+outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
 # A COPR is dnf plus one enable step; `copr` names it (params).
 [installers.dnf-copr]
 probe = "dnf"
