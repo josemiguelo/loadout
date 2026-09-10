@@ -563,6 +563,25 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun parseAndLoadRepoResolveInstallsIdentically() {
+        // parse() is test-only and deliberately laxer (inline [machines.*],
+        // no file: existence check) — but if it disagreed about INSTALLERS,
+        // every engine test would be exercising a resolution production never
+        // performs. Both go through withBuiltinInstallers.
+        val text = """
+            [programs.ripgrep]
+            via = ["dnf"]
+        """.trimIndent()
+        val parsed = ManifestLoader.parse(text)
+        val loaded = ManifestLoader.loadRepo(fs(mapOf("manifest.toml" to text)), repo)
+        assertEquals(
+            loaded.resolveInstall("ripgrep", "dnf"),
+            parsed.resolveInstall("ripgrep", "dnf"),
+        )
+        assertEquals(loaded.builtinInstallers, parsed.builtinInstallers)
+    }
+
+    @Test
     fun theShippedLibraryCarriesNoDeadPerPackageOracle() {
         // A batch oracle always wins over the per-pkg one (resolveInstall),
         // so an installer declaring both would ship a command that can never

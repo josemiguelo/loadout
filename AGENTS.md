@@ -145,7 +145,11 @@ These came from explicit user decisions; don't "improve" them away:
 9. **Errors are clean one-liners** (`error: ...`), never stack traces. New
    exception types get a catch in Main.kt.
 10. **Product code loads manifests via `ManifestLoader.loadRepo`** (merging +
-    file validation). `parse()` exists for tests only.
+    file validation). `parse()` exists for tests only — it tolerates inline
+    `[machines.*]` and can't check `file:` paths, but both paths share
+    `withBuiltinInstallers`, so install resolution is identical (a test
+    asserts it). Anything else that must hold for both goes in that helper,
+    not in one path.
 11. **No templates.** `[templates.<name>]` (reusable program patterns with
     `{name}` substitution) existed through 0.8.0 and was REMOVED in 0.9.0 —
     the only real config repo never used it, and the recipe below prefers

@@ -129,15 +129,15 @@ object ManifestLoader {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
         }
 
-        val builtins = InstallerLibrary.installers
         val merged = expandVia(
-            root.copy(
-                installers = builtins + installers,
-                builtinInstallers = builtins.keys - installers.keys,
-                programs = programs,
-                scripts = scripts,
-                machines = machines,
-                outdated = outdatedSources,
+            withBuiltinInstallers(
+                root.copy(
+                    installers = installers,
+                    programs = programs,
+                    scripts = scripts,
+                    machines = machines,
+                    outdated = outdatedSources,
+                ),
             ),
         )
         validate(merged)
@@ -180,11 +180,30 @@ object ManifestLoader {
         return merged.copy(machines = merged.machines.filterValues { !it.base })
     }
 
-    /** Parse and validate a single manifest document (no fragment/machine-file merging). */
+    /**
+     * Parse and validate a single manifest document. TEST-ONLY (contract 10):
+     * it skips fragment/machine-file merging and, unlike [loadRepo], tolerates
+     * inline `[machines.*]` and cannot check that `file:` paths exist. It does
+     * go through [withBuiltinInstallers], so install resolution — the thing
+     * most tests are actually about — behaves exactly as in production.
+     */
     fun parse(text: String): Manifest {
-        val manifest = expandVia(parseRaw(text, "manifest"))
+        val manifest = expandVia(withBuiltinInstallers(parseRaw(text, "manifest")))
         validate(manifest)
         return manifest
+    }
+
+    /**
+     * Merge loadout's shipped installers UNDER the manifest's own: a repo
+     * definition of the same name replaces the built-in, and what survived
+     * is recorded for `explain`/`installers`. The one place this happens.
+     */
+    private fun withBuiltinInstallers(manifest: Manifest): Manifest {
+        val builtins = InstallerLibrary.installers
+        return manifest.copy(
+            installers = builtins + manifest.installers,
+            builtinInstallers = builtins.keys - manifest.installers.keys,
+        )
     }
 
     /**
