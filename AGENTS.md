@@ -258,6 +258,12 @@ These came from explicit user decisions; don't "improve" them away:
   yellow-title/blue-name look Mordant ships, in whichever palette was
   detected. Without it help keeps Mordant's dark-only defaults and washes
   out on light terminals.
+- **`diff` boxes the rows that need attention**: drift/incomplete rows are
+  wrapped in a rounded box (amber, red when the block contains an incomplete
+  row) and consecutive ones share one box, so a run reads as a single block.
+  Every row — boxed or not — starts with a 2-column gutter (border + space,
+  or two spaces) so the columns line up either way; the box width comes from
+  the widest `!flags` annotation among boxed rows.
 - **Slow steps wear the spinner**: any step that can look like a hang —
   version checks, state refresh/write, git pull/push — goes through
   `Style.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
