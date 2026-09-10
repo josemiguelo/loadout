@@ -83,6 +83,12 @@ echo "$OUT" | grep -q "git" || fail "install plans the named program"
 echo "$OUT" | grep -q "marker" && fail "install must not touch scripts" || true
 "$BIN" --repo repo --machine m1 install ghost-prog --dry-run >/dev/null 2>&1 && fail "unknown program should fail" || true
 "$BIN" --repo repo --machine m1 setup-new-machine git --dry-run >/dev/null 2>&1 && fail "setup-new-machine must not accept names" || true
+OUT=$("$BIN" --repo repo --machine m1 install --all --dry-run) || fail "install --all exits 0"
+echo "$OUT" | grep -q "git" || fail "install --all plans every mapped program"
+echo "$OUT" | grep -q "marker" && fail "install --all must not touch scripts" || true
+"$BIN" --repo repo --machine m1 install --all git --dry-run >/dev/null 2>&1 && fail "--all with names should fail" || true
+"$BIN" --repo repo --machine m1 install --dry-run >/dev/null 2>&1 && fail "install with no names and no --all should fail" || true
+ok "install --all covers this machine's mapped programs, and rejects names alongside it"
 ok "install targets named programs; setup-new-machine takes no names"
 
 # --- run (script + check gate + force) ----------------------------------
@@ -99,6 +105,14 @@ ok "run respects the check gate"
 OUT=$("$BIN" --repo repo --machine m1 run marker --force)
 echo "$OUT" | grep -q "ran marker" || fail "--force reruns"
 ok "run --force ignores the check gate"
+
+OUT=$("$BIN" --repo repo --machine m1 run --all --force)
+echo "$OUT" | grep -q "ran marker" || fail "run --all runs every opted-in script"
+"$BIN" --repo repo --machine m1 run --all marker >/dev/null 2>&1 && fail "--all with names should fail" || true
+"$BIN" --repo repo --machine m1 run >/dev/null 2>&1 && fail "run with no names and no --all should fail" || true
+OUT=$("$BIN" --repo repo --machine m2 run --all)
+echo "$OUT" | grep -q "No scripts opted in" || fail "run --all on a machine with no scripts says so"
+ok "run --all covers this machine's opted-in scripts, and rejects names alongside it"
 
 # m2 never opted into the marker script.
 "$BIN" --repo repo --machine m2 run marker >/dev/null 2>&1 && fail "run without opt-in should fail" || true

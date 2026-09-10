@@ -14,19 +14,25 @@ import loadout.core.engine.PlanItem
 import loadout.core.engine.VersionChecker
 
 /**
- * The targeted installer: named programs only, dependencies first. Scripts
- * are `run`'s job; the whole loadout is `setup-new-machine`'s.
+ * The targeted installer: named programs (or --all, this machine's whole
+ * mapped membership), dependencies first. Scripts are `run`'s job; programs
+ * *and* scripts together are `setup-new-machine`'s.
  */
 class InstallCommand : CliktCommand(name = "install") {
     override fun help(context: Context) = commandHelp(
         "Install the named programs on this machine, dependencies first.",
         "<programs...>  programs from the manifest (+ depends-on)",
+        "--all          every program this machine maps, instead of names",
         "--dry-run      print the plan, execute nothing",
         "--yes          skip the confirmation",
     )
 
     private val names by argument(name = "programs", help = "Programs to install")
-        .multiple(required = true)
+        .multiple()
+    private val all by option(
+        "--all",
+        help = "Install every program mapped for this machine (same membership as setup-new-machine)",
+    ).flag()
     private val dryRun by option("--dry-run", help = "Show what would run without doing it").flag()
     private val yes by option("-y", "--yes", help = "Don't ask for confirmation").flag()
 
@@ -35,6 +41,8 @@ class InstallCommand : CliktCommand(name = "install") {
     override fun run() {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
+        if (all && names.isNotEmpty()) throw UsageError("Give program names or --all, not both")
+        if (!all && names.isEmpty()) throw UsageError("Give at least one program, or --all")
         names.filterNot { it in manifest.programs }.let { unknown ->
             if (unknown.isNotEmpty()) throw UsageError("Unknown programs: ${unknown.joinToString()}")
         }

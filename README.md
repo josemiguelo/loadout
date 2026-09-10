@@ -40,8 +40,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `outdated` | Ask the remotes (dnf/brew/flathub/…, one batch call each) what newer versions exist — the tool itself and any custom `[outdated.*]` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
-| | `install <programs>` | Just those programs, dependencies first |
-| | `run <scripts>` | Just those scripts (check-gated; `--force` overrides) |
+| | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
+| | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` overrides) |
 | | `maintain` | Interactive picker over the maintenance scripts, live-streamed logs, checks as verdicts |
 | **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
 | | `upgrade` | Update the loadout binary itself — needs no repo, works even under a version-floor refusal |

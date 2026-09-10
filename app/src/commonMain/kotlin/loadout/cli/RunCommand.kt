@@ -19,11 +19,16 @@ class RunCommand : CliktCommand(name = "run") {
     override fun help(context: Context) = commandHelp(
         "Run the named scripts from the manifest.",
         "<scripts...>  script names (must be opted in by this machine)",
+        "--all         every script this machine opts into, instead of names",
         "--force       run even when the check already passes",
     )
 
     private val names by argument(name = "scripts", help = "Script names from the manifest")
-        .multiple(required = true)
+        .multiple()
+    private val all by option(
+        "--all",
+        help = "Run every script this machine opts into (modes ignored, like any run)",
+    ).flag()
     private val force by option("--force", help = "Run even if the script's check passes").flag()
 
     private val app by requireObject<AppContext>()
@@ -31,6 +36,8 @@ class RunCommand : CliktCommand(name = "run") {
     override fun run() {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
+        if (all && names.isNotEmpty()) throw UsageError("Give script names or --all, not both")
+        if (!all && names.isEmpty()) throw UsageError("Give at least one script, or --all")
         names.filterNot { it in manifest.scripts }.let { unknown ->
             if (unknown.isNotEmpty()) throw UsageError("Unknown scripts: ${unknown.joinToString()}")
         }
@@ -45,10 +52,18 @@ class RunCommand : CliktCommand(name = "run") {
             }
         }
 
+        // --all is the machine's opt-in list itself — membership, not modes:
+        // `run` is the explicit escape hatch and ignores setup/maintain.
+        val targets = if (all) enabled.keys else names
+        if (targets.isEmpty()) {
+            echo(Style.dim("No scripts opted in for ${system.machine}."))
+            return
+        }
+
         val runner = ScriptRunner(app.runner, app.repoRoot)
         val results = mutableMapOf<String, ScriptState>()
-        for (name in ManifestLoader.scriptOrder(manifest, names)) {
-            if (name !in names) continue
+        for (name in ManifestLoader.scriptOrder(manifest, targets)) {
+            if (name !in targets) continue
             val step = manifest.scripts.getValue(name)
             when (val outcome = runner.run(step, system.os, force, args = enabled.getValue(name))) {
                 is ScriptOutcome.NotApplicable -> echo(" " + Style.dim("\u00b7") + "  skipped $name " + Style.dim("(not for ${system.os.id})"))
