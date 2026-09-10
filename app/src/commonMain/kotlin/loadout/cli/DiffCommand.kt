@@ -14,11 +14,6 @@ private fun flagsOf(row: ProgramRow) = buildList {
     if (row.incomplete) add("incomplete")
 }.joinToString(",")
 
-/** Printed width of the trailing "  !drift" annotation (0 when there is none). */
-private fun flagsWidth(flags: String) = if (flags.isEmpty()) 0 else flags.length + 3
-
-private fun Int?.orZero() = this ?: 0
-
 class DiffCommand : CliktCommand(name = "diff") {
     override fun help(context: Context) = commandHelp(
         "Compare all machines' state files: missing installs and version drift. Exits 1 when something is off.",
@@ -50,53 +45,38 @@ class DiffCommand : CliktCommand(name = "diff") {
         val nameWidth = (report.rows.map { it.program.length } + 7).max() + 2
         val colWidth = (report.machines.map { it.length } + 8).max() + 2
         echo(Style.header("  " + "PROGRAM".padEnd(nameWidth + 3)) + report.machines.joinToString("") { Style.machine(it.padEnd(colWidth)) })
-        // Rows needing attention are wrapped in a box: consecutive ones share
-        // one, so a run reads as a single block. The left border sits in the
-        // gutter column, so boxed and plain rows keep the same columns.
-        val boxed = report.rows.map { it.drift || it.incomplete }
-        val cellsWidth = 3 + nameWidth + colWidth * report.machines.size
-        val bodyWidth = cellsWidth + report.rows.filterIndexed { i, _ -> boxed[i] }
-            .maxOfOrNull { flagsWidth(flagsOf(it)) }.orZero()
-        fun paint(severe: Boolean, text: String) = if (severe) Style.error(text) else Style.warn(text)
-        fun edge(severe: Boolean, left: String, right: String) =
-            paint(severe, left + "\u2500".repeat(bodyWidth + 2) + right)
-        var runSevere = false
-        for ((index, row) in report.rows.withIndex()) {
-            // Same marker language as status: ok / drift / missing-somewhere;
-            // a program no compared machine has is a dim non-event.
-            val everywhereUnknown = row.perMachine.values.all { it == InstallState.Unknown }
-            val marker = when {
-                row.incomplete -> Style.error("\u2718")
-                row.drift -> Style.warn("!")
-                everywhereUnknown -> Style.dim("\u00b7")
-                else -> Style.ok("\u2714")
-            }
-            val cells = report.machines.joinToString("") { machine ->
-                when (val cell = row.perMachine.getValue(machine)) {
-                    // On a drifting row every version is a suspect — highlight them all.
-                    is InstallState.Installed -> (cell.version ?: "ok").padEnd(colWidth)
-                        .let { if (row.drift) Style.warn(it) else it }
-                    InstallState.Missing -> Style.error("missing".padEnd(colWidth))
-                    InstallState.Unknown -> Style.dim("-".padEnd(colWidth))
+        // Rows needing attention (drift, or a missing install somewhere) are
+        // boxed by echoRows; the rest print with the same gutter.
+        echoRows(
+            report.rows.map { row ->
+                // Same marker language as status: ok / drift / missing-somewhere;
+                // a program no compared machine has is a dim non-event.
+                val everywhereUnknown = row.perMachine.values.all { it == InstallState.Unknown }
+                val marker = when {
+                    row.incomplete -> Style.error("\u2718")
+                    row.drift -> Style.warn("!")
+                    everywhereUnknown -> Style.dim("\u00b7")
+                    else -> Style.ok("\u2714")
                 }
-            }
-            val flags = flagsOf(row)
-            val body = "$marker  " + row.program.padEnd(nameWidth) + cells +
-                (if (flags.isEmpty()) "" else Style.warn("  !$flags"))
-            if (!boxed[index]) {
-                echo("  $body")
-                continue
-            }
-            if (index == 0 || !boxed[index - 1]) {
-                runSevere = (index..report.rows.lastIndex)
-                    .takeWhile { boxed[it] }
-                    .any { report.rows[it].incomplete }
-                echo(edge(runSevere, "\u256d", "\u256e"))  // rounded top
-            }
-            val pad = " ".repeat((bodyWidth - cellsWidth - flagsWidth(flags)).coerceAtLeast(0))
-            echo(paint(runSevere, "\u2502") + " " + body + pad + " " + paint(runSevere, "\u2502"))
-            if (index == report.rows.lastIndex || !boxed[index + 1]) echo(edge(runSevere, "\u2570", "\u256f"))
-        }
+                val cells = report.machines.joinToString("") { machine ->
+                    when (val cell = row.perMachine.getValue(machine)) {
+                        // On a drifting row every version is a suspect — highlight them all.
+                        is InstallState.Installed -> (cell.version ?: "ok").padEnd(colWidth)
+                            .let { if (row.drift) Style.warn(it) else it }
+                        InstallState.Missing -> Style.error("missing".padEnd(colWidth))
+                        InstallState.Unknown -> Style.dim("-".padEnd(colWidth))
+                    }
+                }
+                val flags = flagsOf(row)
+                TableRow(
+                    listOf(
+                        "$marker  " + row.program.padEnd(nameWidth) + cells +
+                            (if (flags.isEmpty()) "" else Style.warn("  !$flags")),
+                    ),
+                    severity = if (row.incomplete) true else if (row.drift) false else null,
+                )
+            },
+        )
 
         val driftCount = report.rows.count { it.drift }
         val missingCount = report.rows.count { it.incomplete }

@@ -67,27 +67,43 @@ class StatusCommand : CliktCommand(name = "status") {
         echo(Style.dim("machine ") + Style.machine(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))
         echo("")
         val nameWidth = ((state.programs.keys + state.scripts.keys).map { it.length } + 7).max()
-        echo(Style.header(" " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(11) + "VERSION"))
-        for ((name, program) in state.programs.toList().sortedBy { it.first }) {
-            val (mark, status) = when (program.status) {
-                ProgramStatus.INSTALLED -> Style.ok("✔") to Style.ok("installed".padEnd(11))
-                ProgramStatus.MISSING -> Style.error("✘") to Style.error("missing".padEnd(11))
-                ProgramStatus.UNKNOWN -> Style.dim("·") to Style.dim("unknown".padEnd(11))
-            }
-            echo(" $mark  " + name.padEnd(nameWidth + 1) + status + (program.version ?: "-"))
-        }
+        echo(Style.header("  " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(11) + "VERSION"))
+        // Rows that aren't settled get boxed by echoRows, same as diff's
+        // drift rows: a missing install is severe, a pending script is not.
+        echoRows(
+            state.programs.toList().sortedBy { it.first }.map { (name, program) ->
+                val (mark, status, severity) = when (program.status) {
+                    ProgramStatus.INSTALLED ->
+                        Triple(Style.ok("\u2714"), Style.ok("installed".padEnd(11)), null)
+                    ProgramStatus.MISSING ->
+                        Triple(Style.error("\u2718"), Style.error("missing".padEnd(11)), true)
+                    ProgramStatus.UNKNOWN ->
+                        Triple(Style.dim("\u00b7"), Style.dim("unknown".padEnd(11)), null)
+                }
+                TableRow(
+                    listOf("$mark  " + name.padEnd(nameWidth + 1) + status + (program.version ?: "-")),
+                    severity,
+                )
+            },
+        )
         if (state.scripts.isEmpty()) return
         echo("")
-        echo(Style.header(" " + "SCRIPT".padEnd(nameWidth + 4) + "STATUS"))
-        for ((name, script) in state.scripts.toList().sortedBy { it.first }) {
-            val (mark, status) = when (script.status) {
-                ScriptStatus.DONE -> Style.ok("✔") to Style.ok("done")
-                ScriptStatus.PENDING -> Style.error("✘") to Style.warn("pending")
-                ScriptStatus.FAILED -> Style.error("✘") to Style.error("failed")
-            }
-            echo(" $mark  " + name.padEnd(nameWidth + 1) + status)
-            // What the failing check reported — the "missing: ..." lines.
-            detail[name]?.lineSequence()?.forEach { echo(Style.dim("".padEnd(nameWidth + 6) + it)) }
-        }
+        echo(Style.header("  " + "SCRIPT".padEnd(nameWidth + 4) + "STATUS"))
+        echoRows(
+            state.scripts.toList().sortedBy { it.first }.map { (name, script) ->
+                val (mark, status, severity) = when (script.status) {
+                    ScriptStatus.DONE -> Triple(Style.ok("\u2714"), Style.ok("done"), null)
+                    ScriptStatus.PENDING -> Triple(Style.warn("\u2718"), Style.warn("pending"), false)
+                    ScriptStatus.FAILED -> Triple(Style.error("\u2718"), Style.error("failed"), true)
+                }
+                // What the failing check reported — the "missing: ..." lines,
+                // inside the box with the row they explain.
+                val detailLines = detail[name]?.lineSequence()
+                    ?.map { Style.dim("".padEnd(nameWidth + 5) + it) }
+                    ?.toList()
+                    .orEmpty()
+                TableRow(listOf("$mark  " + name.padEnd(nameWidth + 1) + status) + detailLines, severity)
+            },
+        )
     }
 }

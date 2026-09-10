@@ -258,12 +258,15 @@ These came from explicit user decisions; don't "improve" them away:
   yellow-title/blue-name look Mordant ships, in whichever palette was
   detected. Without it help keeps Mordant's dark-only defaults and washes
   out on light terminals.
-- **`diff` boxes the rows that need attention**: drift/incomplete rows are
-  wrapped in a rounded box (amber, red when the block contains an incomplete
-  row) and consecutive ones share one box, so a run reads as a single block.
-  Every row — boxed or not — starts with a 2-column gutter (border + space,
-  or two spaces) so the columns line up either way; the box width comes from
-  the widest `!flags` annotation among boxed rows.
+- **Unsettled rows are boxed**: `Style.kt`'s `echoRows(List<TableRow>)` is
+  the one renderer for `diff` and `status` tables — a row with a non-null
+  `severity` (false = amber, true = red) is wrapped in a rounded box,
+  consecutive ones share one box (severe if any row in it is), and a row's
+  extra lines (a failing script's check output) ride inside it. Plain rows
+  get the same 2-column gutter the border occupies, so columns line up
+  either way; box width is measured with ANSI codes stripped. Boxed today:
+  diff's drift (amber) / incomplete (red), status' missing programs (red)
+  and pending (amber) / failed (red) scripts.
 - **Slow steps wear the spinner**: any step that can look like a hang —
   version checks, state refresh/write, git pull/push — goes through
   `Style.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
