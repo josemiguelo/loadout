@@ -87,9 +87,10 @@ $ ./integration/run-tests.sh                       # black-box suite (real binar
 ```
 
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (macs build on
-macs). CI runs units + integration on Linux and macOS; a `v*` tag builds,
-strips, and attaches release tarballs for linux-x64 / macos-arm64 /
-macos-x64 — which is what the install one-liner and `loadout upgrade` serve.
+macs). A `v*` tag builds, strips, and attaches release tarballs for
+linux-x64 / macos-arm64 / macos-x64 — which is what the install one-liner
+and `loadout upgrade` serve. The CI workflow (units + integration on Linux
+and macOS) is written but not wired up — see TODO.
 
 Stack: [Clikt](https://github.com/ajalt/clikt) ·
 [ktoml](https://github.com/orchestr7/ktoml) · kotlinx-serialization ·
@@ -99,3 +100,12 @@ Stack: [Clikt](https://github.com/ajalt/clikt) ·
 
 Known limits: unix-like only · dependency edges have no version constraints
 · linux-arm64 builds but isn't released.
+
+## TODO
+
+- **Wire up CI.** `.github/workflows/ci.yml` triggers on `push` to `main`
+  and on pull requests; the default branch is `master` and there have been
+  no PRs, so it has never run — every release so far was cut on locally run
+  suites plus `release.yml`, which builds and packages but runs no tests.
+  Fix is `branches: [master]`; expect the first real run to surface
+  something, especially on the macOS job that has never executed.
