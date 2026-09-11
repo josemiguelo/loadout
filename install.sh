@@ -36,6 +36,14 @@ if [ -z "$version" ]; then
   [ -n "$version" ] || { echo "error: could not determine the latest release of $REPO" >&2; exit 1; }
 fi
 
+# An upgrade or a first install? Asked BEFORE overwriting, because the
+# closing instructions ("clone your config repo") are wrong for someone who
+# already has one — `loadout upgrade` runs this same script.
+previous=""
+if [ -x "$INSTALL_DIR/loadout" ]; then
+  previous=$("$INSTALL_DIR/loadout" --version 2>/dev/null | awk '{print $NF}')
+fi
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -53,16 +61,23 @@ tar -xzf "$tmp/loadout.tar.gz" -C "$tmp"
 mkdir -p "$INSTALL_DIR"
 mv "$tmp/loadout" "$INSTALL_DIR/loadout"
 chmod +x "$INSTALL_DIR/loadout"
-echo "Installed $INSTALL_DIR/loadout ($version)"
+if [ -n "$previous" ]; then
+  echo "Installed $INSTALL_DIR/loadout ($version, was v$previous)"
+else
+  echo "Installed $INSTALL_DIR/loadout ($version)"
+fi
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
   *) echo "note: $INSTALL_DIR is not on your PATH — add it to your shell profile" ;;
 esac
 
-echo ""
-echo "Next steps:"
-echo "  1. git clone <your config repo> ~/.config/loadouts"
-echo "  2. Write machines/\$(hostname).toml — or just: extends = \"<your-os-base>\""
-echo "  3. loadout --repo ~/.config/loadouts setup-new-machine"
-echo "  4. loadout --repo ~/.config/loadouts sync"
+# First install only: someone upgrading already did all of this.
+if [ -z "$previous" ]; then
+  echo ""
+  echo "Next steps:"
+  echo "  1. git clone <your config repo> ~/.config/loadouts"
+  echo "  2. Write machines/\$(hostname).toml — or just: extends = \"<your-os-base>\""
+  echo "  3. loadout --repo ~/.config/loadouts setup-new-machine"
+  echo "  4. loadout --repo ~/.config/loadouts sync"
+fi

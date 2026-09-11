@@ -5,6 +5,7 @@ set -eu
 
 BIN=${1:-app/build/bin/linuxX64/debugExecutable/loadout.kexe}
 BIN=$(realpath "$BIN")
+INSTALL_SH=$(realpath "$(dirname "$0")/../install.sh")
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
@@ -28,6 +29,22 @@ ok "init scaffolds a repo"
 
 "$BIN" init repo >/dev/null 2>&1 && fail "init refuses to overwrite" || true
 ok "init refuses to overwrite an existing manifest"
+
+# --- install.sh: first install vs upgrade --------------------------------
+# Offline: a stub binary in a local "release" tarball.
+mkdir -p rel/v9.9.9 relbuild relbin
+printf '#!/bin/sh\ncase "$1" in --version) echo "loadout version 9.9.9";; *) echo help;; esac\n' > relbuild/loadout
+chmod +x relbuild/loadout
+tar -czf rel/v9.9.9/loadout-v9.9.9-linux-x64.tar.gz -C relbuild loadout
+if [ "$(uname -s)" = "Linux" ]; then
+  OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/relbin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH")
+  echo "$OUT" | grep -q "Next steps:" || fail "a first install prints the setup steps"
+  OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/relbin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH")
+  echo "$OUT" | grep -q "Next steps:" && fail "an upgrade must not print first-install steps" || true
+  echo "$OUT" | grep -q "was v9.9.9" || fail "an upgrade names the version it replaced"
+  ok "install.sh tells a first install from an upgrade"
+fi
+rm -rf rel relbuild relbin
 
 # --- installer params ----------------------------------------------------
 mkdir -p paramrepo/machines
