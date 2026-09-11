@@ -16,7 +16,7 @@ sealed interface ScriptOutcome {
     /** The check command exited 0, so the step was already done. */
     data object AlreadyDone : ScriptOutcome
 
-    data class Ran(val state: ScriptState, val output: String = "") : ScriptOutcome
+    data class Ran(val state: ScriptState) : ScriptOutcome
 }
 
 class ScriptRunner(
@@ -39,16 +39,15 @@ class ScriptRunner(
     }
 
     /**
-     * [captureOutput] runs the script with captured (not inherited) stdio and
-     * returns it in [ScriptOutcome.Ran.output] — for UIs that own the terminal.
-     * [args] is the machine's argument string; it reaches both the `check`
-     * (as positional parameters) and a `file` script's argv.
+     * Run [step] unless its `check` already passes (or [force]). [args] is the
+     * machine's argument string; it reaches both the `check` (as positional
+     * parameters) and a `file` script's argv. Output goes straight to the
+     * terminal — the maintain screen streams via ProcessRunner.stream instead.
      */
     fun run(
         step: ScriptStep,
         os: OsFamily,
         force: Boolean = false,
-        captureOutput: Boolean = false,
         args: String = "",
     ): ScriptOutcome {
         if (!step.appliesTo(os)) return ScriptOutcome.NotApplicable
@@ -61,21 +60,13 @@ class ScriptRunner(
 
         // Validation guarantees exactly one of file/run is set, and that args
         // are only used with file scripts.
-        val command = commandFor(step, args)
-        val workDir = repoRoot.toString()
-        val (exitCode, output) = if (captureOutput) {
-            val result = runner.capture(command, workDir)
-            result.exitCode to (result.stdout + result.stderr)
-        } else {
-            runner.inherit(command, workDir) to ""
-        }
+        val exitCode = runner.inherit(commandFor(step, args), repoRoot.toString())
         return ScriptOutcome.Ran(
             ScriptState(
                 status = if (exitCode == 0) ScriptStatus.DONE else ScriptStatus.FAILED,
                 lastRun = nowIso(),
                 exitCode = exitCode,
             ),
-            output = output,
         )
     }
 }

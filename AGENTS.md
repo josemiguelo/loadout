@@ -69,10 +69,10 @@ core/  loadout.core
                use goes through the interface (tests use FakeProcessRunner).
                capture (blocking), inherit (sudo/progress), stream (live
                line-by-line + kill handle; default impl replays capture)
-  detect/      Detection — os/distro/hostname + isPmAvailable probe (`command -v`)
+  detect/      Detection — os/distro/hostname + isBinaryAvailable probe (`command -v`)
   engine/      VersionChecker (concurrent checkAll), UpdateChecker (outdated
                oracles; exit code deliberately ignored), InstallEngine (plan/
-               execute/executeCaptured), ScriptRunner, StatusEngine (observes
+               execute), ScriptRunner, StatusEngine (observes
                programs AND scripts; all checks concurrent — read-only)
   diff/        DiffEngine — pure function: manifest × states -> DiffReport
   git/         GitClient — shells out to `git`, always cwd = repo root
@@ -80,7 +80,7 @@ core/  loadout.core
                blockingDispatcher (= Dispatchers.IO)
 app/   loadout
   Main.kt      Clikt dispatch (bare invocation prints help). Catches
-               Manifest/Resolution/Git exceptions -> "error: ..." + exit 1
+               LoadoutException (+ okio.IOException) -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
                one file per subcommand (status/explain/installers/setup-new-machine/install/outdated/maintain/run/diff/sync/upgrade/init).
                SelfVersion = the one remote-self-check carve-out: status
