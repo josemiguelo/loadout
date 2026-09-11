@@ -501,6 +501,7 @@ TOML
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a failing source still exits 0"
 echo "$OUT" | grep -qE "outdated source \[flaky\] failed: exited 3" || fail "failing custom source is surfaced loud"
 echo "$OUT" | grep -q "boom" || fail "failing source shows its stderr detail"
+echo "$OUT" | grep -q "│" || fail "a failing source is boxed, like other attention rows"
 ok "outdated surfaces a failing custom [outdated.*] source instead of silence"
 
 # check: script checks with their detail output, structured.

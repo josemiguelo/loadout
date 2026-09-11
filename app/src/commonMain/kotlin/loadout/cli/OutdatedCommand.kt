@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import loadout.core.TOOL_VERSION
+import loadout.core.platform.terminalColumns
 import loadout.core.engine.UpdateChecker
 import loadout.core.model.ProgramStatus
 import kotlinx.coroutines.async
@@ -127,10 +128,19 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
                     Style.dim(" — neither `setup-new-machine` nor `install --all` upgrades them; both only install what's MISSING. Upgrade with the package manager, then `loadout status`"),
             )
         }
-        for ((label, err) in sourceErrors) {
-            echo(
-                " " + Style.error("✖") + "  outdated source [$label] failed: $err" +
-                    Style.dim(" — its results are missing this run"),
+        // A broken oracle is a different severity sitting under a long list of
+        // ordinary updates — box it, the one place in this screen where a row
+        // contrasts with its neighbours. The message carries a stderr tail, so
+        // clamp it to the terminal: a box that wraps is worse than a plain line.
+        if (sourceErrors.isNotEmpty()) {
+            val tail = " — its results are missing this run"
+            val budget = (terminalColumns() ?: 100) - 6 - tail.length
+            echoRows(
+                sourceErrors.map { (label, err) ->
+                    val head = "  outdated source [$label] failed: $err"
+                    val clamped = if (head.length <= budget) head else head.take(budget - 1) + "…"
+                    TableRow(listOf(Style.error("✖") + clamped + Style.dim(tail)), severity = true)
+                },
             )
         }
         if (unchecked.isNotEmpty()) {

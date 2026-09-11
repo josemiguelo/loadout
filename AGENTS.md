@@ -300,7 +300,11 @@ These came from explicit user decisions; don't "improve" them away:
   get the same 2-column gutter the border occupies, so columns line up
   either way; box width is measured with ANSI codes stripped. Boxed today:
   diff's drift (amber) / incomplete (red), status' missing programs (red)
-  and pending (amber) / failed (red) scripts.
+  and pending (amber) / failed (red) scripts, and outdated's failed
+  `[outdated.*]` sources (red, message clamped to the terminal width — a box
+  that wraps is worse than a plain line). NOT outdated's update rows: every
+  row there is an update, and a highlight with nothing to contrast against
+  is decoration.
 - **One converge pipeline**: `cli/Converge.kt` owns the program half of
   converging — `planPrograms` (re-check + `engine.plan`), `echoPlan`
   (plan table, `extraRows` for setup's scripts), `confirmOrAbort`,
