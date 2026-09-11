@@ -64,7 +64,7 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
 
         // The tool itself is a program too: ask GitHub for the latest release
         // (uncached — outdated is the explicit ask-the-network command).
-        val selfRow = SelfVersion.behind(app.runner, cached = false)
+        val selfRow = SelfVersion.behind(app.runner, app.fs, cached = false)
             ?.let { latest -> UpdateRow("loadout", TOOL_VERSION, latest, "release") }
 
         val sourceRows = sourceResults.flatMap { (label, res) ->

@@ -84,7 +84,8 @@ app/   loadout
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
                one file per subcommand (status/explain/installers/setup-new-machine/install/outdated/maintain/run/diff/sync/upgrade/init).
                SelfVersion = the one remote-self-check carve-out: status
-               footer (cached 6h, fail-soft) + outdated self-row (fresh);
+               footer (6h cache read/written with Okio, fail-soft) +
+               outdated self-row (fresh);
                `upgrade` shells to INSTALL_COMMAND and needs no repo, so it
                works under a min-tool-version refusal (which points at it)
   tui/         MaintainModel (ALL state + logic, no rendering, unit-tested)
@@ -323,7 +324,9 @@ These came from explicit user decisions; don't "improve" them away:
   freeze the spinner) and draws nothing when stdout isn't a TTY.
 - **TUI + sudo**: streamed output would swallow a sudo password prompt; the
   maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
-  points users at `sudo -v`.
+  points users at `sudo -v`. The match is `commandNeedsSudo` (word, not
+  substring — "pseudo-tty" isn't sudo) and covers the script's CHECK too,
+  which streams the same way.
 - **Maintain screen** (`loadout maintain`, TTY-only — UsageError otherwise):
   MaintainModel drives picker (ALL opted-in scripts, check-less included) ->
   sequential FORCED runs of the scripts themselves with live-log accordion ->

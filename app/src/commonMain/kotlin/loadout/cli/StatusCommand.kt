@@ -53,7 +53,7 @@ class StatusCommand : CliktCommand(name = "status") {
         } else {
             printTable(state, detail)
             // The one self-knowledge carve-out: is this binary itself behind?
-            SelfVersion.behind(app.runner)?.let { latest ->
+            SelfVersion.behind(app.runner, app.fs)?.let { latest ->
                 echo("")
                 echo(" " + Style.warn("↑") + "  loadout $TOOL_VERSION — $latest available " + Style.dim("(run: loadout upgrade)"))
             }

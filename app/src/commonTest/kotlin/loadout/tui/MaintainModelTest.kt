@@ -223,3 +223,13 @@ class MaintainModelTest {
         assertTrue(select.state.exit)
     }
 }
+
+class SudoGuardTest {
+    @Test
+    fun sudoIsMatchedAsAWordAndCheckedInChecksToo() {
+        assertTrue(commandNeedsSudo("sudo dnf install -y git"))
+        assertTrue(commandNeedsSudo("true && sudo systemctl enable x"))
+        assertFalse(commandNeedsSudo("sh 'scripts/pseudo-tty.sh'"))
+        assertFalse(commandNeedsSudo("echo sudoku"))
+    }
+}

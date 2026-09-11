@@ -53,6 +53,10 @@ class KommandProcessRunner : ProcessRunner {
         val stdout = child.bufferedStdout()
         runCatching {
             while (true) onLine(stdout?.readLine() ?: break)
+        }.onFailure {
+            // Say it in the log: a pipe that breaks mid-run used to look
+            // exactly like a command that finished quietly.
+            onLine("[output stream ended: ${it.message ?: it::class.simpleName}]")
         }
         return runCatching { child.wait() }.getOrDefault(-1)
     }

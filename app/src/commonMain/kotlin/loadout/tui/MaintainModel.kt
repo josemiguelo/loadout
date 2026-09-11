@@ -24,6 +24,11 @@ import kotlinx.coroutines.withContext
 
 enum class MaintainKey { UP, DOWN, PAGE_UP, PAGE_DOWN, SPACE, A, N, T, Q, ESC, ENTER }
 
+private val SUDO = Regex("(^|[^-\\w])sudo\\b")
+
+/** Whether [command] actually invokes sudo (not "pseudo-tty", not "sudoku"). */
+internal fun commandNeedsSudo(command: String) = SUDO.containsMatchIn(command)
+
 private val ANSI_ESCAPES = Regex("\u001b\\[[0-9;?]*[ -/]*[@-~]|\u001b\\][^\u0007\u001b]*(\u0007|\u001b\\\\)?|\u001b.")
 
 /**
@@ -39,6 +44,9 @@ internal fun displayLines(raw: String): List<String> =
             settled.replace(ANSI_ESCAPES, "").replace("\t", "    ")
         }
         .filter { it.isNotBlank() }
+
+/** Per-script log cap; the viewer keeps the tail of a long run. */
+private const val MAX_LOG_LINES = 10_000
 
 enum class MaintainPhase { SELECT, RUNNING, DONE }
 
@@ -193,8 +201,13 @@ class MaintainModel(
     internal suspend fun runSelected(): Unit = withContext(blockingDispatcher) {
         val targets = state.rows.filter { it.name in state.selected }
         // Streamed output would swallow a sudo password prompt; refuse unless
-        // sudo's credential cache is warm (same guard as the dashboard).
-        if (targets.any { "sudo" in it.command } && !runner.capture("sudo -n true").success) {
+        // sudo's credential cache is warm. Word match (not a substring: a
+        // "pseudo-tty" script is not sudo) and the CHECK counts too — it
+        // streams the same way and can prompt just as easily.
+        val needsSudo = targets.any { row ->
+            commandNeedsSudo(row.command) || row.checkCommand?.let(::commandNeedsSudo) == true
+        }
+        if (needsSudo && !runner.capture("sudo -n true").success) {
             state = state.copy(message = "sudo needs a password — run 'sudo -v' in a terminal first, then retry")
             return@withContext
         }
@@ -212,7 +225,7 @@ class MaintainModel(
                 workDir = app.repoRoot.toString(),
                 onStart = { current = it },
             ) { line ->
-                if (!cancelled) displayLines(line).forEach { appendLog(target.name, it) }
+                if (!cancelled) appendLog(target.name, displayLines(line))
             }
             current = null
             // After a cancel the state was already finalized by cancelRun();
@@ -238,7 +251,7 @@ class MaintainModel(
                         workDir = app.repoRoot.toString(),
                         onStart = { current = it },
                     ) { line ->
-                        if (!cancelled) displayLines(line).forEach { appendLog(target.name, it) }
+                        if (!cancelled) appendLog(target.name, displayLines(line))
                     }
                     current = null
                     if (cancelled) return@withContext
@@ -333,9 +346,20 @@ class MaintainModel(
         state = state.copy(rows = state.rows.map { if (it.name == name) transform(it) else it })
     }
 
-    private fun appendLog(name: String, line: String) {
-        setRow(name) { it.copy(log = (it.log + line).takeLast(10_000)) }
+    /**
+     * Append a whole chunk's worth of lines in ONE state update: a line at a
+     * time rebuilt the row list (and re-trimmed the log) per line, which is
+     * quadratic in a chatty script's output.
+     */
+    private fun appendLog(name: String, lines: List<String>) {
+        if (lines.isEmpty()) return
+        setRow(name) {
+            val grown = it.log + lines
+            it.copy(log = if (grown.size > MAX_LOG_LINES) grown.takeLast(MAX_LOG_LINES) else grown)
+        }
     }
+
+    private fun appendLog(name: String, line: String) = appendLog(name, listOf(line))
 
     private fun move(delta: Int) {
         val max = (state.rows.size - 1).coerceAtLeast(0)
