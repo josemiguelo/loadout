@@ -281,7 +281,10 @@ These came from explicit user decisions; don't "improve" them away:
   stays plain AND never queries the terminal. Color = signal: ok/warn/error/dim
   statuses, accent = headers/actions (`Style.header` = bold accent),
   machine = machine identity — never reintroduce raw ANSI codes or
-  Color.* constants outside Theme.kt/Style.kt. Style AFTER padding.
+  Color.* constants outside Theme.kt/cli/Style.kt. Style AFTER padding.
+  The CLI's presentation is four small files, not one: `Style.kt` (palette
+  -> ANSI + the Clikt theme), `Table.kt` (TableRow/echoRows), `Spinner.kt`,
+  `Help.kt` (commandHelp). Put new presentation in the one it belongs to.
   `--help` is rendered by Clikt/Mordant, not by `Style`, so RootCommand
   installs `Terminal(theme = Style.cliktTheme())` — the same detected palette
   mapped onto Mordant's style keys (warning = section titles, info = option/
@@ -289,7 +292,7 @@ These came from explicit user decisions; don't "improve" them away:
   yellow-title/blue-name look Mordant ships, in whichever palette was
   detected. Without it help keeps Mordant's dark-only defaults and washes
   out on light terminals.
-- **Unsettled rows are boxed**: `Style.kt`'s `echoRows(List<TableRow>)` is
+- **Unsettled rows are boxed**: `cli/Table.kt`'s `echoRows(List<TableRow>)` is
   the one renderer for `diff` and `status` tables — a row with a non-null
   `severity` (false = amber, true = red) is wrapped in a rounded box,
   consecutive ones share one box (severe if any row in it is), and a row's
@@ -306,7 +309,7 @@ These came from explicit user decisions; don't "improve" them away:
   command (that's how `--all` nearly became install-only).
 - **Slow steps wear the spinner**: any step that can look like a hang —
   version checks, state refresh/write, git pull/push — goes through
-  `Style.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
+  `cli/Spinner.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
   `echo("Doing x...")` + `runBlocking`. It runs the work on
   `blockingDispatcher` (a blocking call on runBlocking's own thread would
   freeze the spinner) and draws nothing when stdout isn't a TTY.
