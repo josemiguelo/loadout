@@ -75,6 +75,8 @@ data class MaintainState(
     val exit: Boolean = false,
     val exitCode: Int = 0,
     val dark: Boolean = true,
+    /** True when the listed verdicts come from the state file, not this run. */
+    val stale: Boolean = false,
 )
 
 /**
@@ -123,17 +125,31 @@ class MaintainModel(
                     m.scripts.getValue(name).appliesTo(sys.os) &&
                     m.scripts.getValue(name).runsIn("maintain")
             }
+        // The checks `status` already ran are written down — show them here
+        // instead of making the user carry them over from another screen.
+        val observed = app.stateStore.read(sys.machine)?.scripts.orEmpty()
+        val rows = targets.map { name ->
+            val step = m.scripts.getValue(name)
+            val args = enabled.getValue(name)
+            MaintainRow(
+                name = name,
+                command = ScriptRunner.commandFor(step, args),
+                checkCommand = step.check?.let { ScriptRunner.withArgs(it, args) },
+                status = when (observed[name]?.status) {
+                    ScriptStatus.DONE -> RunStatus.DONE
+                    ScriptStatus.PENDING -> RunStatus.PENDING
+                    ScriptStatus.FAILED -> RunStatus.FAILED
+                    // Never observed here: unproven, not done.
+                    null -> RunStatus.WAITING
+                },
+            )
+        }
         state = state.copy(
             machine = sys.machine,
-            rows = targets.map { name ->
-                val step = m.scripts.getValue(name)
-                val args = enabled.getValue(name)
-                MaintainRow(
-                    name = name,
-                    command = ScriptRunner.commandFor(step, args),
-                    checkCommand = step.check?.let { ScriptRunner.withArgs(it, args) },
-                )
-            },
+            rows = rows,
+            // Anything not known-done starts selected: that IS the work.
+            selected = rows.filter { it.status != RunStatus.DONE }.map { it.name }.toSet(),
+            stale = observed.isNotEmpty(),
         )
     }
 
@@ -213,7 +229,7 @@ class MaintainModel(
         }
         cancelled = false
         failedWrite = null
-        state = state.copy(phase = MaintainPhase.RUNNING, message = null)
+        state = state.copy(phase = MaintainPhase.RUNNING, message = null, stale = false)
         val results = mutableMapOf<String, ScriptState>()
         for (target in targets) {
             if (cancelled) break
@@ -326,8 +342,12 @@ class MaintainModel(
     }
 
     private fun finishRun() {
-        val bad = state.rows.count { it.status == RunStatus.PENDING || it.status == RunStatus.FAILED }
-        val ran = state.rows.count { it.status != RunStatus.WAITING }
+        // Only what THIS run touched: rows can start pending (from the state
+        // file) without having been selected, and those aren't this run's
+        // verdict.
+        val touched = state.rows.filter { it.name in state.selected }
+        val bad = touched.count { it.status == RunStatus.PENDING || it.status == RunStatus.FAILED }
+        val ran = touched.size
         val writeError = failedWrite
         state = state.copy(
             phase = MaintainPhase.DONE,

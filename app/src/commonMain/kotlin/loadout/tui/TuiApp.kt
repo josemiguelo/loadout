@@ -27,7 +27,7 @@ import loadout.theme.ThemePalette
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 
-private val SPINNER = listOf("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+internal val SPINNER = listOf("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 private val BOLD = TextStyle.Bold
 
 // ---------------------------------------------------------------- theme
@@ -63,9 +63,11 @@ private fun ThemePalette.toPalette() = Palette(
 private val DARK_PALETTE = DARK_THEME.toPalette()
 private val LIGHT_PALETTE = LIGHT_THEME.toPalette()
 
-private val LocalPalette = compositionLocalOf { DARK_PALETTE }
+internal val LocalPalette = compositionLocalOf { DARK_PALETTE }
 
-private fun fit(text: String, width: Int): String =
+internal fun paletteFor(dark: Boolean) = if (dark) DARK_PALETTE else LIGHT_PALETTE
+
+internal fun fit(text: String, width: Int): String =
     if (text.length > width) text.take((width - 1).coerceAtLeast(0)) + "…" else text.padEnd(width)
 
 // ---------------------------------------------------------------- maintain tui
@@ -148,7 +150,7 @@ private fun MaintainApp(model: MaintainModel) {
     val logHeight = (termRows - s.rows.size - 6).coerceAtLeast(3)
     val width = termCols
 
-    CompositionLocalProvider(LocalPalette provides if (s.dark) DARK_PALETTE else LIGHT_PALETTE) {
+    CompositionLocalProvider(LocalPalette provides paletteFor(s.dark)) {
         Column(
             modifier = Modifier.onKeyEvent { event ->
                 val key = maintainKeyOf(event) ?: return@onKeyEvent false
@@ -202,6 +204,9 @@ private fun MaintainTitleBar(s: MaintainState) {
             Text(" │ ", color = p.dim)
             Text("selected ", color = p.dim)
             Text("${s.selected.size}", color = p.accent, textStyle = BOLD)
+            // Say where the verdicts came from: they are the last `status`
+            // run's, not this moment's.
+            if (s.stale) Text("  (last observed state — run status to refresh)", color = p.dim)
         }
     }
 }
@@ -214,6 +219,12 @@ private fun runStatusLabel(row: MaintainRow, selectedForRun: Boolean, elapsed: I
     RunStatus.FAILED -> "failed"
     RunStatus.CANCELLED -> "cancelled"
     RunStatus.WAITING -> if (selectedForRun) "queued" else "skipped"
+}
+
+/** Picker labels: the stored verdict, or "not observed" when there is none. */
+private fun pickerLabel(row: MaintainRow): String = when (row.status) {
+    RunStatus.WAITING -> "not observed"
+    else -> runStatusLabel(row, selectedForRun = false, elapsed = 0)
 }
 
 /** Borderless full-width list: one row per script, accordion lines beneath. */
@@ -233,7 +244,10 @@ private fun MaintainPanel(s: MaintainState, spin: Int, elapsed: Int, logHeight: 
             row.status == RunStatus.CANCELLED -> " ✘  "
             else -> " ·  "
         }
-        val statusLabel = if (s.phase == MaintainPhase.SELECT) "" else runStatusLabel(row, selectedForRun, elapsed)
+        // In the picker the label is the LAST OBSERVED verdict (what `status`
+        // wrote), so you can see what needs work without leaving this screen.
+        val statusLabel =
+            if (s.phase == MaintainPhase.SELECT) pickerLabel(row) else runStatusLabel(row, selectedForRun, elapsed)
         val hasCursor = s.phase != MaintainPhase.RUNNING && index == s.cursor
         if (hasCursor) {
             // Selection bar stretches across the whole terminal.

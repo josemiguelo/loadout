@@ -41,6 +41,20 @@ rm -f repo/state/m1.json
 "$BIN" --repo repo --machine m1 status >/dev/null || fail "status rewrites the state file"
 ok "an unreadable state file warns and is skipped, never a stack trace"
 
+# --- home screen: bare invocation ----------------------------------------
+OUT=$("$BIN" --repo repo --machine m1 2>&1)
+echo "$OUT" | grep -q "Usage: loadout" || fail "bare loadout without a TTY still prints help"
+if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
+    { sleep 3; printf 'q'; sleep 1; } \
+        | script -qec "\"$BIN\" --repo repo --machine m1" tui-home.log >/dev/null || true
+    grep -qa "loadout" tui-home.log || fail "the home screen renders"
+    # Styled words are separate Text nodes: grep one node's worth of text.
+    grep -qa "act on this line" tui-home.log || fail "the home screen says how to act"
+    grep -qa "programs" tui-home.log || fail "the home screen lists its subjects"
+    grep -qai "Tty already bound" tui-home.log && fail "the home screen must not double-bind the tty" || true
+    ok "bare loadout opens the home screen on a TTY, help without one"
+fi
+
 # --- install.sh: first install vs upgrade --------------------------------
 # Offline: a stub binary in a local "release" tarball.
 mkdir -p rel/v9.9.9 relbuild relbin
@@ -192,6 +206,18 @@ OUT=$("$BIN" --repo repo --machine m1 run --all --force)
 echo "$OUT" | grep -q "ran marker" || fail "run --all runs every opted-in script"
 "$BIN" --repo repo --machine m1 run --all marker >/dev/null 2>&1 && fail "--all with names should fail" || true
 "$BIN" --repo repo --machine m1 run >/dev/null 2>&1 && fail "run with no names and no --all should fail" || true
+# --pending: the verdict the last status wrote, acted on without retyping.
+"$BIN" --repo repo --machine m1 status >/dev/null || fail "status records script state"
+OUT=$("$BIN" --repo repo --machine m1 run --pending)
+echo "$OUT" | grep -q "Nothing pending" || fail "run --pending is a no-op when everything is done"
+printf 'pending\n' > repo/marker-state.txt
+rm -f repo/marker.txt
+"$BIN" --repo repo --machine m1 status >/dev/null
+OUT=$("$BIN" --repo repo --machine m1 run --pending)
+echo "$OUT" | grep -q "ran marker" || fail "run --pending runs what the check says isn't done"
+"$BIN" --repo repo --machine m1 run --pending --all >/dev/null 2>&1 && fail "--pending with --all should fail" || true
+ok "run --pending acts on the last observed verdict"
+
 OUT=$("$BIN" --repo repo --machine m2 run --all)
 echo "$OUT" | grep -q "No scripts opted in" || fail "run --all on a machine with no scripts says so"
 ok "run --all covers this machine's opted-in scripts, and rejects names alongside it"

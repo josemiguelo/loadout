@@ -224,6 +224,23 @@ class MaintainModelTest {
     }
 }
 
+class PickerPreselectionTest {
+    @Test
+    fun notDoneIsWhatStartsSelected() {
+        // The rule both surfaces share: done is proven, anything else is work.
+        val rows = listOf(
+            MaintainRow("done-one", "run-a", status = RunStatus.DONE),
+            MaintainRow("pending-one", "run-b", status = RunStatus.PENDING),
+            MaintainRow("failed-one", "run-c", status = RunStatus.FAILED),
+            MaintainRow("never-observed", "run-d"),
+        )
+        assertEquals(
+            setOf("pending-one", "failed-one", "never-observed"),
+            rows.filter { it.status != RunStatus.DONE }.map { it.name }.toSet(),
+        )
+    }
+}
+
 class SudoGuardTest {
     @Test
     fun sudoIsMatchedAsAWordAndCheckedInChecksToo() {

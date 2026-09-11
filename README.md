@@ -39,6 +39,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 | | Command | What it does |
 |---|---|---|
+| **start here** | `loadout` | The home screen: what needs working on, enter acts on the focused row, and r/S/U/C re-check, sync, upgrade or set up this machine (a pipe gets help instead) |
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Any program/script exactly as the engine resolves it (default: everything) |
 | | `installers [name]` | The install mechanisms available here — loadout's built-ins plus your own (`--eject` copies the built-ins into your repo) |
@@ -46,8 +47,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
-| | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` overrides) |
-| | `maintain` | Interactive picker over the maintenance scripts, live-streamed logs, checks as verdicts |
+| | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--pending` = the ones status didn't find done, `--force` overrides) |
+| | `maintain` | Interactive picker over the maintenance scripts — opens on the last observed verdicts with the unfinished ones already selected — live-streamed logs, checks as verdicts |
 | **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
 | | `upgrade` | Update the loadout binary itself — needs no repo, works even under a version-floor refusal |
 | | `init` | Scaffold a new config repo |

@@ -4,14 +4,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
-import loadout.core.TOOL_VERSION
 import loadout.core.platform.terminalColumns
-import loadout.core.engine.UpdateChecker
-import loadout.core.model.ProgramStatus
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-
-private data class UpdateRow(val name: String, val current: String, val candidate: String, val source: String, val note: String = "")
 
 class OutdatedCommand : CliktCommand(name = "outdated") {
     override fun help(context: Context) = commandHelp(
@@ -23,89 +16,21 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
     override fun run() {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
-        val mapped = manifest.machines[system.machine]?.pm.orEmpty()
         val state = app.stateStore.read(system.machine)
         if (state == null) {
             echo("error: no state for ${system.machine} yet — run `loadout status` first")
             throw ProgramResult(1)
         }
 
-        // Only installed programs can be outdated; only variants whose
-        // installer declares an oracle can be asked. An installer's batch
-        // oracle (`outdated-all`) covers its programs with ONE command;
-        // per-program oracles remain for explicit variant overrides.
-        val installed = mapped.filterKeys {
-            state.programs[it]?.status == ProgramStatus.INSTALLED
+        val sources = manifest.outdated.size
+        val extra = if (sources == 0) "" else " and $sources extra source(s)"
+        val report = spinning("asking the remotes$extra…") {
+            outdatedReport(app, manifest, system, state, freshSelfCheck = true)
         }
-        val resolved = installed.mapValues { (name, key) -> manifest.resolveInstall(name, key) }
-        val oracles = resolved.mapNotNull { (name, r) -> r.outdated?.let { name to it } }.toMap()
-        val batched = resolved.mapNotNull { (name, r) -> r.outdatedAll?.let { name to it } }.toMap()
-        val batchCommands = batched.values.associate { it.installer to it.command }
-        val unchecked = installed.keys - oracles.keys - batched.keys
-
-        val checker = UpdateChecker(app.runner, app.repoRoot.toString())
-        val sources = manifest.outdated.mapValues { (_, s) -> s.command!! }
-        val extra = if (sources.isEmpty()) "" else " and ${sources.size} extra source(s)"
-        val (perProgram, batchResults, sourceResults) = spinning(
-            "asking the remotes about ${oracles.size + batched.size} programs$extra…",
-        ) {
-            coroutineScope {
-                val batch = async { checker.batchAll(batchCommands) }
-                val per = async { checker.candidates(oracles) }
-                val custom = async { checker.sourcesAll(sources) }
-                Triple(per.await(), batch.await(), custom.await())
-            }
-        }
-        val candidates = perProgram + batched.mapValues { (_, oracle) ->
-            batchResults[oracle.installer]?.get(oracle.pkg)?.let { raw ->
-                Regex(oracle.regex).find(raw)?.groupValues?.getOrNull(1)
-            }
-        }
-
-        // The tool itself is a program too: ask GitHub for the latest release
-        // (uncached — outdated is the explicit ask-the-network command).
-        val selfRow = SelfVersion.behind(app.runner, app.fs, cached = false)
-            ?.let { latest -> UpdateRow("loadout", TOOL_VERSION, latest, "release") }
-
-        val sourceRows = sourceResults.flatMap { (label, res) ->
-            res.rows.map { UpdateRow(it.name, it.current, it.candidate, label, it.note) }
-        }
-        // Custom sources that failed (non-zero exit): surfaced loud so a broken
-        // oracle can never masquerade as "nothing outdated". Declaration order.
-        val sourceErrors = manifest.outdated.keys.mapNotNull { label ->
-            sourceResults[label]?.error?.let { label to it }
-        }
-        val programRows = candidates.mapNotNull { (name, candidate) ->
-            val current = state.programs.getValue(name).version
-            if (candidate != null && candidate != current) {
-                UpdateRow(name, current ?: "?", candidate, mapped.getValue(name))
-            } else {
-                null
-            }
-        }
-
-        // Order: program rows grouped by installer DECLARATION order (list
-        // native pms first in your installers fragment), then the self row,
-        // then custom oracles in their declaration order. No pm knowledge
-        // here — the repo's own ordering is the ordering.
-        val installerOrder = manifest.installers.keys.withIndex().associate { (i, k) -> k to i }
-        val oracleOrder = manifest.outdated.keys.withIndex().associate { (i, k) -> k to i }
-        fun installerOf(program: String): String? {
-            val key = mapped.getValue(program)
-            val variant = manifest.programs[program]?.install?.get(key)
-            return variant?.installer ?: key.takeIf { it in manifest.installers }
-        }
-        fun rank(row: UpdateRow): Pair<Int, Int> = when {
-            row.source == "release" -> 1 to 0
-            row.source in oracleOrder -> 2 to oracleOrder.getValue(row.source)
-            else -> 0 to (installerOf(row.name)?.let { installerOrder[it] } ?: Int.MAX_VALUE)
-        }
-
-        val updates = (listOfNotNull(selfRow) + sourceRows + programRows)
-            .sortedWith(compareBy({ rank(it).first }, { rank(it).second }, { it.name }))
+        val updates = report.updates
 
         // Same visual language as status: markers + color as signal only.
-        if (updates.isEmpty() && sourceErrors.isEmpty()) {
+        if (updates.isEmpty() && report.errors.isEmpty()) {
             echo(" " + Style.ok("✔") + "  everything is up to date")
         } else if (updates.isNotEmpty()) {
             val nameWidth = updates.maxOf { it.name.length } + 2
@@ -132,19 +57,19 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
         // ordinary updates — box it, the one place in this screen where a row
         // contrasts with its neighbours. The message carries a stderr tail, so
         // clamp it to the terminal: a box that wraps is worse than a plain line.
-        if (sourceErrors.isNotEmpty()) {
+        if (report.errors.isNotEmpty()) {
             val tail = " — its results are missing this run"
             val budget = (terminalColumns() ?: 100) - 6 - tail.length
             echoRows(
-                sourceErrors.map { (label, err) ->
+                report.errors.map { (label, err) ->
                     val head = "  outdated source [$label] failed: $err"
                     val clamped = if (head.length <= budget) head else head.take(budget - 1) + "…"
                     TableRow(listOf(Style.error("✖") + clamped + Style.dim(tail)), severity = true)
                 },
             )
         }
-        if (unchecked.isNotEmpty()) {
-            echo(Style.dim(" ·  ${unchecked.size} installed programs have no outdated oracle: ${unchecked.sorted().joinToString()}"))
+        if (report.unchecked.isNotEmpty()) {
+            echo(Style.dim(" ·  ${report.unchecked.size} installed programs have no outdated oracle: ${report.unchecked.sorted().joinToString()}"))
         }
     }
 }

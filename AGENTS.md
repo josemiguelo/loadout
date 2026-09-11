@@ -12,9 +12,10 @@ versions across machines. Users declare installers (mechanism patterns: probe/in
 programs (install variants over those installers) and scripts (idempotent
 setup steps) in TOML; each machine
 maps every program to one install variant; state files record what each machine
-actually has; `diff` compares the fleet. CLI + the Mosaic maintain screen
-(the old dashboard TUI was deleted on 2026-08-21 — every function it had
-lives in a command now; don't reintroduce it).
+actually has; `diff` compares the fleet. CLI + two Mosaic screens: the home screen (bare `loadout`) and the maintain
+picker. The old dashboard TUI was deleted on 2026-08-21 because it
+RE-DISPLAYED what commands already did; the home screen is the opposite —
+it observes, then dispatches to those commands, and owns no domain logic.
 
 Renamed from `post-installer` on 2026-08-17 — the working directory and some
 external references may still use the old name. Never reintroduce it in code.
@@ -322,14 +323,51 @@ These came from explicit user decisions; don't "improve" them away:
   `echo("Doing x...")` + `runBlocking`. It runs the work on
   `blockingDispatcher` (a blocking call on runBlocking's own thread would
   freeze the spinner) and draws nothing when stdout isn't a TTY.
+- **Home screen** (bare `loadout` on a TTY; a pipe still gets help):
+  `tui/HomeModel.kt` + `HomeApp.kt`. Four subject rows (programs, scripts,
+  remote, fleet) each carrying its verdict and the ONE verb that resolves
+  it; ↑↓/jk move, enter acts on the focused row, l/h (or ←/→) open and close
+  a detail, pgup/pgdn scroll it. Machine-wide verbs are their own keys, not
+  rows, because they belong to no single subject: r re-check, S sync,
+  U upgrade, C setup-new-machine, t theme, q quit — capitals for the ones
+  that push, replace the binary, or converge the machine. `l` only ever OPENS — it never
+  dispatches, so the vim keys can't start an install by accident.
+  Rows whose answer is already in hand (remote, fleet) OPEN IT IN PLACE on
+  enter instead of leaving — and they show nothing on focus, because their
+  detail is that table. Rows whose verb changes the machine (programs,
+  scripts) preview their offenders on focus and dispatch on enter. It
+  opens on the stored state, then runs a real `status` refresh (3s on the
+  live repo, published like `status` does) and then asks the remotes (4s)
+  — both land as they finish, so the screen is usable while they run. The
+  remote row uses the CACHED self-version check: this screen opens
+  constantly and GitHub's unauthenticated API is rate-limited; `outdated`
+  asks fresh. HomeModel owns no domain logic: StatusEngine observes,
+  DiffEngine compares, `cli/OutdatedQuery.kt`'s `outdatedReport()` asks the
+  remotes for BOTH this screen and the `outdated` command, and every action
+  dispatches to a real subcommand through `cli/Actions.kt`'s `dispatch()`.
+- **One Mosaic app per process**: `runMosaicBlocking` binds the tty once and
+  never releases it — a second call anywhere in the same process dies with
+  `IllegalStateException: Tty already bound`. So the home screen cannot
+  reopen after an action and cannot launch the maintain picker: it exits
+  INTO its action (install --all / run --pending / outdated / diff) and the
+  process ends. Any "return to the home screen" loop needs re-exec, not a
+  second runMosaic.
 - **TUI + sudo**: streamed output would swallow a sudo password prompt; the
   maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
   points users at `sudo -v`. The match is `commandNeedsSudo` (word, not
   substring — "pseudo-tty" isn't sudo) and covers the script's CHECK too,
   which streams the same way.
 - **Maintain screen** (`loadout maintain`, TTY-only — UsageError otherwise):
+  the picker opens on the LAST OBSERVED verdicts — `load()` reads
+  `state/<machine>.json` and shows each script's stored done/pending/failed
+  (never-observed = "not observed"), preselecting everything not `done`, with
+  a header saying the verdicts are the last `status`'s. `run --pending` is the
+  same rule without the TUI. Don't make either re-run the checks on open: they
+  take minutes, and `status` already wrote the answer down.
   MaintainModel drives picker (ALL opted-in scripts, check-less included) ->
-  sequential FORCED runs of the scripts themselves with live-log accordion ->
+  sequential FORCED runs of the scripts themselves with live-log accordion
+  (a run's verdict counts only the rows it touched — rows can start pending
+  from the state file without being selected) ->
   full-log viewer. Rendering is borderless and fills the whole terminal:
   width from `platform.terminalColumns()` (polled with terminalRows), footer
   pushed to the bottom with filler lines (user decision — no panel boxes
