@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.LoadoutException
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
 import loadout.core.model.Manifest
@@ -9,7 +10,7 @@ import loadout.core.model.ProgramStatus
 import okio.Path
 
 /** A plan could not be built; nothing was executed. */
-class ResolutionException(message: String) : Exception(message)
+class ResolutionException(message: String) : LoadoutException(message)
 
 sealed interface PlanItem {
     val program: String

@@ -1,6 +1,9 @@
 package loadout.core
 
 import loadout.core.manifest.ManifestException
+import loadout.core.LoadoutException
+import loadout.core.engine.ResolutionException
+import loadout.core.git.GitException
 import loadout.core.manifest.InstallerLibrary
 import loadout.core.manifest.ManifestLoader
 import kotlin.test.Test
@@ -619,5 +622,17 @@ class ManifestRepoTest {
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
         assertTrue(e.message!!.contains("removed in loadout 0.9.0"), e.message!!)
+    }
+
+    @Test
+    fun everyLoadoutFailureReportsAsACleanOneLiner() {
+        // Main.kt catches LoadoutException and nothing else of ours; a type
+        // that escapes this hierarchy would reach the user as a stack trace.
+        val ours: List<Exception> = listOf(
+            ManifestException("x"),
+            ResolutionException("x"),
+            GitException("x"),
+        )
+        for (e in ours) assertTrue(e is LoadoutException, "${e::class.simpleName} is not a LoadoutException")
     }
 }

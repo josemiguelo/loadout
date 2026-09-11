@@ -57,6 +57,7 @@ macosArm64 — macosX64 is deprecated upstream but kept). Compose plugin only on
 
 ```
 core/  loadout.core
+  LoadoutException — supertype of every refusal (contract 9)
   model/       Manifest, MachineState, System (@Serializable schemas; Manifest
                owns resolveInstall/checkFor — variant × installer resolution)
   manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d (recursive, subfolders cosmetic)
@@ -142,8 +143,11 @@ These came from explicit user decisions; don't "improve" them away:
 8. **State files**: written only for this machine; `updatedAt` bumps only when
    content actually changed (keeps git history clean; makes `sync` a no-op when
    idle). Unknown JSON keys ignored on read.
-9. **Errors are clean one-liners** (`error: ...`), never stack traces. New
-   exception types get a catch in Main.kt.
+9. **Errors are clean one-liners** (`error: ...`), never stack traces. Every
+   refusal of ours extends `loadout.core.LoadoutException`, which Main.kt
+   catches once (plus `okio.IOException`, which isn't ours) — a new failure
+   type inherits the clean reporting instead of needing a new catch block. A
+   test asserts the hierarchy.
 10. **Product code loads manifests via `ManifestLoader.loadRepo`** (merging +
     file validation). `parse()` exists for tests only — it tolerates inline
     `[machines.*]` and can't check `file:` paths, but both paths share

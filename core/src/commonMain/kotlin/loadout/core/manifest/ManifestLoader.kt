@@ -2,6 +2,7 @@ package loadout.core.manifest
 
 import com.akuleshov7.ktoml.Toml
 import com.akuleshov7.ktoml.TomlInputConfig
+import loadout.core.LoadoutException
 import loadout.core.TOOL_VERSION
 import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.InstallVariant
@@ -15,7 +16,7 @@ import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
 
-class ManifestException(message: String) : Exception(message)
+class ManifestException(message: String) : LoadoutException(message)
 
 object ManifestLoader {
     /** Directory of extra manifest fragments merged into the root manifest. */

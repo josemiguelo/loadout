@@ -1,10 +1,11 @@
 package loadout.core.git
 
 import loadout.core.exec.ExecResult
+import loadout.core.LoadoutException
 import loadout.core.exec.ProcessRunner
 import okio.Path
 
-class GitException(message: String) : Exception(message)
+class GitException(message: String) : LoadoutException(message)
 
 /** Thin wrapper over the `git` binary, always operating on the config repo. */
 class GitClient(

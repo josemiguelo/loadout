@@ -16,9 +16,7 @@ import loadout.cli.SetupCommand
 import loadout.cli.StatusCommand
 import loadout.cli.SyncCommand
 import loadout.cli.UpgradeCommand
-import loadout.core.engine.ResolutionException
-import loadout.core.git.GitException
-import loadout.core.manifest.ManifestException
+import loadout.core.LoadoutException
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
@@ -39,16 +37,13 @@ fun main(args: Array<String>) {
                 InitCommand(),
             )
             .main(args)
-    } catch (e: ManifestException) {
-        println("error: ${e.message}")
-        exitProcess(1)
-    } catch (e: ResolutionException) {
-        println("error: ${e.message}")
-        exitProcess(1)
-    } catch (e: GitException) {
+        // Every loadout refusal is a LoadoutException, so a new failure mode
+        // reports cleanly without anyone remembering to add a catch here.
+    } catch (e: LoadoutException) {
         println("error: ${e.message}")
         exitProcess(1)
     } catch (e: okio.IOException) {
+        // Not ours: a missing/unreadable file surfacing from Okio.
         println("error: ${e.message}")
         exitProcess(1)
     }
