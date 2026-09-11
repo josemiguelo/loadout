@@ -30,6 +30,17 @@ ok "init scaffolds a repo"
 "$BIN" init repo >/dev/null 2>&1 && fail "init refuses to overwrite" || true
 ok "init refuses to overwrite an existing manifest"
 
+# --- an unreadable state file is a warning, not a crash ------------------
+printf '{ this is not json' > repo/state/m1.json
+OUT=$("$BIN" --repo repo --machine m1 status --no-write 2>&1) || fail "status survives a corrupt state file"
+echo "$OUT" | grep -q "not readable state" || fail "a corrupt state file warns"
+echo "$OUT" | grep -qi "Uncaught Kotlin exception" && fail "a corrupt state file must not crash" || true
+OUT=$("$BIN" --repo repo --machine m1 diff 2>&1 || true)
+echo "$OUT" | grep -q "not readable state" || fail "diff warns about a corrupt state file instead of hiding it"
+rm -f repo/state/m1.json
+"$BIN" --repo repo --machine m1 status >/dev/null || fail "status rewrites the state file"
+ok "an unreadable state file warns and is skipped, never a stack trace"
+
 # --- install.sh: first install vs upgrade --------------------------------
 # Offline: a stub binary in a local "release" tarball.
 mkdir -p rel/v9.9.9 relbuild relbin

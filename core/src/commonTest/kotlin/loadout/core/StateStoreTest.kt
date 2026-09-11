@@ -92,4 +92,23 @@ class StateStoreTest {
         assertTrue("\"installed\"" in text)
         assertTrue("INSTALLED" !in text)
     }
+
+    @Test
+    fun anUnreadableStateFileWarnsInsteadOfCrashing() {
+        val fs = FakeFileSystem()
+        val repo = "/repo".toPath()
+        fs.createDirectories(repo / "state")
+        fs.write(repo / "state" / "m1.json") { writeUtf8("{ this is not json") }
+        fs.write(repo / "state" / "m2.json") { writeUtf8("{ also broken") }
+        val store = StateStore(fs, repo)
+
+        // read(): a crash here reaches the user as a stack trace (contract 9).
+        assertNull(store.read("m1"))
+        assertEquals(1, store.lastWarnings.size, store.lastWarnings.toString())
+        assertTrue("state/m1.json" in store.lastWarnings.single(), store.lastWarnings.single())
+
+        // readAll(): silence here would make the machine vanish from `diff`.
+        assertTrue(store.readAll().isEmpty())
+        assertEquals(2, store.lastWarnings.size, store.lastWarnings.toString())
+    }
 }
