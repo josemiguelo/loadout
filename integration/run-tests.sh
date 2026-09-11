@@ -558,6 +558,18 @@ if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
     grep -q '"drifted"' instrepo/state/m1.json || fail "maintain records the run in the state file"
     grep -q '"status": "pending"' instrepo/state/m1.json || fail "maintain state status comes from the rerun check"
     ok "maintain runs selected scripts in a PTY, exits 1 when a check still fails"
+
+    # A state write that fails must be said out loud, not swallowed: the runs
+    # happened, nothing recorded them. A read-only state FILE forces it — a
+    # read-only directory would not: rewriting an existing file needs no
+    # directory permission.
+    chmod 400 instrepo/state/m1.json
+    { sleep 2; printf 'a'; sleep 1; printf '\r'; sleep 4; printf 'q'; sleep 1; } \
+        | script -qec "\"$BIN\" --repo instrepo --machine m1 maintain" tui-nowrite.log >/dev/null \
+        && fail "maintain should exit 1 when the state write fails" || true
+    chmod 600 instrepo/state/m1.json
+    grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in maintain"
+    ok "maintain says so when it cannot write the state file"
 fi
 
 # --- machine bases + subfolders -----------------------------------------

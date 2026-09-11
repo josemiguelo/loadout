@@ -337,7 +337,8 @@ These came from explicit user decisions; don't "improve" them away:
   results are MERGED into the existing state file directly (the statuses ARE
   the checks this run just executed; a full refreshAndWriteState here would
   re-probe everything for minutes — it's used only when no state file exists
-  yet), skipped on cancel. `status` is the report side: it prints script
+  yet), skipped on cancel. A write that FAILS ends the run with "state not
+  written (<reason>)" and exit 1, never "all N done" over an unwritten file. `status` is the report side: it prints script
   statuses with each failing check's detail (StatusEngine.lastScriptDetail,
   surfaced like StateStore.lastWarnings). Live
   output comes from `ProcessRunner.stream`, which prepends `exec 2>&1`

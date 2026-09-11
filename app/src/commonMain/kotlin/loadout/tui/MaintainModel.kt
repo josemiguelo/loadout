@@ -96,6 +96,9 @@ class MaintainModel(
     private val scope = CoroutineScope(SupervisorJob() + blockingDispatcher)
     private var current: RunningProcess? = null
     private var cancelled = false
+
+    /** Why the state write failed, when it did — finishRun turns it into a verdict. */
+    private var failedWrite: String? = null
     private var manifest: Manifest? = null
     private var system: SystemInfo? = null
 
@@ -196,6 +199,7 @@ class MaintainModel(
             return@withContext
         }
         cancelled = false
+        failedWrite = null
         state = state.copy(phase = MaintainPhase.RUNNING, message = null)
         val results = mutableMapOf<String, ScriptState>()
         for (target in targets) {
@@ -260,6 +264,8 @@ class MaintainModel(
         val sys = system ?: return
         if (results.isEmpty()) return
         state = state.copy(message = "updating state…")
+        // A failure here loses the run's results; say so instead of finishing
+        // with "all done" over an unwritten file (see failedWrite below).
         runCatching {
             val previous = app.stateStore.read(sys.machine)
             if (previous == null) {
@@ -284,6 +290,8 @@ class MaintainModel(
                 )
                 if (merged.copy(updatedAt = previous.updatedAt) != previous) app.stateStore.write(merged)
             }
+        }.onFailure { e ->
+            failedWrite = e.message?.lineSequence()?.firstOrNull() ?: "unknown error"
         }
     }
 
@@ -307,12 +315,17 @@ class MaintainModel(
     private fun finishRun() {
         val bad = state.rows.count { it.status == RunStatus.PENDING || it.status == RunStatus.FAILED }
         val ran = state.rows.count { it.status != RunStatus.WAITING }
+        val writeError = failedWrite
         state = state.copy(
             phase = MaintainPhase.DONE,
-            exitCode = if (bad > 0) 1 else 0,
-            message =
-                if (bad == 0) "all $ran done — enter opens a script's log"
-                else "$bad of $ran failed or still pending — enter opens the logs",
+            // An unwritten state file is a failure of the run even when every
+            // script passed: the next status/diff won't know what happened.
+            exitCode = if (bad > 0 || writeError != null) 1 else 0,
+            message = when {
+                writeError != null -> "state not written ($writeError) — the runs above are not recorded"
+                bad == 0 -> "all $ran done — enter opens a script's log"
+                else -> "$bad of $ran failed or still pending — enter opens the logs"
+            },
         )
     }
 
