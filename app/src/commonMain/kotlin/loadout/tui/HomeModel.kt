@@ -425,9 +425,10 @@ class HomeModel(private val app: AppContext) {
         }
         // Ask before touching anything: these commands change the machine,
         // and the sweep ones change more than the rows you picked.
+        // The pane is an overlay: whatever was open stays open underneath,
+        // so closing the pane shows the screen exactly as it was left.
         pending = plan
         state = state.copy(
-            expanded = false,
             run = UpgradeRun(
                 steps = plan.map { it.label },
                 label = plan.joinToString(", ") { it.label },
@@ -473,6 +474,9 @@ class HomeModel(private val app: AppContext) {
             before = stored?.programs?.mapValues { it.value.version }.orEmpty()
             state = state.copy(
                 sections = sectionsOf(m, sys, stored, fleet(), state.remote),
+                // The table underneath still lists what was just upgraded;
+                // ask again so it's true when the pane closes.
+                remote = RemoteStatus.Asking,
                 run = state.run?.copy(
                     done = true,
                     // Name what failed: "finished with failures" makes you
@@ -483,6 +487,7 @@ class HomeModel(private val app: AppContext) {
                     },
                 ),
             )
+            stored?.let { askRemotes(m, sys, it) }
         }
     }
 

@@ -302,6 +302,13 @@ private const val DETAIL_FOCUS = "        ❯ "
 /** Truncate to [max] columns; a wrapped row shreds the table. */
 private fun clip(text: String, max: Int) = if (text.length <= max) text else text.take(max - 1) + "…"
 
+/**
+ * Versions differ at the END ("adoptopenjdk-21.0.6+7" vs "…21.0.8+9"), so
+ * a version that can't fit loses its head, not its tail — right-clipping
+ * showed two identical prefixes and hid the only part that changed.
+ */
+private fun clipVersion(text: String, max: Int) = if (text.length <= max) text else "…" + text.takeLast(max - 1)
+
 /** Where you are in a list too long to show at once. */
 @Composable
 private fun ScrollHint(total: Int, scroll: Int, viewport: Int) {
@@ -375,8 +382,11 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
     // Columns are capped, not just padded: one long name would otherwise
     // wrap every row and shred the table.
     val nameWidth = updates.maxOf { it.name.length }.coerceAtMost(26) + 2
-    val currentWidth = updates.maxOf { it.current.length }.coerceAtMost(16) + 2
-    val candidateWidth = updates.maxOf { it.candidate.length }.coerceAtMost(16) + 2
+    // Version columns get the room the terminal has: long java/sha strings
+    // fit on a wide terminal and only get clipped on a narrow one.
+    val versionCap = if (width >= 130) 30 else if (width >= 110) 22 else 16
+    val currentWidth = updates.maxOf { it.current.length }.coerceAtMost(versionCap) + 2
+    val candidateWidth = updates.maxOf { it.candidate.length }.coerceAtMost(versionCap) + 2
     val sourceWidth = updates.maxOf { it.source.length }.coerceAtMost(12) + 2
     val used = DETAIL_INDENT.length + 6 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
     for ((offset, row) in updates.drop(s.scroll).take(viewport).withIndex()) {
@@ -393,8 +403,8 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
             else -> "[ ] "
         }
         val line = box + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) +
-            clip(row.current, currentWidth - 1).padEnd(currentWidth) + "-> " +
-            clip(row.candidate, candidateWidth - 1).padEnd(candidateWidth) +
+            clipVersion(row.current, currentWidth - 1).padEnd(currentWidth) + "-> " +
+            clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth) +
             clip("[${row.source}]", sourceWidth) +
             if (row.note.isNotEmpty() && width - used > 12) "  " + clip(row.note, width - used - 2) else ""
         if (focused) {
@@ -412,9 +422,9 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
                 Text(box, color = if (selected) p.accent else p.dim)
                 Text("↑ ", color = p.warn)
                 Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
-                Text(clip(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
+                Text(clipVersion(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
                 Text("-> ", color = p.dim)
-                Text(clip(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
+                Text(clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
                 Text(clip("[${row.source}]", sourceWidth), color = p.dim)
                 if (row.note.isNotEmpty() && width - used > 12) {
                     Text("  " + clip(row.note, width - used - 2), color = p.dim)
