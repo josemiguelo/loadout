@@ -284,7 +284,7 @@ class HomeModel(private val app: AppContext) {
                 HomeKey.DOWN -> moveDetail(1, viewport)
                 HomeKey.PAGE_UP -> moveDetail(-viewport, viewport)
                 HomeKey.PAGE_DOWN -> moveDetail(viewport, viewport)
-                HomeKey.ENTER, HomeKey.ESC, HomeKey.CLOSE ->
+                HomeKey.ESC, HomeKey.CLOSE ->
                     state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
                 HomeKey.OPEN -> {} // already open
                 HomeKey.SELECT -> if (onRemote && answered != null) {
@@ -304,7 +304,9 @@ class HomeModel(private val app: AppContext) {
                     val every = answered.mechanismOf.values.mapNotNull { answered.toolOf[it] }.toSet()
                     state = s.copy(selection = if (s.selection.containsAll(every)) emptySet() else every)
                 }
-                HomeKey.UPGRADE_SELECTION -> if (onRemote && answered != null && s.selection.isNotEmpty()) {
+                // enter IS the upgrade here — opening and closing belong to
+                // l/h, so enter is free to mean "do it".
+                HomeKey.ENTER, HomeKey.UPGRADE_SELECTION -> if (onRemote && answered != null && s.selection.isNotEmpty()) {
                     // Selection is by tool; the engine takes mechanisms.
                     startUpgrade(s.selection.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted())
                 }
@@ -322,26 +324,32 @@ class HomeModel(private val app: AppContext) {
             // `l` only ever opens a detail; enter also acts when there is none.
             HomeKey.OPEN -> {
                 val section = s.sections.getOrNull(s.cursor)
-                state = if (detailLines(s, section) > 0) {
-                    s.copy(expanded = true, scroll = 0, detailCursor = 0)
-                } else {
-                    s.copy(message = "nothing to open there — enter acts on it")
+                state = when {
+                    section?.busy == true -> s.copy(message = "still asking — the rows fill in as answers land")
+                    detailLines(s, section) > 0 -> s.copy(expanded = true, scroll = 0, detailCursor = 0)
+                    else -> s.copy(message = "nothing to open there")
                 }
             }
             HomeKey.CLOSE -> {} // nothing open
             HomeKey.ENTER -> {
                 val section = s.sections.getOrNull(s.cursor) ?: return false
-                // When the answer is already in hand, enter opens it HERE
-                // rather than leaving the screen to ask the same question.
-                if (detailLines(s, section) > 0) {
-                    state = s.copy(expanded = true, scroll = 0, detailCursor = 0)
-                } else if (section.action == HomeAction.NONE) {
-                    state = s.copy(message = "nothing to do there")
-                } else {
-                    // The screen closes so the action owns the terminal —
-                    // sudo prompts and full-screen runners both need that.
-                    state = s.copy(action = section.action, exit = true)
-                    return true
+                when {
+                    // Never act on an answer that hasn't arrived: enter used
+                    // to fire the outdated command over the one still running.
+                    section.busy ->
+                        state = s.copy(message = "still asking — the rows fill in as answers land")
+                    // Rows whose detail is already here are LOOKED at, and
+                    // looking is l's job.
+                    detailLines(s, section) > 0 ->
+                        state = s.copy(message = "press l to open it")
+                    section.action == HomeAction.NONE ->
+                        state = s.copy(message = "nothing to do there")
+                    else -> {
+                        // The screen closes so the action owns the terminal —
+                        // sudo prompts and full-screen runners both need that.
+                        state = s.copy(action = section.action, exit = true)
+                        return true
+                    }
                 }
             }
             HomeKey.REFRESH -> refresh()

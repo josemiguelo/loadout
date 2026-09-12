@@ -355,15 +355,17 @@ These came from explicit user decisions; don't "improve" them away:
 - **Home screen** (bare `loadout` on a TTY; a pipe still gets help):
   `tui/HomeModel.kt` + `HomeApp.kt`. Four subject rows (programs, scripts,
   remote, fleet) each carrying its verdict and the ONE verb that resolves
-  it; ↑↓/jk move, enter acts on the focused row, l/h (or ←/→) open and close
-  a detail, pgup/pgdn scroll it. Machine-wide verbs are their own keys, not
+  it; ↑↓/jk move, l/h (or ←/→) open and close a detail, pgup/pgdn scroll it,
+  and enter ACTS — it never opens or closes, so inside the remote table it
+  is the upgrade key. Nothing acts on a row still marked busy: enter used to
+  dispatch `outdated` on top of the ask already running. Machine-wide verbs are their own keys, not
   rows, because they belong to no single subject: r re-check, S sync,
   U self-upgrade, C setup-new-machine, t theme, q quit — capitals for the
   ones that push, replace the binary, or converge the machine. Inside the
   open remote table: ↑↓ move the focused line, space selects the focused
   row's MECHANISM (every row that sweep covers lights up, since that's what
-  will actually run), a selects all, u upgrades the selection IN the floating
-  pane (the screen stays put and refreshes when it's done). Rows with no
+  will actually run), a selects all, enter (or u) upgrades the selection IN
+  the floating pane — the screen stays put and refreshes when it's done. Rows with no
   upgradable mechanism render `[–]` and refuse selection (custom-oracle rows,
   or an installer with no `upgrade`). `l` only ever OPENS — it never
   dispatches, so the vim keys can't start an install by accident.

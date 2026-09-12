@@ -135,6 +135,42 @@ class HomeKeysTest {
     }
 
     @Test
+    fun nothingFiresWhileAnAnswerIsStillComing() {
+        // Enter used to dispatch `outdated` over the ask already running.
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED, busy = true))
+        val m = model(sections)
+        assertEquals(false, m.handleKey(HomeKey.ENTER))
+        assertEquals(HomeAction.NONE, m.state.action)
+        assertEquals(false, m.state.exit)
+        assertTrue(m.state.message!!.contains("still asking"))
+
+        m.handleKey(HomeKey.OPEN)
+        assertEquals(false, m.state.expanded)
+    }
+
+    @Test
+    fun lookingIsLsJobAndEnterIsForActing() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                remote = RemoteStatus.Answered(listOf(update("kitty", "1", "2")), failedSources = 0),
+            ),
+        )
+        // enter no longer opens: it says which key does.
+        m.handleKey(HomeKey.ENTER)
+        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.message!!.contains("press l"))
+
+        m.handleKey(HomeKey.OPEN)
+        assertTrue(m.state.expanded)
+        // ...and h closes it, where enter would now upgrade.
+        m.handleKey(HomeKey.CLOSE)
+        assertEquals(false, m.state.expanded)
+    }
+
+    @Test
     fun enterActsOnTheFocusedLineOnly() {
         val m = model(sections)
         // A settled subject has no verb: enter says so instead of exiting.
@@ -149,7 +185,7 @@ class HomeKeysTest {
     }
 
     @Test
-    fun enterOnAnAnsweredRemoteOpensItInPlace() {
+    fun lOpensAnAnsweredRemoteInPlace() {
         val m = model(listOf(HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED)))
         m.setStateForTest(
             HomeState(
@@ -157,13 +193,13 @@ class HomeKeysTest {
                 remote = RemoteStatus.Answered(listOf(update("kitty", "1", "2")), failedSources = 0),
             ),
         )
-        // Already answered: enter shows the table here, it doesn't leave to ask again.
-        assertEquals(false, m.handleKey(HomeKey.ENTER))
+        // Already answered: the table shows here, it doesn't leave to ask again.
+        m.handleKey(HomeKey.OPEN)
         assertTrue(m.state.expanded)
         assertEquals(HomeAction.NONE, m.state.action)
         assertEquals(false, m.state.exit)
 
-        assertEquals(false, m.handleKey(HomeKey.ENTER))
+        m.handleKey(HomeKey.CLOSE)
         assertEquals(false, m.state.expanded)
     }
 
@@ -184,7 +220,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(sections = sections, remote = RemoteStatus.Answered(updates, failedSources = 0)),
         )
-        m.handleKey(HomeKey.ENTER, viewport = 5)
+        m.handleKey(HomeKey.OPEN, viewport = 5)
         assertTrue(m.state.expanded)
 
         // The arrows move the focused LINE; the window follows it.
@@ -290,8 +326,9 @@ class HomeKeysTest {
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("pm"), m.state.selection)
 
-        // u runs it HERE (floating pane), so the screen must not leave.
-        assertEquals(false, m.handleKey(HomeKey.UPGRADE_SELECTION, viewport = 5))
+        // enter is the upgrade key inside the table; it runs HERE, in the
+        // floating pane, so the screen must not leave.
+        assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
         assertEquals(HomeAction.NONE, m.state.action)
         assertEquals(false, m.state.exit)
     }

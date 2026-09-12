@@ -94,9 +94,10 @@ private fun HomeApp(model: HomeModel) {
         }
     }
     val width = if (size > 0) size else 80
-    // Detail lines an open section may use: the terminal minus the header,
-    // the four rows, the column heading and the footer.
-    val viewport = (rows - 10).coerceAtLeast(3)
+    // Detail lines an open section may use. Count the chrome exactly or the
+    // header scrolls off the top: header + blank + 4 rows + scroll hint +
+    // 3 footer lines + 1 spare, plus a line when there's a message.
+    val viewport = (rows - 11 - (if (s.message != null) 1 else 0)).coerceAtLeast(3)
 
     CompositionLocalProvider(LocalPalette provides paletteFor(s.dark)) {
       Box(modifier = Modifier.fillMaxSize()) {
@@ -125,7 +126,7 @@ private fun HomeApp(model: HomeModel) {
                     body += when (section.action) {
                         HomeAction.REVIEW_OUTDATED ->
                             RemoteTable(s.remote as? RemoteStatus.Answered, s, viewport, width)
-                        HomeAction.SHOW_DIFF -> FleetTable(s.fleet, s.scroll, viewport, width)
+                        HomeAction.SHOW_DIFF -> FleetTable(s.fleet, s.scroll, viewport, width, s.detailCursor)
                         else -> 0
                     }
                 } else if (focused && section.offenders.isNotEmpty()) {
@@ -262,10 +263,10 @@ private fun HomeSectionRow(
     if (focused && !expanded && section.offenders.isNotEmpty()) {
         val room = offenderRoom(rows)
         for (name in section.offenders.take(room)) {
-            Text("        $name", color = p.dim)
+            Text(DETAIL_INDENT + name, color = p.dim)
         }
         if (section.offenders.size > room) {
-            Text("        … and ${section.offenders.size - room} more", color = p.dim)
+            Text(DETAIL_INDENT + "… and ${section.offenders.size - room} more", color = p.dim)
         }
     }
 }
@@ -278,6 +279,10 @@ private fun offenderLines(section: HomeSection, rows: Int): Int {
     return section.offenders.take(room).size + if (section.offenders.size > room) 1 else 0
 }
 
+/** Detail lines sit one step in from their row, so the nesting reads. */
+private const val DETAIL_INDENT = "          "
+private const val DETAIL_FOCUS = "        ❯ "
+
 /** Truncate to [max] columns; a wrapped row shreds the table. */
 private fun clip(text: String, max: Int) = if (text.length <= max) text else text.take(max - 1) + "…"
 
@@ -287,12 +292,18 @@ private fun ScrollHint(total: Int, scroll: Int, viewport: Int) {
     val p = LocalPalette.current
     if (total <= viewport) return
     val last = (scroll + viewport).coerceAtMost(total)
-    Text("      ${scroll + 1}-$last of $total  ·  ↑↓ scrolls", color = p.dim)
+    Text(DETAIL_INDENT + "${scroll + 1}-$last of $total  ·  ↑↓ scrolls", color = p.dim)
 }
 
 /** The drifting half of `diff`, rendered under the fleet row. */
 @Composable
-private fun FleetTable(report: loadout.core.diff.DiffReport?, scroll: Int, viewport: Int, width: Int): Int {
+private fun FleetTable(
+    report: loadout.core.diff.DiffReport?,
+    scroll: Int,
+    viewport: Int,
+    width: Int,
+    cursor: Int,
+): Int {
     val p = LocalPalette.current
     val drifted = report?.rows?.filter { it.drift || it.incomplete }.orEmpty()
     if (report == null || drifted.isEmpty()) return 0
@@ -301,22 +312,36 @@ private fun FleetTable(report: loadout.core.diff.DiffReport?, scroll: Int, viewp
     val colWidth = ((width - 8 - nameWidth) / report.machines.size.coerceAtLeast(1))
         .coerceIn(8, report.machines.maxOf { it.length } + 2)
     Row {
-        Text("        ")
+        Text(DETAIL_INDENT + "  ")
         Text("".padEnd(nameWidth), color = p.dim)
         for (machine in report.machines) Text(clip(machine, colWidth - 1).padEnd(colWidth), color = p.machine)
     }
-    for (row in drifted.drop(scroll).take(viewport)) {
-        Row {
-            Text("      ")
-            Text(if (row.incomplete) "✘ " else "! ", color = if (row.incomplete) p.error else p.warn)
-            Text(clip(row.program, nameWidth - 1).padEnd(nameWidth))
-            for (machine in report.machines) {
-                val cell = when (val state = row.perMachine.getValue(machine)) {
-                    is InstallState.Installed -> state.version ?: "ok"
-                    InstallState.Missing -> "missing"
-                    InstallState.Unknown -> "-"
-                }
-                Text(clip(cell, colWidth - 1).padEnd(colWidth), color = if (row.drift) p.warn else p.dim)
+    for ((offset, row) in drifted.drop(scroll).take(viewport).withIndex()) {
+        val cells = report.machines.joinToString("") { machine ->
+            val cell = when (val state = row.perMachine.getValue(machine)) {
+                is InstallState.Installed -> state.version ?: "ok"
+                InstallState.Missing -> "missing"
+                InstallState.Unknown -> "-"
+            }
+            clip(cell, colWidth - 1).padEnd(colWidth)
+        }
+        if (scroll + offset == cursor) {
+            Text(
+                fit(
+                    DETAIL_FOCUS + (if (row.incomplete) "✘ " else "! ") +
+                        clip(row.program, nameWidth - 1).padEnd(nameWidth) + cells,
+                    width,
+                ),
+                color = p.selectionFg,
+                background = p.selectionBg,
+                textStyle = TextStyle.Bold,
+            )
+        } else {
+            Row {
+                Text(DETAIL_INDENT)
+                Text(if (row.incomplete) "✘ " else "! ", color = if (row.incomplete) p.error else p.warn)
+                Text(clip(row.program, nameWidth - 1).padEnd(nameWidth))
+                Text(cells, color = if (row.drift) p.warn else p.dim)
             }
         }
     }
@@ -337,7 +362,7 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
     val currentWidth = updates.maxOf { it.current.length }.coerceAtMost(16) + 2
     val candidateWidth = updates.maxOf { it.candidate.length }.coerceAtMost(16) + 2
     val sourceWidth = updates.maxOf { it.source.length }.coerceAtMost(12) + 2
-    val used = 12 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
+    val used = DETAIL_INDENT.length + 6 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
     for ((offset, row) in updates.drop(s.scroll).take(viewport).withIndex()) {
         val index = s.scroll + offset
         val focused = index == s.detailCursor
@@ -352,17 +377,33 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
             selected -> "[x] "
             else -> "[ ] "
         }
-        Row {
-            Text(if (focused) "    > " else "      ")
-            Text(box, color = if (selected) p.accent else p.dim)
-            Text("↑ ", color = p.warn)
-            Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
-            Text(clip(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
-            Text("-> ", color = p.dim)
-            Text(clip(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
-            Text(clip("[${row.source}]", sourceWidth), color = p.dim)
-            if (row.note.isNotEmpty() && width - used > 12) {
-                Text("  " + clip(row.note, width - used - 2), color = p.dim)
+        val line = box + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) +
+            clip(row.current, currentWidth - 1).padEnd(currentWidth) + "-> " +
+            clip(row.candidate, candidateWidth - 1).padEnd(candidateWidth) +
+            clip("[${row.source}]", sourceWidth) +
+            if (row.note.isNotEmpty() && width - used > 12) "  " + clip(row.note, width - used - 2) else ""
+        if (focused) {
+            // Same selection bar the section list and the maintain picker
+            // use: a lone caret was too quiet to find.
+            Text(
+                fit(DETAIL_FOCUS + line, width),
+                color = p.selectionFg,
+                background = p.selectionBg,
+                textStyle = TextStyle.Bold,
+            )
+        } else {
+            Row {
+                Text(DETAIL_INDENT)
+                Text(box, color = if (selected) p.accent else p.dim)
+                Text("↑ ", color = p.warn)
+                Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
+                Text(clip(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
+                Text("-> ", color = p.dim)
+                Text(clip(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
+                Text(clip("[${row.source}]", sourceWidth), color = p.dim)
+                if (row.note.isNotEmpty() && width - used > 12) {
+                    Text("  " + clip(row.note, width - used - 2), color = p.dim)
+                }
             }
         }
     }
@@ -374,54 +415,23 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
 private fun HomeFooter(s: HomeState, width: Int) {
     val p = LocalPalette.current
     Text("")
-    s.message?.let {
-        Text(fit(" $it", width), color = p.warn)
+    s.message?.let { Text(fit(" $it", width), color = p.warn) }
+    // Two fixed lines, clipped to the terminal: a wrapped footer unpins the
+    // bottom and the filler math goes with it.
+    val tight = width < 100
+    val context = when {
+        s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
+            if (tight) "↑↓ move · space select pm · a all · enter upgrade · h close"
+            else "↑↓ move  ·  space select its package manager  ·  a all  ·  enter/u upgrade" +
+                (if (s.selection.isEmpty()) "" else " ${s.selection.joinToString(", ")}") + "  ·  h/esc close"
+        s.expanded ->
+            if (tight) "↑↓ scroll · h close" else "↑↓/pgup/pgdn scroll  ·  h/esc close"
+        else ->
+            if (tight) "↑↓ move · l open · enter act" else "↑↓/jk move  ·  l/→ open  ·  enter act on this line"
     }
-    Row {
-        Text(" ")
-        if (s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED) {
-            Text("↑↓", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" move  ·  ", color = p.dim)
-            Text("space", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" select its package manager  ·  ", color = p.dim)
-            Text("a", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" all  ·  ", color = p.dim)
-            Text("u", color = p.accent, textStyle = TextStyle.Bold)
-            Text(
-                if (s.selection.isEmpty()) " upgrade  ·  "
-                else " upgrade ${s.selection.joinToString(", ")}  ·  ",
-                color = p.dim,
-            )
-            Text("enter/h", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" close", color = p.dim)
-        } else if (s.expanded) {
-            Text("↑↓/pgup/pgdn", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" scroll  ·  ", color = p.dim)
-            Text("enter/h/esc", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" close", color = p.dim)
-        } else {
-            Text("↑↓/jk", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" move  ·  ", color = p.dim)
-            Text("enter", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" act on this line  ·  ", color = p.dim)
-            Text("l", color = p.accent, textStyle = TextStyle.Bold)
-            Text(" open", color = p.dim)
-        }
-    }
-    // Verbs for the whole machine, always available.
-    Row {
-        Text(" ")
-        Text("r", color = p.accent, textStyle = TextStyle.Bold)
-        Text(" re-check  ·  ", color = p.dim)
-        Text("S", color = p.accent, textStyle = TextStyle.Bold)
-        Text(" sync  ·  ", color = p.dim)
-        Text("U", color = p.accent, textStyle = TextStyle.Bold)
-        Text(" upgrade loadout  ·  ", color = p.dim)
-        Text("C", color = p.accent, textStyle = TextStyle.Bold)
-        Text(" set up this machine  ·  ", color = p.dim)
-        Text("t", color = p.accent, textStyle = TextStyle.Bold)
-        Text(" theme  ·  ", color = p.dim)
-        Text("q", color = p.accent, textStyle = TextStyle.Bold)
-        Text(" quit", color = p.dim)
-    }
+    val verbs =
+        if (tight) "r re-check · S sync · U self-upgrade · C set up · t theme · q quit"
+        else "r re-check  ·  S sync  ·  U upgrade loadout  ·  C set up this machine  ·  t theme  ·  q quit"
+    Text(fit(" $context", width), color = p.dim)
+    Text(fit(" $verbs", width), color = p.dim)
 }

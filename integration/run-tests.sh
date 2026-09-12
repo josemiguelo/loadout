@@ -91,8 +91,10 @@ if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
     { sleep 3; printf 'q'; sleep 1; } \
         | script -qec "\"$BIN\" --repo repo --machine m1" tui-home.log >/dev/null || true
     grep -qa "loadout" tui-home.log || fail "the home screen renders"
-    # Styled words are separate Text nodes: grep one node's worth of text.
-    grep -qa "act on this line" tui-home.log || fail "the home screen says how to act"
+    # The footer is one clipped line, and its wording is compact on a narrow
+    # terminal — assert the keys, not the sentence.
+    grep -qa "enter act" tui-home.log || fail "the home screen says how to act"
+    grep -qa "l open" tui-home.log || fail "the home screen says how to look"
     grep -qa "programs" tui-home.log || fail "the home screen lists its subjects"
     grep -qai "Tty already bound" tui-home.log && fail "the home screen must not double-bind the tty" || true
     ok "bare loadout opens the home screen on a TTY, help without one"
