@@ -40,6 +40,8 @@ data class UpgradeRun(
     val confirming: Boolean = false,
     /** The exact commands, shown while confirming. */
     val commands: List<String> = emptyList(),
+    /** Package managers about to upgrade EVERYTHING they manage. */
+    val sweeps: List<String> = emptyList(),
     /**
      * Lines held back from the bottom. 0 follows the tail (the normal live
      * view); scrolling back pins the window so output can be read.
@@ -434,6 +436,7 @@ class HomeModel(private val app: AppContext) {
                 label = plan.joinToString(", ") { it.label },
                 confirming = true,
                 commands = plan.map { "[${it.label}]  ${it.command}" },
+                sweeps = plan.filter { it.sweep }.map { it.label },
             ),
         )
     }
@@ -465,7 +468,12 @@ class HomeModel(private val app: AppContext) {
                 return@launch
             }
             // The transaction moved what it moved: re-ask everything.
-            update { it.copy(label = "re-checking", log = it.log + "" + "re-checking every program…") }
+            update {
+                it.copy(
+                    label = "checking",
+                    log = it.log + "" + "Checking which installed versions changed…",
+                )
+            }
             val fresh = runCatching { app.refreshAndWriteState(m, sys) }
             stored = fresh.getOrNull() ?: stored
             val changed = fresh.getOrNull()?.let { after ->
@@ -475,9 +483,10 @@ class HomeModel(private val app: AppContext) {
             // Close the re-check in the log itself: a trailing "…" line reads
             // as still running, and the footer alone is easy to miss.
             val recheck = if (fresh.isSuccess) {
-                "re-check done — $changed declared program(s) changed version"
+                if (changed == 0) "Done. No program in your loadout changed version; state file updated."
+                else "Done. $changed program(s) in your loadout now have a new version; state file updated."
             } else {
-                "re-check failed: ${fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()}"
+                "Could not check installed versions: ${fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()}"
             }
             state = state.copy(
                 sections = sectionsOf(m, sys, stored, fleet(), state.remote),
@@ -490,8 +499,8 @@ class HomeModel(private val app: AppContext) {
                     // Name what failed: "finished with failures" makes you
                     // scroll back through everything to find out which.
                     summary = state.run?.failures.orEmpty().let { failed ->
-                        if (failed.isEmpty()) "$changed declared program(s) changed version — enter closes"
-                        else "failed: ${failed.joinToString()} — scroll back for the output"
+                        if (failed.isEmpty()) "$changed program(s) changed version — enter closes"
+                        else "failed: ${failed.joinToString()} — scroll up for the output"
                     },
                 ),
             )

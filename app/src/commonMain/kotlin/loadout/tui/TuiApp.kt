@@ -88,8 +88,23 @@ fun runMaintainTui(app: AppContext): Int {
         println("No opted-in scripts for this machine.")
         return 0
     }
-    runMosaicBlocking { MaintainApp(model) }
+    withHiddenCursor { runMosaicBlocking { MaintainApp(model) } }
     return model.state.exitCode
+}
+
+/**
+ * Mosaic redraws a frame by walking the cursor back up and rewriting each
+ * line, and leaves the cursor visible while it does — with a spinner
+ * ticking every 120ms that shows as a cursor hopping around the screen.
+ * Hide it for the app's lifetime; the finally puts it back even on a throw.
+ */
+internal fun withHiddenCursor(block: () -> Unit) {
+    print("\u001b[?25l")
+    try {
+        block()
+    } finally {
+        print("\u001b[?25h")
+    }
 }
 
 private fun maintainKeyOf(event: KeyEvent): MaintainKey? = when (event) {

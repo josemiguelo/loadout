@@ -37,7 +37,7 @@ fun runHomeTui(app: AppContext): HomeAction {
     val model = HomeModel(app)
     model.load()
     model.refresh()
-    runMosaicBlocking { HomeApp(model) }
+    withHiddenCursor { runMosaicBlocking { HomeApp(model) } }
     return model.state.action
 }
 
@@ -180,11 +180,16 @@ private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, paneRows: I
     }
     val edge = if (run.failed) p.error else p.accent
     val lines = if (run.confirming) {
-        listOf("These commands will run, in order:", "") + run.commands + listOf(
-            "",
-            "A package manager decides its own transaction — a sweep can change",
-            "more than the rows you picked.",
-        )
+        listOf("These commands will run, in order:", "") + run.commands +
+            if (run.sweeps.isEmpty()) {
+                emptyList()
+            } else {
+                listOf(
+                    "",
+                    "Note: ${run.sweeps.joinToString(", ")} will upgrade every package it manages,",
+                    "not only the ones listed above — that is how these package managers work.",
+                )
+            }
     } else {
         run.log
     }

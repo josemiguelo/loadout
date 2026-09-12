@@ -16,6 +16,8 @@ data class UpgradeStep(
     val command: String,
     /** The machine's programs these mechanisms install — what you'll see move. */
     val covers: List<String>,
+    /** True for a whole-mechanism sweep; false for one custom-source item. */
+    val sweep: Boolean = true,
 ) {
     /**
      * What to call this step on screen: a sweep is its mechanisms, a
@@ -23,8 +25,7 @@ data class UpgradeStep(
      * say which pin failed.
      */
     val label: String get() =
-        if (covers.size == 1 && installers.size == 1) "${installers.single()}: ${covers.single()}"
-        else installers.joinToString(", ")
+        if (sweep) installers.joinToString(", ") else "${installers.single()}: ${covers.single()}"
 }
 
 data class UpgradeOutcome(val step: UpgradeStep, val exitCode: Int) {
@@ -82,6 +83,7 @@ class UpgradeEngine(
                 installers = listOf(source),
                 command = expandFilePrefix(pattern).replace("{item}", item),
                 covers = listOf(item),
+                sweep = false,
             )
         }
     }
