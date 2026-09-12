@@ -47,10 +47,11 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
+| | `upgrade <programs>` | Move installed programs to newer versions — one transaction per installer (`--all`, or `--installer dnf` for the whole sweep) |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--pending` = the ones status didn't find done, `--force` overrides) |
 | | `maintain` | Interactive picker over the maintenance scripts — opens on the last observed verdicts with the unfinished ones already selected — live-streamed logs, checks as verdicts |
 | **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
-| | `upgrade` | Update the loadout binary itself — needs no repo, works even under a version-floor refusal |
+| | `self-upgrade` | Replace the loadout binary — needs no repo, works even under a version-floor refusal |
 | | `init` | Scaffold a new config repo |
 
 ## Quickstart

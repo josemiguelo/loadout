@@ -15,6 +15,7 @@ import loadout.cli.RunCommand
 import loadout.cli.SetupCommand
 import loadout.cli.StatusCommand
 import loadout.cli.SyncCommand
+import loadout.cli.SelfUpgradeCommand
 import loadout.cli.UpgradeCommand
 import loadout.core.LoadoutException
 import kotlin.system.exitProcess
@@ -34,6 +35,7 @@ fun main(args: Array<String>) {
                 DiffCommand(),
                 SyncCommand(),
                 UpgradeCommand(),
+                SelfUpgradeCommand(),
                 InitCommand(),
             )
             .main(args)

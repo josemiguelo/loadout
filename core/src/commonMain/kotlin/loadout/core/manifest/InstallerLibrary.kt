@@ -28,6 +28,11 @@ object InstallerLibrary {
 # `loadout installers --eject` writes this file into your repo when you
 # want to pin or patch it.
 #
+# `upgrade` upgrades EVERYTHING the mechanism manages — loadout has no
+# per-package form, because partial upgrades are unsupported on Arch and
+# discouraged on Fedora, and a package manager resolves its own transaction
+# regardless. Converge never runs it; `loadout upgrade` is the explicit verb.
+#
 # `outdated-all` asks the remote ONCE for everything ("<pkg> <candidate>"
 # lines) — that is the only oracle these need. The per-pkg `outdated` key
 # still exists for repos to use, but a batch oracle always wins over it
@@ -37,6 +42,7 @@ object InstallerLibrary {
 [installers.dnf]
 probe = "dnf"
 install = "sudo dnf install -y {pkg}"
+upgrade = "sudo dnf upgrade -y"
 check = "rpm -q {pkg}"
 outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
@@ -44,6 +50,7 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 [installers.brew]
 probe = "brew"
 install = "brew install {pkg}"
+upgrade = "brew upgrade"
 check = "brew list --versions {pkg}"
 outdated-all = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=${'$'}NF; gsub(/[()]/, \"\", v); print n, v}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
@@ -51,6 +58,7 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 [installers.brew-cask]
 probe = "brew"
 install = "brew install --cask {pkg}"
+upgrade = "brew upgrade --cask"
 check = "brew list --cask --versions {pkg}"
 outdated-all = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=${'$'}NF; gsub(/[()]/, \"\", v); print n, v}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
@@ -60,6 +68,7 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 [installers.flatpak]
 probe = "flatpak"
 install = "flatpak --user install -y flathub {pkg}"
+upgrade = "flatpak --user update -y"
 check = "flatpak --user info {pkg}"
 outdated-all = "flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk '{print $1, \"Version:\", $2}'"
 regex = "Version: ([0-9][0-9.]*)"
@@ -72,6 +81,7 @@ regex = "Version: ([0-9][0-9.]*)"
 probe = "dnf"
 params = ["repofile"]
 install = "sudo dnf config-manager addrepo --overwrite --from-repofile={repofile} && sudo dnf install -y {pkg}"
+upgrade = "sudo dnf upgrade -y"
 check = "rpm -q {pkg}"
 outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
@@ -81,6 +91,7 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 probe = "dnf"
 params = ["copr"]
 install = "sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}"
+upgrade = "sudo dnf upgrade -y"
 check = "rpm -q {pkg}"
 outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
@@ -91,12 +102,14 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 [installers.apt]
 probe = "apt-get"
 install = "sudo apt-get install -y {pkg}"
+upgrade = "sudo apt-get upgrade -y"
 check = "dpkg-query -W {pkg}"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 
 [installers.pacman]
 probe = "pacman"
 install = "sudo pacman -S --noconfirm {pkg}"
+upgrade = "sudo pacman -Syu --noconfirm"
 check = "pacman -Q {pkg}"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 """.trimIndent() + "\n"

@@ -73,7 +73,8 @@ core/  loadout.core
   detect/      Detection — os/distro/hostname + isBinaryAvailable probe (`command -v`)
   engine/      VersionChecker (concurrent checkAll), UpdateChecker (outdated
                oracles; exit code deliberately ignored), InstallEngine (plan/
-               execute), ScriptRunner, StatusEngine (observes
+               execute), UpgradeEngine (group per installer, run, re-check
+               everything), ScriptRunner, StatusEngine (observes
                programs AND scripts; all checks concurrent — read-only)
   diff/        DiffEngine — pure function: manifest × states -> DiffReport
   git/         GitClient — shells out to `git`, always cwd = repo root
@@ -83,12 +84,12 @@ app/   loadout
   Main.kt      Clikt dispatch (bare invocation prints help). Catches
                LoadoutException (+ okio.IOException) -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/explain/installers/setup-new-machine/install/outdated/maintain/run/diff/sync/upgrade/init).
+               one file per subcommand (status/explain/installers/setup-new-machine/install/upgrade/self-upgrade/outdated/maintain/run/diff/sync/init).
                SelfVersion = the one remote-self-check carve-out: status
                footer (6h cache read/written with Okio, fail-soft) +
                outdated self-row (fresh);
-               `upgrade` shells to INSTALL_COMMAND and needs no repo, so it
-               works under a min-tool-version refusal (which points at it)
+               `self-upgrade` shells to INSTALL_COMMAND and needs no repo, so
+               it works under a min-tool-version refusal (which points at it)
   tui/         MaintainModel (ALL state + logic, no rendering, unit-tested)
                + TuiApp.kt (Mosaic composables for the maintain screen only)
 ```
@@ -229,7 +230,31 @@ These came from explicit user decisions; don't "improve" them away:
     stderr>` line (UpdateChecker.sourceRows returns SourceResult{rows,error};
     OutdatedCommand prints errors even when no updates exist) — a crashing
     oracle can't masquerade as "nothing outdated" and silently hide updates
-    forever. Never write cross-variant `||` chains in checks.
+    forever. Installers may also declare `upgrade` (`{pkgs}` = the
+    space-joined list, ONE transaction per mechanism) and `upgrade-all`
+    (everything it manages). An installer that declares only `upgrade-all`
+    REFUSES selective upgrades by design — pacman is the shipped example,
+    because Arch does not support partial upgrades — and asking it for single
+    packages is an error naming the sweep. Never write cross-variant `||`
+    chains in checks.
+15. **Converge installs; `upgrade` upgrades — a whole mechanism at a time.**
+    `setup-new-machine`/`install` add what's MISSING and never touch a
+    version already there (the manifest declares "have kitty", not "have
+    kitty 0.49"). Moving versions is its own verb, `loadout upgrade
+    <installers…>|--all` (UpgradeEngine), and it NEVER upgrades single
+    packages: partial upgrades are unsupported on Arch, discouraged on
+    Fedora, and pointless elsewhere since the package manager resolves its
+    own transaction anyway. Naming a program is an error pointing at its
+    mechanism. Mechanisms sharing a command (dnf, dnf-repo, dnf-copr all run
+    `dnf upgrade -y`) are ONE step, deduped by command, and the UI groups by
+    the TOOL they drive (their probe), so ticking a brew row ticks casks too.
+    `plan` REFUSES an installer this machine's mapping doesn't use — without
+    that, a repo that maps nothing to brew could still run the real
+    `brew upgrade` through a built-in (it did, once, during development). The sweep touches
+    packages loadout doesn't declare — the plan says so. Afterwards EVERY
+    mapped program is re-checked, because the transaction moves what it
+    moves. The binary's own update is `self-upgrade` (renamed in 0.10.0;
+    needs no repo, so it survives a version-floor refusal).
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —
     0.2.0 itself broke 0.1 repos (string install values became variant
@@ -265,6 +290,10 @@ These came from explicit user decisions; don't "improve" them away:
   Dim/Invert/Italic` combined with `+`, neutral is `TextStyle.Empty` (no
   `.None`); colors `com.jakewharton.mosaic.ui.Color`. App stays alive while a
   `LaunchedEffect` runs — exit = remove the `awaitCancellation()` effect.
+- **TUI effect rule**: EVERY `LaunchedEffect` must stop when the model says
+  exit — `if (!s.exit) { LaunchedEffect(...) }`. An effect still looping keeps
+  `runMosaic` alive forever; the home screen's spinner effect hung the whole
+  integration suite this way (q pressed mid-refresh, spinner still ticking).
 - **TUI coroutine rule**: async work must NOT run on the composition's scope
   (`rememberCoroutineScope`) — a lingering job there keeps `runMosaic` from
   ever finishing (caused a q-after-refresh hang). MaintainModel owns its own
@@ -329,8 +358,14 @@ These came from explicit user decisions; don't "improve" them away:
   it; ↑↓/jk move, enter acts on the focused row, l/h (or ←/→) open and close
   a detail, pgup/pgdn scroll it. Machine-wide verbs are their own keys, not
   rows, because they belong to no single subject: r re-check, S sync,
-  U upgrade, C setup-new-machine, t theme, q quit — capitals for the ones
-  that push, replace the binary, or converge the machine. `l` only ever OPENS — it never
+  U self-upgrade, C setup-new-machine, t theme, q quit — capitals for the
+  ones that push, replace the binary, or converge the machine. Inside the
+  open remote table: ↑↓ move the focused line, space selects the focused
+  row's MECHANISM (every row that sweep covers lights up, since that's what
+  will actually run), a selects all, u upgrades the selection IN the floating
+  pane (the screen stays put and refreshes when it's done). Rows with no
+  upgradable mechanism render `[–]` and refuse selection (custom-oracle rows,
+  or an installer with no `upgrade`). `l` only ever OPENS — it never
   dispatches, so the vim keys can't start an install by accident.
   Rows whose answer is already in hand (remote, fleet) OPEN IT IN PLACE on
   enter instead of leaving — and they show nothing on focus, because their
@@ -345,6 +380,14 @@ These came from explicit user decisions; don't "improve" them away:
   DiffEngine compares, `cli/OutdatedQuery.kt`'s `outdatedReport()` asks the
   remotes for BOTH this screen and the `outdated` command, and every action
   dispatches to a real subcommand through `cli/Actions.kt`'s `dispatch()`.
+- **Floating pane**: Mosaic composites `Box` children in order, so the home
+  screen renders its run pane as a real overlay — `Box(fillMaxSize) { body;
+  RunPane() }` with `Modifier.align(Alignment.Center).background(...)`. Only
+  NON-INTERACTIVE commands may stream there: a sudo or confirm prompt behind
+  a pane is invisible, so `startUpgrade` refuses unless `sudo -n true`
+  succeeds (pointing at `sudo -v`), and install/setup/sync keep exiting into
+  the command instead. esc cancels a run (kills the child), enter closes a
+  finished one, and the rows refresh underneath without leaving the screen.
 - **One Mosaic app per process**: `runMosaicBlocking` binds the tty once and
   never releases it — a second call anywhere in the same process dies with
   `IllegalStateException: Tty already bound`. So the home screen cannot

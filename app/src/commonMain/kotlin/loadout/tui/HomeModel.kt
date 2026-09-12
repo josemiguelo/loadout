@@ -13,6 +13,9 @@ import loadout.core.model.Manifest
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
+import loadout.core.engine.UpgradeEngine
+import loadout.core.engine.VersionChecker
+import loadout.core.exec.RunningProcess
 import loadout.core.platform.blockingDispatcher
 import loadout.core.platform.envVar
 import loadout.core.platform.terminalBackgroundLuma
@@ -21,15 +24,45 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
+/** A run happening inside the screen, shown in the floating pane. */
+data class UpgradeRun(
+    val steps: List<String>,
+    val current: Int = 0,
+    val label: String = "",
+    val log: List<String> = emptyList(),
+    val done: Boolean = false,
+    val failed: Boolean = false,
+    val cancelled: Boolean = false,
+    val summary: String = "",
+)
+
 enum class HomeKey {
     UP, DOWN, PAGE_UP, PAGE_DOWN, ENTER, OPEN, CLOSE, ESC,
+    SELECT, SELECT_ALL, UPGRADE_SELECTION,
     REFRESH, SYNC, UPGRADE, CONVERGE, THEME, QUIT,
 }
 
 /** What the remotes have said so far — they're asked on open, not on demand. */
 sealed interface RemoteStatus {
     data object Asking : RemoteStatus
-    data class Answered(val updates: List<UpdateRow>, val failedSources: Int) : RemoteStatus {
+    data class Answered(
+        val updates: List<UpdateRow>,
+        val failedSources: Int,
+        /**
+         * Row name to the mechanism that can upgrade it. Upgrades are whole-
+         * mechanism, so picking a row means picking its installer.
+         */
+        val mechanismOf: Map<String, String> = emptyMap(),
+        /**
+         * Mechanism to the TOOL it drives (its probe binary): brew and
+         * brew-cask are both "brew", dnf/dnf-repo/dnf-copr are all "dnf".
+         * Selecting a row selects its tool — you upgrade brew, not formulae
+         * but not casks.
+         */
+        val toolOf: Map<String, String> = emptyMap(),
+        /** Tool to every mechanism it covers, for handing the engine names. */
+        val mechanismsOfTool: Map<String, List<String>> = emptyMap(),
+    ) : RemoteStatus {
         val names: List<String> get() = updates.map { it.name }
     }
     data class Unavailable(val reason: String) : RemoteStatus
@@ -76,6 +109,12 @@ data class HomeState(
     val expanded: Boolean = false,
     /** First visible line of the open detail. */
     val scroll: Int = 0,
+    /** Focused line inside the open detail. */
+    val detailCursor: Int = 0,
+    /** Rows ticked for upgrading, by program name. */
+    val selection: Set<String> = emptySet(),
+    /** The upgrade running in the floating pane, if any. */
+    val run: UpgradeRun? = null,
     val message: String? = null,
     val dark: Boolean = true,
     val exit: Boolean = false,
@@ -103,9 +142,12 @@ class HomeModel(private val app: AppContext) {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + blockingDispatcher)
+    private var running: RunningProcess? = null
+    private var cancelled = false
     private var manifest: Manifest? = null
     private var system: SystemInfo? = null
     private var stored: MachineState? = null
+    private var before: Map<String, String?> = emptyMap()
 
     /** Stored verdicts, on screen immediately. Call before runMosaic; may throw. */
     fun load() {
@@ -115,6 +157,7 @@ class HomeModel(private val app: AppContext) {
         system = sys
         val stored = app.stateStore.read(sys.machine)
         this.stored = stored
+        before = stored?.programs?.mapValues { it.value.version }.orEmpty()
         val report = fleet()
         state = state.copy(
             machine = sys.machine,
@@ -170,7 +213,25 @@ class HomeModel(private val app: AppContext) {
         // unauthenticated API is rate-limited. `outdated` asks fresh.
         val remote = runCatching { outdatedReport(app, m, sys, observed, freshSelfCheck = false) }
             .fold(
-                onSuccess = { r -> RemoteStatus.Answered(r.updates, r.errors.size) },
+                onSuccess = { r ->
+                    val mapping = m.machines[sys.machine]?.pm.orEmpty()
+                    val used = UpgradeEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
+                        .upgradableInstallers(m, sys.machine)
+                    RemoteStatus.Answered(
+                        updates = r.updates,
+                        failedSources = r.errors.size,
+                        mechanismOf = r.updates.mapNotNull { row ->
+                            val key = mapping[row.name] ?: return@mapNotNull null
+                            m.resolveInstall(row.name, key).upgradeWith?.let { row.name to it.installer }
+                        }.toMap(),
+                        // ONLY mechanisms this machine's mapping uses. Grouping
+                        // every installer that shares a probe would reach the
+                        // built-in `brew` from a repo that never maps it — and
+                        // then upgrade the real Homebrew.
+                        toolOf = used.keys.associateWith { m.installers[it]?.probe ?: it },
+                        mechanismsOfTool = used.keys.groupBy { m.installers[it]?.probe ?: it },
+                    )
+                },
                 onFailure = { e ->
                     RemoteStatus.Unavailable(e.message?.lineSequence()?.firstOrNull() ?: "unreachable")
                 },
@@ -192,6 +253,20 @@ class HomeModel(private val app: AppContext) {
      */
     fun handleKey(key: HomeKey, viewport: Int = 8): Boolean {
         val s = state
+        // The floating pane owns the keyboard while it's up.
+        s.run?.let { run ->
+            when (key) {
+                HomeKey.ESC, HomeKey.QUIT -> if (run.done) {
+                    state = s.copy(run = null, selection = emptySet())
+                } else {
+                    cancelRun()
+                }
+                HomeKey.ENTER -> if (run.done) state = s.copy(run = null, selection = emptySet())
+                HomeKey.THEME -> state = s.copy(dark = !s.dark)
+                else -> {}
+            }
+            return false
+        }
         // Verbs that belong to the machine, not to a row: same key in either
         // mode. Each leaves the screen so the command owns the terminal.
         when (key) {
@@ -202,13 +277,37 @@ class HomeModel(private val app: AppContext) {
         }
         // With a detail open the arrows belong to it, not to the section list.
         if (s.expanded) {
+            val answered = s.remote as? RemoteStatus.Answered
+            val onRemote = s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED
             when (key) {
-                HomeKey.UP -> scrollBy(-1, viewport)
-                HomeKey.DOWN -> scrollBy(1, viewport)
-                HomeKey.PAGE_UP -> scrollBy(-viewport, viewport)
-                HomeKey.PAGE_DOWN -> scrollBy(viewport, viewport)
-                HomeKey.ENTER, HomeKey.ESC, HomeKey.CLOSE -> state = s.copy(expanded = false, scroll = 0)
+                HomeKey.UP -> moveDetail(-1, viewport)
+                HomeKey.DOWN -> moveDetail(1, viewport)
+                HomeKey.PAGE_UP -> moveDetail(-viewport, viewport)
+                HomeKey.PAGE_DOWN -> moveDetail(viewport, viewport)
+                HomeKey.ENTER, HomeKey.ESC, HomeKey.CLOSE ->
+                    state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
                 HomeKey.OPEN -> {} // already open
+                HomeKey.SELECT -> if (onRemote && answered != null) {
+                    // Selecting a package selects its MECHANISM: loadout only
+                    // does whole upgrades, so anything else would be a lie
+                    // about what pressing u will run.
+                    val row = answered.updates.getOrNull(s.detailCursor)
+                    val tool = row?.let { answered.toolOf[answered.mechanismOf[it.name]] }
+                    state = when {
+                        row == null -> s
+                        tool == null -> s.copy(message = "${row.name} has no mechanism loadout can upgrade")
+                        tool in s.selection -> s.copy(selection = s.selection - tool, message = null)
+                        else -> s.copy(selection = s.selection + tool, message = null)
+                    }
+                }
+                HomeKey.SELECT_ALL -> if (onRemote && answered != null) {
+                    val every = answered.mechanismOf.values.mapNotNull { answered.toolOf[it] }.toSet()
+                    state = s.copy(selection = if (s.selection.containsAll(every)) emptySet() else every)
+                }
+                HomeKey.UPGRADE_SELECTION -> if (onRemote && answered != null && s.selection.isNotEmpty()) {
+                    // Selection is by tool; the engine takes mechanisms.
+                    startUpgrade(s.selection.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted())
+                }
                 HomeKey.THEME -> state = s.copy(dark = !s.dark)
                 HomeKey.REFRESH -> refresh()
                 HomeKey.QUIT -> state = s.copy(exit = true)
@@ -224,7 +323,7 @@ class HomeModel(private val app: AppContext) {
             HomeKey.OPEN -> {
                 val section = s.sections.getOrNull(s.cursor)
                 state = if (detailLines(s, section) > 0) {
-                    s.copy(expanded = true, scroll = 0)
+                    s.copy(expanded = true, scroll = 0, detailCursor = 0)
                 } else {
                     s.copy(message = "nothing to open there — enter acts on it")
                 }
@@ -235,7 +334,7 @@ class HomeModel(private val app: AppContext) {
                 // When the answer is already in hand, enter opens it HERE
                 // rather than leaving the screen to ask the same question.
                 if (detailLines(s, section) > 0) {
-                    state = s.copy(expanded = true, scroll = 0)
+                    state = s.copy(expanded = true, scroll = 0, detailCursor = 0)
                 } else if (section.action == HomeAction.NONE) {
                     state = s.copy(message = "nothing to do there")
                 } else {
@@ -253,9 +352,93 @@ class HomeModel(private val app: AppContext) {
         return false
     }
 
+    /**
+     * Upgrade the chosen mechanisms HERE, streaming into the floating pane.
+     * Only non-interactive commands can live in the pane — a password prompt
+     * behind it would be invisible — so sudo's cache must already be warm.
+     */
+    fun startUpgrade(installers: List<String>) {
+        val m = manifest ?: return
+        val sys = system ?: return
+        if (state.run != null) return
+        val engine = UpgradeEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
+        val plan = runCatching { engine.plan(m, sys.machine, installers) }.getOrElse { e ->
+            state = state.copy(message = e.message?.lineSequence()?.firstOrNull())
+            return
+        }
+        if (plan.any { "sudo" in it.command } && !app.runner.capture("sudo -n true").success) {
+            state = state.copy(message = "sudo needs a password — run `sudo -v` in a terminal, then press u again")
+            return
+        }
+        cancelled = false
+        state = state.copy(
+            expanded = false,
+            run = UpgradeRun(steps = plan.map { it.label }, label = plan.first().label),
+        )
+        scope.launch {
+            for ((index, step) in plan.withIndex()) {
+                if (cancelled) break
+                update { it.copy(current = index, label = step.label, log = it.log + "$ ${step.command}") }
+                val exit = app.runner.stream(
+                    step.command,
+                    workDir = app.repoRoot.toString(),
+                    onStart = { running = it },
+                ) { line -> if (!cancelled) appendRun(displayLines(line)) }
+                running = null
+                if (cancelled) break
+                appendRun(listOf("exit $exit"))
+                if (exit != 0) update { it.copy(failed = true) }
+            }
+            if (cancelled) {
+                update { it.copy(done = true, cancelled = true, summary = "cancelled — state not refreshed") }
+                return@launch
+            }
+            // The transaction moved what it moved: re-ask everything.
+            update { it.copy(label = "re-checking", log = it.log + "" + "re-checking every program…") }
+            val fresh = runCatching { app.refreshAndWriteState(m, sys) }
+            stored = fresh.getOrNull() ?: stored
+            val changed = fresh.getOrNull()?.let { after ->
+                after.programs.count { (name, now) -> now.version != null && now.version != before[name] }
+            } ?: 0
+            before = stored?.programs?.mapValues { it.value.version }.orEmpty()
+            state = state.copy(
+                sections = sectionsOf(m, sys, stored, fleet(), state.remote),
+                run = state.run?.copy(
+                    done = true,
+                    summary = if (state.run?.failed == true) "finished with failures — enter closes"
+                    else "$changed declared program(s) changed version — enter closes",
+                ),
+            )
+        }
+    }
+
+    private fun update(transform: (UpgradeRun) -> UpgradeRun) {
+        state = state.copy(run = state.run?.let(transform))
+    }
+
+    private fun appendRun(lines: List<String>) {
+        if (lines.isEmpty()) return
+        update { it.copy(log = (it.log + lines).takeLast(MAX_RUN_LINES)) }
+    }
+
+    private fun cancelRun() {
+        cancelled = true
+        running?.kill()
+    }
+
     private fun leaveFor(action: HomeAction): Boolean {
         state = state.copy(action = action, exit = true)
         return true
+    }
+
+    /** Move the focused detail line, keeping it inside the visible window. */
+    private fun moveDetail(delta: Int, viewport: Int) {
+        val s = state
+        val total = detailLines(s, s.sections.getOrNull(s.cursor))
+        if (total == 0) return
+        val cursor = (s.detailCursor + delta).coerceIn(0, total - 1)
+        val scroll = s.scroll.coerceIn((cursor - viewport + 1).coerceAtLeast(0), cursor)
+        state = s.copy(detailCursor = cursor, scroll = scroll.coerceAtMost((total - viewport).coerceAtLeast(0)))
     }
 
     private fun scrollBy(delta: Int, viewport: Int) {
@@ -265,6 +448,9 @@ class HomeModel(private val app: AppContext) {
         state = s.copy(scroll = (s.scroll + delta).coerceIn(0, max))
     }
 }
+
+/** Log lines the pane keeps; the viewer tails a long run. */
+private const val MAX_RUN_LINES = 5_000
 
 /** How many detail lines this section can open in place (0 = none). */
 internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (section?.action) {

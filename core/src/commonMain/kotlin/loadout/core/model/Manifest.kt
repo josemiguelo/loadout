@@ -75,6 +75,7 @@ data class Manifest(
             } else {
                 null
             },
+            upgradeWith = installer?.upgrade?.let { UpgradeMechanism(installerName ?: return@let null, it) },
         )
     }
 
@@ -99,6 +100,14 @@ data class ResolvedInstall(
     val outdated: VersionCheck?,
     /** The installer's batch oracle covering this variant, when it has one. */
     val outdatedAll: BatchOracle? = null,
+    /** How this variant upgrades in place, when its mechanism can. */
+    val upgradeWith: UpgradeMechanism? = null,
+)
+
+/** How a variant's mechanism upgrades: all of it, in one command. */
+data class UpgradeMechanism(
+    val installer: String,
+    val command: String,
 )
 
 /**
@@ -146,6 +155,14 @@ data class Installer(
      */
     @SerialName("outdated-all")
     val outdatedAll: String? = null,
+    /**
+     * Upgrade EVERYTHING this mechanism manages, in one command — there is
+     * no per-package form on purpose (contract 15): partial upgrades are
+     * unsupported on Arch, discouraged on Fedora, and a package manager
+     * resolves its own transaction anyway. Converge never runs this;
+     * `loadout upgrade` is the explicit verb.
+     */
+    val upgrade: String? = null,
 )
 
 /**

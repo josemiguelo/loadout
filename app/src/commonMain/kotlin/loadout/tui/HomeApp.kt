@@ -9,8 +9,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jakewharton.mosaic.layout.KeyEvent
 import com.jakewharton.mosaic.layout.onKeyEvent
+import com.jakewharton.mosaic.layout.fillMaxSize
+import com.jakewharton.mosaic.layout.padding
 import com.jakewharton.mosaic.modifier.Modifier
 import com.jakewharton.mosaic.runMosaicBlocking
+import com.jakewharton.mosaic.ui.Alignment
+import com.jakewharton.mosaic.ui.Box
+import com.jakewharton.mosaic.ui.BoxScope
 import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Row
 import com.jakewharton.mosaic.ui.Text
@@ -26,7 +31,7 @@ import kotlinx.coroutines.delay
 
 /**
  * Opens the home screen and returns what the user chose. The caller runs it
- * — outside Mosaic, so the action owns the terminal — and reopens.
+ * — outside Mosaic, so the action owns the terminal.
  */
 fun runHomeTui(app: AppContext): HomeAction {
     val model = HomeModel(app)
@@ -45,6 +50,9 @@ private fun homeKeyOf(event: KeyEvent): HomeKey? = when (event) {
     KeyEvent("PageDown") -> HomeKey.PAGE_DOWN
     KeyEvent("Enter") -> HomeKey.ENTER
     KeyEvent("Escape") -> HomeKey.ESC
+    KeyEvent(" ") -> HomeKey.SELECT
+    KeyEvent("a") -> HomeKey.SELECT_ALL
+    KeyEvent("u") -> HomeKey.UPGRADE_SELECTION
     KeyEvent("r") -> HomeKey.REFRESH
     // Capitals for the consequential ones: S pushes, U replaces the binary,
     // C converges the machine.
@@ -61,22 +69,28 @@ private fun HomeApp(model: HomeModel) {
     val s = model.state
 
     var spin by remember { mutableIntStateOf(0) }
-    val spinning = s.loading || s.remote is RemoteStatus.Asking
-    LaunchedEffect(spinning) {
-        while (spinning) {
-            delay(120)
-            spin++
+    val spinning = s.loading || s.remote is RemoteStatus.Asking || s.run?.done == false
+    // EVERY effect must stop on exit: one still running keeps runMosaic alive
+    // forever — quitting mid-refresh used to hang the screen.
+    if (!s.exit) {
+        LaunchedEffect(spinning) {
+            while (spinning) {
+                delay(120)
+                spin++
+            }
         }
     }
 
     // Mosaic doesn't report the real TTY size; poll it (see AGENTS).
     var size by remember { mutableIntStateOf(0) }
     var rows by remember { mutableIntStateOf(24) }
-    LaunchedEffect(s.exit) {
-        while (!s.exit) {
-            size = terminalColumns() ?: 80
-            rows = terminalRows() ?: 24
-            delay(300)
+    if (!s.exit) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                size = terminalColumns() ?: 80
+                rows = terminalRows() ?: 24
+                delay(300)
+            }
         }
     }
     val width = if (size > 0) size else 80
@@ -85,6 +99,7 @@ private fun HomeApp(model: HomeModel) {
     val viewport = (rows - 10).coerceAtLeast(3)
 
     CompositionLocalProvider(LocalPalette provides paletteFor(s.dark)) {
+      Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.onKeyEvent { event ->
                 homeKeyOf(event)?.let { model.handleKey(it, viewport) } != null
@@ -109,12 +124,7 @@ private fun HomeApp(model: HomeModel) {
                 if (focused && s.expanded) {
                     body += when (section.action) {
                         HomeAction.REVIEW_OUTDATED ->
-                            RemoteTable(
-                                (s.remote as? RemoteStatus.Answered)?.updates.orEmpty(),
-                                s.scroll,
-                                viewport,
-                                width,
-                            )
+                            RemoteTable(s.remote as? RemoteStatus.Answered, s, viewport, width)
                         HomeAction.SHOW_DIFF -> FleetTable(s.fleet, s.scroll, viewport, width)
                         else -> 0
                     }
@@ -130,9 +140,60 @@ private fun HomeApp(model: HomeModel) {
             repeat((rows - body - footer - 1).coerceAtLeast(0)) { Text("") }
             HomeFooter(s, width)
         }
+        s.run?.let { RunPane(it, spin, width, rows) }
+      }
     }
     if (!s.exit) {
         LaunchedEffect(Unit) { awaitCancellation() }
+    }
+}
+
+/**
+ * The floating pane: a real overlay (Mosaic's Box composites children in
+ * order), centred over the screen, tailing whatever is running. Only
+ * non-interactive commands stream here — a password prompt behind a pane is
+ * invisible, so sudo's cache has to be warm before we start.
+ */
+@Composable
+private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, rows: Int) {
+    val p = LocalPalette.current
+    // 80% of the viewport, both ways.
+    val paneWidth = (width * 8 / 10).coerceIn(40, width - 2)
+    val paneRows = (rows * 8 / 10).coerceIn(6, rows - 3)
+    val inner = paneWidth - 4
+    val title = when {
+        run.cancelled -> "cancelled"
+        run.done && run.failed -> "upgrade failed"
+        run.done -> "upgrade finished"
+        else -> "upgrading ${run.label}  ${SPINNER[spin % SPINNER.size]}"
+    }
+    val edge = if (run.failed) p.error else p.accent
+    // No background modifier: the pane's own spaces hide what's behind it,
+    // so it sits on the TERMINAL's background and follows dark/light like
+    // everything else. A painted panel colour would fight the theme.
+    Column(modifier = Modifier.align(Alignment.Center)) {
+        Text(fit("╭─ $title ".padEnd(paneWidth - 1, '─') + "╮", paneWidth), color = edge)
+        val body = run.log.takeLast(paneRows)
+        for (line in body) {
+            Row {
+                Text("│ ", color = edge)
+                Text(clip(line, inner).padEnd(inner))
+                Text(" │", color = edge)
+            }
+        }
+        // Keep the pane a stable size while output trickles in.
+        repeat((paneRows - body.size).coerceAtLeast(0)) {
+            Row {
+                Text("│ ", color = edge)
+                Text(" ".repeat(inner))
+                Text(" │", color = edge)
+            }
+        }
+        val footer = when {
+            run.done -> run.summary.ifEmpty { "enter closes" }
+            else -> "step ${run.current + 1} of ${run.steps.size}  ·  esc cancels"
+        }
+        Text(fit("╰─ $footer ".padEnd(paneWidth - 1, '─') + "╯", paneWidth), color = edge)
     }
 }
 
@@ -266,8 +327,9 @@ private fun FleetTable(report: loadout.core.diff.DiffReport?, scroll: Int, viewp
 
 /** The `outdated` table, rendered under the row that answered it. */
 @Composable
-private fun RemoteTable(updates: List<UpdateRow>, scroll: Int, viewport: Int, width: Int): Int {
+private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport: Int, width: Int): Int {
     val p = LocalPalette.current
+    val updates = answered?.updates.orEmpty()
     if (updates.isEmpty()) return 0
     // Columns are capped, not just padded: one long name would otherwise
     // wrap every row and shred the table.
@@ -275,10 +337,24 @@ private fun RemoteTable(updates: List<UpdateRow>, scroll: Int, viewport: Int, wi
     val currentWidth = updates.maxOf { it.current.length }.coerceAtMost(16) + 2
     val candidateWidth = updates.maxOf { it.candidate.length }.coerceAtMost(16) + 2
     val sourceWidth = updates.maxOf { it.source.length }.coerceAtMost(12) + 2
-    val used = 8 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
-    for (row in updates.drop(scroll).take(viewport)) {
+    val used = 12 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
+    for ((offset, row) in updates.drop(s.scroll).take(viewport).withIndex()) {
+        val index = s.scroll + offset
+        val focused = index == s.detailCursor
+        // [x] picked · [ ] could be · [–] loadout has no way to upgrade it.
+        // Ticked by TOOL: picking a brew row picks casks too, and any dnf
+        // row picks dnf-repo and dnf-copr — that's what the upgrade does.
+        val mechanism = answered?.mechanismOf?.get(row.name)
+        val tool = mechanism?.let { answered.toolOf[it] }
+        val selected = tool != null && tool in s.selection
+        val box = when {
+            mechanism == null -> "[–] "
+            selected -> "[x] "
+            else -> "[ ] "
+        }
         Row {
-            Text("      ")
+            Text(if (focused) "    > " else "      ")
+            Text(box, color = if (selected) p.accent else p.dim)
             Text("↑ ", color = p.warn)
             Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
             Text(clip(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
@@ -290,8 +366,8 @@ private fun RemoteTable(updates: List<UpdateRow>, scroll: Int, viewport: Int, wi
             }
         }
     }
-    ScrollHint(updates.size, scroll, viewport)
-    return updates.drop(scroll).take(viewport).size + if (updates.size > viewport) 1 else 0
+    ScrollHint(updates.size, s.scroll, viewport)
+    return updates.drop(s.scroll).take(viewport).size + if (updates.size > viewport) 1 else 0
 }
 
 @Composable
@@ -303,7 +379,22 @@ private fun HomeFooter(s: HomeState, width: Int) {
     }
     Row {
         Text(" ")
-        if (s.expanded) {
+        if (s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED) {
+            Text("↑↓", color = p.accent, textStyle = TextStyle.Bold)
+            Text(" move  ·  ", color = p.dim)
+            Text("space", color = p.accent, textStyle = TextStyle.Bold)
+            Text(" select its package manager  ·  ", color = p.dim)
+            Text("a", color = p.accent, textStyle = TextStyle.Bold)
+            Text(" all  ·  ", color = p.dim)
+            Text("u", color = p.accent, textStyle = TextStyle.Bold)
+            Text(
+                if (s.selection.isEmpty()) " upgrade  ·  "
+                else " upgrade ${s.selection.joinToString(", ")}  ·  ",
+                color = p.dim,
+            )
+            Text("enter/h", color = p.accent, textStyle = TextStyle.Bold)
+            Text(" close", color = p.dim)
+        } else if (s.expanded) {
             Text("↑↓/pgup/pgdn", color = p.accent, textStyle = TextStyle.Bold)
             Text(" scroll  ·  ", color = p.dim)
             Text("enter/h/esc", color = p.accent, textStyle = TextStyle.Bold)

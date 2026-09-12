@@ -187,15 +187,22 @@ class HomeKeysTest {
         m.handleKey(HomeKey.ENTER, viewport = 5)
         assertTrue(m.state.expanded)
 
+        // The arrows move the focused LINE; the window follows it.
         m.handleKey(HomeKey.DOWN, viewport = 5)
-        assertEquals(1, m.state.scroll)
-        assertEquals(0, m.state.cursor, "arrows scroll the detail, they don't move between rows")
+        assertEquals(1, m.state.detailCursor)
+        assertEquals(0, m.state.scroll, "no need to scroll while the line is visible")
+        assertEquals(0, m.state.cursor, "arrows belong to the detail, not the section list")
 
         m.handleKey(HomeKey.PAGE_DOWN, viewport = 5)
-        assertEquals(6, m.state.scroll)
+        assertEquals(6, m.state.detailCursor)
+        assertEquals(2, m.state.scroll)
+
         repeat(20) { m.handleKey(HomeKey.PAGE_DOWN, viewport = 5) }
-        assertEquals(15, m.state.scroll, "the last page stops at the end")
+        assertEquals(19, m.state.detailCursor, "the last line stops at the end")
+        assertEquals(15, m.state.scroll)
+
         repeat(30) { m.handleKey(HomeKey.UP, viewport = 5) }
+        assertEquals(0, m.state.detailCursor)
         assertEquals(0, m.state.scroll)
 
         m.handleKey(HomeKey.ESC, viewport = 5)
@@ -259,6 +266,73 @@ class HomeKeysTest {
         )
         assertEquals(true, m.handleKey(HomeKey.SYNC))
         assertEquals(HomeAction.SYNC, m.state.action)
+    }
+
+    @Test
+    fun selectingAPackageSelectsItsWholeMechanism() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        val rows = listOf(update("alpha", "1", "2"), update("bravo", "1", "2"), update("oracle", "a", "b"))
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                expanded = true,
+                remote = RemoteStatus.Answered(
+                    updates = rows,
+                    failedSources = 0,
+                    mechanismOf = mapOf("alpha" to "pm", "bravo" to "pm"),
+                    toolOf = mapOf("pm" to "pm"),
+                    mechanismsOfTool = mapOf("pm" to listOf("pm")),
+                ),
+            ),
+        )
+        // One key, one mechanism — loadout never upgrades a single package.
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertEquals(setOf("pm"), m.state.selection)
+
+        // u runs it HERE (floating pane), so the screen must not leave.
+        assertEquals(false, m.handleKey(HomeKey.UPGRADE_SELECTION, viewport = 5))
+        assertEquals(HomeAction.NONE, m.state.action)
+        assertEquals(false, m.state.exit)
+    }
+
+    @Test
+    fun theFloatingPaneOwnsTheKeyboardWhileItRuns() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(sections = sections, run = UpgradeRun(steps = listOf("pm"), label = "pm")),
+        )
+        // Mid-run: q cancels the run, it does not quit the screen.
+        m.handleKey(HomeKey.QUIT)
+        assertEquals(false, m.state.exit)
+
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                selection = setOf("pm"),
+                run = UpgradeRun(steps = listOf("pm"), label = "pm", done = true, summary = "done"),
+            ),
+        )
+        m.handleKey(HomeKey.ENTER)
+        assertEquals(null, m.state.run, "enter closes a finished pane")
+        assertTrue(m.state.selection.isEmpty(), "and clears what it just upgraded")
+    }
+
+    @Test
+    fun aRowWithNoMechanismSaysSoInsteadOfTicking() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                expanded = true,
+                remote = RemoteStatus.Answered(listOf(update("oracle", "a", "b")), failedSources = 0),
+            ),
+        )
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertTrue(m.state.selection.isEmpty())
+        assertTrue(m.state.message!!.contains("no mechanism"))
     }
 
     @Test
