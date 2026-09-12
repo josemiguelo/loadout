@@ -9,6 +9,8 @@ package loadout.theme
 data class Rgb(val r: Int, val g: Int, val b: Int)
 
 data class ThemePalette(
+    /** Body text. Explicit so an overlay can paint over coloured cells. */
+    val text: Rgb,
     val accent: Rgb,
     val onAccent: Rgb,
     val machine: Rgb,
@@ -22,6 +24,7 @@ data class ThemePalette(
 
 /** Tokyo Night. */
 val DARK_THEME = ThemePalette(
+    text = Rgb(0xc0, 0xca, 0xf5),
     accent = Rgb(0x7a, 0xa2, 0xf7),
     onAccent = Rgb(0x1a, 0x1b, 0x26),
     machine = Rgb(0xbb, 0x9a, 0xf7),
@@ -37,6 +40,7 @@ val DARK_THEME = ThemePalette(
 
 /** Light: vivid-but-readable on white (GitHub-light-like saturation). */
 val LIGHT_THEME = ThemePalette(
+    text = Rgb(0x37, 0x60, 0xbf),
     // Navy, not GitHub's #0969da: on white the lighter blue sat too close to
     // the dark palette's pastel accent to read as a different mode.
     accent = Rgb(0x03, 0x3a, 0x85),

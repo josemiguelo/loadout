@@ -472,12 +472,20 @@ class HomeModel(private val app: AppContext) {
                 after.programs.count { (name, now) -> now.version != null && now.version != before[name] }
             } ?: 0
             before = stored?.programs?.mapValues { it.value.version }.orEmpty()
+            // Close the re-check in the log itself: a trailing "…" line reads
+            // as still running, and the footer alone is easy to miss.
+            val recheck = if (fresh.isSuccess) {
+                "re-check done — $changed declared program(s) changed version"
+            } else {
+                "re-check failed: ${fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()}"
+            }
             state = state.copy(
                 sections = sectionsOf(m, sys, stored, fleet(), state.remote),
                 // The table underneath still lists what was just upgraded;
                 // ask again so it's true when the pane closes.
                 remote = RemoteStatus.Asking,
                 run = state.run?.copy(
+                    log = state.run?.log.orEmpty() + recheck,
                     done = true,
                     // Name what failed: "finished with failures" makes you
                     // scroll back through everything to find out which.

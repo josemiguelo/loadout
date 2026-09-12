@@ -113,11 +113,16 @@ private fun HomeApp(model: HomeModel) {
             HomeHeader(s, width)
             Text("")
             var body = 2
+            // While the pane is up, nothing underneath is focused: a selection
+            // bar's background would bleed through the pane's cells, and the
+            // keyboard belongs to the pane regardless.
+            val overlay = s.run != null
             for ((index, section) in s.sections.withIndex()) {
                 val focused = index == s.cursor
                 HomeSectionRow(
                     section,
                     focused = focused,
+                    highlight = !overlay,
                     width = width,
                     rows = rows,
                     expanded = s.expanded,
@@ -129,8 +134,9 @@ private fun HomeApp(model: HomeModel) {
                 if (focused && s.expanded) {
                     body += when (section.action) {
                         HomeAction.REVIEW_OUTDATED ->
-                            RemoteTable(s.remote as? RemoteStatus.Answered, s, viewport, width)
-                        HomeAction.SHOW_DIFF -> FleetTable(s.fleet, s.scroll, viewport, width, s.detailCursor)
+                            RemoteTable(s.remote as? RemoteStatus.Answered, s, viewport, width, highlight = !overlay)
+                        HomeAction.SHOW_DIFF ->
+                            FleetTable(s.fleet, s.scroll, viewport, width, if (overlay) -1 else s.detailCursor)
                         else -> 0
                     }
                 } else if (focused && section.offenders.isNotEmpty()) {
@@ -189,10 +195,14 @@ private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, paneRows: I
     // everything else. A painted panel colour would fight the theme.
     Column(modifier = Modifier.align(Alignment.Center)) {
         Text(fit("╭─ $title ".padEnd(paneWidth - 1, '─') + "╮", paneWidth), color = edge)
+        // An explicit foreground on every cell: Mosaic composites per cell,
+        // and an uncoloured character inherits the colour of whatever was
+        // underneath — which made the half of the pane over the dim columns
+        // come out dim.
         for (line in window) {
             Row {
                 Text("│ ", color = edge)
-                Text(clip(line, inner).padEnd(inner))
+                Text(clip(line, inner).padEnd(inner), color = p.text)
                 Text(" │", color = edge)
             }
         }
@@ -200,7 +210,7 @@ private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, paneRows: I
         repeat((paneRows - window.size).coerceAtLeast(0)) {
             Row {
                 Text("│ ", color = edge)
-                Text(" ".repeat(inner))
+                Text(" ".repeat(inner), color = p.text)
                 Text(" │", color = edge)
             }
         }
@@ -237,6 +247,7 @@ private fun HomeSectionRow(
     rows: Int,
     expanded: Boolean = false,
     spin: Int = 0,
+    highlight: Boolean = true,
 ) {
     val p = LocalPalette.current
     val marker = when {
@@ -260,7 +271,7 @@ private fun HomeSectionRow(
         else -> "${section.summary}  $frame"
     }
     val line = "  " + section.subject.padEnd(11) + summary.padEnd(42)
-    if (focused) {
+    if (focused && highlight) {
         Text(
             fit(" $marker$line→ ${section.verb}", width),
             color = p.selectionFg,
@@ -375,7 +386,13 @@ private fun FleetTable(
 
 /** The `outdated` table, rendered under the row that answered it. */
 @Composable
-private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport: Int, width: Int): Int {
+private fun RemoteTable(
+    answered: RemoteStatus.Answered?,
+    s: HomeState,
+    viewport: Int,
+    width: Int,
+    highlight: Boolean = true,
+): Int {
     val p = LocalPalette.current
     val updates = answered?.updates.orEmpty()
     if (updates.isEmpty()) return 0
@@ -391,7 +408,7 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
     val used = DETAIL_INDENT.length + 6 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
     for ((offset, row) in updates.drop(s.scroll).take(viewport).withIndex()) {
         val index = s.scroll + offset
-        val focused = index == s.detailCursor
+        val focused = highlight && index == s.detailCursor
         // [x] picked · [ ] could be · [–] loadout has no way to upgrade it.
         // Package rows tick by TOOL (a brew row picks casks too, any dnf row
         // picks dnf-repo and dnf-copr); a custom source's row ticks alone.

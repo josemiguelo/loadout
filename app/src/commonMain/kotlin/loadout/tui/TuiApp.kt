@@ -34,6 +34,7 @@ private val BOLD = TextStyle.Bold
 
 /** Semantic color roles. Terminals get true color; Mosaic downsamples if not. */
 data class Palette(
+    val text: Color,
     val accent: Color,
     val onAccent: Color,
     val machine: Color,
@@ -49,6 +50,7 @@ data class Palette(
 private fun Rgb.toColor() = Color(r, g, b)
 
 private fun ThemePalette.toPalette() = Palette(
+    text = text.toColor(),
     accent = accent.toColor(),
     onAccent = onAccent.toColor(),
     machine = machine.toColor(),
