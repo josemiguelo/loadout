@@ -310,4 +310,12 @@ data class ScriptStep(
 data class OutdatedSource(
     /** Command printing `<item> <current> <candidate>` lines. `file:` allowed. */
     val command: String? = null,
+    /**
+     * How to update ONE of this source's items: `{item}` is the row name, and
+     * the command runs once per row you pick. Per-item on purpose — a pin in
+     * a file and a plugin clone are independent, unlike a package manager's
+     * transaction (contract 15). Without this, the source's rows are
+     * read-only. `file:` allowed.
+     */
+    val upgrade: String? = null,
 )

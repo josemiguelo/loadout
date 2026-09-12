@@ -32,8 +32,8 @@ private val MANIFEST = ManifestLoader.parse(
 
 private val SYSTEM = SystemInfo("m1", OsFamily.LINUX, "fedora", "x86_64")
 
-private fun update(name: String, current: String, candidate: String) =
-    loadout.cli.UpdateRow(name, current, candidate, "dnf")
+private fun update(name: String, current: String, candidate: String, source: String = "dnf") =
+    loadout.cli.UpdateRow(name, current, candidate, source)
 
 private fun state(vararg scripts: Pair<String, ScriptStatus>) = MachineState(
     machine = "m1",
@@ -324,13 +324,53 @@ class HomeKeysTest {
         )
         // One key, one mechanism — loadout never upgrades a single package.
         m.handleKey(HomeKey.SELECT, viewport = 5)
-        assertEquals(setOf("pm"), m.state.selection)
+        assertEquals(setOf("tool:pm"), m.state.selection)
 
         // enter is the upgrade key inside the table; it runs HERE, in the
         // floating pane, so the screen must not leave.
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
         assertEquals(HomeAction.NONE, m.state.action)
         assertEquals(false, m.state.exit)
+    }
+
+    @Test
+    fun thePaneAsksBeforeItRuns() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                run = UpgradeRun(
+                    steps = listOf("pm"),
+                    confirming = true,
+                    commands = listOf("[pm]  pm upgrade -y"),
+                ),
+            ),
+        )
+        // esc on the question changes nothing at all.
+        m.handleKey(HomeKey.ESC)
+        assertEquals(null, m.state.run)
+        assertEquals(false, m.state.exit)
+    }
+
+    @Test
+    fun thePaneScrollsBackThroughItsOutput() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                run = UpgradeRun(steps = listOf("pm"), log = (1..30).map { "line $it" }),
+            ),
+        )
+        m.handleKey(HomeKey.UP, viewport = 5)
+        assertEquals(1, m.state.run!!.scrollBack, "0 follows the tail; 1 pins one line back")
+        m.handleKey(HomeKey.PAGE_UP, viewport = 5)
+        assertEquals(6, m.state.run!!.scrollBack)
+        repeat(20) { m.handleKey(HomeKey.PAGE_UP, viewport = 5) }
+        assertEquals(25, m.state.run!!.scrollBack, "stops at the top")
+        repeat(20) { m.handleKey(HomeKey.PAGE_DOWN, viewport = 5) }
+        assertEquals(0, m.state.run!!.scrollBack, "and back to following the tail")
     }
 
     @Test
@@ -354,6 +394,67 @@ class HomeKeysTest {
         m.handleKey(HomeKey.ENTER)
         assertEquals(null, m.state.run, "enter closes a finished pane")
         assertTrue(m.state.selection.isEmpty(), "and clears what it just upgraded")
+    }
+
+    @Test
+    fun aCustomSourcesRowsTickOneByOne() {
+        // A pin in a file is nothing like a package manager's transaction:
+        // these select individually.
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        val rows = listOf(
+            update("golang", "a", "b", "asdf-plugins"),
+            update("nodejs", "a", "b", "asdf-plugins"),
+        )
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                expanded = true,
+                remote = RemoteStatus.Answered(
+                    updates = rows,
+                    failedSources = 0,
+                    upgradableSources = setOf("asdf-plugins"),
+                ),
+            ),
+        )
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertEquals(setOf("item:asdf-plugins/golang"), m.state.selection, "one row, not the source")
+        m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
+        assertEquals(
+            setOf("item:asdf-plugins/golang", "item:asdf-plugins/nodejs"),
+            m.state.selection,
+        )
+    }
+
+    @Test
+    fun theSameNameInTwoSourcesIsTwoRows() {
+        // python is an asdf TOOL and an asdf PLUGIN: ticking one must not
+        // tick the other (selection keyed by row name used to do exactly that).
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        val rows = listOf(
+            update("python", "3.14.1", "3.14.2", "asdf-tools"),
+            update("python", "d4caa7d", "abc2a03", "asdf-plugins"),
+        )
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                expanded = true,
+                remote = RemoteStatus.Answered(
+                    updates = rows,
+                    failedSources = 0,
+                    upgradableSources = setOf("asdf-tools", "asdf-plugins"),
+                ),
+            ),
+        )
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertEquals(setOf("item:asdf-tools/python"), m.state.selection)
+        m.handleKey(HomeKey.DOWN, viewport = 5)
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertEquals(
+            setOf("item:asdf-tools/python", "item:asdf-plugins/python"),
+            m.state.selection,
+        )
     }
 
     @Test

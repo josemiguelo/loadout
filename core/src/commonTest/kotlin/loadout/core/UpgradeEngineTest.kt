@@ -92,6 +92,34 @@ class UpgradeEngineTest {
     }
 
     @Test
+    fun aCustomSourceUpgradesItsItemsOneAtATime() {
+        val manifest = ManifestLoader.parse(
+            """
+            [outdated.pins]
+            command = "list-pins"
+            upgrade = "repin {item}"
+            """.trimIndent(),
+        )
+        val plan = engine().planSourceItems(manifest, "pins", listOf("golang", "nodejs"))
+        assertEquals(listOf("repin golang", "repin nodejs"), plan.map { it.command })
+        assertEquals(listOf(listOf("golang"), listOf("nodejs")), plan.map { it.covers })
+    }
+
+    @Test
+    fun aSourceWithNoUpgradeCommandIsRefused() {
+        val manifest = ManifestLoader.parse(
+            """
+            [outdated.pins]
+            command = "list-pins"
+            """.trimIndent(),
+        )
+        val e = assertFailsWith<UpgradeException> {
+            engine().planSourceItems(manifest, "pins", listOf("golang"))
+        }
+        assertTrue("declares no upgrade command" in e.message.orEmpty(), e.message.orEmpty())
+    }
+
+    @Test
     fun everyStepRunsEvenWhenOneFails() {
         val runner = FakeProcessRunner()
         runner.onCommand("pm upgrade -y", exitCode = 1)

@@ -17,7 +17,14 @@ data class UpgradeStep(
     /** The machine's programs these mechanisms install — what you'll see move. */
     val covers: List<String>,
 ) {
-    val label: String get() = installers.joinToString(", ")
+    /**
+     * What to call this step on screen: a sweep is its mechanisms, a
+     * per-item step is the source AND the item, since "pins" alone doesn't
+     * say which pin failed.
+     */
+    val label: String get() =
+        if (covers.size == 1 && installers.size == 1) "${installers.single()}: ${covers.single()}"
+        else installers.joinToString(", ")
 }
 
 data class UpgradeOutcome(val step: UpgradeStep, val exitCode: Int) {
@@ -53,6 +60,30 @@ class UpgradeEngine(
             byInstaller.getOrPut(mechanism.installer) { mutableListOf() }.add(program)
         }
         return byInstaller.mapValues { it.value.sorted() }
+    }
+
+    /**
+     * One step per item of a custom `[outdated.<name>]` source. Unlike a
+     * package mechanism, these update one at a time: each row is a pin in a
+     * file or a clone of its own, so nothing is shared and one failure
+     * doesn't take the rest with it.
+     */
+    fun planSourceItems(
+        manifest: Manifest,
+        source: String,
+        items: Collection<String>,
+    ): List<UpgradeStep> {
+        val pattern = manifest.outdated[source]?.upgrade
+            ?: throw UpgradeException(
+                "cannot upgrade:\n  - outdated source '$source' declares no upgrade command",
+            )
+        return items.map { item ->
+            UpgradeStep(
+                installers = listOf(source),
+                command = expandFilePrefix(pattern).replace("{item}", item),
+                covers = listOf(item),
+            )
+        }
     }
 
     /** One step per named installer; unknown or non-upgrading ones are errors. */

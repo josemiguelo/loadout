@@ -24,7 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** A run happening inside the screen, shown in the floating pane. */
+/** A run in the floating pane — first as a question, then as it happens. */
 data class UpgradeRun(
     val steps: List<String>,
     val current: Int = 0,
@@ -32,8 +32,19 @@ data class UpgradeRun(
     val log: List<String> = emptyList(),
     val done: Boolean = false,
     val failed: Boolean = false,
+    /** Steps that exited non-zero, by label — named in the summary. */
+    val failures: List<String> = emptyList(),
     val cancelled: Boolean = false,
     val summary: String = "",
+    /** Showing the plan and waiting for a yes — nothing has run yet. */
+    val confirming: Boolean = false,
+    /** The exact commands, shown while confirming. */
+    val commands: List<String> = emptyList(),
+    /**
+     * Lines held back from the bottom. 0 follows the tail (the normal live
+     * view); scrolling back pins the window so output can be read.
+     */
+    val scrollBack: Int = 0,
 )
 
 enum class HomeKey {
@@ -62,6 +73,14 @@ sealed interface RemoteStatus {
         val toolOf: Map<String, String> = emptyMap(),
         /** Tool to every mechanism it covers, for handing the engine names. */
         val mechanismsOfTool: Map<String, List<String>> = emptyMap(),
+        /**
+         * Custom sources that can update one of their items. Rows from these
+         * tick individually — a pin in a file has nothing in common with the
+         * next pin. Kept as a SET of sources, not a row-name map: the same
+         * name can appear in two sources (python is an asdf tool and an asdf
+         * plugin), and a name-keyed map made them one row.
+         */
+        val upgradableSources: Set<String> = emptySet(),
     ) : RemoteStatus {
         val names: List<String> get() = updates.map { it.name }
     }
@@ -144,6 +163,7 @@ class HomeModel(private val app: AppContext) {
     private val scope = CoroutineScope(SupervisorJob() + blockingDispatcher)
     private var running: RunningProcess? = null
     private var cancelled = false
+    private var pending: List<loadout.core.engine.UpgradeStep>? = null
     private var manifest: Manifest? = null
     private var system: SystemInfo? = null
     private var stored: MachineState? = null
@@ -230,6 +250,7 @@ class HomeModel(private val app: AppContext) {
                         // then upgrade the real Homebrew.
                         toolOf = used.keys.associateWith { m.installers[it]?.probe ?: it },
                         mechanismsOfTool = used.keys.groupBy { m.installers[it]?.probe ?: it },
+                        upgradableSources = m.outdated.filterValues { it.upgrade != null }.keys,
                     )
                 },
                 onFailure = { e ->
@@ -256,12 +277,25 @@ class HomeModel(private val app: AppContext) {
         // The floating pane owns the keyboard while it's up.
         s.run?.let { run ->
             when (key) {
-                HomeKey.ESC, HomeKey.QUIT -> if (run.done) {
-                    state = s.copy(run = null, selection = emptySet())
-                } else {
-                    cancelRun()
+                HomeKey.ESC, HomeKey.QUIT -> when {
+                    run.confirming -> {
+                        pending = null
+                        state = s.copy(run = null)
+                    }
+                    run.done -> state = s.copy(run = null, selection = emptySet())
+                    else -> cancelRun()
                 }
-                HomeKey.ENTER -> if (run.done) state = s.copy(run = null, selection = emptySet())
+                HomeKey.ENTER -> when {
+                    run.confirming -> confirmUpgrade()
+                    run.done -> state = s.copy(run = null, selection = emptySet())
+                    else -> {}
+                }
+                // Scrolling back pins the window; coming back to 0 follows
+                // the tail again, which is what a live run wants.
+                HomeKey.UP -> scrollRun(1, viewport)
+                HomeKey.DOWN -> scrollRun(-1, viewport)
+                HomeKey.PAGE_UP -> scrollRun(viewport, viewport)
+                HomeKey.PAGE_DOWN -> scrollRun(-viewport, viewport)
                 HomeKey.THEME -> state = s.copy(dark = !s.dark)
                 else -> {}
             }
@@ -292,23 +326,24 @@ class HomeModel(private val app: AppContext) {
                     // does whole upgrades, so anything else would be a lie
                     // about what pressing u will run.
                     val row = answered.updates.getOrNull(s.detailCursor)
-                    val tool = row?.let { answered.toolOf[answered.mechanismOf[it.name]] }
+                    // A package row ticks its whole tool; a source row ticks
+                    // itself, because that's the unit each one upgrades in.
+                    val key = row?.let { selectionKey(answered, it) }
                     state = when {
                         row == null -> s
-                        tool == null -> s.copy(message = "${row.name} has no mechanism loadout can upgrade")
-                        tool in s.selection -> s.copy(selection = s.selection - tool, message = null)
-                        else -> s.copy(selection = s.selection + tool, message = null)
+                        key == null -> s.copy(message = "${row.name} has no mechanism loadout can upgrade")
+                        key in s.selection -> s.copy(selection = s.selection - key, message = null)
+                        else -> s.copy(selection = s.selection + key, message = null)
                     }
                 }
                 HomeKey.SELECT_ALL -> if (onRemote && answered != null) {
-                    val every = answered.mechanismOf.values.mapNotNull { answered.toolOf[it] }.toSet()
+                    val every = answered.updates.mapNotNull { selectionKey(answered, it) }.toSet()
                     state = s.copy(selection = if (s.selection.containsAll(every)) emptySet() else every)
                 }
                 // enter IS the upgrade here — opening and closing belong to
                 // l/h, so enter is free to mean "do it".
                 HomeKey.ENTER, HomeKey.UPGRADE_SELECTION -> if (onRemote && answered != null && s.selection.isNotEmpty()) {
-                    // Selection is by tool; the engine takes mechanisms.
-                    startUpgrade(s.selection.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted())
+                    startUpgrade(answered, s.selection)
                 }
                 HomeKey.THEME -> state = s.copy(dark = !s.dark)
                 HomeKey.REFRESH -> refresh()
@@ -365,24 +400,51 @@ class HomeModel(private val app: AppContext) {
      * Only non-interactive commands can live in the pane — a password prompt
      * behind it would be invisible — so sudo's cache must already be warm.
      */
-    fun startUpgrade(installers: List<String>) {
+    fun startUpgrade(answered: RemoteStatus.Answered, selection: Set<String>) {
         val m = manifest ?: return
         val sys = system ?: return
         if (state.run != null) return
         val engine = UpgradeEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
-        val plan = runCatching { engine.plan(m, sys.machine, installers) }.getOrElse { e ->
+
+        // Tools sweep; source items go one at a time, in the order shown.
+        val tools = selection.filter { it.startsWith("tool:") }.map { it.removePrefix("tool:") }
+        val items = selection.filter { it.startsWith("item:") }
+            .map { it.removePrefix("item:") }
+            .groupBy({ it.substringBefore('/') }, { it.substringAfter('/') })
+        val plan = runCatching {
+            engine.plan(m, sys.machine, tools.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted()) +
+                items.flatMap { (source, rows) -> engine.planSourceItems(m, source, rows.sorted()) }
+        }.getOrElse { e ->
             state = state.copy(message = e.message?.lineSequence()?.firstOrNull())
             return
         }
+        if (plan.isEmpty()) return
         if (plan.any { "sudo" in it.command } && !app.runner.capture("sudo -n true").success) {
-            state = state.copy(message = "sudo needs a password — run `sudo -v` in a terminal, then press u again")
+            state = state.copy(message = "sudo needs a password — run `sudo -v` in a terminal, then press enter again")
             return
         }
-        cancelled = false
+        // Ask before touching anything: these commands change the machine,
+        // and the sweep ones change more than the rows you picked.
+        pending = plan
         state = state.copy(
             expanded = false,
-            run = UpgradeRun(steps = plan.map { it.label }, label = plan.first().label),
+            run = UpgradeRun(
+                steps = plan.map { it.label },
+                label = plan.joinToString(", ") { it.label },
+                confirming = true,
+                commands = plan.map { "[${it.label}]  ${it.command}" },
+            ),
         )
+    }
+
+    /** The yes. Runs what [startUpgrade] planned, streaming into the pane. */
+    fun confirmUpgrade() {
+        val m = manifest ?: return
+        val sys = system ?: return
+        val plan = pending ?: return
+        pending = null
+        cancelled = false
+        state = state.copy(run = state.run?.copy(confirming = false, label = plan.first().label))
         scope.launch {
             for ((index, step) in plan.withIndex()) {
                 if (cancelled) break
@@ -395,7 +457,7 @@ class HomeModel(private val app: AppContext) {
                 running = null
                 if (cancelled) break
                 appendRun(listOf("exit $exit"))
-                if (exit != 0) update { it.copy(failed = true) }
+                if (exit != 0) update { it.copy(failed = true, failures = it.failures + step.label) }
             }
             if (cancelled) {
                 update { it.copy(done = true, cancelled = true, summary = "cancelled — state not refreshed") }
@@ -413,8 +475,12 @@ class HomeModel(private val app: AppContext) {
                 sections = sectionsOf(m, sys, stored, fleet(), state.remote),
                 run = state.run?.copy(
                     done = true,
-                    summary = if (state.run?.failed == true) "finished with failures — enter closes"
-                    else "$changed declared program(s) changed version — enter closes",
+                    // Name what failed: "finished with failures" makes you
+                    // scroll back through everything to find out which.
+                    summary = state.run?.failures.orEmpty().let { failed ->
+                        if (failed.isEmpty()) "$changed declared program(s) changed version — enter closes"
+                        else "failed: ${failed.joinToString()} — scroll back for the output"
+                    },
                 ),
             )
         }
@@ -427,6 +493,13 @@ class HomeModel(private val app: AppContext) {
     private fun appendRun(lines: List<String>) {
         if (lines.isEmpty()) return
         update { it.copy(log = (it.log + lines).takeLast(MAX_RUN_LINES)) }
+    }
+
+    private fun scrollRun(delta: Int, viewport: Int) {
+        val run = state.run ?: return
+        val lines = if (run.confirming) run.commands else run.log
+        val max = (lines.size - viewport).coerceAtLeast(0)
+        update { it.copy(scrollBack = (it.scrollBack + delta).coerceIn(0, max)) }
     }
 
     private fun cancelRun() {
@@ -459,6 +532,18 @@ class HomeModel(private val app: AppContext) {
 
 /** Log lines the pane keeps; the viewer tails a long run. */
 private const val MAX_RUN_LINES = 5_000
+
+/**
+ * What ticking [row] selects. A package row selects the TOOL behind it (dnf,
+ * brew — the sweep upgrades all of it); a custom source's row selects just
+ * that row, because its items are independent. Null = loadout can't upgrade
+ * it at all.
+ */
+internal fun selectionKey(answered: RemoteStatus.Answered, row: UpdateRow): String? {
+    if (row.source in answered.upgradableSources) return "item:${row.source}/${row.name}"
+    val tool = answered.toolOf[answered.mechanismOf[row.name]] ?: return null
+    return "tool:$tool"
+}
 
 /** How many detail lines this section can open in place (0 = none). */
 internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (section?.action) {

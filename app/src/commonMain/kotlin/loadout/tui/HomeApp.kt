@@ -98,12 +98,16 @@ private fun HomeApp(model: HomeModel) {
     // header scrolls off the top: header + blank + 4 rows + scroll hint +
     // 3 footer lines + 1 spare, plus a line when there's a message.
     val viewport = (rows - 11 - (if (s.message != null) 1 else 0)).coerceAtLeast(3)
+    // A page in the pane is the PANE's height, not the section list's.
+    val paneRows = (rows * 8 / 10).coerceIn(6, rows - 3)
 
     CompositionLocalProvider(LocalPalette provides paletteFor(s.dark)) {
       Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.onKeyEvent { event ->
-                homeKeyOf(event)?.let { model.handleKey(it, viewport) } != null
+                homeKeyOf(event)?.let {
+                    model.handleKey(it, if (s.run != null) paneRows else viewport)
+                } != null
             },
         ) {
             HomeHeader(s, width)
@@ -141,7 +145,7 @@ private fun HomeApp(model: HomeModel) {
             repeat((rows - body - footer - 1).coerceAtLeast(0)) { Text("") }
             HomeFooter(s, width)
         }
-        s.run?.let { RunPane(it, spin, width, rows) }
+        s.run?.let { RunPane(it, spin, width, paneRows) }
       }
     }
     if (!s.exit) {
@@ -156,26 +160,36 @@ private fun HomeApp(model: HomeModel) {
  * invisible, so sudo's cache has to be warm before we start.
  */
 @Composable
-private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, rows: Int) {
+private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, paneRows: Int) {
     val p = LocalPalette.current
     // 80% of the viewport, both ways.
     val paneWidth = (width * 8 / 10).coerceIn(40, width - 2)
-    val paneRows = (rows * 8 / 10).coerceIn(6, rows - 3)
     val inner = paneWidth - 4
     val title = when {
+        run.confirming -> "run this?"
         run.cancelled -> "cancelled"
         run.done && run.failed -> "upgrade failed"
         run.done -> "upgrade finished"
         else -> "upgrading ${run.label}  ${SPINNER[spin % SPINNER.size]}"
     }
     val edge = if (run.failed) p.error else p.accent
+    val lines = if (run.confirming) {
+        listOf("These commands will run, in order:", "") + run.commands + listOf(
+            "",
+            "A package manager decides its own transaction — a sweep can change",
+            "more than the rows you picked.",
+        )
+    } else {
+        run.log
+    }
+    // Scrolled back? Pin the window there; otherwise follow the tail.
+    val window = lines.dropLast(run.scrollBack).takeLast(paneRows)
     // No background modifier: the pane's own spaces hide what's behind it,
     // so it sits on the TERMINAL's background and follows dark/light like
     // everything else. A painted panel colour would fight the theme.
     Column(modifier = Modifier.align(Alignment.Center)) {
         Text(fit("╭─ $title ".padEnd(paneWidth - 1, '─') + "╮", paneWidth), color = edge)
-        val body = run.log.takeLast(paneRows)
-        for (line in body) {
+        for (line in window) {
             Row {
                 Text("│ ", color = edge)
                 Text(clip(line, inner).padEnd(inner))
@@ -183,16 +197,18 @@ private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, rows: Int) 
             }
         }
         // Keep the pane a stable size while output trickles in.
-        repeat((paneRows - body.size).coerceAtLeast(0)) {
+        repeat((paneRows - window.size).coerceAtLeast(0)) {
             Row {
                 Text("│ ", color = edge)
                 Text(" ".repeat(inner))
                 Text(" │", color = edge)
             }
         }
+        val scrolled = if (run.scrollBack > 0) "  ·  ${run.scrollBack} line(s) below" else ""
         val footer = when {
-            run.done -> run.summary.ifEmpty { "enter closes" }
-            else -> "step ${run.current + 1} of ${run.steps.size}  ·  esc cancels"
+            run.confirming -> "enter runs it  ·  esc cancels  ·  ↑↓/pgup/pgdn scroll$scrolled"
+            run.done -> run.summary.ifEmpty { "enter closes" } + "  ·  ↑↓/pgup/pgdn scroll" + scrolled
+            else -> "step ${run.current + 1} of ${run.steps.size}  ·  ↑↓/pgup/pgdn scroll  ·  esc cancels$scrolled"
         }
         Text(fit("╰─ $footer ".padEnd(paneWidth - 1, '─') + "╯", paneWidth), color = edge)
     }
@@ -367,13 +383,12 @@ private fun RemoteTable(answered: RemoteStatus.Answered?, s: HomeState, viewport
         val index = s.scroll + offset
         val focused = index == s.detailCursor
         // [x] picked · [ ] could be · [–] loadout has no way to upgrade it.
-        // Ticked by TOOL: picking a brew row picks casks too, and any dnf
-        // row picks dnf-repo and dnf-copr — that's what the upgrade does.
-        val mechanism = answered?.mechanismOf?.get(row.name)
-        val tool = mechanism?.let { answered.toolOf[it] }
-        val selected = tool != null && tool in s.selection
+        // Package rows tick by TOOL (a brew row picks casks too, any dnf row
+        // picks dnf-repo and dnf-copr); a custom source's row ticks alone.
+        val key = answered?.let { selectionKey(it, row) }
+        val selected = key != null && key in s.selection
         val box = when {
-            mechanism == null -> "[–] "
+            key == null -> "[–] "
             selected -> "[x] "
             else -> "[ ] "
         }
@@ -422,8 +437,8 @@ private fun HomeFooter(s: HomeState, width: Int) {
     val context = when {
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
             if (tight) "↑↓ move · space select pm · a all · enter upgrade · h close"
-            else "↑↓ move  ·  space select its package manager  ·  a all  ·  enter/u upgrade" +
-                (if (s.selection.isEmpty()) "" else " ${s.selection.joinToString(", ")}") + "  ·  h/esc close"
+            else "↑↓ move  ·  space select  ·  a all  ·  enter/u upgrade" +
+                (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h/esc close"
         s.expanded ->
             if (tight) "↑↓ scroll · h close" else "↑↓/pgup/pgdn scroll  ·  h/esc close"
         else ->

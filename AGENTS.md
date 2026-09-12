@@ -250,7 +250,12 @@ These came from explicit user decisions; don't "improve" them away:
     the TOOL they drive (their probe), so ticking a brew row ticks casks too.
     `plan` REFUSES an installer this machine's mapping doesn't use — without
     that, a repo that maps nothing to brew could still run the real
-    `brew upgrade` through a built-in (it did, once, during development). The sweep touches
+    `brew upgrade` through a built-in (it did, once, during development).
+    Custom `[outdated.<name>]` sources upgrade the OTHER way: they may
+    declare `upgrade = "... {item}"`, run ONCE PER ROW you pick
+    (`planSourceItems`), because a pin in a file or a plugin clone is
+    independent — nothing is shared, and one failure doesn't take the rest.
+    A source without that command keeps read-only rows (`[–]`). The sweep touches
     packages loadout doesn't declare — the plan says so. Afterwards EVERY
     mapped program is re-checked, because the transaction moves what it
     moves. The binary's own update is `self-upgrade` (renamed in 0.10.0;
@@ -365,7 +370,9 @@ These came from explicit user decisions; don't "improve" them away:
   open remote table: ↑↓ move the focused line, space selects the focused
   row's MECHANISM (every row that sweep covers lights up, since that's what
   will actually run), a selects all, enter (or u) upgrades the selection IN
-  the floating pane — the screen stays put and refreshes when it's done. Rows with no
+  the floating pane — the screen stays put and refreshes when it's done.
+  Rows from a custom source tick ONE AT A TIME (`selectionKey` returns
+  `tool:<probe>` for a package row, `item:<source>/<row>` for a source row). Rows with no
   upgradable mechanism render `[–]` and refuse selection (custom-oracle rows,
   or an installer with no `upgrade`). `l` only ever OPENS — it never
   dispatches, so the vim keys can't start an install by accident.
@@ -388,8 +395,11 @@ These came from explicit user decisions; don't "improve" them away:
   NON-INTERACTIVE commands may stream there: a sudo or confirm prompt behind
   a pane is invisible, so `startUpgrade` refuses unless `sudo -n true`
   succeeds (pointing at `sudo -v`), and install/setup/sync keep exiting into
-  the command instead. esc cancels a run (kills the child), enter closes a
-  finished one, and the rows refresh underneath without leaving the screen.
+  the command instead. The pane opens as a QUESTION — the exact commands,
+  enter runs them, esc changes nothing — then becomes the live log: ↑↓/pgup
+  scroll back through it (0 follows the tail), esc cancels a run (kills the
+  child), enter closes a finished one, and the rows refresh underneath
+  without leaving the screen.
 - **One Mosaic app per process**: `runMosaicBlocking` binds the tty once and
   never releases it — a second call anywhere in the same process dies with
   `IllegalStateException: Tty already bound`. So the home screen cannot

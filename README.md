@@ -43,7 +43,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Any program/script exactly as the engine resolves it (default: everything) |
 | | `installers [name]` | The install mechanisms available here — loadout's built-ins plus your own (`--eject` copies the built-ins into your repo) |
-| | `outdated` | Ask the remotes (dnf/brew/flathub/…, one batch call each) what newer versions exist — the tool itself and any custom `[outdated.*]` sources included |
+| | `outdated` | Ask the remotes (dnf/brew/flathub/…, one batch call each) what newer versions exist — the tool itself and any custom `[outdated.*]` sources included (a source with an `upgrade` command can update its items one by one from the home screen) |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
