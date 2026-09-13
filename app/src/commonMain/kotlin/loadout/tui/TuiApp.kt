@@ -11,7 +11,10 @@ import androidx.compose.runtime.setValue
 import com.jakewharton.mosaic.layout.KeyEvent
 import com.jakewharton.mosaic.layout.onKeyEvent
 import com.jakewharton.mosaic.modifier.Modifier
-import com.jakewharton.mosaic.runMosaicBlocking
+import com.jakewharton.mosaic.Mosaic
+import com.jakewharton.mosaic.terminal.Terminal
+import com.jakewharton.mosaic.tty.Tty
+import com.jakewharton.mosaic.tty.terminal.asTerminalIn
 import com.jakewharton.mosaic.ui.Color
 import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Row
@@ -24,8 +27,13 @@ import loadout.theme.DARK_THEME
 import loadout.theme.LIGHT_THEME
 import loadout.theme.Rgb
 import loadout.theme.ThemePalette
+import androidx.compose.runtime.BroadcastFrameClock
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlin.time.TimeSource
 
 internal val SPINNER = listOf("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 private val BOLD = TextStyle.Bold
@@ -88,23 +96,78 @@ fun runMaintainTui(app: AppContext): Int {
         println("No opted-in scripts for this machine.")
         return 0
     }
-    withHiddenCursor { runMosaicBlocking { MaintainApp(model) } }
+    runTui { MaintainApp(model) }
     return model.state.exitCode
 }
 
 /**
- * Mosaic redraws a frame by walking the cursor back up and rewriting each
- * line, and leaves the cursor visible while it does — with a spinner
- * ticking every 120ms that shows as a cursor hopping around the screen.
- * Hide it for the app's lifetime; the finally puts it back even on a throw.
+ * Our own frame loop around Mosaic's composition — for two things stock
+ * `runMosaicBlocking` gets wrong inside tmux. Mosaic probes the terminal at
+ * start-up and, when the primary device-attributes reply names a VT100
+ * (`?1;…c` — exactly what tmux answers), skips EVERY capability query: it
+ * neither hides the cursor nor learns that synchronized output (mode 2026)
+ * is available. Its renderer then clears each line and rewrites it in the
+ * open, and tmux repaints whatever it has parsed so far — with a spinner
+ * ticking every 120ms that shows as the pane's text flickering.
+ *
+ * So every frame here is wrapped in `?2026h`…`?2026l` (a terminal that
+ * doesn't know the mode ignores it) and the cursor is hidden for the app's
+ * lifetime; the finally puts it back even on a throw. Frames are otherwise
+ * drawn like Mosaic's: cursor back up to the first line, clear-and-write
+ * each row, clear below when the frame shrank.
  */
-internal fun withHiddenCursor(block: () -> Unit) {
+internal fun runTui(content: @Composable () -> Unit) {
     print("\u001b[?25l")
     try {
-        block()
+        runBlocking {
+            coroutineScope {
+                val terminal = checkNotNull(Tty.tryBind()) { "Unable to run in non-interactive mode." }
+                    .asTerminalIn(this)
+                terminal.use { runFrames(it, content) }
+            }
+        }
     } finally {
         print("\u001b[?25h")
     }
+}
+
+private suspend fun runFrames(terminal: Terminal, content: @Composable () -> Unit) = coroutineScope {
+    val clock = BroadcastFrameClock()
+    val ansi = terminal.capabilities.ansiLevel
+    val underline = terminal.capabilities.kittyUnderline
+    var lastHeight = 0
+    val mosaic = Mosaic(
+        coroutineContext = coroutineContext + clock,
+        onDraw = { m ->
+            val canvas = m.draw()
+            val frame = buildString {
+                append("\u001b[?2026h")
+                if (lastHeight > 0) append("\u001b[${lastHeight}F")
+                for (row in 0 until canvas.height) {
+                    if (row < lastHeight) append("\u001b[K")
+                    canvas.appendRowTo(this, row, ansi, underline)
+                    append("\r\n")
+                }
+                if (canvas.height < lastHeight) append("\u001b[J")
+                append("\u001b[?2026l")
+            }
+            lastHeight = canvas.height
+            print(frame)
+        },
+        terminal = terminal,
+    )
+    mosaic.setContent(content)
+    // Mosaic's own loop does the same: a frame every millisecond, the delay
+    // being the yield that lets the composition's coroutines run.
+    val start = TimeSource.Monotonic.markNow()
+    val ticker = launch {
+        while (true) {
+            clock.sendFrame(start.elapsedNow().inWholeNanoseconds)
+            delay(1)
+        }
+    }
+    mosaic.awaitComplete()
+    ticker.cancel()
 }
 
 private fun maintainKeyOf(event: KeyEvent): MaintainKey? = when (event) {

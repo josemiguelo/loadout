@@ -230,13 +230,11 @@ These came from explicit user decisions; don't "improve" them away:
     stderr>` line (UpdateChecker.sourceRows returns SourceResult{rows,error};
     OutdatedCommand prints errors even when no updates exist) — a crashing
     oracle can't masquerade as "nothing outdated" and silently hide updates
-    forever. Installers may also declare `upgrade` (`{pkgs}` = the
-    space-joined list, ONE transaction per mechanism) and `upgrade-all`
-    (everything it manages). An installer that declares only `upgrade-all`
-    REFUSES selective upgrades by design — pacman is the shipped example,
-    because Arch does not support partial upgrades — and asking it for single
-    packages is an error naming the sweep. Never write cross-variant `||`
-    chains in checks.
+    forever. Installers may also declare `upgrade`: the ONE command that
+    moves everything the mechanism manages (`sudo dnf upgrade -y`,
+    `brew upgrade`) — no `{pkgs}` placeholder, since loadout never upgrades
+    single packages (contract 15). Never write cross-variant `||` chains in
+    checks.
 15. **Converge installs; `upgrade` upgrades — a whole mechanism at a time.**
     `setup-new-machine`/`install` add what's MISSING and never touch a
     version already there (the manifest declares "have kitty", not "have
@@ -290,7 +288,7 @@ These came from explicit user decisions; don't "improve" them away:
   `platform.blockingDispatcher` — use that.
 - **Clikt 5**: `currentContext.obj` needs `import com.github.ajalt.clikt.core.obj`;
   subcommands read it via `requireObject<AppContext>()`.
-- **Mosaic 0.18**: `runMosaicBlocking {}`; keys via
+- **Mosaic 0.18**: entry point is our `runTui {}` (see below); keys via
   `Modifier.onKeyEvent { it == KeyEvent("q") ... }`; styles `TextStyle.Bold/
   Dim/Invert/Italic` combined with `+`, neutral is `TextStyle.Empty` (no
   `.None`); colors `com.jakewharton.mosaic.ui.Color`. App stays alive while a
@@ -400,7 +398,20 @@ These came from explicit user decisions; don't "improve" them away:
   scroll back through it (0 follows the tail), esc cancels a run (kills the
   child), enter closes a finished one, and the rows refresh underneath
   without leaving the screen.
-- **One Mosaic app per process**: `runMosaicBlocking` binds the tty once and
+- **Own frame loop, not `runMosaicBlocking`**: both screens start through
+  `tui/TuiApp.kt`'s `runTui {}`, which binds the tty (`Tty.tryBind()` +
+  `asTerminalIn`) and drives Mosaic's public `Mosaic(...)` composition
+  itself, so every frame is wrapped in synchronized output (`?2026h`/`l`)
+  and the cursor is hidden for the app's lifetime. Stock Mosaic decides
+  both from a capability handshake it SKIPS whenever the primary DA reply
+  says VT100 — which is what tmux answers — so under tmux it drew each
+  frame in the open (clear line, rewrite, ×N) with a visible cursor: the
+  pane text flickered on every spinner tick. Rendering itself mirrors
+  Mosaic's `AnsiRendering` (cursor up, clear-and-write each row, clear
+  below on shrink); Mosaic's own `runMosaic` is not used anywhere.
+  (Needs mosaic-terminal / mosaic-tty / mosaic-tty-terminal as compile
+  deps — they're runtime-only transitives of mosaic-runtime.)
+- **One Mosaic app per process**: `Tty.tryBind()` (inside `runTui`) binds the tty once and
   never releases it — a second call anywhere in the same process dies with
   `IllegalStateException: Tty already bound`. So the home screen cannot
   reopen after an action and cannot launch the maintain picker: it exits

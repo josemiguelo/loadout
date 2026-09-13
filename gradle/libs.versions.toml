@@ -20,6 +20,9 @@ clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
 ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }
 kommand = { module = "com.kgit2:kommand", version.ref = "kommand" }
 mosaic-runtime = { module = "com.jakewharton.mosaic:mosaic-runtime", version.ref = "mosaic" }
+mosaic-terminal = { module = "com.jakewharton.mosaic:mosaic-terminal", version.ref = "mosaic" }
+mosaic-tty = { module = "com.jakewharton.mosaic:mosaic-tty", version.ref = "mosaic" }
+mosaic-tty-terminal = { module = "com.jakewharton.mosaic:mosaic-tty-terminal", version.ref = "mosaic" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

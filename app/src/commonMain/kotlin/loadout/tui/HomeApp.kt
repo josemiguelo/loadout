@@ -12,7 +12,6 @@ import com.jakewharton.mosaic.layout.onKeyEvent
 import com.jakewharton.mosaic.layout.fillMaxSize
 import com.jakewharton.mosaic.layout.padding
 import com.jakewharton.mosaic.modifier.Modifier
-import com.jakewharton.mosaic.runMosaicBlocking
 import com.jakewharton.mosaic.ui.Alignment
 import com.jakewharton.mosaic.ui.Box
 import com.jakewharton.mosaic.ui.BoxScope
@@ -37,7 +36,7 @@ fun runHomeTui(app: AppContext): HomeAction {
     val model = HomeModel(app)
     model.load()
     model.refresh()
-    withHiddenCursor { runMosaicBlocking { HomeApp(model) } }
+    runTui { HomeApp(model) }
     return model.state.action
 }
 
@@ -207,7 +206,11 @@ private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, paneRows: I
         for (line in window) {
             Row {
                 Text("│ ", color = edge)
-                Text(clip(line, inner).padEnd(inner), color = p.text)
+                if (line.startsWith(RUN_DIVIDER)) {
+                    Text(clip(line, inner).padEnd(inner, '─'), color = p.dim)
+                } else {
+                    Text(clip(line, inner).padEnd(inner), color = p.text)
+                }
                 Text(" │", color = edge)
             }
         }

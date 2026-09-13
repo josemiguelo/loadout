@@ -452,7 +452,16 @@ class HomeModel(private val app: AppContext) {
         scope.launch {
             for ((index, step) in plan.withIndex()) {
                 if (cancelled) break
-                update { it.copy(current = index, label = step.label, log = it.log + "$ ${step.command}") }
+                // A rule before each step: five commands' output in one
+                // scroll is otherwise one undifferentiated stream.
+                val divider = "$RUN_DIVIDER${index + 1}/${plan.size}  ${step.label} "
+                update {
+                    it.copy(
+                        current = index,
+                        label = step.label,
+                        log = it.log + listOfNotNull("".takeIf { index > 0 }, divider, "$ ${step.command}"),
+                    )
+                }
                 val exit = app.runner.stream(
                     step.command,
                     workDir = app.repoRoot.toString(),
@@ -553,6 +562,9 @@ class HomeModel(private val app: AppContext) {
 }
 
 /** Log lines the pane keeps; the viewer tails a long run. */
+/** Log lines starting with this are step dividers; the pane rules them across. */
+internal const val RUN_DIVIDER = "── "
+
 private const val MAX_RUN_LINES = 5_000
 
 /**

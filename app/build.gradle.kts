@@ -36,6 +36,9 @@ kotlin {
             implementation(project(":core"))
             implementation(libs.clikt)
             implementation(libs.mosaic.runtime)
+            implementation(libs.mosaic.terminal)
+            implementation(libs.mosaic.tty)
+            implementation(libs.mosaic.tty.terminal)
             implementation(libs.coroutines.core)
         }
         commonTest.dependencies {
