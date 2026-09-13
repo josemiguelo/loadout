@@ -543,6 +543,9 @@ file never needs a check mode unless it IS the truth's only oracle.
 
 ## Working agreements with the user
 
+- **Stop the Gradle daemon when you're done**: `./gradlew --stop` at the end
+  of a task (not after every build — it's what keeps rebuilds fast). The
+  user doesn't want the `java … GradleDaemon` process lingering.
 - After completing any phase/feature, end with a **"Try it"** section: exact
   commands, binary path, expected output.
 - Docs split (2026-08-24): **README.md** is a concise front door (concept,
