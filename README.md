@@ -47,7 +47,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
-| | `upgrade <programs>` | Move installed programs to newer versions — one transaction per installer (`--all`, or `--installer dnf` for the whole sweep) |
+| | `upgrade <installers>` | Move installed programs to newer versions, a whole mechanism at a time (`upgrade dnf brew`, or `--all` for every mechanism this machine maps) — never a single package |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--pending` = the ones status didn't find done, `--force` overrides) |
 | | `maintain` | Interactive picker over the maintenance scripts — opens on the last observed verdicts with the unfinished ones already selected — live-streamed logs, checks as verdicts |
 | **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
@@ -91,7 +91,7 @@ $ ./integration/run-tests.sh                       # black-box suite (real binar
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (macs build on
 macs). A `v*` tag builds, strips, and attaches release tarballs for
 linux-x64 / macos-arm64 / macos-x64 — which is what the install one-liner
-and `loadout upgrade` serve. The CI workflow (units + integration on Linux
+and `loadout self-upgrade` serve. The CI workflow (units + integration on Linux
 and macOS) is written but not wired up — see TODO.
 
 Stack: [Clikt](https://github.com/ajalt/clikt) ·
