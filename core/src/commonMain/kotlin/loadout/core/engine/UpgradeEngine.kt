@@ -1,11 +1,8 @@
 package loadout.core.engine
 
 import loadout.core.LoadoutException
-import loadout.core.exec.ProcessRunner
 import loadout.core.model.Manifest
-import loadout.core.model.ProgramState
 import loadout.core.model.expandFilePrefix
-import okio.Path
 
 /**
  * One upgrade command and every mechanism it covers. dnf, dnf-repo and
@@ -28,10 +25,6 @@ data class UpgradeStep(
         if (sweep) installers.joinToString(", ") else "${installers.single()}: ${covers.single()}"
 }
 
-data class UpgradeOutcome(val step: UpgradeStep, val exitCode: Int) {
-    val success: Boolean get() = exitCode == 0
-}
-
 /** A mechanism can't be upgraded, and why — refusals are explicit, never silent. */
 class UpgradeException(message: String) : LoadoutException(message)
 
@@ -46,12 +39,15 @@ class UpgradeException(message: String) : LoadoutException(message)
  * resolves its own transaction, so asking for one package moves whatever
  * that implies anyway. Picking a program in the UI means "upgrade the
  * mechanism it came from".
+ *
+ * A planner only: it decides WHAT runs and refuses what mustn't. Running
+ * the steps belongs to the caller, because that is where the two callers
+ * differ — the CLI inherits stdio (sudo may prompt there), the home
+ * screen's pane streams (it can't show a prompt). Verification is the same
+ * for both and is not here either: re-observe everything the way `status`
+ * does (AppContext.refreshAndWriteState) and diff the versions.
  */
-class UpgradeEngine(
-    private val runner: ProcessRunner,
-    private val checker: VersionChecker,
-    private val repoRoot: Path,
-) {
+object UpgradeEngine {
     /** The installers this machine's mapping uses that can upgrade themselves. */
     fun upgradableInstallers(manifest: Manifest, machine: String): Map<String, List<String>> {
         val mapping = manifest.machines[machine]?.pm.orEmpty()
@@ -126,34 +122,5 @@ class UpgradeEngine(
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
             )
         }
-    }
-
-    /** The upgrade command each of this machine's mechanisms runs. */
-    fun commandsFor(manifest: Manifest, machine: String): Map<String, String> =
-        upgradableInstallers(manifest, machine).keys
-            .mapNotNull { name -> manifest.installers[name]?.upgrade?.let { name to it } }
-            .toMap()
-
-    /**
-     * Run each step with inherited stdio (they need sudo and show progress).
-     * A failing mechanism doesn't stop the rest: they're independent.
-     */
-    fun execute(plan: List<UpgradeStep>, onStart: (UpgradeStep) -> Unit = {}): List<UpgradeOutcome> =
-        plan.map { step ->
-            onStart(step)
-            UpgradeOutcome(step, runner.inherit(step.command, workDir = repoRoot.toString()))
-        }
-
-    /**
-     * Re-check EVERY mapped program afterwards: a whole-mechanism upgrade
-     * moves whatever it moves, and state has to match the machine rather
-     * than the subset someone had in mind.
-     */
-    suspend fun verify(manifest: Manifest, machine: String): Map<String, ProgramState> {
-        val mapping = manifest.machines[machine]?.pm.orEmpty()
-        return checker.checkAll(
-            manifest.programs.keys.filter { it in mapping }
-                .associateWith { name -> manifest.checkFor(name, mapping[name]) },
-        )
     }
 }

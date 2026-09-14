@@ -10,7 +10,6 @@ import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import loadout.core.engine.UpgradeEngine
-import loadout.core.engine.VersionChecker
 import loadout.core.model.ProgramStatus
 
 /**
@@ -43,8 +42,7 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         val before = app.stateStore.read(system.machine)?.programs.orEmpty()
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
-        val checker = VersionChecker(app.runner, app.repoRoot.toString())
-        val engine = UpgradeEngine(app.runner, checker, app.repoRoot)
+        val engine = UpgradeEngine
         val targets = if (all) engine.upgradableInstallers(manifest, system.machine).keys else names
         if (targets.isEmpty()) {
             echo(Style.dim("No mechanism on ${system.machine} declares an upgrade command."))
@@ -67,22 +65,26 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         if (dryRun) return
         confirmOrAbort(yes)
 
-        val outcomes = engine.execute(plan) { echo("\n" + Style.accent("==> upgrading ${it.label}")) }
+        // Inherited stdio: sudo may prompt, dnf shows progress. A failing
+        // mechanism doesn't stop the rest — they're independent.
+        val failed = plan.filter { step ->
+            echo("\n" + Style.accent("==> upgrading ${step.label}"))
+            app.runner.inherit(step.command, workDir = app.repoRoot.toString()) != 0
+        }
 
         echo("")
-        val after = spinning("re-checking every program…") { engine.verify(manifest, system.machine) }
-        val changed = after.filter { (name, now) ->
+        // The transaction moved what it moved: re-observe everything, the
+        // same way `status` does, and say what changed.
+        val after = spinning("re-checking every program…") { app.refreshAndWriteState(manifest, system) }
+        val changed = after.programs.filter { (name, now) ->
             now.status == ProgramStatus.INSTALLED && now.version != null && now.version != before[name]?.version
         }
-        spinning("updating state…") { app.refreshAndWriteState(manifest, system) }
-
-        val failed = outcomes.filterNot { it.success }
         echo(" " + Style.ok("✔") + "  ${changed.size} declared program(s) changed version")
         for ((name, now) in changed.entries.sortedBy { it.key }) {
             echo("      " + name + Style.dim("  ${before[name]?.version ?: "?"} -> ") + Style.warn(now.version ?: "?"))
         }
         if (failed.isNotEmpty()) {
-            echo(" " + Style.error("✘") + "  failed: ${failed.joinToString { it.step.label }}")
+            echo(" " + Style.error("✘") + "  failed: ${failed.joinToString { it.label }}")
             throw ProgramResult(1)
         }
     }

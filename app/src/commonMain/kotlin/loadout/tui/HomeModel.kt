@@ -17,7 +17,6 @@ import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
 import loadout.core.engine.ScriptRunner
 import loadout.core.engine.UpgradeEngine
-import loadout.core.engine.VersionChecker
 import loadout.core.exec.RunningProcess
 import loadout.core.platform.blockingDispatcher
 import loadout.core.platform.envVar
@@ -266,8 +265,7 @@ class HomeModel(private val app: AppContext) {
             .fold(
                 onSuccess = { r ->
                     val mapping = m.machines[sys.machine]?.pm.orEmpty()
-                    val used = UpgradeEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
-                        .upgradableInstallers(m, sys.machine)
+                    val used = UpgradeEngine.upgradableInstallers(m, sys.machine)
                     RemoteStatus.Answered(
                         updates = r.updates,
                         failedSources = r.errors.size,
@@ -454,7 +452,7 @@ class HomeModel(private val app: AppContext) {
         val m = manifest ?: return
         val sys = system ?: return
         if (state.run != null) return
-        val engine = UpgradeEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
+        val engine = UpgradeEngine
 
         // Tools sweep; source items go one at a time, in the order shown.
         val tools = selection.filter { it.startsWith("tool:") }.map { it.removePrefix("tool:") }

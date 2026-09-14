@@ -79,8 +79,10 @@ core/  loadout.core
   detect/      Detection — os/distro/hostname + isBinaryAvailable probe (`command -v`)
   engine/      VersionChecker (concurrent checkAll), UpdateChecker (outdated
                oracles; exit code deliberately ignored), InstallEngine (plan/
-               execute), UpgradeEngine (group per installer, run, re-check
-               everything), ScriptRunner, StatusEngine (observes
+               execute), UpgradeEngine (a planner only: which mechanisms
+               this machine can upgrade, one step per command, refusals —
+               the CLI and the pane each run the steps their own way and
+               verify via refreshAndWriteState), ScriptRunner, StatusEngine (observes
                programs AND scripts; all checks concurrent — read-only)
   diff/        DiffEngine — pure function: manifest × states -> DiffReport
   git/         GitClient — shells out to `git`, always cwd = repo root

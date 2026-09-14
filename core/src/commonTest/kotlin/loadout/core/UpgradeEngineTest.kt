@@ -2,13 +2,11 @@ package loadout.core
 
 import loadout.core.engine.UpgradeEngine
 import loadout.core.engine.UpgradeException
-import loadout.core.engine.VersionChecker
 import loadout.core.manifest.ManifestLoader
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
-import okio.Path.Companion.toPath
 
 private val MANIFEST = ManifestLoader.parse(
     """
@@ -50,8 +48,7 @@ private val MANIFEST = ManifestLoader.parse(
 )
 
 class UpgradeEngineTest {
-    private fun engine(runner: FakeProcessRunner = FakeProcessRunner()) =
-        UpgradeEngine(runner, VersionChecker(runner), "/repo".toPath())
+    private fun engine() = UpgradeEngine
 
     @Test
     fun anUpgradeIsAlwaysTheWholeMechanism() {
@@ -117,17 +114,5 @@ class UpgradeEngineTest {
             engine().planSourceItems(manifest, "pins", listOf("golang"))
         }
         assertTrue("declares no upgrade command" in e.message.orEmpty(), e.message.orEmpty())
-    }
-
-    @Test
-    fun everyStepRunsEvenWhenOneFails() {
-        val runner = FakeProcessRunner()
-        runner.onCommand("pm upgrade -y", exitCode = 1)
-        runner.onCommand("roll -Syu", exitCode = 0)
-        val plan = engine(runner).plan(MANIFEST, "m1", listOf("pm", "rolling"))
-        val outcomes = engine(runner).execute(plan)
-        assertEquals(2, outcomes.size)
-        assertEquals(false, outcomes.first().success)
-        assertTrue(outcomes.last().success, "a failed mechanism must not stop the others")
     }
 }
