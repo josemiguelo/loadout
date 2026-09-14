@@ -1,0 +1,51 @@
+# The home screen, driven on a pseudo-terminal. Give the screen ~4s to bind
+# the tty and finish its first refresh before the first key: a key on a
+# busy row is refused, and a key before raw mode is lost.
+
+basic_repo repo
+OUT=$("$BIN" --repo repo --machine m1 2>&1)
+echo "$OUT" | grep -q "Usage: loadout" || fail "bare loadout without a TTY still prints help"
+if has_pty; then
+    { sleep 3; printf 'q'; sleep 1; } | pty_run tui-home.log --repo repo --machine m1
+    grep -qa "loadout" tui-home.log || fail "the home screen renders"
+    # The footer is one clipped line, and its wording is compact on a narrow
+    # terminal — assert the keys, not the sentence.
+    grep -qa "enter act" tui-home.log || fail "the home screen says how to act"
+    grep -qa "l open" tui-home.log || fail "the home screen says how to look"
+    grep -qa "programs" tui-home.log || fail "the home screen lists its subjects"
+    grep -qai "Tty already bound" tui-home.log && fail "the home screen must not double-bind the tty" || true
+    ok "bare loadout opens the home screen on a TTY, help without one"
+fi
+
+# --- the scripts row: open the picker -> tick all -> run in the pane -----
+scripts_repo srepo
+"$BIN" --repo srepo --machine m1 setup-new-machine --yes >/dev/null
+rm -f srepo/bootstrap-marker.txt
+"$BIN" --repo srepo --machine m1 status >/dev/null
+if has_pty; then
+    # j to the scripts row, l opens the picker, a ticks every script,
+    # enter asks, enter runs, wait for the refresh, enter closes, q quits
+    # (a q on a finished pane closes it — it never quits the screen).
+    { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+        | pty_run tui-scripts.log --repo srepo --machine m1
+    grep -qa "space tick" tui-scripts.log || fail "the scripts row opens a picker"
+    grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list modes=[setup] scripts" || true
+    grep -qa "These scripts will run" tui-scripts.log || fail "the pane asks before running scripts"
+    grep -qa "Still not done: drifted" tui-scripts.log || fail "the pane re-checks and names what is still not done"
+    grep -qa "missing: nodejs 16" tui-scripts.log || fail "the pane says what the failing check printed"
+    grep -q '"drifted"' srepo/state/m1.json || fail "a pane run records the scripts in the state file"
+    grep -q '"status": "pending"' srepo/state/m1.json || fail "the recorded status comes from the rerun check"
+    grep -q '"exitCode": 0' srepo/state/m1.json || fail "the recorded exit code is the script's own"
+    ok "the home screen runs ticked scripts in its pane and re-checks them"
+
+    # A state write that fails must be said out loud, not swallowed: the runs
+    # happened, nothing recorded them. A read-only state FILE forces it — a
+    # read-only directory would not: rewriting an existing file needs no
+    # directory permission.
+    chmod 400 srepo/state/m1.json
+    { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf 'q'; sleep 0.5; printf 'q'; sleep 1; } \
+        | pty_run tui-nowrite.log --repo srepo --machine m1
+    chmod 600 srepo/state/m1.json
+    grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in the pane"
+    ok "the pane says so when it cannot write the state file"
+fi

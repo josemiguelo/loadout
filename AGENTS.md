@@ -32,7 +32,8 @@ external references may still use the old name. Never reintroduce it in code.
 
 ./gradlew :core:linuxX64Test                        # core unit tests
 ./gradlew :app:linuxX64Test                         # home-model unit tests
-./integration/run-tests.sh [path-to-binary]         # black-box suite (default: debug binary)
+./integration/run-tests.sh [path-to-binary] [pattern] # black-box suite (default: debug binary)
+./integration/run-tests.sh home                     # only t/*home*.sh — 30s instead of 2min
 ```
 
 All three suites must pass before claiming work done. The integration script
@@ -475,15 +476,22 @@ These came from explicit user decisions; don't "improve" them away:
   processes or filesystem: `FakeProcessRunner` (scripted stdout/exit codes;
   unregistered command = exit 127) and Okio `FakeFileSystem`.
 - `EXAMPLE_MANIFEST` in core's ManifestLoaderTest is the shared fixture.
-- Integration = `integration/run-tests.sh`: black-box, real binary, temp repo,
-  local bare git remote, `manual = "..."` custom install keys so tests don't
-  depend on the host's package managers. Add an `ok "..."` test there for every
-  user-visible behavior change.
+- Integration = `integration/run-tests.sh`: black-box, real binary. The
+  runner sources `lib.sh` (ok/fail, fixtures, `has_pty`/`pty_run`) and then
+  every `t/NN-*.sh` in name order, each in its OWN fresh directory — a
+  file builds its fixtures (`basic_repo`, `scripts_repo`, `scaffold_repo`,
+  or inline) and never depends on another file having run; the numbers
+  only fix the order. `manual = "..."` custom install keys keep tests off
+  the host's package managers. Add an `ok "..."` test for every
+  user-visible behavior change, in the file whose subject it is (a new
+  subject = a new file); run just that file with a name pattern while
+  iterating. Never share state across files through `$WORK`.
 - TUI: reducers (`handleKey`) and the pure row builders (`sectionsOf`,
   `scriptRowsOf`, `preselect`, `selectionKey`) are unit-tested via
   `setStateForTest`; rendering is verified manually (ask the user) plus PTY
-  smoke probes; run-tests.sh has Linux-guarded `script`-driven tests of the
-  home screen (bare open, a scripts run in the pane, a refused state write).
+  smoke probes; `t/70-home-screen.sh` has `has_pty`-guarded `script`-driven
+  tests of the home screen (bare open, a scripts run in the pane, a refused
+  state write).
 
 ## CI / release
 

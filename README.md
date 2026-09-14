@@ -84,7 +84,7 @@ $ ./gradlew :app:linkDebugExecutableLinuxX64
 $ ./app/build/bin/linuxX64/debugExecutable/loadout.kexe --help
 
 $ ./gradlew :core:linuxX64Test :app:linuxX64Test   # unit tests
-$ ./integration/run-tests.sh                       # black-box suite (real binary)
+$ ./integration/run-tests.sh [pattern]             # black-box suite (real binary; pattern = only t/*pattern*.sh)
 ```
 
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (macs build on
