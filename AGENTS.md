@@ -401,13 +401,17 @@ These came from explicit user decisions; don't "improve" them away:
   same run without it (`run --pending` existed to back the old enter and
   was removed with it: a scripted retry of everything failed is a bad
   cron job, and the rule it encoded — `preselect` — is the screen's).
-  Rows whose answer is already in hand (scripts, remote, fleet) OPEN IT IN
-  PLACE on `l` — and they show nothing on focus, because their detail is
-  that table; when there is nothing to open (remotes unreachable, fleet in
-  sync) enter says so instead of leaving to print the same answer from a
-  command. THE SCREEN LEAVES ONLY FOR COMMANDS THAT MAY PROMPT: the
-  programs row previews its offenders on focus and dispatches
-  `install --all` on enter, and S/U/C dispatch sync/self-upgrade/setup. It
+  The PROGRAMS row is the same picker over what the last observation
+  found missing (`missingRowsOf`: name, mapped key, the command its
+  variant would run), all ticked; enter plans the ticks with
+  `InstallEngine.plan` (dependencies first, the same refusals `install`
+  raises) and installs them in the pane. Every row's answer is in hand
+  (programs, scripts, remote, fleet): `l` OPENS IT IN PLACE and they show
+  nothing on focus, because their detail is that table; when there is
+  nothing to open (remotes unreachable, fleet in sync) enter says so
+  instead of leaving to print the same answer from a command. NO ROW EVER
+  LEAVES THE SCREEN; only S/U/C do (sync, self-upgrade, setup own the
+  terminal). It
   opens on the stored state, then runs a real `status` refresh (3s on the
   live repo, published like `status` does) and then asks the remotes (4s)
   — both land as they finish, so the screen is usable while they run. The
@@ -419,25 +423,36 @@ These came from explicit user decisions; don't "improve" them away:
   dispatches to a real subcommand through `cli/Actions.kt`'s `dispatch()`.
 - **Floating pane**: Mosaic composites `Box` children in order, so the home
   screen renders its run pane as a real overlay — `Box(fillMaxSize) { body;
-  RunPane() }` with `Modifier.align(Alignment.Center)`. One pane, two
-  planners: `startUpgrade` (mechanism sweeps + source items) and
-  `startScripts` (ticked scripts) both hand `ask()` a list of `PaneStep`s
-  and `confirmRun()` streams them — `PaneRun.scripts` only changes the
-  words and the ending (scripts merge their run history into the refresh,
-  upgrades re-ask the remotes). Only NON-INTERACTIVE commands may stream
-  there: a sudo or confirm prompt behind a pane is invisible, so `ask`
-  refuses unless `sudo -n true` succeeds (pointing at `sudo -v`; the match
-  is `commandNeedsSudo` — a word, not a substring, and a script's CHECK
-  counts too), and install/setup/sync keep exiting into the command
-  instead. The pane opens as a QUESTION — the exact commands, enter runs
-  them, esc changes nothing — then becomes the live log: a dim rule
+  RunPane() }` with `Modifier.align(Alignment.Center)`. One pane, three
+  planners: `startUpgrade` (mechanism sweeps + source items),
+  `startScripts` (ticked scripts) and `startInstalls` (ticked missing
+  programs) each hand `ask()` a list of `PaneStep`s and `confirmRun()`
+  streams them — `PaneRun.kind` only changes the words and the ending
+  (scripts merge their run history into the refresh, installs count what
+  is still missing, upgrades re-ask the remotes). A child's own prompt
+  behind the pane is invisible, so THE PANE ASKS FOR SUDO'S PASSWORD
+  ITSELF: `ask` notes whether any step (or a script's CHECK — the refresh
+  runs it the same way) invokes sudo (`commandNeedsSudo`, a word, not a
+  substring); on the yes, if `sudo -n true` fails, a bold AMBER box takes
+  the bottom of the pane body with a masked field (`PaneRun.password`;
+  `HomeApp` routes printable keys to `passwordKey`, enter/esc stay with
+  the reducer — the one moment the pane asks you something, so it must
+  not look like a log line), enter hands the line to
+  `sudo -S -p '' -v` on STDIN (`ProcessRunner.capture(input=)` — never
+  argv, never env, never the log) so sudo stamps its own cache, a wrong
+  one says "sorry, try again" on the field, esc backs out to the
+  question. A keepalive (`sudo -n -v` every 60s) holds the stamp for the
+  run's duration. A `file:` script that reads stdin on its own is still
+  invisible — nothing can catch that but the author. The pane opens as a
+  QUESTION — the exact commands, enter runs them, esc changes nothing —
+  then becomes the live log: a dim rule
   (`RUN_DIVIDER`) before each step, ↑↓/pgup scroll back through it (0
   follows the tail), esc cancels a run (kills the child), enter closes a
   finished one (clearing an upgrade's selection, never the scripts' picks
   — those follow the verdicts), and the rows refresh underneath without
   leaving the screen. Output goes through `displayLines` (\r progress
   collapsed, ANSI stripped, tabs expanded).
-- **Own frame loop, not `runMosaicBlocking`**: both screens start through
+- **Own frame loop, not `runMosaicBlocking`**: the screen starts through
   `tui/TuiApp.kt`'s `runTui {}`, which binds the tty (`Tty.tryBind()` +
   `asTerminalIn`) and drives Mosaic's public `Mosaic(...)` composition
   itself, so every frame is wrapped in synchronized output (`?2026h`/`l`)
@@ -583,6 +598,11 @@ file never needs a check mode unless it IS the truth's only oracle.
   at ../loadout.wiki). Keep README, the wiki, and **this file** updated with
   every change; the wiki links into josemiguelo/loadouts as the live example,
   so renames there may break wiki links.
+- **Word every user-visible string for the final user.** Screen text, CLI
+  output and the wiki say what to do or what happened, never why the
+  implementation needs it: "a step needs your sudo password", not "sudo's
+  cache is cold". Cache, stamp, mechanism, oracle, transaction are
+  contributor words — they live here and in comments.
 - The user prefers explicit over implicit in every design fork — no
   auto-detection, no fallbacks, no heuristics; errors over guesses. Propose
   designs before implementing when the user asks a question ("is this ok?"

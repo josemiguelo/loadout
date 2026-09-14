@@ -105,6 +105,8 @@ private fun HomeApp(model: HomeModel) {
       Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.onKeyEvent { event ->
+                // A password field eats printable keys; enter/esc still reduce.
+                if (s.run?.password != null && model.passwordKey(event.key)) return@onKeyEvent true
                 homeKeyOf(event)?.let {
                     model.handleKey(it, if (s.run != null) paneRows else viewport)
                 } != null
@@ -133,6 +135,8 @@ private fun HomeApp(model: HomeModel) {
                 // showing it shouldn't mean leaving the screen.
                 if (focused && s.expanded) {
                     body += when (section.action) {
+                        HomeAction.INSTALL_MISSING ->
+                            MissingTable(s, viewport, width, highlight = !overlay)
                         HomeAction.RUN_SCRIPTS ->
                             ScriptsTable(s, viewport, width, highlight = !overlay)
                         HomeAction.REVIEW_OUTDATED ->
@@ -171,20 +175,36 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
     // 80% of the viewport, both ways.
     val paneWidth = (width * 8 / 10).coerceIn(40, width - 2)
     val inner = paneWidth - 4
-    val noun = if (run.scripts) "run" else "upgrade"
+    val frame = SPINNER[spin % SPINNER.size]
     val title = when {
         run.confirming -> "run this?"
         run.cancelled -> "cancelled"
         // A script that ran fine but whose check still fails isn't a failed
-        // run — it's work that isn't done yet.
-        run.done && run.failed -> if (run.scripts) "not all done" else "upgrade failed"
-        run.done -> "$noun finished"
-        run.scripts -> "running ${run.label}  ${SPINNER[spin % SPINNER.size]}"
-        else -> "upgrading ${run.label}  ${SPINNER[spin % SPINNER.size]}"
+        // run — it's work that isn't done yet. Same for a program still missing.
+        run.done && run.failed -> when (run.kind) {
+            PaneKind.SCRIPTS -> "not all done"
+            PaneKind.INSTALL -> "not all installed"
+            PaneKind.UPGRADE -> "upgrade failed"
+        }
+        run.done -> when (run.kind) {
+            PaneKind.SCRIPTS -> "run finished"
+            PaneKind.INSTALL -> "install finished"
+            PaneKind.UPGRADE -> "upgrade finished"
+        }
+        else -> when (run.kind) {
+            PaneKind.SCRIPTS -> "running ${run.label}  $frame"
+            PaneKind.INSTALL -> "installing ${run.label}  $frame"
+            PaneKind.UPGRADE -> "upgrading ${run.label}  $frame"
+        }
     }
     val edge = if (run.failed) p.error else p.accent
     val lines = if (run.confirming) {
-        listOf(if (run.scripts) "These scripts will run, in order:" else "These commands will run, in order:", "") + run.commands +
+        val intro = when (run.kind) {
+            PaneKind.SCRIPTS -> "These scripts will run, in order:"
+            PaneKind.INSTALL -> "These programs will install, in order:"
+            PaneKind.UPGRADE -> "These commands will run, in order:"
+        }
+        listOf(intro, "") + run.commands +
             if (run.sweeps.isEmpty()) {
                 emptyList()
             } else {
@@ -197,8 +217,10 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
     } else {
         run.log
     }
-    // Scrolled back? Pin the window there; otherwise follow the tail.
-    val window = lines.dropLast(run.scrollBack).takeLast(paneRows)
+    // Scrolled back? Pin the window there; otherwise follow the tail. The
+    // password prompt takes the bottom rows of the body as its own box.
+    val promptRows = if (run.password != null) 5 else 0
+    val window = lines.dropLast(run.scrollBack).takeLast(paneRows - promptRows)
     // No background modifier: the pane's own spaces hide what's behind it,
     // so it sits on the TERMINAL's background and follows dark/light like
     // everything else. A painted panel colour would fight the theme.
@@ -220,15 +242,40 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
             }
         }
         // Keep the pane a stable size while output trickles in.
-        repeat((paneRows - window.size).coerceAtLeast(0)) {
+        repeat((paneRows - promptRows - window.size).coerceAtLeast(0)) {
             Row {
                 Text("│ ", color = edge)
                 Text(" ".repeat(inner), color = p.text)
                 Text(" │", color = edge)
             }
         }
+        // The one moment the pane asks YOU something: a box of its own,
+        // amber and bold, so it can't be mistaken for another log line.
+        run.password?.let { typed ->
+            val boxWidth = inner - 2
+            val boxInner = boxWidth - 4
+            val field = "sudo password: " + "•".repeat(typed.length) + "_"
+            val hint = run.passwordError ?: "enter confirms  ·  esc goes back"
+            val boxLines = listOf(
+                "╭" + "─".repeat(boxWidth - 2) + "╮",
+                "│ " + fit("a step needs your sudo password", boxInner) + " │",
+                "│ " + fit(field, boxInner) + " │",
+                "│ " + fit(hint, boxInner) + " │",
+                "╰" + "─".repeat(boxWidth - 2) + "╯",
+            )
+            for (line in boxLines) {
+                Row {
+                    Text("│ ", color = edge)
+                    Text(" ", color = p.text)
+                    Text(line, color = p.warn, textStyle = TextStyle.Bold)
+                    Text(" ", color = p.text)
+                    Text(" │", color = edge)
+                }
+            }
+        }
         val scrolled = if (run.scrollBack > 0) "  ·  ${run.scrollBack} line(s) below" else ""
         val footer = when {
+            run.password != null -> "type the password above  ·  enter  ·  esc back"
             run.confirming -> "enter runs it  ·  esc cancels  ·  ↑↓/pgup/pgdn scroll$scrolled"
             run.done -> run.summary.ifEmpty { "enter closes" } + "  ·  ↑↓/pgup/pgdn scroll" + scrolled
             else -> "step ${run.current + 1} of ${run.steps.size}  ·  ↑↓/pgup/pgdn scroll  ·  esc cancels$scrolled"
@@ -467,6 +514,48 @@ private fun RemoteTable(
 }
 
 /**
+ * The programs picker, rendered under the programs row: every program the
+ * last observation found missing, with what would install it, all ticked.
+ */
+@Composable
+private fun MissingTable(s: HomeState, viewport: Int, width: Int, highlight: Boolean = true): Int {
+    val p = LocalPalette.current
+    val rows = s.missing
+    if (rows.isEmpty()) return 0
+    val nameWidth = rows.maxOf { it.name.length }.coerceAtMost(30) + 2
+    val keyWidth = rows.maxOf { it.installKey.length }.coerceAtMost(12) + 2
+    val used = DETAIL_INDENT.length + 6 + nameWidth + keyWidth
+    for ((offset, row) in rows.drop(s.scroll).take(viewport).withIndex()) {
+        val index = s.scroll + offset
+        val focused = highlight && index == s.detailCursor
+        val chosen = row.name in s.chosen
+        val box = if (chosen) "[x] " else "[ ] "
+        val name = clip(row.name, nameWidth - 1).padEnd(nameWidth)
+        val key = clip("[${row.installKey}]", keyWidth - 1).padEnd(keyWidth)
+        val command = clip(row.command, (width - used).coerceAtLeast(8))
+        if (focused) {
+            Text(
+                fit(DETAIL_FOCUS + box + "✘ " + name + key + command, width),
+                color = p.selectionFg,
+                background = p.selectionBg,
+                textStyle = TextStyle.Bold,
+            )
+        } else {
+            Row {
+                Text(DETAIL_INDENT)
+                Text(box, color = if (chosen) p.accent else p.dim)
+                Text("✘ ", color = p.error)
+                Text(name)
+                Text(key, color = p.dim)
+                Text(command, color = p.dim)
+            }
+        }
+    }
+    ScrollHint(rows.size, s.scroll, viewport)
+    return rows.drop(s.scroll).take(viewport).size + if (rows.size > viewport) 1 else 0
+}
+
+/**
  * The scripts picker, rendered under the scripts row: every maintenance
  * script this machine opts into, its last verdict, and a tick box. Ticking
  * a done one is how you force it.
@@ -521,6 +610,10 @@ private fun HomeFooter(s: HomeState, width: Int) {
     // bottom and the filler math goes with it.
     val tight = width < 100
     val context = when {
+        s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.INSTALL_MISSING ->
+            if (tight) "↑↓ move · space tick · a all · enter install · h close"
+            else "↑↓ move  ·  space tick  ·  a all  ·  enter install" +
+                (if (s.chosen.isEmpty()) "" else " ${s.chosen.size} ticked") + "  ·  h/esc close"
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.RUN_SCRIPTS ->
             if (tight) "↑↓ move · space tick · a all · enter run · h close"
             else "↑↓ move  ·  space tick  ·  a all  ·  enter run" +

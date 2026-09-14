@@ -18,8 +18,13 @@ interface RunningProcess {
  * and env-var references work as they would in a terminal.
  */
 interface ProcessRunner {
-    /** Run [command] capturing stdout/stderr (version checks, probes, git plumbing). */
-    fun capture(command: String, workDir: String? = null): ExecResult
+    /**
+     * Run [command] capturing stdout/stderr (version checks, probes, git
+     * plumbing). [input], when given, is written to the child's stdin and
+     * the pipe closed — the only way a secret reaches a child (`sudo -S`):
+     * never argv, never the environment.
+     */
+    fun capture(command: String, workDir: String? = null, input: String? = null): ExecResult
 
     /**
      * Run [command] with stdio inherited from the parent terminal, so

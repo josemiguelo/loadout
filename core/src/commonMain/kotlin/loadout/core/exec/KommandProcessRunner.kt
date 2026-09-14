@@ -10,11 +10,23 @@ class KommandProcessRunner : ProcessRunner {
         return cmd
     }
 
-    override fun capture(command: String, workDir: String?): ExecResult {
-        val output = command(command, workDir)
+    override fun capture(command: String, workDir: String?, input: String?): ExecResult {
+        val cmd = command(command, workDir)
             .stdout(Stdio.Pipe)
             .stderr(Stdio.Pipe)
-            .output()
+        val output = if (input == null) {
+            cmd.output()
+        } else {
+            val child = cmd.stdin(Stdio.Pipe).spawn()
+            child.bufferedStdin()?.apply {
+                writeLine(input)
+                flush()
+                // No close() here: waitWithOutput drops stdin itself, and
+                // kommand's writer frees the handle twice if we beat it to
+                // it (a double free, seen as an abort).
+            }
+            child.waitWithOutput()
+        }
         return ExecResult(
             exitCode = output.status ?: -1,
             stdout = output.stdout.orEmpty(),

@@ -71,6 +71,28 @@ TOML
     printf 'scripts = ["healthy", "drifted", "bootstrap-only"]\n\n[pm]\nmytool = "fake"\n' > "$1/machines/m1.toml"
 }
 
+# A stand-in sudo on PATH for pane tests: `-n` succeeds only once a stamp
+# file exists, `-S -v` reads the password from stdin and stamps on
+# "secret", anything else runs the command only when stamped. Sets
+# FAKE_SUDO_PATH to put in front of PATH.
+fake_sudo() {
+    mkdir -p fakebin
+    cat > fakebin/sudo <<'SUDO'
+#!/bin/sh
+STAMP=$FAKE_SUDO_STAMP
+case "$1" in
+  -n) shift; [ "${1:-}" = "-v" ] && shift; [ -f "$STAMP" ] || { echo "sudo: a password is required" >&2; exit 1; }; [ $# -gt 0 ] && exec "$@"; exit 0 ;;
+  -S) read -r pw; [ "$pw" = "secret" ] && { touch "$STAMP"; exit 0; } || { echo "Sorry, try again." >&2; exit 1; } ;;
+  *) [ -f "$STAMP" ] || { echo "sudo: a terminal is required" >&2; exit 1; }; exec "$@" ;;
+esac
+SUDO
+    chmod +x fakebin/sudo
+    FAKE_SUDO_PATH=$PWD/fakebin
+    FAKE_SUDO_STAMP=$PWD/sudo-stamp
+    export FAKE_SUDO_STAMP
+    rm -f "$FAKE_SUDO_STAMP"
+}
+
 # The PTY tests need Linux `script`; macOS's has a different syntax.
 has_pty() { [ "$(uname)" = "Linux" ] && command -v script >/dev/null; }
 

@@ -49,3 +49,38 @@ if has_pty; then
     grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in the pane"
     ok "the pane says so when it cannot write the state file"
 fi
+
+# --- the programs row: tick missing programs, the pane asks for sudo ------
+# A fake sudo on PATH: the pane must ask for the password ITSELF (a child's
+# prompt behind it is invisible), refuse a wrong one, and run on the right.
+mkdir -p irepo/state irepo/machines
+cat > irepo/manifest.toml <<'TOML'
+[installers.fake]
+probe = "sh"
+install = "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'"
+check = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
+regex = "([0-9][0-9.]*)"
+
+[programs.alpha]
+via = ["fake"]
+[programs.beta]
+via = ["fake"]
+TOML
+printf '[pm]\nalpha = "fake"\nbeta = "fake"\n' > irepo/machines/m1.toml
+fake_sudo
+"$BIN" --repo irepo --machine m1 status >/dev/null
+if has_pty; then
+    # l opens the picker (both missing, both ticked), enter asks, enter says
+    # yes -> the password field; a wrong password is refused, the right one
+    # runs both installs; enter closes the finished pane, q quits.
+    { sleep 4; printf 'l'; sleep 0.5; printf '\r'; sleep 0.5; printf '\r'; sleep 0.7; printf 'nope\r'; sleep 1; printf 'secret\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+        | PATH="$FAKE_SUDO_PATH:$PATH" pty_run tui-install.log --repo irepo --machine m1
+    grep -qa "These programs will install" tui-install.log || fail "the pane asks before installing"
+    grep -qa "sudo password:" tui-install.log || fail "the pane asks for the sudo password itself"
+    grep -qa "sorry, try again" tui-install.log || fail "a wrong password is refused on the field"
+    grep -qa "nope" tui-install.log && fail "the password must never be echoed" || true
+    grep -qa "All 2 program(s) installed" tui-install.log || fail "the right password runs the installs"
+    [ -f irepo/fake-alpha.txt ] && [ -f irepo/fake-beta.txt ] || fail "both ticked programs were installed"
+    grep -c '"status": "installed"' irepo/state/m1.json | grep -qx 2 || fail "the re-check recorded both as installed"
+    ok "the programs row installs ticked programs in the pane, asking for sudo's password itself"
+fi

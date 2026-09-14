@@ -21,7 +21,7 @@ class FakeProcessRunner : ProcessRunner {
         responses[command] = ExecResult(exitCode, stdout, stderr)
     }
 
-    override fun capture(command: String, workDir: String?): ExecResult {
+    override fun capture(command: String, workDir: String?, input: String?): ExecResult {
         while (true) {
             val current = executedRef.load()
             if (executedRef.compareAndSet(current, current + command)) break

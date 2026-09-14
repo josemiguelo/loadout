@@ -39,7 +39,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 | | Command | What it does |
 |---|---|---|
-| **start here** | `loadout` | The home screen: what needs working on; `l` opens a row's detail, and inside it enter runs what you ticked — pending scripts, outdated mechanisms — in a floating pane; r/S/U/C re-check, sync, upgrade or set up this machine (a pipe gets help instead) |
+| **start here** | `loadout` | The home screen: what needs working on; `l` opens a row's detail, and inside it enter runs what you ticked — missing programs, pending scripts, outdated mechanisms — in a floating pane that asks for your sudo password itself; r/S/U/C re-check, sync, upgrade or set up this machine (a pipe gets help instead) |
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Any program/script exactly as the engine resolves it (default: everything) |
 | | `installers [name]` | The install mechanisms available here — loadout's built-ins plus your own (`--eject` copies the built-ins into your repo) |

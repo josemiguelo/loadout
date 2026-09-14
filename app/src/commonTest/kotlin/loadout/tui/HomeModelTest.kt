@@ -65,7 +65,8 @@ class HomeSectionsTest {
 
         val programs = sections.first { it.subject == "programs" }
         assertEquals(HomeAction.INSTALL_MISSING, programs.action)
-        assertEquals(listOf("kitty"), programs.offenders)
+        // Its detail is the picker (opens on l), so nothing spills on focus.
+        assertTrue(programs.offenders.isEmpty())
         assertEquals(true, programs.severity)
 
         val scripts = sections.first { it.subject == "scripts" }
@@ -182,17 +183,17 @@ class HomeKeysTest {
     }
 
     @Test
-    fun enterActsOnTheFocusedLineOnly() {
+    fun enterNeverLeavesForARow() {
         val m = model(sections)
         // A settled subject has no verb: enter says so instead of exiting.
         assertEquals(false, m.handleKey(HomeKey.ENTER))
         assertEquals(HomeAction.NONE, m.state.action)
         assertEquals(false, m.state.exit)
 
+        // A row with work opens its picker on l; enter points there.
         m.handleKey(HomeKey.DOWN)
-        assertEquals(true, m.handleKey(HomeKey.ENTER))
-        assertEquals(HomeAction.INSTALL_MISSING, m.state.action)
-        assertTrue(m.state.exit)
+        assertEquals(false, m.handleKey(HomeKey.ENTER))
+        assertEquals(false, m.state.exit)
     }
 
     @Test
@@ -215,16 +216,23 @@ class HomeKeysTest {
     }
 
     @Test
-    fun onlyAnInstallEverLeavesTheScreen() {
+    fun noRowEverLeavesTheScreen() {
         // An unanswered remote used to exit into `outdated`, which would fail
-        // the same way; a fleet in sync exited into `diff` to print "in sync".
+        // the same way; a fleet in sync exited into `diff` to print "in sync";
+        // programs exited into `install --all`. Only S/U/C leave now.
         val sections = listOf(
             HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED),
             HomeSection("fleet", "", "compare", HomeAction.SHOW_DIFF),
             HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
         )
         val m = model(sections)
-        m.setStateForTest(HomeState(sections = sections, remote = RemoteStatus.Unavailable("offline")))
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                remote = RemoteStatus.Unavailable("offline"),
+                missing = listOf(ProgramRow("kitty", "dnf", "sudo dnf install -y kitty")),
+            ),
+        )
         assertEquals(false, m.handleKey(HomeKey.ENTER))
         assertEquals(false, m.state.exit)
         assertTrue(m.state.message!!.contains("r tries again"))
@@ -234,8 +242,59 @@ class HomeKeysTest {
         assertTrue(m.state.message!!.contains("in sync"))
 
         m.handleKey(HomeKey.DOWN)
-        assertEquals(true, m.handleKey(HomeKey.ENTER), "an install may prompt: the command owns the terminal")
-        assertEquals(HomeAction.INSTALL_MISSING, m.state.action)
+        assertEquals(false, m.handleKey(HomeKey.ENTER), "the picker opens on l; enter looks")
+        assertTrue(m.state.message!!.contains("press l"))
+        m.handleKey(HomeKey.OPEN)
+        assertTrue(m.state.expanded)
+        assertEquals(HomeAction.NONE, m.state.action)
+    }
+
+    @Test
+    fun thePaneAsksForTheSudoPasswordItself() {
+        val sections = listOf(HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                run = PaneRun(steps = listOf("kitty"), kind = PaneKind.INSTALL, needsSudo = true, confirming = true, password = ""),
+            ),
+        )
+        // Printable keys build the field; nothing else reacts to them.
+        assertTrue(m.passwordKey("s"))
+        assertTrue(m.passwordKey("3"))
+        assertTrue(m.passwordKey("!"))
+        assertEquals("s3!", m.state.run!!.password)
+        assertTrue(m.passwordKey("Backspace"))
+        assertEquals("s3", m.state.run!!.password)
+        assertEquals(false, m.passwordKey("ArrowUp"), "non-printables fall through to the reducer")
+        // j/q/h are letters now, not keys: the reducer never sees them.
+        m.handleKey(HomeKey.QUIT)
+        assertEquals(false, m.state.exit)
+        assertTrue(m.state.run!!.confirming)
+        // esc backs out to the question with nothing run and nothing kept.
+        m.handleKey(HomeKey.ESC)
+        assertNull(m.state.run!!.password)
+        assertTrue(m.state.run!!.confirming)
+    }
+
+    @Test
+    fun theProgramsPickerTicksAndAsksBeforeInstalling() {
+        val rows = missingRowsOf(MANIFEST, SYSTEM, state())
+        // kitty is missing in the fixture state, git is installed.
+        assertEquals(listOf("kitty"), rows.map { it.name })
+        assertEquals("dnf", rows.single().installKey)
+        assertEquals("sudo dnf install -y kitty", rows.single().command)
+
+        val sections = listOf(HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING))
+        val m = model(sections)
+        m.setStateForTest(HomeState(sections = sections, expanded = true, missing = rows, chosen = setOf("kitty")))
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertEquals(emptySet(), m.state.chosen)
+        assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
+        assertNull(m.state.run)
+        assertTrue(m.state.message!!.contains("nothing ticked"))
+        m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
+        assertEquals(setOf("kitty"), m.state.chosen)
     }
 
     @Test
@@ -542,7 +601,7 @@ class HomeKeysTest {
         assertEquals(false, m.state.exit)
         val run = m.state.run!!
         assertTrue(run.confirming)
-        assertTrue(run.scripts)
+        assertEquals(PaneKind.SCRIPTS, run.kind)
         assertEquals(listOf("[pull]  sh pull", "[apply]  sh apply"), run.commands, "in run order, not tick order")
 
         // esc on the question leaves the picks alone for another go.
@@ -569,12 +628,28 @@ class HomeKeysTest {
             HomeState(
                 sections = sections,
                 selection = setOf("tool:dnf"),
-                run = PaneRun(steps = listOf("pull"), scripts = true, done = true, summary = "done"),
+                run = PaneRun(steps = listOf("pull"), kind = PaneKind.SCRIPTS, done = true, summary = "done"),
             ),
         )
         m.handleKey(HomeKey.ENTER)
         assertNull(m.state.run)
         assertEquals(setOf("tool:dnf"), m.state.selection, "only an upgrade's own picks are cleared")
+    }
+
+    @Test
+    fun aDetailThatEmptiedClosesItselfOnTheNextKey() {
+        // Every missing program got installed while the picker was open:
+        // the arrows must move the section cursor again, not a table of
+        // nothing.
+        val sections = listOf(
+            HomeSection("programs", "", "", HomeAction.NONE),
+            HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS),
+        )
+        val m = model(sections)
+        m.setStateForTest(HomeState(sections = sections, expanded = true, missing = emptyList()))
+        m.handleKey(HomeKey.DOWN, viewport = 5)
+        assertEquals(false, m.state.expanded)
+        assertEquals(1, m.state.cursor)
     }
 
     @Test
