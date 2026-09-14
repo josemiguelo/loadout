@@ -2,7 +2,7 @@ package loadout.theme
 
 /**
  * The one source of truth for loadout's visual identity, shared by the
- * maintain TUI (Mosaic colors) and the CLI (24-bit ANSI). Color is signal,
+ * home screen (Mosaic colors) and the CLI (24-bit ANSI). Color is signal,
  * never decoration: every role below means something (ok/warn/error/dim as
  * statuses, accent for headers and actions, machine for machine identity).
  */

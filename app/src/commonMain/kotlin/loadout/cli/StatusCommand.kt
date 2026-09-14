@@ -61,7 +61,7 @@ class StatusCommand : CliktCommand(name = "status") {
         }
     }
 
-    // Same visual language as the maintain screen: ✔/✘/· markers, color as
+    // Same visual language as the home screen: ✔/✘/· markers, color as
     // signal only (ok/warn/error/dim), dim detail lines under failing rows.
     private fun printTable(state: MachineState, detail: Map<String, String>) {
         echo(Style.dim("machine ") + Style.machine(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))

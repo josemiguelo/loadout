@@ -294,7 +294,7 @@ data class ScriptStep(
     val after: List<String> = emptyList(),
     /**
      * Execution surfaces this script participates in: "setup"
-     * (setup-new-machine's converge) and/or "maintain" (the maintain picker).
+     * (setup-new-machine's converge) and/or "maintain" (the home screen's scripts picker).
      * Default: both. Governs execution only — `status` observes every opted-in
      * script regardless, and `run <name>` is the explicit escape hatch.
      */

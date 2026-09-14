@@ -8,8 +8,10 @@ import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
+import loadout.theme.detectDarkTerminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -24,6 +26,12 @@ private val MANIFEST = ManifestLoader.parse(
     run = "true"
     check = "true"
 
+    [scripts.bootstrap]
+    run = "true"
+    modes = ["setup"]
+
+    [machines.m1]
+    scripts = ["dotfiles", "bootstrap"]
     [machines.m1.pm]
     git = "dnf"
     kitty = "dnf"
@@ -61,15 +69,18 @@ class HomeSectionsTest {
         assertEquals(true, programs.severity)
 
         val scripts = sections.first { it.subject == "scripts" }
-        assertEquals(HomeAction.RUN_PENDING, scripts.action)
-        assertEquals(listOf("dotfiles"), scripts.offenders)
+        assertEquals(HomeAction.RUN_SCRIPTS, scripts.action)
+        assertEquals(false, scripts.severity)
+        // Its detail is the picker (opens on l), so nothing spills on focus.
+        assertTrue(scripts.offenders.isEmpty())
     }
 
     @Test
     fun settledSubjectsOfferNothing() {
         val sections = sectionsOf(MANIFEST, SYSTEM, state("dotfiles" to ScriptStatus.DONE), null, null)
         val scripts = sections.first { it.subject == "scripts" }
-        assertEquals(HomeAction.NONE, scripts.action)
+        // Settled, but still openable: ticking a done script is how you force it.
+        assertEquals(HomeAction.RUN_SCRIPTS, scripts.action)
         assertNull(scripts.severity)
         assertTrue(scripts.offenders.isEmpty())
         // No state files to compare: the fleet row can't act either.
@@ -121,7 +132,7 @@ class HomeKeysTest {
 
     private val sections = listOf(
         HomeSection("programs", "", "", HomeAction.NONE),
-        HomeSection("scripts", "", "", HomeAction.RUN_PENDING),
+        HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
     )
 
     @Test
@@ -180,7 +191,7 @@ class HomeKeysTest {
 
         m.handleKey(HomeKey.DOWN)
         assertEquals(true, m.handleKey(HomeKey.ENTER))
-        assertEquals(HomeAction.RUN_PENDING, m.state.action)
+        assertEquals(HomeAction.INSTALL_MISSING, m.state.action)
         assertTrue(m.state.exit)
     }
 
@@ -340,7 +351,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                run = UpgradeRun(
+                run = PaneRun(
                     steps = listOf("pm"),
                     confirming = true,
                     commands = listOf("[pm]  pm upgrade -y"),
@@ -360,7 +371,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                run = UpgradeRun(steps = listOf("pm"), log = (1..30).map { "line $it" }),
+                run = PaneRun(steps = listOf("pm"), log = (1..30).map { "line $it" }),
             ),
         )
         m.handleKey(HomeKey.UP, viewport = 5)
@@ -378,7 +389,7 @@ class HomeKeysTest {
         val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
         val m = model(sections)
         m.setStateForTest(
-            HomeState(sections = sections, run = UpgradeRun(steps = listOf("pm"), label = "pm")),
+            HomeState(sections = sections, run = PaneRun(steps = listOf("pm"), label = "pm")),
         )
         // Mid-run: q cancels the run, it does not quit the screen.
         m.handleKey(HomeKey.QUIT)
@@ -388,7 +399,7 @@ class HomeKeysTest {
             HomeState(
                 sections = sections,
                 selection = setOf("pm"),
-                run = UpgradeRun(steps = listOf("pm"), label = "pm", done = true, summary = "done"),
+                run = PaneRun(steps = listOf("pm"), label = "pm", done = true, summary = "done"),
             ),
         )
         m.handleKey(HomeKey.ENTER)
@@ -474,10 +485,134 @@ class HomeKeysTest {
     }
 
     @Test
+    fun theScriptsPickerListsMaintenanceScriptsWithTheirLastVerdicts() {
+        val rows = scriptRowsOf(MANIFEST, SYSTEM, state("dotfiles" to ScriptStatus.PENDING))
+        // bootstrap is modes=["setup"]: converge's, never the picker's.
+        assertEquals(listOf("dotfiles"), rows.map { it.name })
+        assertEquals(ScriptStatus.PENDING, rows.single().status)
+        assertEquals("true", rows.single().command)
+        // Never observed = unproven, not done — and so ticked.
+        val unseen = scriptRowsOf(MANIFEST, SYSTEM, state())
+        assertNull(unseen.single().status)
+        assertEquals(setOf("dotfiles"), preselect(unseen))
+        assertEquals(emptySet(), preselect(scriptRowsOf(MANIFEST, SYSTEM, state("dotfiles" to ScriptStatus.DONE))))
+    }
+
+    @Test
+    fun theScriptsPickerTicksOneScriptAtATimeAndEnterRunsThemHere() {
+        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
+        val m = model(sections)
+        val rows = listOf(
+            ScriptRow("pull", "sh pull", status = ScriptStatus.PENDING),
+            ScriptRow("apply", "sh apply", status = ScriptStatus.DONE),
+        )
+        m.setStateForTest(HomeState(sections = sections, scripts = rows, picked = setOf("pull")))
+        // enter on the closed row looks, it doesn't run: l opens the picker.
+        m.handleKey(HomeKey.ENTER)
+        assertTrue(m.state.message!!.contains("press l"))
+        m.handleKey(HomeKey.OPEN)
+        assertTrue(m.state.expanded)
+
+        // space on a done script ticks it: that is the force.
+        m.handleKey(HomeKey.DOWN, viewport = 5)
+        m.handleKey(HomeKey.SELECT, viewport = 5)
+        assertEquals(setOf("pull", "apply"), m.state.picked)
+        m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
+        assertEquals(emptySet(), m.state.picked, "a on a full tick clears it")
+        m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
+        assertEquals(setOf("pull", "apply"), m.state.picked)
+
+        // enter runs the picks HERE — the screen stays, the pane asks first.
+        assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
+        assertEquals(false, m.state.exit)
+        val run = m.state.run!!
+        assertTrue(run.confirming)
+        assertTrue(run.scripts)
+        assertEquals(listOf("[pull]  sh pull", "[apply]  sh apply"), run.commands, "in run order, not tick order")
+
+        // esc on the question leaves the picks alone for another go.
+        m.handleKey(HomeKey.ESC, viewport = 5)
+        assertNull(m.state.run)
+        assertEquals(setOf("pull", "apply"), m.state.picked)
+    }
+
+    @Test
+    fun enterWithNothingTickedSaysSo() {
+        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
+        val m = model(sections)
+        m.setStateForTest(HomeState(sections = sections, expanded = true, scripts = listOf(ScriptRow("pull", "sh pull"))))
+        assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
+        assertNull(m.state.run)
+        assertTrue(m.state.message!!.contains("nothing ticked"))
+    }
+
+    @Test
+    fun closingAScriptRunKeepsTheRemoteSelection() {
+        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                selection = setOf("tool:dnf"),
+                run = PaneRun(steps = listOf("pull"), scripts = true, done = true, summary = "done"),
+            ),
+        )
+        m.handleKey(HomeKey.ENTER)
+        assertNull(m.state.run)
+        assertEquals(setOf("tool:dnf"), m.state.selection, "only an upgrade's own picks are cleared")
+    }
+
+    @Test
     fun quitLeavesWithoutAnAction() {
         val m = model(sections, cursor = 1)
         m.handleKey(HomeKey.QUIT)
         assertTrue(m.state.exit)
         assertEquals(HomeAction.NONE, m.state.action)
+    }
+}
+
+class ThemeDetectionTest {
+    @Test
+    fun oscLumaWinsOverColorFgBg() {
+        assertEquals(true, detectDarkTerminal(0.08, null))
+        assertEquals(false, detectDarkTerminal(0.93, "15;0"))
+    }
+
+    @Test
+    fun colorFgBgFallbackAndUnknownDefaultsDark() {
+        assertEquals(true, detectDarkTerminal(null, "15;0"))
+        assertEquals(false, detectDarkTerminal(null, "0;15"))
+        assertEquals(false, detectDarkTerminal(null, "0;7"))
+        assertEquals(true, detectDarkTerminal(null, null))
+        assertEquals(true, detectDarkTerminal(null, "garbage"))
+        assertEquals(false, detectDarkTerminal(null, "12;default;15"))
+    }
+}
+
+class DisplayLinesTest {
+    @Test
+    fun carriageReturnProgressCollapsesToFinalState() {
+        assertEquals(listOf("progress 100%"), displayLines("progress 10%\rprogress 50%\rprogress 100%"))
+    }
+
+    @Test
+    fun ansiEscapesAreStrippedAndTabsExpanded() {
+        assertEquals(listOf("colored ok"), displayLines("\u001b[32mcolored ok\u001b[0m"))
+        assertEquals(listOf("a    b    c"), displayLines("a\tb\tc"))
+    }
+
+    @Test
+    fun embeddedNewlinesSplitAndBlanksDrop() {
+        assertEquals(listOf("one", "two"), displayLines("one\n\ntwo\n"))
+    }
+}
+
+class SudoGuardTest {
+    @Test
+    fun sudoIsMatchedAsAWordNotASubstring() {
+        assertTrue(commandNeedsSudo("sudo dnf install -y git"))
+        assertTrue(commandNeedsSudo("true && sudo systemctl enable x"))
+        assertFalse(commandNeedsSudo("sh 'scripts/pseudo-tty.sh'"))
+        assertFalse(commandNeedsSudo("echo sudoku"))
     }
 }

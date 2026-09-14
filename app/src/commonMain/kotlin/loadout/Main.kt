@@ -8,7 +8,6 @@ import loadout.cli.ExplainCommand
 import loadout.cli.InitCommand
 import loadout.cli.InstallCommand
 import loadout.cli.InstallersCommand
-import loadout.cli.MaintainCommand
 import loadout.cli.OutdatedCommand
 import loadout.cli.RootCommand
 import loadout.cli.RunCommand
@@ -30,7 +29,6 @@ fun main(args: Array<String>) {
                 SetupCommand(),
                 InstallCommand(),
                 OutdatedCommand(),
-                MaintainCommand(),
                 RunCommand(),
                 DiffCommand(),
                 SyncCommand(),

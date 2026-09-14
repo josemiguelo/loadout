@@ -12,10 +12,13 @@ versions across machines. Users declare installers (mechanism patterns: probe/in
 programs (install variants over those installers) and scripts (idempotent
 setup steps) in TOML; each machine
 maps every program to one install variant; state files record what each machine
-actually has; `diff` compares the fleet. CLI + two Mosaic screens: the home screen (bare `loadout`) and the maintain
-picker. The old dashboard TUI was deleted on 2026-08-21 because it
-RE-DISPLAYED what commands already did; the home screen is the opposite —
-it observes, then dispatches to those commands, and owns no domain logic.
+actually has; `diff` compares the fleet. CLI + ONE Mosaic screen: the home
+screen (bare `loadout`). The old dashboard TUI was deleted on 2026-08-21
+because it RE-DISPLAYED what commands already did; the `maintain` picker
+was deleted on 2026-09-14 because the home screen's scripts row became the
+same picker with the same pane. The home screen observes, then dispatches
+to commands (or streams non-interactive ones in its pane), and owns no
+domain logic.
 
 Renamed from `post-installer` on 2026-08-17 — the working directory and some
 external references may still use the old name. Never reintroduce it in code.
@@ -28,7 +31,7 @@ external references may still use the old name. Never reintroduce it in code.
 ./gradlew :app:linkReleaseExecutableLinuxX64        # optimized (slow)
 
 ./gradlew :core:linuxX64Test                        # core unit tests
-./gradlew :app:linuxX64Test                         # maintain-model unit tests
+./gradlew :app:linuxX64Test                         # home-model unit tests
 ./integration/run-tests.sh [path-to-binary]         # black-box suite (default: debug binary)
 ```
 
@@ -36,10 +39,12 @@ All three suites must pass before claiming work done. The integration script
 builds nothing — link the binary first.
 
 **Testing the TUI without a human**: Mosaic needs a real TTY; use `script` to
-fake one and pipe keys with sleeps:
+fake one and pipe keys with sleeps (give the screen ~4s to bind the tty and
+finish its first refresh before the first key — a key on a busy row is
+refused, and a key before raw mode is lost):
 
 ```sh
-(sleep 2; printf 'a'; sleep 1; printf '\r'; sleep 3; printf 'q') | script -qec "$BIN --repo <repo> maintain" /dev/null
+(sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 1; printf 'q') | script -qec "$BIN --repo <repo>" /dev/null
 ```
 
 A run that doesn't exit usually means a coroutine kept `runMosaic` alive (see
@@ -84,14 +89,14 @@ app/   loadout
   Main.kt      Clikt dispatch (bare invocation prints help). Catches
                LoadoutException (+ okio.IOException) -> "error: ..." + exit 1
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
-               one file per subcommand (status/explain/installers/setup-new-machine/install/upgrade/self-upgrade/outdated/maintain/run/diff/sync/init).
+               one file per subcommand (status/explain/installers/setup-new-machine/install/upgrade/self-upgrade/outdated/run/diff/sync/init).
                SelfVersion = the one remote-self-check carve-out: status
                footer (6h cache read/written with Okio, fail-soft) +
                outdated self-row (fresh);
                `self-upgrade` shells to INSTALL_COMMAND and needs no repo, so
                it works under a min-tool-version refusal (which points at it)
-  tui/         MaintainModel (ALL state + logic, no rendering, unit-tested)
-               + TuiApp.kt (Mosaic composables for the maintain screen only)
+  tui/         HomeModel (ALL state + logic, no rendering, unit-tested)
+               + HomeApp.kt (the composables) + TuiApp.kt (palette, frame loop)
 ```
 
 ## Design contract — do not violate
@@ -174,7 +179,8 @@ These came from explicit user decisions; don't "improve" them away:
     error. No implicit script application; no os/bootc auto-detection to
     decide membership. A script's optional `modes` (["setup"], ["maintain"],
     default both) scopes EXECUTION surfaces only — setup-new-machine converges
-    setup-mode scripts, maintain lists maintain-mode ones; status observes all
+    setup-mode scripts, the home screen's scripts picker lists maintain-mode
+    ones; status observes all
     opted-in scripts regardless and `run` ignores modes (explicit escape
     hatch). Empty or unknown modes are load errors.
 13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
@@ -299,9 +305,9 @@ These came from explicit user decisions; don't "improve" them away:
   integration suite this way (q pressed mid-refresh, spinner still ticking).
 - **TUI coroutine rule**: async work must NOT run on the composition's scope
   (`rememberCoroutineScope`) — a lingering job there keeps `runMosaic` from
-  ever finishing (caused a q-after-refresh hang). MaintainModel owns its own
+  ever finishing (caused a q-after-refresh hang). HomeModel owns its own
   `CoroutineScope(SupervisorJob() + blockingDispatcher)`; UI calls
-  `model.dispatch(action)`. Keep it that way.
+  `model.handleKey(key)`. Keep it that way.
 - **TUI size**: Mosaic 0.18's `LocalTerminalState.size` does NOT report the
   real TTY size — TuiApp polls `platform.terminalRows()`/`terminalColumns()`
   (TIOCGWINSZ) every 300ms instead, with 24x80 fallback; the polling effect
@@ -311,7 +317,7 @@ These came from explicit user decisions; don't "improve" them away:
   `loadout.theme`) holds the Tokyo Night / Day `ThemePalette` pairs and
   `detectDarkTerminal(bgLuma, COLORFGBG)`; the TUI maps it to Mosaic colors
   (TuiApp `toPalette()`), the CLI emits it as 24-bit ANSI (`Style` — Mordant
-  may re-encode the SGR codes on output; that's normal). `MaintainState.dark`
+  may re-encode the SGR codes on output; that's normal). `HomeState.dark`
   toggled with `t`; bgLuma is a real OSC 11 query
   (`platform.terminalBackgroundLuma()`, raw-mode /dev/tty round-trip,
   150ms fail-soft) that MUST run before runMosaic owns the terminal — CLI
@@ -374,10 +380,26 @@ These came from explicit user decisions; don't "improve" them away:
   upgradable mechanism render `[–]` and refuse selection (custom-oracle rows,
   or an installer with no `upgrade`). `l` only ever OPENS — it never
   dispatches, so the vim keys can't start an install by accident.
-  Rows whose answer is already in hand (remote, fleet) OPEN IT IN PLACE on
-  enter instead of leaving — and they show nothing on focus, because their
-  detail is that table. Rows whose verb changes the machine (programs,
-  scripts) preview their offenders on focus and dispatch on enter. It
+  The SCRIPTS row is the picker the old `maintain` command was: `l` lists
+  every maintain-mode script this machine opts into (`scriptRowsOf`, in
+  run order) with the verdict the last observation wrote down (✔ done,
+  ! pending, ✘ failed, · never observed), anything not done pre-ticked
+  (`preselect` — re-applied after EVERY refresh, so picks follow verdicts);
+  space ticks one script (a done one too: that is the force), a all,
+  enter runs the ticks in the pane, forced, each under its own rule. The
+  pane then runs the same `refreshAndWriteState` the r key does (3s on the
+  live repo — the checks ARE the verdicts, so the pane never streams a
+  check itself), names what is "Still not done" with the first line each
+  failing check printed (`app.lastScriptDetail`), and titles itself "not
+  all done" rather than "failed" — a script that exited 0 with a check
+  still failing is work left, not a crash. A refresh that can't write
+  ends with "state not written — the run above is not recorded" in red.
+  The scripts row never leaves the screen; `run --pending` / `run <names>
+  --force` are the same rule without it.
+  Rows whose answer is already in hand (scripts, remote, fleet) OPEN IT IN
+  PLACE on `l` — and they show nothing on focus, because their detail is
+  that table. The programs row previews its offenders on focus and
+  dispatches `install --all` on enter, because installs may prompt. It
   opens on the stored state, then runs a real `status` refresh (3s on the
   live repo, published like `status` does) and then asks the remotes (4s)
   — both land as they finish, so the screen is usable while they run. The
@@ -389,15 +411,24 @@ These came from explicit user decisions; don't "improve" them away:
   dispatches to a real subcommand through `cli/Actions.kt`'s `dispatch()`.
 - **Floating pane**: Mosaic composites `Box` children in order, so the home
   screen renders its run pane as a real overlay — `Box(fillMaxSize) { body;
-  RunPane() }` with `Modifier.align(Alignment.Center).background(...)`. Only
-  NON-INTERACTIVE commands may stream there: a sudo or confirm prompt behind
-  a pane is invisible, so `startUpgrade` refuses unless `sudo -n true`
-  succeeds (pointing at `sudo -v`), and install/setup/sync keep exiting into
-  the command instead. The pane opens as a QUESTION — the exact commands,
-  enter runs them, esc changes nothing — then becomes the live log: ↑↓/pgup
-  scroll back through it (0 follows the tail), esc cancels a run (kills the
-  child), enter closes a finished one, and the rows refresh underneath
-  without leaving the screen.
+  RunPane() }` with `Modifier.align(Alignment.Center)`. One pane, two
+  planners: `startUpgrade` (mechanism sweeps + source items) and
+  `startScripts` (ticked scripts) both hand `ask()` a list of `PaneStep`s
+  and `confirmRun()` streams them — `PaneRun.scripts` only changes the
+  words and the ending (scripts merge their run history into the refresh,
+  upgrades re-ask the remotes). Only NON-INTERACTIVE commands may stream
+  there: a sudo or confirm prompt behind a pane is invisible, so `ask`
+  refuses unless `sudo -n true` succeeds (pointing at `sudo -v`; the match
+  is `commandNeedsSudo` — a word, not a substring, and a script's CHECK
+  counts too), and install/setup/sync keep exiting into the command
+  instead. The pane opens as a QUESTION — the exact commands, enter runs
+  them, esc changes nothing — then becomes the live log: a dim rule
+  (`RUN_DIVIDER`) before each step, ↑↓/pgup scroll back through it (0
+  follows the tail), esc cancels a run (kills the child), enter closes a
+  finished one (clearing an upgrade's selection, never the scripts' picks
+  — those follow the verdicts), and the rows refresh underneath without
+  leaving the screen. Output goes through `displayLines` (\r progress
+  collapsed, ANSI stripped, tabs expanded).
 - **Own frame loop, not `runMosaicBlocking`**: both screens start through
   `tui/TuiApp.kt`'s `runTui {}`, which binds the tty (`Tty.tryBind()` +
   `asTerminalIn`) and drives Mosaic's public `Mosaic(...)` composition
@@ -414,47 +445,25 @@ These came from explicit user decisions; don't "improve" them away:
 - **One Mosaic app per process**: `Tty.tryBind()` (inside `runTui`) binds the tty once and
   never releases it — a second call anywhere in the same process dies with
   `IllegalStateException: Tty already bound`. So the home screen cannot
-  reopen after an action and cannot launch the maintain picker: it exits
-  INTO its action (install --all / run --pending / outdated / diff) and the
-  process ends. Any "return to the home screen" loop needs re-exec, not a
-  second runMosaic.
-- **TUI + sudo**: streamed output would swallow a sudo password prompt; the
-  maintain screen refuses sudo scripts unless `sudo -n true` succeeds and
-  points users at `sudo -v`. The match is `commandNeedsSudo` (word, not
-  substring — "pseudo-tty" isn't sudo) and covers the script's CHECK too,
-  which streams the same way.
-- **Maintain screen** (`loadout maintain`, TTY-only — UsageError otherwise):
-  the picker opens on the LAST OBSERVED verdicts — `load()` reads
-  `state/<machine>.json` and shows each script's stored done/pending/failed
-  (never-observed = "not observed"), preselecting everything not `done`, with
-  a header saying the verdicts are the last `status`'s. `run --pending` is the
-  same rule without the TUI. Don't make either re-run the checks on open: they
-  take minutes, and `status` already wrote the answer down.
-  MaintainModel drives picker (ALL opted-in scripts, check-less included) ->
-  sequential FORCED runs of the scripts themselves with live-log accordion
-  (a run's verdict counts only the rows it touched — rows can start pending
-  from the state file without being selected) ->
-  full-log viewer. Rendering is borderless and fills the whole terminal:
-  width from `platform.terminalColumns()` (polled with terminalRows), footer
-  pushed to the bottom with filler lines (user decision — no panel boxes
-  here). After each script its `check` (when present) reruns and
-  decides done/pending — surfaced as its own `checking…` state
-  (RunStatus.CHECKING), since a check can take minutes and "running" after
-  `exit 0` reads as a hang; check-less scripts report exit code (done/failed);
-  results are MERGED into the existing state file directly (the statuses ARE
-  the checks this run just executed; a full refreshAndWriteState here would
-  re-probe everything for minutes — it's used only when no state file exists
-  yet), skipped on cancel. A write that FAILS ends the run with "state not
-  written (<reason>)" and exit 1, never "all N done" over an unwritten file. `status` is the report side: it prints script
+  reopen after an action: it exits INTO its action (install --all /
+  outdated / diff / sync / setup / self-upgrade) and the process ends. Any
+  "return to the home screen" loop needs re-exec, not a second runMosaic.
+- **The picker opens on the LAST OBSERVED verdicts** — `load()` reads
+  `state/<machine>.json`; the refresh that follows re-asks them (3s on the
+  live repo) and the rows update in place. `run --pending` is the same rule
+  without the TUI. Check-less scripts report their exit code (done/failed);
+  a script's verdict is otherwise its check, re-run by the refresh after
+  the pane's run — a run's verdict counts only the scripts it ran (rows can
+  be pending without being ticked). Live output comes from
+  `ProcessRunner.stream`, which prepends `exec 2>&1` (merges stderr without
+  a subshell so sh tail-execs and `kill()` reaches the real process) and
+  reads kommand's `Child.bufferedStdout().readLine()`. Ceiling: kill hits
+  the direct child only; a grandchild holding the pipe open delays the
+  reader. On esc-cancel the model marks the run cancelled immediately and
+  the zombie stream return is guarded off (`cancelled`) — don't let a late
+  return mutate state. `status` is the report side: it prints script
   statuses with each failing check's detail (StatusEngine.lastScriptDetail,
-  surfaced like StateStore.lastWarnings). Live
-  output comes from `ProcessRunner.stream`, which prepends `exec 2>&1`
-  (merges stderr without a subshell so sh tail-execs and `kill()` reaches the
-  real process) and reads kommand's `Child.bufferedStdout().readLine()`.
-  Ceiling: kill hits the direct child only; a grandchild holding the pipe
-  open delays the reader. On esc-cancel the model finalizes state immediately
-  and the zombie stream return is guarded off — don't let a late return
-  mutate state.
+  surfaced like StateStore.lastWarnings).
 - ktoml quirk insurance: manifest schema sticks to plain nested tables (no
   inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
 - `.toml.sample` files in `machines/` and `manifest.d/` are deliberately
@@ -470,9 +479,11 @@ These came from explicit user decisions; don't "improve" them away:
   local bare git remote, `manual = "..."` custom install keys so tests don't
   depend on the host's package managers. Add an `ok "..."` test there for every
   user-visible behavior change.
-- TUI: reducers (`handleKey`) are unit-tested via `setStateForTest`; rendering
-  is verified manually (ask the user) plus PTY smoke probes; run-tests.sh has
-  a Linux-guarded `script`-driven test of the maintain screen.
+- TUI: reducers (`handleKey`) and the pure row builders (`sectionsOf`,
+  `scriptRowsOf`, `preselect`, `selectionKey`) are unit-tested via
+  `setStateForTest`; rendering is verified manually (ask the user) plus PTY
+  smoke probes; run-tests.sh has Linux-guarded `script`-driven tests of the
+  home screen (bare open, a scripts run in the pane, a refused state write).
 
 ## CI / release
 
@@ -546,6 +557,10 @@ file never needs a check mode unless it IS the truth's only oracle.
 - **Stop the Gradle daemon when you're done**: `./gradlew --stop` at the end
   of a task (not after every build — it's what keeps rebuilds fast). The
   user doesn't want the `java … GradleDaemon` process lingering.
+- **Close your tmux test windows**: this session runs inside the user's own
+  tmux, so a real-terminal check of the TUI is `tmux new-window -d -n ldtest`
+  + `send-keys` + `capture-pane` — and `tmux kill-window -t ldtest` before
+  the task ends, every time. Nothing of yours stays open.
 - After completing any phase/feature, end with a **"Try it"** section: exact
   commands, binary path, expected output.
 - Docs split (2026-08-24): **README.md** is a concise front door (concept,

@@ -22,6 +22,7 @@ import com.jakewharton.mosaic.ui.TextStyle
 import loadout.cli.AppContext
 import loadout.cli.UpdateRow
 import loadout.core.diff.InstallState
+import loadout.core.model.ScriptStatus
 import loadout.core.TOOL_VERSION
 import loadout.core.platform.terminalColumns
 import loadout.core.platform.terminalRows
@@ -132,6 +133,8 @@ private fun HomeApp(model: HomeModel) {
                 // showing it shouldn't mean leaving the screen.
                 if (focused && s.expanded) {
                     body += when (section.action) {
+                        HomeAction.RUN_SCRIPTS ->
+                            ScriptsTable(s, viewport, width, highlight = !overlay)
                         HomeAction.REVIEW_OUTDATED ->
                             RemoteTable(s.remote as? RemoteStatus.Answered, s, viewport, width, highlight = !overlay)
                         HomeAction.SHOW_DIFF ->
@@ -142,11 +145,9 @@ private fun HomeApp(model: HomeModel) {
                     body += offenderLines(section, rows)
                 }
             }
-            // Fill the terminal: the footer belongs at the bottom, the same
-            // way the maintain screen pins its key bar.
+            // Fill the terminal: the footer belongs at the bottom.
             val footer = 3 + (if (s.message != null) 1 else 0)
-            // -1 like the maintain screen: filling the last line scrolls the
-            // header off the top.
+            // -1: filling the last line scrolls the header off the top.
             repeat((rows - body - footer - 1).coerceAtLeast(0)) { Text("") }
             HomeFooter(s, width)
         }
@@ -165,21 +166,25 @@ private fun HomeApp(model: HomeModel) {
  * invisible, so sudo's cache has to be warm before we start.
  */
 @Composable
-private fun BoxScope.RunPane(run: UpgradeRun, spin: Int, width: Int, paneRows: Int) {
+private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int) {
     val p = LocalPalette.current
     // 80% of the viewport, both ways.
     val paneWidth = (width * 8 / 10).coerceIn(40, width - 2)
     val inner = paneWidth - 4
+    val noun = if (run.scripts) "run" else "upgrade"
     val title = when {
         run.confirming -> "run this?"
         run.cancelled -> "cancelled"
-        run.done && run.failed -> "upgrade failed"
-        run.done -> "upgrade finished"
+        // A script that ran fine but whose check still fails isn't a failed
+        // run — it's work that isn't done yet.
+        run.done && run.failed -> if (run.scripts) "not all done" else "upgrade failed"
+        run.done -> "$noun finished"
+        run.scripts -> "running ${run.label}  ${SPINNER[spin % SPINNER.size]}"
         else -> "upgrading ${run.label}  ${SPINNER[spin % SPINNER.size]}"
     }
     val edge = if (run.failed) p.error else p.accent
     val lines = if (run.confirming) {
-        listOf("These commands will run, in order:", "") + run.commands +
+        listOf(if (run.scripts) "These scripts will run, in order:" else "These commands will run, in order:", "") + run.commands +
             if (run.sweeps.isEmpty()) {
                 emptyList()
             } else {
@@ -433,8 +438,8 @@ private fun RemoteTable(
             clip("[${row.source}]", sourceWidth) +
             if (row.note.isNotEmpty() && width - used > 12) "  " + clip(row.note, width - used - 2) else ""
         if (focused) {
-            // Same selection bar the section list and the maintain picker
-            // use: a lone caret was too quiet to find.
+            // Same selection bar the section list uses: a lone caret was
+            // too quiet to find.
             Text(
                 fit(DETAIL_FOCUS + line, width),
                 color = p.selectionFg,
@@ -461,6 +466,52 @@ private fun RemoteTable(
     return updates.drop(s.scroll).take(viewport).size + if (updates.size > viewport) 1 else 0
 }
 
+/**
+ * The scripts picker, rendered under the scripts row: every maintenance
+ * script this machine opts into, its last verdict, and a tick box. Ticking
+ * a done one is how you force it.
+ */
+@Composable
+private fun ScriptsTable(s: HomeState, viewport: Int, width: Int, highlight: Boolean = true): Int {
+    val p = LocalPalette.current
+    val rows = s.scripts
+    if (rows.isEmpty()) return 0
+    val nameWidth = rows.maxOf { it.name.length }.coerceAtMost(30) + 2
+    for ((offset, row) in rows.drop(s.scroll).take(viewport).withIndex()) {
+        val index = s.scroll + offset
+        val focused = highlight && index == s.detailCursor
+        val picked = row.name in s.picked
+        val box = if (picked) "[x] " else "[ ] "
+        // Same marks as the status table: ✔ done, ! pending, ✘ failed, and
+        // · for a script nothing has observed here yet.
+        val (mark, markColor, verdict) = when (row.status) {
+            ScriptStatus.DONE -> Triple("✔ ", p.ok, "done")
+            ScriptStatus.PENDING -> Triple("! ", p.warn, "pending")
+            ScriptStatus.FAILED -> Triple("✘ ", p.error, "failed")
+            null -> Triple("· ", p.dim, "not observed")
+        }
+        val name = clip(row.name, nameWidth - 1).padEnd(nameWidth)
+        if (focused) {
+            Text(
+                fit(DETAIL_FOCUS + box + mark + name + verdict, width),
+                color = p.selectionFg,
+                background = p.selectionBg,
+                textStyle = TextStyle.Bold,
+            )
+        } else {
+            Row {
+                Text(DETAIL_INDENT)
+                Text(box, color = if (picked) p.accent else p.dim)
+                Text(mark, color = markColor)
+                Text(name)
+                Text(verdict, color = if (row.status == ScriptStatus.DONE) p.dim else markColor)
+            }
+        }
+    }
+    ScrollHint(rows.size, s.scroll, viewport)
+    return rows.drop(s.scroll).take(viewport).size + if (rows.size > viewport) 1 else 0
+}
+
 @Composable
 private fun HomeFooter(s: HomeState, width: Int) {
     val p = LocalPalette.current
@@ -470,6 +521,10 @@ private fun HomeFooter(s: HomeState, width: Int) {
     // bottom and the filler math goes with it.
     val tight = width < 100
     val context = when {
+        s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.RUN_SCRIPTS ->
+            if (tight) "↑↓ move · space tick · a all · enter run · h close"
+            else "↑↓ move  ·  space tick  ·  a all  ·  enter run" +
+                (if (s.picked.isEmpty()) "" else " ${s.picked.size} ticked") + "  ·  h/esc close"
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
             if (tight) "↑↓ move · space select pm · a all · enter upgrade · h close"
             else "↑↓ move  ·  space select  ·  a all  ·  enter/u upgrade" +

@@ -68,16 +68,13 @@ class RootCommand : CliktCommand(name = "loadout") {
     /**
      * Render the home screen, then hand the terminal to whatever the user
      * chose. One TUI per invocation: Mosaic binds the tty once per process
-     * ("Tty already bound"), so the screen cannot reopen afterwards and the
-     * picker (another Mosaic app) cannot be an action — "run what's pending"
-     * dispatches `run --pending`, which does exactly that set. Upgrades are
-     * the exception: they stream INSIDE the screen's floating pane, because
-     * they never prompt.
+     * ("Tty already bound"), so the screen cannot reopen afterwards. Upgrades
+     * and script runs never leave: they stream INSIDE the screen's floating
+     * pane, because they never prompt.
      */
     private fun home(app: AppContext) {
         val code = when (runHomeTui(app)) {
-            HomeAction.NONE -> return
-            HomeAction.RUN_PENDING -> dispatch(RunCommand(), app, listOf("--pending"))
+            HomeAction.NONE, HomeAction.RUN_SCRIPTS -> return
             HomeAction.INSTALL_MISSING -> dispatch(InstallCommand(), app, listOf("--all"))
             HomeAction.REVIEW_OUTDATED -> dispatch(OutdatedCommand(), app)
             HomeAction.SHOW_DIFF -> dispatch(DiffCommand(), app)

@@ -615,32 +615,37 @@ echo "$OUT" | grep -qE "drifted +pending" || fail "status lists failing scripts"
 echo "$OUT" | grep -q "missing: nodejs 16 npm firebase-tools" || fail "status surfaces the failing check's detail"
 ok "status shows scripts with each failing check's detail"
 
-# maintain (interactive): PTY-drive select-all -> run scripts -> view a log.
+# The home screen's scripts row (interactive): PTY-drive open the picker ->
+# tick all -> run in the pane -> confirm -> let the re-check land -> quit.
 # linux-only: macOS `script` has a different syntax; reducers are unit-tested.
-"$BIN" --repo instrepo --machine m1 maintain </dev/null >/dev/null 2>&1 && fail "maintain without a TTY should fail" || true
+"$BIN" --repo instrepo --machine m1 run </dev/null >/dev/null 2>&1 && fail "run without names should fail" || true
 if [ "$(uname)" = "Linux" ] && command -v script >/dev/null; then
-    # select all, run, cursor down to the drifted row, open its log viewer, quit
-    { sleep 2; printf 'a'; sleep 1; printf '\r'; sleep 3; printf '\033[B'; sleep 1; printf '\r'; sleep 1; printf '\033'; sleep 1; printf 'q'; sleep 1; } \
-        | script -qec "\"$BIN\" --repo instrepo --machine m1 maintain" tui-maintain.log >/dev/null \
-        && fail "maintain should exit 1 while drifted's check still fails" || true
-    grep -qa "loadout maintain" tui-maintain.log || fail "maintain renders its title bar"
-    grep -qa "bootstrap-only" tui-maintain.log && fail "maintain must not list modes=[setup] scripts" || true
-    grep -qa "check: still failing" tui-maintain.log || fail "maintain reruns the check after the script and records the verdict"
-    grep -q '"drifted"' instrepo/state/m1.json || fail "maintain records the run in the state file"
-    grep -q '"status": "pending"' instrepo/state/m1.json || fail "maintain state status comes from the rerun check"
-    ok "maintain runs selected scripts in a PTY, exits 1 when a check still fails"
+    rm -f instrepo/bootstrap-marker.txt
+    # j to the scripts row, l opens the picker, a ticks every script,
+    # enter asks, enter runs, wait for the refresh, enter closes, q quits
+    # (a q on a finished pane closes it — it never quits the screen).
+    { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+        | script -qec "\"$BIN\" --repo instrepo --machine m1" tui-scripts.log >/dev/null || true
+    grep -qa "space tick" tui-scripts.log || fail "the scripts row opens a picker"
+    grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list modes=[setup] scripts" || true
+    grep -qa "These scripts will run" tui-scripts.log || fail "the pane asks before running scripts"
+    grep -qa "Still not done: drifted" tui-scripts.log || fail "the pane re-checks and names what is still not done"
+    grep -qa "missing: nodejs 16" tui-scripts.log || fail "the pane says what the failing check printed"
+    grep -q '"drifted"' instrepo/state/m1.json || fail "a pane run records the scripts in the state file"
+    grep -q '"status": "pending"' instrepo/state/m1.json || fail "the recorded status comes from the rerun check"
+    grep -q '"exitCode": 0' instrepo/state/m1.json || fail "the recorded exit code is the script's own"
+    ok "the home screen runs ticked scripts in its pane and re-checks them"
 
     # A state write that fails must be said out loud, not swallowed: the runs
     # happened, nothing recorded them. A read-only state FILE forces it — a
     # read-only directory would not: rewriting an existing file needs no
     # directory permission.
     chmod 400 instrepo/state/m1.json
-    { sleep 2; printf 'a'; sleep 1; printf '\r'; sleep 4; printf 'q'; sleep 1; } \
-        | script -qec "\"$BIN\" --repo instrepo --machine m1 maintain" tui-nowrite.log >/dev/null \
-        && fail "maintain should exit 1 when the state write fails" || true
+    { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf 'q'; sleep 0.5; printf 'q'; sleep 1; } \
+        | script -qec "\"$BIN\" --repo instrepo --machine m1" tui-nowrite.log >/dev/null || true
     chmod 600 instrepo/state/m1.json
-    grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in maintain"
-    ok "maintain says so when it cannot write the state file"
+    grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in the pane"
+    ok "the pane says so when it cannot write the state file"
 fi
 
 # --- machine bases + subfolders -----------------------------------------

@@ -39,7 +39,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 | | Command | What it does |
 |---|---|---|
-| **start here** | `loadout` | The home screen: what needs working on, enter acts on the focused row, and r/S/U/C re-check, sync, upgrade or set up this machine (a pipe gets help instead) |
+| **start here** | `loadout` | The home screen: what needs working on; `l` opens a row's detail, and inside it enter runs what you ticked — pending scripts, outdated mechanisms — in a floating pane; r/S/U/C re-check, sync, upgrade or set up this machine (a pipe gets help instead) |
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Any program/script exactly as the engine resolves it (default: everything) |
 | | `installers [name]` | The install mechanisms available here — loadout's built-ins plus your own (`--eject` copies the built-ins into your repo) |
@@ -49,7 +49,6 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Move installed programs to newer versions, a whole mechanism at a time (`upgrade dnf brew`, or `--all` for every mechanism this machine maps) — never a single package |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--pending` = the ones status didn't find done, `--force` overrides) |
-| | `maintain` | Interactive picker over the maintenance scripts — opens on the last observed verdicts with the unfinished ones already selected — live-streamed logs, checks as verdicts |
 | **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
 | | `self-upgrade` | Replace the loadout binary — needs no repo, works even under a version-floor refusal |
 | | `init` | Scaffold a new config repo |
@@ -98,7 +97,7 @@ Stack: [Clikt](https://github.com/ajalt/clikt) ·
 [ktoml](https://github.com/orchestr7/ktoml) · kotlinx-serialization ·
 [kommand](https://github.com/kgit2/kommand) ·
 [Okio](https://square.github.io/okio/) ·
-[Mosaic](https://github.com/JakeWharton/mosaic) (the maintain screen).
+[Mosaic](https://github.com/JakeWharton/mosaic) (the home screen).
 
 Known limits: unix-like only · dependency edges have no version constraints
 · linux-arm64 builds but isn't released.

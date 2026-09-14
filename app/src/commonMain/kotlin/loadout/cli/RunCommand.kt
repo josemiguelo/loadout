@@ -20,7 +20,7 @@ class RunCommand : CliktCommand(name = "run") {
         "Run the named scripts from the manifest.",
         "<scripts...>  script names (must be opted in by this machine)",
         "--all         every script this machine opts into, instead of names",
-        "--pending     the ones the last status did not find done",
+        "--pending     only the scripts the last status left pending, failed, or never checked — what the home screen ticks for you",
         "--force       run even when the check already passes",
     )
 
@@ -32,7 +32,7 @@ class RunCommand : CliktCommand(name = "run") {
     ).flag()
     private val pending by option(
         "--pending",
-        help = "Run the opted-in scripts the state file doesn't record as done (never-observed included)",
+        help = "Only the opted-in scripts the last status left pending, failed, or never checked",
     ).flag()
     private val force by option("--force", help = "Run even if the script's check passes").flag()
 

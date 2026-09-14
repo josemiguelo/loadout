@@ -42,7 +42,7 @@ class ScriptRunner(
      * Run [step] unless its `check` already passes (or [force]). [args] is the
      * machine's argument string; it reaches both the `check` (as positional
      * parameters) and a `file` script's argv. Output goes straight to the
-     * terminal — the maintain screen streams via ProcessRunner.stream instead.
+     * terminal — the home screen's pane streams via ProcessRunner.stream instead.
      */
     fun run(
         step: ScriptStep,

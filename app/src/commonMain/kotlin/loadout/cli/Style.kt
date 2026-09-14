@@ -13,7 +13,7 @@ import com.github.ajalt.mordant.rendering.TextColors
 
 /**
  * ANSI styling for CLI screens, using the SAME Tokyo Night / Day palette as
- * the maintain TUI (loadout.theme) so every surface speaks one visual
+ * the home screen (loadout.theme) so every surface speaks one visual
  * language — same roles too: ok/warn/error/dim as statuses, accent for
  * headers/actions, machine for machine identity. Color is signal, never
  * decoration. Dark vs light is detected once like the TUI does (OSC 11
