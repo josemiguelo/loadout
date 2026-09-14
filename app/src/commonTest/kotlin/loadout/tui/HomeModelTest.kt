@@ -592,7 +592,9 @@ class HomeKeysTest {
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("pull", "apply"), m.state.picked)
         m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
-        assertEquals(emptySet(), m.state.picked, "a on a full tick clears it")
+        assertEquals(setOf("pull", "apply"), m.state.picked, "a on a full tick stays full")
+        m.handleKey(HomeKey.SELECT_NONE, viewport = 5)
+        assertEquals(emptySet(), m.state.picked, "u clears")
         m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
         assertEquals(setOf("pull", "apply"), m.state.picked)
 

@@ -376,8 +376,8 @@ These came from explicit user decisions; don't "improve" them away:
   ones that push, replace the binary, or converge the machine. Inside the
   open remote table: ↑↓ move the focused line, space selects the focused
   row's MECHANISM (every row that sweep covers lights up, since that's what
-  will actually run), a selects all, enter (or u) upgrades the selection IN
-  the floating pane — the screen stays put and refreshes when it's done.
+  will actually run), a selects all, u clears the selection, enter upgrades
+  it IN the floating pane — the screen stays put and refreshes when it's done.
   Rows from a custom source tick ONE AT A TIME (`selectionKey` returns
   `tool:<probe>` for a package row, `item:<source>/<row>` for a source row). Rows with no
   upgradable mechanism render `[–]` and refuse selection (custom-oracle rows,
@@ -388,8 +388,8 @@ These came from explicit user decisions; don't "improve" them away:
   run order) with the verdict the last observation wrote down (✔ done,
   ! pending, ✘ failed, · never observed), anything not done pre-ticked
   (`preselect` — re-applied after EVERY refresh, so picks follow verdicts);
-  space ticks one script (a done one too: that is the force), a all,
-  enter runs the ticks in the pane, forced, each under its own rule. The
+  space ticks one script (a done one too: that is the force), a all, u
+  none, enter runs the ticks in the pane, forced, each under its own rule. The
   pane then runs the same `refreshAndWriteState` the r key does (3s on the
   live repo — the checks ARE the verdicts, so the pane never streams a
   check itself), names what is "Still not done" with the first line each

@@ -52,7 +52,7 @@ private fun homeKeyOf(event: KeyEvent): HomeKey? = when (event) {
     KeyEvent("Escape") -> HomeKey.ESC
     KeyEvent(" ") -> HomeKey.SELECT
     KeyEvent("a") -> HomeKey.SELECT_ALL
-    KeyEvent("u") -> HomeKey.UPGRADE_SELECTION
+    KeyEvent("u") -> HomeKey.SELECT_NONE
     KeyEvent("r") -> HomeKey.REFRESH
     // Capitals for the consequential ones: S pushes, U replaces the binary,
     // C converges the machine.
@@ -325,11 +325,7 @@ private fun HomeSectionRow(
     // A working row spins where its answer will be, rather than a spinner
     // parked in the title bar away from the thing it describes.
     val frame = SPINNER[spin % SPINNER.size]
-    val summary = when {
-        !section.busy -> section.summary
-        section.summary.isEmpty() -> frame
-        else -> "${section.summary}  $frame"
-    }
+    val summary = if (section.busy) frame else section.summary
     val line = "  " + section.subject.padEnd(11) + summary.padEnd(42)
     if (focused && highlight && expanded) {
         // Its detail is open and the keys live there: the selection bar
@@ -343,7 +339,7 @@ private fun HomeSectionRow(
         }
     } else if (focused && highlight) {
         Text(
-            fit(" $marker$line→ ${section.verb}", width),
+            fit(" $marker$line" + (if (section.verb.isEmpty()) "" else "→ ${section.verb}"), width),
             color = p.selectionFg,
             background = p.selectionBg,
             textStyle = TextStyle.Bold,
@@ -621,16 +617,16 @@ private fun HomeFooter(s: HomeState, width: Int) {
     val tight = width < 100
     val context = when {
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.INSTALL_MISSING ->
-            if (tight) "↑↓ move · space tick · a all · enter install · h close"
-            else "↑↓ move  ·  space tick  ·  a all  ·  enter install" +
+            if (tight) "↑↓ move · space tick · a all · u none · enter install · h close"
+            else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter install" +
                 (if (s.chosen.isEmpty()) "" else " ${s.chosen.size} ticked") + "  ·  h/esc close"
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.RUN_SCRIPTS ->
-            if (tight) "↑↓ move · space tick · a all · enter run · h close"
-            else "↑↓ move  ·  space tick  ·  a all  ·  enter run" +
+            if (tight) "↑↓ move · space tick · a all · u none · enter run · h close"
+            else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter run" +
                 (if (s.picked.isEmpty()) "" else " ${s.picked.size} ticked") + "  ·  h/esc close"
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
-            if (tight) "↑↓ move · space select pm · a all · enter upgrade · h close"
-            else "↑↓ move  ·  space select  ·  a all  ·  enter/u upgrade" +
+            if (tight) "↑↓ move · space select pm · a all · u none · enter upgrade · h close"
+            else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  enter upgrade" +
                 (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h/esc close"
         s.expanded ->
             if (tight) "↑↓ scroll · h close" else "↑↓/pgup/pgdn scroll  ·  h/esc close"

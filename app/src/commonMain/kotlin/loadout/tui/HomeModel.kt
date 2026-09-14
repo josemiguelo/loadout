@@ -72,7 +72,7 @@ data class PaneRun(
 
 enum class HomeKey {
     UP, DOWN, PAGE_UP, PAGE_DOWN, ENTER, OPEN, CLOSE, ESC,
-    SELECT, SELECT_ALL, UPGRADE_SELECTION,
+    SELECT, SELECT_ALL, SELECT_NONE,
     REFRESH, SYNC, UPGRADE, CONVERGE, THEME, QUIT,
 }
 
@@ -426,22 +426,25 @@ class HomeModel(private val app: AppContext) {
                         else -> s.copy(selection = s.selection + key, message = null)
                     }
                 }
-                HomeKey.SELECT_ALL -> if (onPrograms) {
-                    val every = s.missing.map { it.name }.toSet()
-                    state = s.copy(chosen = if (s.chosen.containsAll(every)) emptySet() else every)
-                } else if (onScripts) {
-                    val every = s.scripts.map { it.name }.toSet()
-                    state = s.copy(picked = if (s.picked.containsAll(every)) emptySet() else every)
-                } else if (onRemote && answered != null) {
-                    val every = answered.updates.mapNotNull { selectionKey(answered, it) }.toSet()
-                    state = s.copy(selection = if (s.selection.containsAll(every)) emptySet() else every)
+                // a ticks everything, u unticks everything — two keys, so
+                // neither has to guess what you meant from what's ticked.
+                HomeKey.SELECT_ALL, HomeKey.SELECT_NONE -> {
+                    val all = key == HomeKey.SELECT_ALL
+                    if (onPrograms) {
+                        state = s.copy(chosen = if (all) s.missing.map { it.name }.toSet() else emptySet())
+                    } else if (onScripts) {
+                        state = s.copy(picked = if (all) s.scripts.map { it.name }.toSet() else emptySet())
+                    } else if (onRemote && answered != null) {
+                        val every = answered.updates.mapNotNull { selectionKey(answered, it) }.toSet()
+                        state = s.copy(selection = if (all) every else emptySet())
+                    }
                 }
-                // enter IS the upgrade here — opening and closing belong to
+                // enter IS the action here — opening and closing belong to
                 // l/h, so enter is free to mean "do it".
-                HomeKey.ENTER, HomeKey.UPGRADE_SELECTION -> if (onPrograms) {
-                    if (key == HomeKey.ENTER) startInstalls(s.chosen)
+                HomeKey.ENTER -> if (onPrograms) {
+                    startInstalls(s.chosen)
                 } else if (onScripts) {
-                    if (key == HomeKey.ENTER) startScripts(s.picked)
+                    startScripts(s.picked)
                 } else if (onRemote && answered != null && s.selection.isNotEmpty()) {
                     startUpgrade(answered, s.selection)
                 }
@@ -951,22 +954,32 @@ internal fun sectionsOf(
     return listOf(
         HomeSection(
             subject = "programs",
-            summary = if (observed == null) "$mapped mapped — not observed yet"
-            else "$installed installed · ${missing.size} missing",
-            verb = if (missing.isEmpty()) "nothing missing" else "install what's missing",
+            // While the checks run the row is only the spinner, like the
+            // remote row: a stale count next to it reads as the answer.
+            summary = when {
+                checking -> ""
+                observed == null -> "$mapped mapped — not observed yet"
+                else -> "$installed installed · ${missing.size} missing"
+            },
+            verb = if (checking) "" else if (missing.isEmpty()) "nothing missing" else "install what's missing",
             action = if (missing.isEmpty()) HomeAction.NONE else HomeAction.INSTALL_MISSING,
             severity = if (missing.isEmpty()) null else true,
+            neutral = checking,
             busy = checking,
             // No preview: this row's detail is the picker, and it opens on l.
             offenders = emptyList(),
         ),
         HomeSection(
             subject = "scripts",
-            summary = if (observed == null) "not observed yet"
-            else "$done done · ${unfinished.size} pending",
-            verb = if (unfinished.isEmpty()) "nothing pending" else "run what's pending",
+            summary = when {
+                checking -> ""
+                observed == null -> "not observed yet"
+                else -> "$done done · ${unfinished.size} pending"
+            },
+            verb = if (checking) "" else if (unfinished.isEmpty()) "nothing pending" else "run what's pending",
             action = if (pickable) HomeAction.RUN_SCRIPTS else HomeAction.NONE,
             severity = if (unfinished.isEmpty()) null else false,
+            neutral = checking,
             busy = checking,
             // No preview: this row's detail is the picker, and it opens on l.
             offenders = emptyList(),
@@ -985,7 +998,7 @@ internal fun sectionsOf(
                         if (remote.failedSources == 0) "" else " · ${remote.failedSources} source(s) failed"
                 }
             },
-            verb = "review them",
+            verb = if (remote is RemoteStatus.Asking) "" else "review them",
             action = HomeAction.REVIEW_OUTDATED,
             severity = when {
                 remote is RemoteStatus.Answered && remote.failedSources > 0 -> true
