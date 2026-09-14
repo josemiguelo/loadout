@@ -331,7 +331,17 @@ private fun HomeSectionRow(
         else -> "${section.summary}  $frame"
     }
     val line = "  " + section.subject.padEnd(11) + summary.padEnd(42)
-    if (focused && highlight) {
+    if (focused && highlight && expanded) {
+        // Its detail is open and the keys live there: the selection bar
+        // belongs to the inner row, so the parent reads as the open heading
+        // — accent, bold, no bar — and the two can't be confused.
+        Row {
+            Text(" ")
+            Text(marker, color = markerColor, textStyle = TextStyle.Bold)
+            Text(line, color = p.accent, textStyle = TextStyle.Bold)
+            Text("▾ ${section.verb}", color = p.accent, textStyle = TextStyle.Bold)
+        }
+    } else if (focused && highlight) {
         Text(
             fit(" $marker$line→ ${section.verb}", width),
             color = p.selectionFg,
