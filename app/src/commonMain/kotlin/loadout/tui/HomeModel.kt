@@ -110,8 +110,9 @@ sealed interface RemoteStatus {
 enum class HomeAction {
     NONE,
 
-    // Row verbs: what the focused subject needs. RUN_SCRIPTS never leaves
-    // the screen — its detail is the picker and the pane runs the picks.
+    // Row verbs: what the focused subject needs. Only INSTALL_MISSING ever
+    // leaves the screen (installs may prompt); the others open their table
+    // in place and act from it, in the pane.
     RUN_SCRIPTS, INSTALL_MISSING, REVIEW_OUTDATED, SHOW_DIFF,
 
     // Whole-machine verbs, on their own keys — they belong to no single row.
@@ -419,11 +420,18 @@ class HomeModel(private val app: AppContext) {
                     // looking is l's job.
                     detailLines(s, section) > 0 ->
                         state = s.copy(message = "press l to open it")
+                    // A remote row that couldn't be asked, a fleet in sync:
+                    // there is nothing to open, and leaving to print the same
+                    // answer from a command is what this screen replaced.
+                    section.action == HomeAction.REVIEW_OUTDATED ->
+                        state = s.copy(message = if (s.remote is RemoteStatus.Unavailable) "the remotes couldn't be asked — r tries again" else "everything up to date")
+                    section.action == HomeAction.SHOW_DIFF ->
+                        state = s.copy(message = "the fleet is in sync — nothing to compare")
                     section.action == HomeAction.NONE ->
                         state = s.copy(message = "nothing to do there")
                     else -> {
-                        // The screen closes so the action owns the terminal —
-                        // sudo prompts and full-screen runners both need that.
+                        // The ONE row that leaves: an install may prompt
+                        // (sudo, confirmation), so the command owns the terminal.
                         state = s.copy(action = section.action, exit = true)
                         return true
                     }

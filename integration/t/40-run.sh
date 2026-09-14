@@ -1,4 +1,4 @@
-# run: check gate, --force, --all, --pending, per-machine opt-in, arguments.
+# run: check gate, --force, --all, per-machine opt-in, arguments.
 
 basic_repo repo
 
@@ -23,17 +23,6 @@ echo "$OUT" | grep -q "ran marker" || fail "run --all runs every opted-in script
 OUT=$("$BIN" --repo repo --machine m2 run --all)
 echo "$OUT" | grep -q "No scripts opted in" || fail "run --all on a machine with no scripts says so"
 ok "run --all covers this machine's opted-in scripts, and rejects names alongside it"
-
-# --pending: the verdict the last status wrote, acted on without retyping.
-"$BIN" --repo repo --machine m1 status >/dev/null || fail "status records script state"
-OUT=$("$BIN" --repo repo --machine m1 run --pending)
-echo "$OUT" | grep -q "Nothing pending" || fail "run --pending is a no-op when everything is done"
-rm -f repo/marker.txt
-"$BIN" --repo repo --machine m1 status >/dev/null
-OUT=$("$BIN" --repo repo --machine m1 run --pending)
-echo "$OUT" | grep -q "ran marker" || fail "run --pending runs what the check says isn't done"
-"$BIN" --repo repo --machine m1 run --pending --all >/dev/null 2>&1 && fail "--pending with --all should fail" || true
-ok "run --pending acts on the last observed verdict"
 
 # m2 never opted into the marker script.
 "$BIN" --repo repo --machine m2 run marker >/dev/null 2>&1 && fail "run without opt-in should fail" || true

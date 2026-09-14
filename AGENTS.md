@@ -395,12 +395,17 @@ These came from explicit user decisions; don't "improve" them away:
   all done" rather than "failed" — a script that exited 0 with a check
   still failing is work left, not a crash. A refresh that can't write
   ends with "state not written — the run above is not recorded" in red.
-  The scripts row never leaves the screen; `run --pending` / `run <names>
-  --force` are the same rule without it.
+  The scripts row never leaves the screen; `run <names> --force` is the
+  same run without it (`run --pending` existed to back the old enter and
+  was removed with it: a scripted retry of everything failed is a bad
+  cron job, and the rule it encoded — `preselect` — is the screen's).
   Rows whose answer is already in hand (scripts, remote, fleet) OPEN IT IN
   PLACE on `l` — and they show nothing on focus, because their detail is
-  that table. The programs row previews its offenders on focus and
-  dispatches `install --all` on enter, because installs may prompt. It
+  that table; when there is nothing to open (remotes unreachable, fleet in
+  sync) enter says so instead of leaving to print the same answer from a
+  command. THE SCREEN LEAVES ONLY FOR COMMANDS THAT MAY PROMPT: the
+  programs row previews its offenders on focus and dispatches
+  `install --all` on enter, and S/U/C dispatch sync/self-upgrade/setup. It
   opens on the stored state, then runs a real `status` refresh (3s on the
   live repo, published like `status` does) and then asks the remotes (4s)
   — both land as they finish, so the screen is usable while they run. The
@@ -451,8 +456,7 @@ These came from explicit user decisions; don't "improve" them away:
   "return to the home screen" loop needs re-exec, not a second runMosaic.
 - **The picker opens on the LAST OBSERVED verdicts** — `load()` reads
   `state/<machine>.json`; the refresh that follows re-asks them (3s on the
-  live repo) and the rows update in place. `run --pending` is the same rule
-  without the TUI. Check-less scripts report their exit code (done/failed);
+  live repo) and the rows update in place. Check-less scripts report their exit code (done/failed);
   a script's verdict is otherwise its check, re-run by the refresh after
   the pane's run — a run's verdict counts only the scripts it ran (rows can
   be pending without being ticked). Live output comes from

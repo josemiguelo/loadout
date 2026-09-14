@@ -247,7 +247,7 @@ private fun HomeHeader(s: HomeState, width: Int) {
         Text(" │ ", color = p.dim)
         Text(s.system, color = p.dim)
         if (s.stale && !s.loading) {
-            Text("   last observed state — s re-checks", color = p.dim)
+            Text("   last observed state — r re-checks", color = p.dim)
         }
     }
 }

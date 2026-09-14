@@ -20,7 +20,6 @@ class RunCommand : CliktCommand(name = "run") {
         "Run the named scripts from the manifest.",
         "<scripts...>  script names (must be opted in by this machine)",
         "--all         every script this machine opts into, instead of names",
-        "--pending     only the scripts the last status left pending, failed, or never checked — what the home screen ticks for you",
         "--force       run even when the check already passes",
     )
 
@@ -30,10 +29,6 @@ class RunCommand : CliktCommand(name = "run") {
         "--all",
         help = "Run every script this machine opts into (modes ignored, like any run)",
     ).flag()
-    private val pending by option(
-        "--pending",
-        help = "Only the opted-in scripts the last status left pending, failed, or never checked",
-    ).flag()
     private val force by option("--force", help = "Run even if the script's check passes").flag()
 
     private val app by requireObject<AppContext>()
@@ -41,12 +36,8 @@ class RunCommand : CliktCommand(name = "run") {
     override fun run() {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
-        if (listOf(all, pending, names.isNotEmpty()).count { it } > 1) {
-            throw UsageError("Give script names, --all, or --pending — not more than one")
-        }
-        if (!all && !pending && names.isEmpty()) {
-            throw UsageError("Give at least one script, or --all, or --pending")
-        }
+        if (all && names.isNotEmpty()) throw UsageError("Give script names or --all, not both")
+        if (!all && names.isEmpty()) throw UsageError("Give at least one script, or --all")
         names.filterNot { it in manifest.scripts }.let { unknown ->
             if (unknown.isNotEmpty()) throw UsageError("Unknown scripts: ${unknown.joinToString()}")
         }
@@ -63,24 +54,11 @@ class RunCommand : CliktCommand(name = "run") {
 
         // --all is the machine's opt-in list itself — membership, not modes:
         // `run` is the explicit escape hatch and ignores setup/maintain.
-        // --pending narrows that to what the last `status` didn't find done,
-        // so the observe screen's verdict can be acted on without retyping it.
-        val targets = when {
-            pending -> {
-                val observed = app.stateStore.read(system.machine)?.scripts.orEmpty()
-                app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
-                enabled.keys.filter { observed[it]?.status != ScriptStatus.DONE }.toSet()
-            }
-            all -> enabled.keys
-            else -> names.toSet()
-        }
+        // Acting on the last status's verdict is the home screen's job (its
+        // scripts row pre-ticks what isn't done); here you name what you want.
+        val targets = if (all) enabled.keys else names.toSet()
         if (targets.isEmpty()) {
-            echo(
-                Style.dim(
-                    if (pending) "Nothing pending for ${system.machine}."
-                    else "No scripts opted in for ${system.machine}.",
-                ),
-            )
+            echo(Style.dim("No scripts opted in for ${system.machine}."))
             return
         }
 

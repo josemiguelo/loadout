@@ -48,7 +48,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Move installed programs to newer versions, a whole mechanism at a time (`upgrade dnf brew`, or `--all` for every mechanism this machine maps) — never a single package |
-| | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--pending` = the ones status didn't find done, `--force` overrides) |
+| | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` overrides) — the home screen's scripts row is the same with tick boxes |
 | **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
 | | `self-upgrade` | Replace the loadout binary — needs no repo, works even under a version-floor refusal |
 | | `init` | Scaffold a new config repo |

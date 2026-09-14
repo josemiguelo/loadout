@@ -215,12 +215,27 @@ class HomeKeysTest {
     }
 
     @Test
-    fun enterOnAnUnansweredRemoteStillDispatches() {
-        val sections = listOf(HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED))
+    fun onlyAnInstallEverLeavesTheScreen() {
+        // An unanswered remote used to exit into `outdated`, which would fail
+        // the same way; a fleet in sync exited into `diff` to print "in sync".
+        val sections = listOf(
+            HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED),
+            HomeSection("fleet", "", "compare", HomeAction.SHOW_DIFF),
+            HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
+        )
         val m = model(sections)
         m.setStateForTest(HomeState(sections = sections, remote = RemoteStatus.Unavailable("offline")))
-        assertEquals(true, m.handleKey(HomeKey.ENTER))
-        assertEquals(HomeAction.REVIEW_OUTDATED, m.state.action)
+        assertEquals(false, m.handleKey(HomeKey.ENTER))
+        assertEquals(false, m.state.exit)
+        assertTrue(m.state.message!!.contains("r tries again"))
+
+        m.handleKey(HomeKey.DOWN)
+        assertEquals(false, m.handleKey(HomeKey.ENTER))
+        assertTrue(m.state.message!!.contains("in sync"))
+
+        m.handleKey(HomeKey.DOWN)
+        assertEquals(true, m.handleKey(HomeKey.ENTER), "an install may prompt: the command owns the terminal")
+        assertEquals(HomeAction.INSTALL_MISSING, m.state.action)
     }
 
     @Test
