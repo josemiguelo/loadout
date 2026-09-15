@@ -347,7 +347,8 @@ These came from explicit user decisions; don't "improve" them away:
   may re-encode the SGR codes on output; that's normal). `HomeState.dark`
   toggled with `t`; bgLuma is a real OSC 11 query
   (`platform.terminalBackgroundLuma()`, raw-mode /dev/tty round-trip,
-  150ms fail-soft) that MUST run before runMosaic owns the terminal — CLI
+  ~200ms fail-soft — see the poll() gotcha below) that MUST run before
+  runMosaic owns the terminal — CLI
   `Style` runs it lazily at first styled output, TTY-gated so piped output
   stays plain AND never queries the terminal. Color = signal: ok/warn/error/dim
   statuses, accent = headers/actions (`Style.header` = bold accent),
@@ -363,6 +364,22 @@ These came from explicit user decisions; don't "improve" them away:
   yellow-title/blue-name look Mordant ships, in whichever palette was
   detected. Without it help keeps Mordant's dark-only defaults and washes
   out on light terminals.
+- **NEVER time a /dev/tty read with `poll()`** — on Darwin poll() answers
+  /dev/tty with POLLNVAL (revents 0x20), never POLLIN, so a
+  `if (poll(...) <= 0) break` guard is waved through and the read that
+  follows blocks FOREVER whenever no reply comes. That shipped in
+  `terminalBackgroundLuma()` and hung EVERY command (Style's palette is
+  initialized while RootCommand builds its Clikt context, so even `status`
+  never printed a byte) in any terminal that swallows the OSC 11 query —
+  a tmux popup running its own nested tmux client (`tmux new -A -s
+  floating`, i.e. the "floating pane" people bind) being the one actually
+  hit; a plain kitty pane answers, which is why it looked fine everywhere
+  else. The deadline must come from the terminal: cfmakeraw leaves VMIN=1
+  ("block for a byte"), so set `VMIN=0` + `VTIME` (deciseconds) and read()
+  itself returns 0 on silence. Any future terminal query does the same.
+  Reproduce a no-reply terminal with a DETACHED tmux session (`tmux
+  new-session -d`, nobody to answer) and `sample <pid>` to see the stack —
+  but use a DEBUG binary, the released one is stripped.
 - **Unsettled rows are boxed**: `cli/Table.kt`'s `echoRows(List<TableRow>)` is
   the one renderer for `diff` and `status` tables — a row with a non-null
   `severity` (false = amber, true = red) is wrapped in a rounded box,

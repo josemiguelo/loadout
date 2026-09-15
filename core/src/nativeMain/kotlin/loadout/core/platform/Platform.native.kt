@@ -15,9 +15,9 @@ import kotlinx.cinterop.toKString
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.plus
 import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.set
 import kotlinx.cinterop.usePinned
 import platform.posix.O_RDWR
-import platform.posix.POLLIN
 import platform.posix.STDOUT_FILENO
 import platform.posix.TCSANOW
 import platform.posix.TIOCGWINSZ
@@ -27,14 +27,14 @@ import platform.posix.gethostname
 import platform.posix.ioctl
 import platform.posix.isatty
 import platform.posix.open
-import platform.posix.poll
-import platform.posix.pollfd
 import platform.posix.read
 import platform.posix.tcgetattr
 import platform.posix.tcsetattr
 import platform.posix.termios
 import platform.posix.uname
 import platform.posix.utsname
+import platform.posix.VMIN
+import platform.posix.VTIME
 import platform.posix.winsize
 import platform.posix.write
 
@@ -77,6 +77,12 @@ actual fun terminalColumns(): Int? = memScoped {
     ws.ws_col.toInt().takeIf { it > 0 }
 }
 
+/** VTIME is in tenths of a second: how long a silent terminal costs us. */
+private const val REPLY_TIMEOUT_DECISECONDS: UByte = 2u
+
+/** Caps a drip-feeding terminal at a few timeouts instead of 120 of them. */
+private const val MAX_REPLY_READS = 3
+
 @OptIn(ExperimentalForeignApi::class)
 actual fun terminalBackgroundLuma(): Double? = memScoped {
     val fd = open("/dev/tty", O_RDWR)
@@ -90,6 +96,16 @@ actual fun terminalBackgroundLuma(): Double? = memScoped {
         val raw = alloc<termios>()
         tcgetattr(fd, raw.ptr)
         cfmakeraw(raw.ptr)
+        // The deadline MUST come from the terminal itself, never from poll():
+        // on Darwin poll() answers /dev/tty with POLLNVAL instead of
+        // readiness, so a poll guard waves through a read that then blocks
+        // FOREVER whenever nothing replies — which is every terminal that
+        // swallows the query, a nested tmux (a tmux popup running its own
+        // client) being the one people actually hit. cfmakeraw leaves VMIN=1,
+        // i.e. "block until a byte arrives"; VMIN=0 + VTIME makes read()
+        // return 0 when the reply doesn't come, so detection stays fail-soft.
+        raw.c_cc[VMIN] = 0u
+        raw.c_cc[VTIME] = REPLY_TIMEOUT_DECISECONDS
         tcsetattr(fd, TCSANOW, raw.ptr)
 
         val query = "\u001b]11;?\u001b\\".encodeToByteArray()
@@ -98,11 +114,9 @@ actual fun terminalBackgroundLuma(): Double? = memScoped {
         // Reply: ESC ] 11 ; rgb:RRRR/GGGG/BBBB (ST or BEL terminated).
         val buf = allocArray<ByteVar>(128)
         var total = 0
-        val pfd = alloc<pollfd>()
-        pfd.fd = fd
-        pfd.events = POLLIN.toShort()
-        while (total < 120) {
-            if (poll(pfd.ptr, 1u, 150) <= 0) break
+        var reads = 0
+        while (total < 120 && reads < MAX_REPLY_READS) {
+            reads++
             val n = read(fd, buf + total, (120 - total).toULong())
             if (n <= 0L) break
             total += n.toInt()
