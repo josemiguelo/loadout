@@ -4,6 +4,7 @@ import loadout.core.TOOL_VERSION
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.MachineState
 import loadout.core.model.Manifest
+import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
@@ -34,6 +35,16 @@ class StatusEngine(
      * as StateStore.lastWarnings: read it right after the call.
      */
     var lastScriptDetail: Map<String, String> = emptyMap()
+        private set
+
+    /**
+     * Tools whose checks could not run during the last [refresh], each with
+     * the programs left unchecked and whether the tool is on PATH at all
+     * (asked once per tool with `command -v`). "brew is not on PATH — 21
+     * programs not checked" is one line to a person; the per-row reasons
+     * only say which rows.
+     */
+    var lastToolsDown: List<ToolDown> = emptyList()
         private set
 
     /**
@@ -94,6 +105,19 @@ class StatusEngine(
 
             val observed = scripts.map { (name, deferred) -> name to deferred.await() }
             lastScriptDetail = observed.mapNotNull { (name, pair) -> pair.second?.let { name to it } }.toMap()
+            val checked = programs.await()
+            // Group the checks that couldn't run by the tool they asked
+            // through, then ask about each tool ONCE: absent, or present but
+            // failing (a wrapper that exits 126, say).
+            lastToolsDown = checked
+                .filter { (_, state) -> state.status == ProgramStatus.UNKNOWN && state.reason != null }
+                .keys
+                .groupBy { name -> observedChecks[name]?.probe ?: "" }
+                .filterKeys { it.isNotEmpty() }
+                .map { (tool, names) ->
+                    ToolDown(tool, names.sorted(), onPath = runner.capture("command -v $tool").success)
+                }
+                .sortedBy { it.tool }
             MachineState(
                 machine = system.machine,
                 os = system.os.id,
@@ -101,9 +125,23 @@ class StatusEngine(
                 arch = system.arch,
                 toolVersion = TOOL_VERSION,
                 updatedAt = nowIso(),
-                programs = programs.await(),
+                programs = checked,
                 scripts = observed.associate { (name, pair) -> name to pair.first },
             )
         }
     }
+}
+
+/** A tool the checks go through that couldn't answer this time. */
+data class ToolDown(
+    val tool: String,
+    /** The programs whose checks it left unanswered. */
+    val programs: List<String>,
+    /** `command -v` finds it: it's there but its checks fail anyway. */
+    val onPath: Boolean,
+) {
+    /** One line for a person: the fact, and what it cost. */
+    val message: String get() =
+        (if (onPath) "$tool is on PATH but its checks fail" else "$tool is not on PATH") +
+            " — ${programs.size} program(s) not checked"
 }

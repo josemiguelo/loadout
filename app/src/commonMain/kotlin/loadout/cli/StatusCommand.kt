@@ -36,14 +36,14 @@ class StatusCommand : CliktCommand(name = "status") {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
 
-        val (state, detail) = spinning("checking programs and scripts…") {
+        val (state, detail, toolsDown) = spinning("checking programs and scripts…") {
             if (noWrite) {
                 val engine =
                     StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
                 val s = engine.refresh(manifest, system, app.stateStore.read(system.machine))
-                s to engine.lastScriptDetail
+                Triple(s, engine.lastScriptDetail, engine.lastToolsDown)
             } else {
-                app.refreshAndWriteState(manifest, system) to app.lastScriptDetail
+                Triple(app.refreshAndWriteState(manifest, system), app.lastScriptDetail, app.lastToolsDown)
             }
         }
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
@@ -52,6 +52,12 @@ class StatusCommand : CliktCommand(name = "status") {
             echo(stateJson.encodeToString(MachineState.serializer(), state))
         } else {
             printTable(state, detail)
+            // The per-row boxes say WHICH programs; this says what happened,
+            // once, in words: the tool the checks go through wasn't there.
+            for (down in toolsDown) {
+                echo("")
+                echo(" " + Style.warn("⚠") + "  " + Style.warn(down.message) + Style.dim("  (${down.programs.joinToString()})"))
+            }
             // The one self-knowledge carve-out: is this binary itself behind?
             SelfVersion.behind(app.runner, app.fs)?.let { latest ->
                 echo("")

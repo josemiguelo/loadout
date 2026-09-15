@@ -35,6 +35,10 @@ class AppContext(
     var lastScriptDetail: Map<String, String> = emptyMap()
         private set
 
+    /** Tools whose checks couldn't run during the last refresh (see StatusEngine.lastToolsDown). */
+    var lastToolsDown: List<loadout.core.engine.ToolDown> = emptyList()
+        private set
+
     /**
      * Re-run all version checks, merge in any script results from this run,
      * write the state file, and return the new state.
@@ -48,6 +52,7 @@ class AppContext(
         val engine = StatusEngine(VersionChecker(runner, repoRoot.toString()), runner, repoRoot)
         val state = engine.refresh(manifest, system, previous, scriptResults)
         lastScriptDetail = engine.lastScriptDetail
+        lastToolsDown = engine.lastToolsDown
         // Keep updatedAt (and git history) stable when nothing real changed.
         if (previous != null && state.copy(updatedAt = previous.updatedAt) == previous) {
             return previous

@@ -18,6 +18,7 @@ import loadout.core.model.SystemInfo
 import loadout.core.engine.InstallEngine
 import loadout.core.engine.PlanItem
 import loadout.core.engine.ScriptRunner
+import loadout.core.engine.ToolDown
 import loadout.core.engine.UpgradeEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.exec.RunningProcess
@@ -278,12 +279,15 @@ class HomeModel(private val app: AppContext) {
                 loading = false,
                 stale = fresh.isFailure,
                 fleet = report,
-                sections = sectionsOf(m, sys, observed, report, state.remote),
+                sections = sectionsOf(m, sys, observed, report, state.remote, toolsDown = app.lastToolsDown),
                 missing = missing,
                 chosen = missing.map { it.name }.toSet(),
                 scripts = scripts,
                 picked = preselect(scripts),
-                message = fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull(),
+                // A tool the checks go through wasn't there: one sentence,
+                // here, where a person reads — not only a count in a row.
+                message = fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()
+                    ?: app.lastToolsDown.firstOrNull()?.let { "${it.message} · r re-checks once it is fixed" },
             )
             // A machine with no state file yet couldn't be asked about above.
             if (known == null && observed != null) askRemotes(m, sys, observed)
@@ -320,7 +324,7 @@ class HomeModel(private val app: AppContext) {
             )
         state = state.copy(
             remote = remote,
-            sections = sectionsOf(m, sys, stored, fleet(), remote, checking = state.loading),
+            sections = sectionsOf(m, sys, stored, fleet(), remote, checking = state.loading, toolsDown = app.lastToolsDown),
         )
     }
 
@@ -750,7 +754,7 @@ class HomeModel(private val app: AppContext) {
             // back through everything to find out which.
             val failed = (state.run?.failures.orEmpty() + stillNot + stillMissing).distinct()
             state = state.copy(
-                sections = sectionsOf(m, sys, stored, fleet(), state.remote),
+                sections = sectionsOf(m, sys, stored, fleet(), state.remote, toolsDown = app.lastToolsDown),
                 scripts = rows,
                 picked = preselect(rows),
                 missing = missing,
@@ -938,6 +942,7 @@ internal fun sectionsOf(
     fleet: loadout.core.diff.DiffReport?,
     remote: RemoteStatus?,
     checking: Boolean = false,
+    toolsDown: List<ToolDown> = emptyList(),
 ): List<HomeSection> {
     val programs = observed?.programs.orEmpty()
     val missing = programs.filterValues { it.status == ProgramStatus.MISSING }.keys.sorted()
@@ -969,8 +974,12 @@ internal fun sectionsOf(
                 checking -> ""
                 missing.isNotEmpty() -> "install what's missing"
                 // Say what's wrong, not "nothing missing": the checks that
-                // failed never answered.
-                unchecked.isNotEmpty() -> unchecked.values.first().reason!!
+                // failed never answered. In loadout's words when the refresh
+                // asked the tool itself; the shell's line otherwise (a stored
+                // state has no tools-down list).
+                unchecked.isNotEmpty() ->
+                    toolsDown.firstOrNull()?.let { if (it.onPath) "${it.tool} checks fail" else "${it.tool} is not on PATH" }
+                        ?: unchecked.values.first().reason!!
                 else -> "nothing missing"
             },
             action = if (missing.isEmpty()) HomeAction.NONE else HomeAction.INSTALL_MISSING,

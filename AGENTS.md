@@ -160,6 +160,13 @@ These came from explicit user decisions; don't "improve" them away:
    ("· N not checked") and never offers to install it. A check with no
    probe IS the program (`rg --version`), so its 127 means missing. brew
    off PATH once reported every brew program missing — a confident lie.
+   The refresh then groups those rows by tool and asks about each tool
+   ONCE (`command -v`): `StatusEngine.lastToolsDown` (surfaced like
+   lastScriptDetail, via AppContext) — `status` prints "⚠ brew is not on
+   PATH — 22 program(s) not checked (bat, …)" after the table, the home
+   screen shows the sentence on its message line and "brew is not on
+   PATH" as the programs row's verb. The per-row reason says WHICH; the
+   sentence says WHAT, once, in loadout's words.
    Ceiling: a pipeline check (`brew tap | grep …`) exits with the LAST
    command's code and hides the tool's absence; write
    `x=$(tool …) && printf '%s\n' "$x" | grep …` so the tool's failure
