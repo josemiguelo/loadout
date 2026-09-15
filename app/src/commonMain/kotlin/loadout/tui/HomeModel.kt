@@ -76,7 +76,7 @@ data class PaneRun(
 
 enum class HomeKey {
     UP, DOWN, PAGE_UP, PAGE_DOWN, ENTER, OPEN, CLOSE, ESC,
-    SELECT, SELECT_ALL, SELECT_NONE,
+    SELECT, SELECT_ALL, SELECT_NONE, OPEN_LINK,
     REFRESH, SYNC, UPGRADE, CONVERGE, THEME, QUIT,
 }
 
@@ -470,6 +470,17 @@ class HomeModel(private val app: AppContext) {
                         else -> s.copy(selection = s.selection + key, message = null)
                     }
                 }
+                // K opens the page the row's source pointed at — the GitHub
+                // compare of the two shas, like Lazy's K — in the browser.
+                HomeKey.OPEN_LINK -> if (onRemote && answered != null) {
+                    val link = remoteLines(answered, s.collapsed).getOrNull(s.detailCursor)?.link
+                    if (link == null) {
+                        state = s.copy(message = "no page to open for this row")
+                    } else {
+                        state = s.copy(message = "opening $link")
+                        openInBrowser(link)
+                    }
+                }
                 // a ticks everything, u unticks everything — two keys, so
                 // neither has to guess what you meant from what's ticked.
                 HomeKey.SELECT_ALL, HomeKey.SELECT_NONE -> {
@@ -837,6 +848,26 @@ class HomeModel(private val app: AppContext) {
     }
 
     /** A finished pane closes on the screen as it was, minus what it just ran. */
+    /**
+     * Hand [url] to the desktop (xdg-open, else open) off the UI thread and
+     * say how it went: the opener's own last line when it fails — a Qt
+     * "could not connect to display" was once a silent core dump behind
+     * "opened …" — with the URL kept on screen to copy by hand.
+     */
+    private fun openInBrowser(url: String) {
+        val quoted = "'" + url.replace("'", "'\\''") + "'"
+        scope.launch {
+            val result = app.runner.capture(
+                "sh -c 'command -v xdg-open >/dev/null 2>&1 && exec xdg-open \"\$1\" || exec open \"\$1\"' sh $quoted </dev/null",
+            )
+            val said = (result.stderr + result.stdout).lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
+            state = state.copy(
+                message = if (result.success) "opened $url"
+                else "could not open a browser (${said ?: "exit ${result.exitCode}"}) — $url",
+            )
+        }
+    }
+
     private fun closed(s: HomeState, run: PaneRun) =
         s.copy(run = null, selection = if (run.kind == PaneKind.UPGRADE) emptySet() else s.selection)
 
@@ -1001,6 +1032,8 @@ sealed interface RemoteLine {
     val group: String? get() = null
     /** A heading: the line that stays when its group is folded. */
     val heading: Boolean get() = false
+    /** A page about this row's change, when its source printed one. */
+    val link: String? get() = null
 
     data class Tool(val info: ToolUpdates, override val key: String?) : RemoteLine {
         override val focusable get() = true
@@ -1039,6 +1072,7 @@ sealed interface RemoteLine {
         override val focusable get() = true
         override val refusal get() = if (key == null) "${row.source} can't update its items from loadout" else null
         override val group get() = "source:${row.source}"
+        override val link get() = row.link
     }
 }
 

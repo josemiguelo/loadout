@@ -102,7 +102,11 @@ class UpdateChecker(
             .mapNotNull { line ->
                 val tokens = line.trim().split(Regex("\\s+"))
                 if (tokens.size >= 3) {
-                    SourceRow(tokens[0], tokens[1], tokens[2], tokens.drop(3).joinToString(" "))
+                    // A URL in the tail is the row's LINK (the compare page
+                    // for the two shas, say), not part of the annotation.
+                    val tail = tokens.drop(3)
+                    val link = tail.firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
+                    SourceRow(tokens[0], tokens[1], tokens[2], tail.filter { it != link }.joinToString(" "), link)
                 } else {
                     null
                 }
@@ -122,8 +126,12 @@ class UpdateChecker(
         }
 }
 
-/** One row from a custom outdated source; [note] is an optional annotation. */
-data class SourceRow(val name: String, val current: String, val candidate: String, val note: String = "")
+/**
+ * One row from a custom outdated source; [note] is an optional annotation,
+ * [link] a page about the change (a GitHub compare URL) when the source
+ * printed one in the tail.
+ */
+data class SourceRow(val name: String, val current: String, val candidate: String, val note: String = "", val link: String? = null)
 
 /**
  * Outcome of running one custom source: parsed [rows] on success, or an

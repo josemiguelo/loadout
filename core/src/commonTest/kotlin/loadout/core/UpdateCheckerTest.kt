@@ -107,13 +107,22 @@ class UpdateCheckerTest {
     @Test
     fun customSourceRowsParseAndValidate() {
         val runner = FakeProcessRunner()
-        runner.onCommand("plugin-sweep", stdout = "java 9bd89aa ea1fe99\nruby fa85ede 498c76f extra\nmalformed line\n")
+        runner.onCommand(
+            "plugin-sweep",
+            stdout = "java 9bd89aa ea1fe99\nruby fa85ede 498c76f extra\n" +
+                "go 1111111 2222222 3 commit(s) behind https://github.com/x/go/compare/1111111...2222222\nmalformed line\n",
+        )
         val result = UpdateChecker(runner).sourceRows("plugin-sweep")
         assertNull(result.error)
         val rows = result.rows
-        assertEquals(2, rows.size)
+        assertEquals(3, rows.size)
         assertEquals(SourceRow("java", "9bd89aa", "ea1fe99"), rows[0])
         assertEquals(SourceRow("ruby", "fa85ede", "498c76f", "extra"), rows[1])
+        // A URL in the tail is the row's link, lifted out of the note.
+        assertEquals(
+            SourceRow("go", "1111111", "2222222", "3 commit(s) behind", "https://github.com/x/go/compare/1111111...2222222"),
+            rows[2],
+        )
 
         val manifest = ManifestLoader.parse(
             """

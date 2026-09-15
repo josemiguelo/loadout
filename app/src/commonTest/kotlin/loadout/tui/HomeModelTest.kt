@@ -576,6 +576,28 @@ class HomeKeysTest {
     }
 
     @Test
+    fun kOpensTheRowsPageWhenItsSourceGaveOne() {
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        val rows = listOf(
+            loadout.cli.UpdateRow("golang", "a", "b", "asdf-plugins", "2 commit(s) behind", "https://github.com/x/y/compare/a...b"),
+            loadout.cli.UpdateRow("nodejs", "a", "b", "asdf-plugins"),
+        )
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                expanded = true,
+                remote = RemoteStatus.Answered(updates = rows, failedSources = 0, upgradableSources = setOf("asdf-plugins")),
+            ),
+        )
+        assertEquals("https://github.com/x/y/compare/a...b", remoteLines(m.state.remote as RemoteStatus.Answered)[1].link)
+        m.handleKey(HomeKey.DOWN, viewport = 5)
+        m.handleKey(HomeKey.DOWN, viewport = 5) // nodejs: no link
+        m.handleKey(HomeKey.OPEN_LINK, viewport = 5)
+        assertTrue(m.state.message!!.contains("no page"))
+    }
+
+    @Test
     fun aCustomSourcesRowsTickOneByOne() {
         // A pin in a file is nothing like a package manager's transaction:
         // these select individually.

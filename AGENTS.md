@@ -250,7 +250,11 @@ These came from explicit user decisions; don't "improve" them away:
     repos until the fleet upgrades. Repos may also declare custom
     `[outdated.<name>]` sources (command prints `<item> <current>
     <candidate> [note…]` lines — the optional tail renders as a dim
-    annotation; `file:` allowed, fragment-definable, repo-unique) —
+    annotation, and a URL token in it is lifted out as the row's LINK
+    (`SourceRow.link`/`UpdateRow.link`: the GitHub compare page for the
+    two shas, say — the home screen marks the row `↗` and `K` opens it
+    in the browser via xdg-open/open, detached; `outdated` prints it dim);
+    `file:` allowed, fragment-definable, repo-unique) —
     outdated runs them concurrently and tags rows with the source name; the
     hardcoded self-version row is conceptually the first of these. UNLIKE the
     installer oracles, a custom source's exit code is NOT ignored: it is a
@@ -429,7 +433,9 @@ These came from explicit user decisions; don't "improve" them away:
   (`item:<source>/<row>`); `[–]` = nothing loadout can move (a source
   without `upgrade`, a tool without one). The row's summary is the
   doctor's: "dnf 168 · brew 6 · flatpak 1 · 34 pins". `loadout outdated`
-  prints the same tool lines first. Batch oracles read STDOUT ONLY: an
+  prints the same tool lines first. `K` on a row whose source printed a
+  link opens it (Lazy's key for the diff; `openInBrowser` runs
+  `nohup sh -c 'xdg-open || open'` in the background). Batch oracles read STDOUT ONLY: an
   empty stdout is "nothing", stderr is warnings (`brew outdated --cask`
   once yielded packages named "Warning:" and "Please"). `l` only ever
   OPENS — it never dispatches, so the vim keys can't start an install by

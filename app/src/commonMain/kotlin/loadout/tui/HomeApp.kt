@@ -53,6 +53,8 @@ private fun homeKeyOf(event: KeyEvent): HomeKey? = when (event) {
     KeyEvent(" ") -> HomeKey.SELECT
     KeyEvent("a") -> HomeKey.SELECT_ALL
     KeyEvent("u") -> HomeKey.SELECT_NONE
+    // Lazy's key for "show me the diff": the row's compare page, in the browser.
+    KeyEvent("K") -> HomeKey.OPEN_LINK
     KeyEvent("r") -> HomeKey.REFRESH
     // Capitals for the consequential ones: S pushes, U replaces the binary,
     // C converges the machine.
@@ -532,7 +534,8 @@ private fun RemoteTable(
                 // tool's box is the one that means anything. A source item
                 // has its own, indented under the heading's.
                 val lead = if (nested) "    " else "  " + box(line.key)
-                val note = if (row.note.isNotEmpty() && room > 12) "  " + clip(row.note, room - 2) else ""
+                val note = (if (row.note.isNotEmpty() && room > 12) "  " + clip(row.note, room - 2) else "") +
+                    (if (row.link != null) "  ↗" else "")
                 val text = lead + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) + version(row) + note
                 if (focused) {
                     Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
@@ -697,8 +700,8 @@ private fun HomeFooter(s: HomeState, width: Int) {
             else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter run" +
                 (if (s.picked.isEmpty()) "" else " ${s.picked.size} ticked") + "  ·  h/esc close"
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
-            if (tight) "↑↓ move · space · a all · u none · h fold/close · l unfold · enter upgrade"
-            else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  h fold, l unfold  ·  enter upgrade" +
+            if (tight) "↑↓ move · space · a all · u none · h fold/close · l unfold · K diff · enter upgrade"
+            else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  h fold, l unfold  ·  K diff ↗  ·  enter upgrade" +
                 (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h again/esc close"
         s.expanded ->
             if (tight) "↑↓ scroll · h close" else "↑↓/pgup/pgdn scroll  ·  h/esc close"

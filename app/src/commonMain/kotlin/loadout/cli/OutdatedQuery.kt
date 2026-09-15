@@ -16,6 +16,8 @@ data class UpdateRow(
     val candidate: String,
     val source: String,
     val note: String = "",
+    /** A page about the change — the source printed a URL in its note tail. */
+    val link: String? = null,
 )
 
 /**
@@ -96,7 +98,7 @@ internal suspend fun outdatedReport(
         ?.let { latest -> UpdateRow("loadout", TOOL_VERSION, latest, "release") }
 
     val sourceRows = sourceResults.flatMap { (label, res) ->
-        res.rows.map { UpdateRow(it.name, it.current, it.candidate, label, it.note) }
+        res.rows.map { UpdateRow(it.name, it.current, it.candidate, label, it.note, it.link) }
     }
     // Custom sources that failed (non-zero exit): surfaced loud so a broken
     // oracle can never masquerade as "nothing outdated". Declaration order.
