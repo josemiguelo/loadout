@@ -461,7 +461,7 @@ class ManifestRepoTest {
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
         assertTrue("requires loadout >= 999.0.0" in e.message.orEmpty())
-        assertTrue("run: loadout upgrade" in e.message.orEmpty())
+        assertTrue("run: loadout self-upgrade" in e.message.orEmpty())
     }
 
     @Test

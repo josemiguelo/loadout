@@ -61,7 +61,7 @@ class StatusCommand : CliktCommand(name = "status") {
             // The one self-knowledge carve-out: is this binary itself behind?
             SelfVersion.behind(app.runner, app.fs)?.let { latest ->
                 echo("")
-                echo(" " + Style.warn("↑") + "  loadout $TOOL_VERSION — $latest available " + Style.dim("(run: loadout upgrade)"))
+                echo(" " + Style.warn("↑") + "  loadout $TOOL_VERSION — $latest available " + Style.dim("(run: loadout self-upgrade)"))
             }
             if (!noWrite) echo(Style.dim("\nState written to ${app.stateStore.pathFor(system.machine)}"))
         }

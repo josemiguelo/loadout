@@ -576,7 +576,7 @@ root) is the curl|sh bootstrap over those releases — it resolves
 latest via the GitHub API (pin: LOADOUT_VERSION) and installs to
 ~/.local/bin; keep its target names in sync with release.yml. It reads the
 installed binary's version BEFORE overwriting it, so an upgrade (including
-`loadout upgrade`, which shells out to this script) says "was vX" and skips
+`loadout self-upgrade`, which shells out to this script) says "was vX" and skips
 the first-install "Next steps" — those instructions are wrong for someone
 who already has a config repo. Testable offline via
 LOADOUT_DOWNLOAD_BASE=file://… against a local tarball; run-tests.sh covers

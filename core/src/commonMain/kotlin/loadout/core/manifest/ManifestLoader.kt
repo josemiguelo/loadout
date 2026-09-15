@@ -49,7 +49,7 @@ object ManifestLoader {
             if (!versionAtLeast(TOOL_VERSION, required)) {
                 throw ManifestException(
                     "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
-                        "run: loadout upgrade",
+                        "run: loadout self-upgrade",
                 )
             }
         }
