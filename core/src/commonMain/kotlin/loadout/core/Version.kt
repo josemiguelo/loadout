@@ -1,6 +1,6 @@
 package loadout.core
 
-const val TOOL_VERSION: String = "0.11.2"
+const val TOOL_VERSION: String = "0.12.0"
 
 /** The curl|sh bootstrap — used by `loadout self-upgrade` and the floor refusal. */
 const val INSTALL_COMMAND: String =

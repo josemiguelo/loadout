@@ -264,7 +264,7 @@ These came from explicit user decisions; don't "improve" them away:
     OutdatedCommand prints errors even when no updates exist) — a crashing
     oracle can't masquerade as "nothing outdated" and silently hide updates
     forever. Installers may also declare `upgrade`: the ONE command that
-    moves everything the mechanism manages (`sudo dnf upgrade -y`,
+    moves everything the mechanism manages (`sudo dnf upgrade --refresh -y` — refresh, because the oracle is cache-only and the sweep must not trust yesterday's metadata;
     `brew upgrade`) — no `{pkgs}` placeholder, since loadout never upgrades
     single packages (contract 15). Never write cross-variant `||` chains in
     checks.

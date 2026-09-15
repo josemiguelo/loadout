@@ -15,14 +15,21 @@ data class UpgradeStep(
     val covers: List<String>,
     /** True for a whole-mechanism sweep; false for one custom-source item. */
     val sweep: Boolean = true,
+    /** The tool the sweep's mechanisms all drive (their shared probe), when they do. */
+    val tool: String? = null,
 ) {
     /**
-     * What to call this step on screen: a sweep is its mechanisms, a
-     * per-item step is the source AND the item, since "pins" alone doesn't
-     * say which pin failed.
+     * What to call this step on screen: a sweep is the TOOL it drives when
+     * its mechanisms share one — a user knows "dnf", not that the manifest
+     * splits it into dnf/dnf-repo/dnf-copr — else the mechanisms; a per-item
+     * step is the source AND the item, since "pins" alone doesn't say which
+     * pin failed.
      */
-    val label: String get() =
-        if (sweep) installers.joinToString(", ") else "${installers.single()}: ${covers.single()}"
+    val label: String get() = when {
+        !sweep -> "${installers.single()}: ${covers.single()}"
+        tool != null -> tool
+        else -> installers.joinToString(", ")
+    }
 }
 
 /** A mechanism can't be upgraded, and why — refusals are explicit, never silent. */
@@ -116,10 +123,12 @@ object UpgradeEngine {
         // Same command = same transaction: run it once, name every mechanism
         // it covers.
         return steps.groupBy({ it.second }, { it.first }).map { (command, mechanisms) ->
+            val probes = mechanisms.map { manifest.installers[it]?.probe }.distinct()
             UpgradeStep(
                 installers = mechanisms,
                 command = command,
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
+                tool = probes.singleOrNull()?.takeIf { it != null },
             )
         }
     }
