@@ -333,8 +333,8 @@ private fun HomeSectionRow(
     // A working row spins where its answer will be, rather than a spinner
     // parked in the title bar away from the thing it describes.
     val frame = SPINNER[spin % SPINNER.size]
-    val summary = if (section.busy) frame else clip(section.summary, 41)
-    val line = "  " + section.subject.padEnd(11) + summary.padEnd(42)
+    val summary = if (section.busy) frame else clip(section.summary, SUMMARY_WIDTH)
+    val line = "  " + section.subject.padEnd(11) + summary.padEnd(SUMMARY_WIDTH + 1)
     if (focused && highlight && expanded) {
         // Its detail is open and the keys live there: the selection bar
         // belongs to the inner row, so the parent reads as the open heading

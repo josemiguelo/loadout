@@ -448,8 +448,30 @@ These came from explicit user decisions; don't "improve" them away:
   the same way it kept its colour. Ticking the tool line or a program
   under it selects the tool (`tool:<probe>`); a source item ticks alone
   (`item:<source>/<row>`); `[–]` = nothing loadout can move (a source
-  without `upgrade`, a tool without one). The row's summary is the
-  doctor's: "dnf 168 · brew 6 · flatpak 1 · 34 pins". `loadout outdated`
+  without `upgrade`, a tool without one). **A row belongs to where it came
+  from, never to what it is called**: `RemoteStatus.Answered.sources` is
+  EVERY custom source mapped to whether it can `upgrade` one item (one
+  field, so "is a source" and "is upgradable" can't drift — and
+  `upgradableSources` is derived from it), `mechanismOf` holds PROGRAM rows
+  only, and `selectionKey` gives a source's row either its own
+  `item:` key or null. Keying by name instead filed a source item under the
+  mapped program of the same name — the live repo has a `tpack` tmux plugin
+  and a `tpack` brew cask, a `rust` asdf pin and a `rust` package — so the
+  row rendered as a brew program and ticking it ran `brew upgrade`, which
+  cannot fast-forward a git clone: it came back outdated after every
+  refresh, forever. Only upgradable sources were kept out of the tool
+  groups, so a read-only source (nvim-plugins) was the unguarded case. The
+  row's summary (`remoteSummary`) answers WHERE THE WORK IS, in plain words
+  a user owns: tools that have work lead ("one command fixes all of brew"),
+  then one count of everything that takes an update each ("42 updates"
+  alone, "42 more" after a tool), then the biggest of those groups by name
+  while `SUMMARY_WIDTH` lasts, then "+N more". An idle tool is NOT named —
+  the line used to read "brew 0 · 42 pins", spending its first characters
+  on the only thing with nothing to do while the 42 that did stayed
+  anonymous behind jargon. Never merge the two counts into one total: a
+  sweep and 42 individual pins are not the same work, and size-ranking a
+  tool buries the cheapest win. A crashed source outranks the group names.
+  `loadout outdated`
   prints the same tool lines first. `K` on a row whose source printed a
   link opens it (Lazy's key for the diff; `openInBrowser` runs
   `nohup sh -c 'xdg-open || open'` in the background). Batch oracles read STDOUT ONLY: an

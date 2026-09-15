@@ -108,7 +108,9 @@ sealed interface RemoteStatus {
         val tools: List<ToolUpdates> = emptyList(),
         /**
          * Row name to the mechanism that can upgrade it. Upgrades are whole-
-         * mechanism, so picking a row means picking its installer.
+         * mechanism, so picking a row means picking its installer. PROGRAM
+         * rows only — a custom source's row is never in here, however its
+         * item happens to be named (see [sources]).
          */
         val mechanismOf: Map<String, String> = emptyMap(),
         /**
@@ -121,14 +123,26 @@ sealed interface RemoteStatus {
         /** Tool to every mechanism it covers, for handing the engine names. */
         val mechanismsOfTool: Map<String, List<String>> = emptyMap(),
         /**
-         * Custom sources that can update one of their items. Rows from these
-         * tick individually — a pin in a file has nothing in common with the
-         * next pin. Kept as a SET of sources, not a row-name map: the same
-         * name can appear in two sources (python is an asdf tool and an asdf
-         * plugin), and a name-keyed map made them one row.
+         * EVERY custom source, mapped to whether it can update ONE of its
+         * items (`upgrade` declared). Rows from an upgradable one tick
+         * individually — a pin in a file has nothing in common with the next
+         * pin. Keyed by SOURCE, not by row name: the same name can appear in
+         * two sources (python is an asdf tool and an asdf plugin), and a
+         * name-keyed map made them one row.
+         *
+         * Read-only sources are in here too, because what a row IS comes from
+         * where it came from, never from its name. A source's item may share
+         * a name with a mapped program — the live repo has a `tpack` tmux
+         * plugin and a `tpack` brew cask, a `rust` asdf pin and a `rust`
+         * package — and a name lookup filed it under that program's tool, so
+         * ticking it ran `brew upgrade`, which cannot move a git clone, and
+         * the row came back outdated forever. One field, so "is a source" and
+         * "can be upgraded" can never drift apart.
          */
-        val upgradableSources: Set<String> = emptySet(),
+        val sources: Map<String, Boolean> = emptyMap(),
     ) : RemoteStatus {
+        /** Sources that can move an item; their rows tick one at a time. */
+        val upgradableSources: Set<String> get() = sources.filterValues { it }.keys
         val names: List<String> get() = updates.map { it.name }
     }
     data class Unavailable(val reason: String) : RemoteStatus
@@ -314,6 +328,9 @@ class HomeModel(private val app: AppContext) {
                         failedSources = r.errors.size,
                         tools = r.tools,
                         mechanismOf = r.updates.mapNotNull { row ->
+                            // A custom source's row is its source's, whatever
+                            // it is called — never the program of that name.
+                            if (row.source in m.outdated.keys || row.source == "release") return@mapNotNull null
                             val key = mapping[row.name] ?: return@mapNotNull null
                             m.resolveInstall(row.name, key).upgradeWith?.let { row.name to it.installer }
                         }.toMap(),
@@ -323,7 +340,7 @@ class HomeModel(private val app: AppContext) {
                         // then upgrade the real Homebrew.
                         toolOf = used.keys.associateWith { m.installers[it]?.probe ?: it },
                         mechanismsOfTool = used.keys.groupBy { m.installers[it]?.probe ?: it },
-                        upgradableSources = m.outdated.filterValues { it.upgrade != null }.keys,
+                        sources = m.outdated.mapValues { (_, s) -> s.upgrade != null },
                     )
                 },
                 onFailure = { e ->
@@ -1104,7 +1121,8 @@ internal fun remoteLines(answered: RemoteStatus.Answered, collapsed: Set<String>
         val key = if (tool.command != null && tool.tool in answered.mechanismsOfTool) "tool:${tool.tool}" else null
         lines += RemoteLine.Tool(tool, key)
         for (row in answered.updates) {
-            if (row in placed || row.source in answered.upgradableSources || row.source == "release") continue
+            // Sources keep their own rows — ALL of them, read-only included.
+            if (row in placed || row.source in answered.sources || row.source == "release") continue
             if (answered.toolOf[answered.mechanismOf[row.name]] == tool.tool || row.name in tool.declared) {
                 lines += RemoteLine.Program(row, key, "tool:${tool.tool}")
                 placed += row
@@ -1131,7 +1149,13 @@ internal fun remoteLines(answered: RemoteStatus.Answered, collapsed: Set<String>
  * it at all.
  */
 internal fun selectionKey(answered: RemoteStatus.Answered, row: UpdateRow): String? {
-    if (row.source in answered.upgradableSources) return "item:${row.source}/${row.name}"
+    if (row.source == "release") return null
+    // A source's row ticks itself or nothing at all. It never falls through
+    // to a tool: sharing a name with a mapped program would otherwise tick
+    // that program's sweep, which cannot move what the source tracks.
+    if (row.source in answered.sources) {
+        return if (row.source in answered.upgradableSources) "item:${row.source}/${row.name}" else null
+    }
     val tool = answered.toolOf[answered.mechanismOf[row.name]] ?: return null
     return "tool:$tool"
 }
@@ -1153,6 +1177,71 @@ internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (s
     HomeAction.SHOW_DIFF -> state.fleet?.rows?.count { it.drift || it.incomplete } ?: 0
     else -> 0
 }
+
+/** All a subject line gets for its answer, so the summary can fit itself. */
+internal const val SUMMARY_WIDTH = 41
+
+private const val SEP = " · "
+
+/**
+ * The remote row's one line, ordered by what the reader can do about it: a
+ * tool is ONE command for every package it has, so it leads; everything
+ * else takes an update each, counted and then named biggest-group-first
+ * while the width lasts.
+ *
+ * A tool with nothing outdated is left OUT — naming it spent the line
+ * saying there was no work ("brew 0 · 42 pins"), while the 42 that did have
+ * work stayed anonymous. Counts of different kinds of work never merge into
+ * one total either: "brew 3" is one keystroke, "42 more" is forty-two.
+ */
+internal fun remoteSummary(remote: RemoteStatus.Answered): String {
+    // A null total is "no batch oracle can say", which is not the same as
+    // idle — keep asking with a "?" rather than claiming it's clean.
+    val tools = remote.tools
+        .filter { it.total == null || it.total > 0 }
+        .map { "${it.tool} ${it.total ?: "?"}" }
+    val singles = remote.updates.filter {
+        it.source in remote.sources || it.source == "release" || remote.mechanismOf[it.name] == null
+    }
+    val counted = when {
+        singles.isEmpty() -> null
+        // "more" only reads right after a count it adds to.
+        tools.isNotEmpty() -> "${singles.size} more"
+        singles.size == 1 -> "1 update"
+        else -> "${singles.size} updates"
+    }
+    // A crashed source outranks the group names: it's the one thing on this
+    // line that means the rest of the line may be understating the work.
+    val failed = when (remote.failedSources) {
+        0 -> null
+        1 -> "1 source failed"
+        else -> "${remote.failedSources} sources failed"
+    }
+    val head = tools + listOfNotNull(counted, failed)
+    if (head.isEmpty()) return "everything up to date"
+
+    val groups = singles.groupingBy { groupLabel(it) }.eachCount().entries
+        .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+        .map { "${it.key} ${it.value}" }
+    var line = head.joinToString(SEP)
+    var shown = 0
+    for (group in groups) {
+        val candidate = line + SEP + group
+        if (candidate.length > SUMMARY_WIDTH) break
+        line = candidate
+        shown++
+    }
+    // The marker counts the groups left, which the total can't say — but it
+    // never costs a named group, since the total already implies "and more".
+    if (shown in 1 until groups.size) {
+        val marker = "$SEP+${groups.size - shown} more"
+        if (line.length + marker.length <= SUMMARY_WIDTH) line += marker
+    }
+    return line
+}
+
+/** Where a row came from, as the reader knows it — not as the code keys it. */
+private fun groupLabel(row: UpdateRow) = if (row.source == "release") "loadout" else row.source
 
 /** Pure: the four subject lines for a machine's observed state. */
 internal fun sectionsOf(
@@ -1235,19 +1324,7 @@ internal fun sectionsOf(
                 // Empty on purpose: the row shows the spinner instead.
                 RemoteStatus.Asking -> ""
                 is RemoteStatus.Unavailable -> "unavailable — ${remote.reason}"
-                is RemoteStatus.Answered -> {
-                    // The doctor's summary: each tool's whole count, then
-                    // the pins (custom sources + the binary) behind.
-                    val tools = remote.tools.joinToString(" · ") { "${it.tool} ${it.total ?: "?"}" }
-                    val pins = remote.updates.count { it.source in remote.upgradableSources || it.source == "release" || remote.mechanismOf[it.name] == null }
-                    val failed = if (remote.failedSources == 0) "" else " · ${remote.failedSources} source(s) failed"
-                    when {
-                        remote.tools.isEmpty() && remote.names.isEmpty() && remote.failedSources == 0 -> "everything up to date"
-                        remote.tools.isEmpty() && remote.names.isEmpty() -> "${remote.failedSources} source(s) failed"
-                        remote.tools.isEmpty() -> "${remote.names.size} update(s) available$failed"
-                        else -> tools + (if (pins == 0) "" else " · $pins pins") + failed
-                    }
-                }
+                is RemoteStatus.Answered -> remoteSummary(remote)
             },
             verb = if (remote is RemoteStatus.Asking) "" else "review them",
             action = HomeAction.REVIEW_OUTDATED,

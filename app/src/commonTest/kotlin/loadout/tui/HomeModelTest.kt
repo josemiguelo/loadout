@@ -107,7 +107,7 @@ class HomeSectionsTest {
                 failedSources = 0,
             ),
         )
-        assertEquals("2 update(s) available", answered.summary)
+        assertEquals("2 updates · dnf 2", answered.summary)
         assertEquals(false, answered.severity)
         // The names are NOT spilled under the row on focus: enter opens the
         // table instead, so moving the cursor stays quiet.
@@ -120,6 +120,96 @@ class HomeSectionsTest {
         // A broken oracle is worse than an outdated package: it hides them.
         val broken = remote(RemoteStatus.Answered(listOf(update("kitty", "1", "2")), failedSources = 1))
         assertEquals(true, broken.severity)
+    }
+}
+
+/**
+ * The remote row's line answers "where is the work", so a tool with none is
+ * not news — the live mac shipped "brew 0 · 42 pins", naming the only thing
+ * with nothing to do and leaving the 42 that did anonymous.
+ */
+class RemoteSummaryTest {
+    /** The live repo's shape: brew, plus five custom sources. */
+    private fun answered(
+        brew: Int? = 0,
+        failedSources: Int = 0,
+        counts: Map<String, Int> = mapOf(
+            "nvim-plugins" to 15,
+            "asdf-tools" to 10,
+            "antidote-plugins" to 9,
+            "asdf-plugins" to 7,
+            "antidote" to 1,
+        ),
+    ) = RemoteStatus.Answered(
+        updates = counts.flatMap { (source, n) ->
+            (1..n).map { loadout.cli.UpdateRow("item$it", "1", "2", source) }
+        },
+        failedSources = failedSources,
+        tools = listOf(
+            loadout.cli.ToolUpdates("brew", listOf("brew"), total = brew, declared = emptyList(), others = emptyList(), command = "brew upgrade"),
+        ),
+        sources = counts.keys.associateWith { true },
+    )
+
+    @Test
+    fun anIdleToolIsLeftOutAndTheWorkIsNamed() {
+        val line = remoteSummary(answered(brew = 0))
+        assertEquals("42 updates · nvim-plugins 15 · +4 more", line)
+        assertFalse("brew" in line, "a tool with nothing outdated is not news")
+        assertTrue(line.length <= SUMMARY_WIDTH)
+    }
+
+    @Test
+    fun aToolWithWorkLeadsAndItsCountStaysItsOwn() {
+        // One keystroke fixes brew's 3; the other 42 are 42 decisions. A
+        // single "45 behind" would say they're the same kind of work, and
+        // ranking brew purely by size would bury the cheapest win.
+        val line = remoteSummary(answered(brew = 3))
+        assertEquals("brew 3 · 42 more · nvim-plugins 15", line)
+        assertTrue(line.length <= SUMMARY_WIDTH)
+    }
+
+    @Test
+    fun nothingOutdatedReadsAsSettledEvenWhileToolsExist() {
+        assertEquals(
+            "everything up to date",
+            remoteSummary(answered(brew = 0, counts = emptyMap())),
+        )
+    }
+
+    @Test
+    fun aCrashedSourceOutranksTheGroupNames() {
+        // It's the one item here that means the rest of the line understates
+        // the work, so it must survive the width, plural and all.
+        val one = remoteSummary(answered(failedSources = 1))
+        assertEquals("42 updates · 1 source failed", one)
+        assertTrue("2 sources failed" in remoteSummary(answered(failedSources = 2)))
+    }
+
+    @Test
+    fun anUnaskableToolKeepsAskingRatherThanReadingAsClean() {
+        // No batch oracle can say — which is not the same as "nothing to do".
+        assertTrue(remoteSummary(answered(brew = null)).startsWith("brew ?"))
+    }
+
+    @Test
+    fun theBinaryOwnRowIsCalledLoadoutNotItsChannel() {
+        val line = remoteSummary(
+            RemoteStatus.Answered(
+                updates = listOf(loadout.cli.UpdateRow("loadout", "0.12.0", "0.13.0", "release")),
+                failedSources = 0,
+            ),
+        )
+        assertEquals("1 update · loadout 1", line)
+    }
+
+    @Test
+    fun longSourceNamesLoseTheMarkerNotTheColumn() {
+        val line = remoteSummary(
+            answered(counts = mapOf("some-very-long-source-name" to 3, "another-long-one" to 2)),
+        )
+        assertTrue(line.length <= SUMMARY_WIDTH, "spilling the column clips mid-word: $line")
+        assertEquals("5 updates · some-very-long-source-name 3", line)
     }
 }
 
@@ -488,6 +578,50 @@ class HomeKeysTest {
         assertTrue(m.state.selection.isEmpty(), "and clears what it just upgraded")
     }
 
+    /**
+     * A source's item may be named like a mapped program: the live repo has a
+     * `tpack` tmux plugin AND a `tpack` brew cask. The row belongs to its
+     * source either way — filed under brew, ticking it ran `brew upgrade`,
+     * which cannot fast-forward a git clone, so the row came back outdated
+     * after every refresh.
+     */
+    @Test
+    fun aSourceRowNamedLikeAProgramIsNeverTheProgram() {
+        val row = loadout.cli.UpdateRow("tpack", "27172d5", "1f8b694", "tmux-plugins", "156 commit(s) behind")
+        fun answered(upgradable: Boolean) = RemoteStatus.Answered(
+            updates = listOf(row),
+            failedSources = 0,
+            tools = listOf(
+                loadout.cli.ToolUpdates("brew", listOf("brew-cask"), total = 0, declared = emptyList(), others = emptyList(), command = "brew upgrade"),
+            ),
+            mechanismOf = mapOf("tpack" to "brew-cask"),
+            toolOf = mapOf("brew-cask" to "brew"),
+            mechanismsOfTool = mapOf("brew" to listOf("brew-cask")),
+            sources = mapOf("tmux-plugins" to upgradable),
+        )
+
+        // Upgradable: its own item, under its own source.
+        val own = answered(upgradable = true)
+        assertEquals(
+            listOf("Tool", "Gap", "Source", "Item"),
+            remoteLines(own).map { it::class.simpleName },
+        )
+        assertEquals("source:tmux-plugins", remoteLines(own)[3].group)
+        assertEquals("item:tmux-plugins/tpack", selectionKey(own, row))
+
+        // Read-only: still its source's row — NOT a brew program. This is the
+        // case the old name lookup got wrong, because only upgradable sources
+        // were kept out of the tool groups.
+        val readOnly = answered(upgradable = false)
+        assertEquals(
+            listOf("Tool", "Gap", "Source", "Item"),
+            remoteLines(readOnly).map { it::class.simpleName },
+        )
+        assertEquals("source:tmux-plugins", remoteLines(readOnly)[3].group)
+        assertNull(selectionKey(readOnly, row), "nothing loadout can move — never brew's sweep")
+        assertEquals("tmux-plugins can't update its items from loadout", remoteLines(readOnly)[3].refusal)
+    }
+
     @Test
     fun theRemoteTableIsGroupedByTheToolThatWillAct() {
         val rows = listOf(update("kitty", "1", "2"), update("ruby", "3.4.8", "3.4.10", "asdf-tools"))
@@ -501,7 +635,7 @@ class HomeKeysTest {
             mechanismOf = mapOf("kitty" to "dnf"),
             toolOf = mapOf("dnf" to "dnf", "flatpak" to "flatpak"),
             mechanismsOfTool = mapOf("dnf" to listOf("dnf"), "flatpak" to listOf("flatpak")),
-            upgradableSources = setOf("asdf-tools"),
+            sources = mapOf("asdf-tools" to true),
         )
         val lines = remoteLines(answered)
         // dnf line, kitty under it, the cost, a gap, flatpak (clean, still
@@ -587,7 +721,7 @@ class HomeKeysTest {
             HomeState(
                 sections = sections,
                 expanded = true,
-                remote = RemoteStatus.Answered(updates = rows, failedSources = 0, upgradableSources = setOf("asdf-plugins")),
+                remote = RemoteStatus.Answered(updates = rows, failedSources = 0, sources = mapOf("asdf-plugins" to true)),
             ),
         )
         assertEquals("https://github.com/x/y/compare/a...b", remoteLines(m.state.remote as RemoteStatus.Answered)[1].link)
@@ -614,7 +748,7 @@ class HomeKeysTest {
                 remote = RemoteStatus.Answered(
                     updates = rows,
                     failedSources = 0,
-                    upgradableSources = setOf("asdf-plugins"),
+                    sources = mapOf("asdf-plugins" to true),
                 ),
             ),
         )
@@ -645,7 +779,7 @@ class HomeKeysTest {
                 remote = RemoteStatus.Answered(
                     updates = rows,
                     failedSources = 0,
-                    upgradableSources = setOf("asdf-tools", "asdf-plugins"),
+                    sources = mapOf("asdf-tools" to true, "asdf-plugins" to true),
                 ),
             ),
         )
