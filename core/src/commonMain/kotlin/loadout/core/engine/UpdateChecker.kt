@@ -52,7 +52,10 @@ class UpdateChecker(
      */
     fun batchCandidates(command: String): Map<String, String> {
         val result = runner.capture(expandFilePrefix(command), workDir)
-        return result.stdout.ifBlank { result.stderr }.lineSequence()
+        // stdout ONLY: an empty stdout is "nothing outdated", and a tool's
+        // stderr is warnings — `brew outdated --cask` once turned a
+        // deprecation notice into packages named "Warning:" and "Please".
+        return result.stdout.lineSequence()
             .mapNotNull { line ->
                 val trimmed = line.trim()
                 val split = trimmed.indexOfFirst { it.isWhitespace() }

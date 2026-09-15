@@ -63,6 +63,9 @@ echo "$OUT" | grep -qE "mytool +1.0 +-> 2.0" || fail "outdated reports the newer
 echo "$OUT" | grep -q "othertool" && fail "up-to-date program must not be listed" || true
 echo "$OUT" | grep -qE "batchtool +1.0 +-> 3.0" || fail "batch oracle (outdated-all) reports its candidate"
 echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must not be listed" || true
+# The doctor's line per tool: everything the batch oracle reported, and how
+# much of it is in the loadout — the whole picture an upgrade would touch.
+echo "$OUT" | grep -qE "sh +2 updates · 1 in your loadout" || fail "outdated leads with the tool's whole count (fake3's probe is sh)"
 ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
 # --- custom [outdated.*] sources: arbitrary rows, the source as the tag --

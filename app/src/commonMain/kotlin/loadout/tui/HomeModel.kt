@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import loadout.cli.AppContext
+import loadout.cli.ToolUpdates
 import loadout.cli.UpdateRow
 import loadout.cli.outdatedReport
 import loadout.core.TOOL_VERSION
@@ -33,13 +34,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** What a pane run is doing — the words and the ending differ, nothing else. */
-enum class PaneKind { UPGRADE, SCRIPTS, INSTALL }
+/** What a pane run is doing — the words and the ending differ, nothing else. LIST runs nothing: it shows. */
+enum class PaneKind { UPGRADE, SCRIPTS, INSTALL, LIST }
 
 /** A run in the floating pane — first as a question, then as it happens. */
 data class PaneRun(
     val steps: List<String>,
     val kind: PaneKind = PaneKind.UPGRADE,
+    /** A LIST pane's own title; the run kinds derive theirs from what they do. */
+    val title: String = "",
     /** Some step invokes sudo: the yes may have to ask for a password first. */
     val needsSudo: Boolean = false,
     /**
@@ -101,6 +104,8 @@ sealed interface RemoteStatus {
     data class Answered(
         val updates: List<UpdateRow>,
         val failedSources: Int,
+        /** The doctor's view: every tool asked, with everything it reported, declared or not. */
+        val tools: List<ToolUpdates> = emptyList(),
         /**
          * Row name to the mechanism that can upgrade it. Upgrades are whole-
          * mechanism, so picking a row means picking its installer.
@@ -305,6 +310,7 @@ class HomeModel(private val app: AppContext) {
                     RemoteStatus.Answered(
                         updates = r.updates,
                         failedSources = r.errors.size,
+                        tools = r.tools,
                         mechanismOf = r.updates.mapNotNull { row ->
                             val key = mapping[row.name] ?: return@mapNotNull null
                             m.resolveInstall(row.name, key).upgradeWith?.let { row.name to it.installer }
@@ -416,16 +422,14 @@ class HomeModel(private val app: AppContext) {
                         state = s.copy(picked = if (row.name in s.picked) s.picked - row.name else s.picked + row.name)
                     }
                 } else if (onRemote && answered != null) {
-                    // Selecting a package selects its MECHANISM: loadout only
-                    // does whole upgrades, so anything else would be a lie
-                    // about what pressing u will run.
-                    val row = answered.updates.getOrNull(s.detailCursor)
-                    // A package row ticks its whole tool; a source row ticks
-                    // itself, because that's the unit each one upgrades in.
-                    val key = row?.let { selectionKey(answered, it) }
+                    // A tool line, or a program under it, ticks the TOOL:
+                    // loadout only does whole upgrades, and the tool line
+                    // says what that means. A source row ticks itself.
+                    val line = remoteLines(answered).getOrNull(s.detailCursor)
+                    val key = line?.key
                     state = when {
-                        row == null -> s
-                        key == null -> s.copy(message = "${row.name} has no mechanism loadout can upgrade")
+                        line == null -> s
+                        key == null -> s.copy(message = line.refusal ?: "nothing to tick there")
                         key in s.selection -> s.copy(selection = s.selection - key, message = null)
                         else -> s.copy(selection = s.selection + key, message = null)
                     }
@@ -439,7 +443,7 @@ class HomeModel(private val app: AppContext) {
                     } else if (onScripts) {
                         state = s.copy(picked = if (all) s.scripts.map { it.name }.toSet() else emptySet())
                     } else if (onRemote && answered != null) {
-                        val every = answered.updates.mapNotNull { selectionKey(answered, it) }.toSet()
+                        val every = remoteLines(answered).mapNotNull { it.key }.toSet()
                         state = s.copy(selection = if (all) every else emptySet())
                     }
                 }
@@ -449,6 +453,20 @@ class HomeModel(private val app: AppContext) {
                     startInstalls(s.chosen)
                 } else if (onScripts) {
                     startScripts(s.picked)
+                } else if (onRemote && answered != null && remoteLines(answered).getOrNull(s.detailCursor) is RemoteLine.Others) {
+                    // The sweep's cost, in full: every package the tool would
+                    // move that loadout doesn't declare, one per line.
+                    val others = remoteLines(answered)[s.detailCursor] as RemoteLine.Others
+                    state = s.copy(
+                        run = PaneRun(
+                            steps = emptyList(),
+                            kind = PaneKind.LIST,
+                            title = "${others.tool}: ${others.names.size} packages not in your loadout",
+                            log = others.names,
+                            done = true,
+                            summary = "these upgrade too when you upgrade ${others.tool} — enter closes",
+                        ),
+                    )
                 } else if (onRemote && answered != null && s.selection.isNotEmpty()) {
                     startUpgrade(answered, s.selection)
                 }
@@ -468,7 +486,7 @@ class HomeModel(private val app: AppContext) {
                 val section = s.sections.getOrNull(s.cursor)
                 state = when {
                     section?.busy == true -> s.copy(message = "still asking — the rows fill in as answers land")
-                    detailLines(s, section) > 0 -> s.copy(expanded = true, scroll = 0, detailCursor = 0)
+                    detailLines(s, section) > 0 -> s.copy(expanded = true, scroll = 0, detailCursor = firstStop(s, section))
                     else -> s.copy(message = "nothing to open there")
                 }
             }
@@ -709,7 +727,7 @@ class HomeModel(private val app: AppContext) {
                     log = it.log + "" + when (kind) {
                         PaneKind.SCRIPTS -> "Re-checking every script…"
                         PaneKind.INSTALL -> "Re-checking every program…"
-                        PaneKind.UPGRADE -> "Checking which installed versions changed…"
+                        else -> "Checking which installed versions changed…"
                     },
                 )
             }
@@ -799,7 +817,10 @@ class HomeModel(private val app: AppContext) {
         val run = state.run ?: return
         val lines = if (run.confirming) run.commands else run.log
         val max = (lines.size - viewport).coerceAtLeast(0)
-        update { it.copy(scrollBack = (it.scrollBack + delta).coerceIn(0, max)) }
+        // A log is read from its tail (scrollBack counts up from the bottom);
+        // a list from its top, so the same keys move the other way.
+        val step = if (run.kind == PaneKind.LIST) -delta else delta
+        update { it.copy(scrollBack = (it.scrollBack + step).coerceIn(0, max)) }
     }
 
     private fun cancelRun() {
@@ -817,7 +838,22 @@ class HomeModel(private val app: AppContext) {
         val s = state
         val total = detailLines(s, s.sections.getOrNull(s.cursor))
         if (total == 0) return
-        val cursor = (s.detailCursor + delta).coerceIn(0, total - 1)
+        var cursor = (s.detailCursor + delta).coerceIn(0, total - 1)
+        // Headings and notes in the remote table aren't stops: keep going
+        // in the same direction, or stay put at the edge.
+        val lines = (s.remote as? RemoteStatus.Answered)
+            ?.takeIf { s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED }
+            ?.let { remoteLines(it) }
+        if (lines != null) {
+            val step = if (delta < 0) -1 else 1
+            while (cursor in lines.indices && !lines[cursor].focusable) cursor += step
+            if (cursor !in lines.indices) return
+            // Back at the first stop: show the heading above it too.
+            if (lines.take(cursor).none { it.focusable }) {
+                state = s.copy(detailCursor = cursor, scroll = 0)
+                return
+            }
+        }
         val scroll = s.scroll.coerceIn((cursor - viewport + 1).coerceAtLeast(0), cursor)
         state = s.copy(detailCursor = cursor, scroll = scroll.coerceAtMost((total - viewport).coerceAtLeast(0)))
     }
@@ -914,6 +950,85 @@ internal fun preselect(rows: List<ScriptRow>): Set<String> =
     rows.filter { it.status != ScriptStatus.DONE }.map { it.name }.toSet()
 
 /**
+ * One line of the remote table. The table is grouped by what will ACT: a
+ * tool line (dnf, brew…) with everything it reported, its declared programs
+ * under it, a note for what it would touch beyond them; then each custom
+ * source with its items. [key] is what ticking selects (null = can't);
+ * [focusable] lines are cursor stops.
+ */
+sealed interface RemoteLine {
+    val key: String?
+    val focusable: Boolean
+    /** Why ticking does nothing, when it does nothing. */
+    val refusal: String? get() = null
+
+    data class Tool(val info: ToolUpdates, override val key: String?) : RemoteLine {
+        override val focusable get() = true
+        override val refusal get() = if (key == null) "${info.tool} declares no upgrade command" else null
+    }
+    data class Program(val row: UpdateRow, override val key: String?) : RemoteLine {
+        override val focusable get() = true
+        override val refusal get() = if (key == null) "${row.name} has no mechanism loadout can upgrade" else null
+    }
+    /** What the sweep touches that loadout doesn't declare — enter lists them all. */
+    data class Others(val tool: String, val names: List<String>) : RemoteLine {
+        override val key: String? get() = null
+        override val focusable get() = true
+        override val refusal get() = "nothing to tick — enter lists them"
+    }
+    data class Source(val name: String) : RemoteLine {
+        override val key: String? get() = null
+        override val focusable get() = false
+    }
+    /** Breathing room between groups. */
+    data object Gap : RemoteLine {
+        override val key: String? get() = null
+        override val focusable get() = false
+    }
+    data class Item(val row: UpdateRow, override val key: String?) : RemoteLine {
+        override val focusable get() = true
+        override val refusal get() = if (key == null) "${row.source} can't update its items from loadout" else null
+    }
+}
+
+/** Pure: the remote table as lines — tools first (every one asked, clean ones too), then sources. */
+internal fun remoteLines(answered: RemoteStatus.Answered): List<RemoteLine> {
+    val lines = mutableListOf<RemoteLine>()
+    val placed = mutableSetOf<UpdateRow>()
+    // A tool no batch oracle described (per-package oracles only) still
+    // heads its programs — it just can't say how many others it would move.
+    val described = answered.tools.map { it.tool }.toSet()
+    val undescribed = answered.updates
+        .mapNotNull { row -> answered.toolOf[answered.mechanismOf[row.name]]?.takeIf { it !in described }?.let { it to row.name } }
+        .groupBy({ it.first }, { it.second })
+        .map { (tool, names) ->
+            ToolUpdates(tool, answered.mechanismsOfTool[tool].orEmpty(), total = null, declared = names, others = emptyList(), command = "")
+        }
+    for (tool in answered.tools + undescribed) {
+        if (lines.isNotEmpty()) lines += RemoteLine.Gap
+        val key = if (tool.command != null && tool.tool in answered.mechanismsOfTool) "tool:${tool.tool}" else null
+        lines += RemoteLine.Tool(tool, key)
+        for (row in answered.updates) {
+            if (row in placed || row.source in answered.upgradableSources || row.source == "release") continue
+            if (answered.toolOf[answered.mechanismOf[row.name]] == tool.tool || row.name in tool.declared) {
+                lines += RemoteLine.Program(row, key)
+                placed += row
+            }
+        }
+        if (tool.others.isNotEmpty()) lines += RemoteLine.Others(tool.tool, tool.others)
+    }
+    // Everything else, grouped by source: the binary's own row, custom
+    // sources, and programs whose mechanism no tool line claimed.
+    val rest = answered.updates.filter { it !in placed }
+    for ((source, rows) in rest.groupBy { it.source }) {
+        if (lines.isNotEmpty()) lines += RemoteLine.Gap
+        lines += RemoteLine.Source(source)
+        for (row in rows) lines += RemoteLine.Item(row, selectionKey(answered, row))
+    }
+    return lines
+}
+
+/**
  * What ticking [row] selects. A package row selects the TOOL behind it (dnf,
  * brew — the sweep upgrades all of it); a custom source's row selects just
  * that row, because its items are independent. Null = loadout can't upgrade
@@ -925,11 +1040,20 @@ internal fun selectionKey(answered: RemoteStatus.Answered, row: UpdateRow): Stri
     return "tool:$tool"
 }
 
+/** The first line the cursor may rest on when a detail opens (a heading isn't one). */
+internal fun firstStop(state: HomeState, section: HomeSection?): Int =
+    if (section?.action == HomeAction.REVIEW_OUTDATED) {
+        (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it).indexOfFirst { l -> l.focusable } }
+            ?.coerceAtLeast(0) ?: 0
+    } else {
+        0
+    }
+
 /** How many detail lines this section can open in place (0 = none). */
 internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (section?.action) {
     HomeAction.INSTALL_MISSING -> state.missing.size
     HomeAction.RUN_SCRIPTS -> state.scripts.size
-    HomeAction.REVIEW_OUTDATED -> (state.remote as? RemoteStatus.Answered)?.updates?.size ?: 0
+    HomeAction.REVIEW_OUTDATED -> (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it).size } ?: 0
     HomeAction.SHOW_DIFF -> state.fleet?.rows?.count { it.drift || it.incomplete } ?: 0
     else -> 0
 }
@@ -1015,18 +1139,25 @@ internal fun sectionsOf(
                 // Empty on purpose: the row shows the spinner instead.
                 RemoteStatus.Asking -> ""
                 is RemoteStatus.Unavailable -> "unavailable — ${remote.reason}"
-                is RemoteStatus.Answered -> when {
-                    remote.names.isEmpty() && remote.failedSources == 0 -> "everything up to date"
-                    remote.names.isEmpty() -> "${remote.failedSources} source(s) failed"
-                    else -> "${remote.names.size} update(s) available" +
-                        if (remote.failedSources == 0) "" else " · ${remote.failedSources} source(s) failed"
+                is RemoteStatus.Answered -> {
+                    // The doctor's summary: each tool's whole count, then
+                    // the pins (custom sources + the binary) behind.
+                    val tools = remote.tools.joinToString(" · ") { "${it.tool} ${it.total ?: "?"}" }
+                    val pins = remote.updates.count { it.source in remote.upgradableSources || it.source == "release" || remote.mechanismOf[it.name] == null }
+                    val failed = if (remote.failedSources == 0) "" else " · ${remote.failedSources} source(s) failed"
+                    when {
+                        remote.tools.isEmpty() && remote.names.isEmpty() && remote.failedSources == 0 -> "everything up to date"
+                        remote.tools.isEmpty() && remote.names.isEmpty() -> "${remote.failedSources} source(s) failed"
+                        remote.tools.isEmpty() -> "${remote.names.size} update(s) available$failed"
+                        else -> tools + (if (pins == 0) "" else " · $pins pins") + failed
+                    }
                 }
             },
             verb = if (remote is RemoteStatus.Asking) "" else "review them",
             action = HomeAction.REVIEW_OUTDATED,
             severity = when {
                 remote is RemoteStatus.Answered && remote.failedSources > 0 -> true
-                remote is RemoteStatus.Answered && remote.names.isNotEmpty() -> false
+                remote is RemoteStatus.Answered && (remote.names.isNotEmpty() || remote.tools.any { (it.total ?: 0) > 0 }) -> false
                 else -> null
             },
             neutral = remote == null || remote is RemoteStatus.Asking || remote is RemoteStatus.Unavailable,

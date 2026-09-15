@@ -307,24 +307,27 @@ class HomeKeysTest {
         )
         m.handleKey(HomeKey.OPEN, viewport = 5)
         assertTrue(m.state.expanded)
+        // 21 lines: the rows' source heading, then the 20 rows. The cursor
+        // opens on the first row — a heading is never a stop.
+        assertEquals(1, m.state.detailCursor)
 
         // The arrows move the focused LINE; the window follows it.
         m.handleKey(HomeKey.DOWN, viewport = 5)
-        assertEquals(1, m.state.detailCursor)
+        assertEquals(2, m.state.detailCursor)
         assertEquals(0, m.state.scroll, "no need to scroll while the line is visible")
         assertEquals(0, m.state.cursor, "arrows belong to the detail, not the section list")
 
         m.handleKey(HomeKey.PAGE_DOWN, viewport = 5)
-        assertEquals(6, m.state.detailCursor)
-        assertEquals(2, m.state.scroll)
+        assertEquals(7, m.state.detailCursor)
+        assertEquals(3, m.state.scroll)
 
         repeat(20) { m.handleKey(HomeKey.PAGE_DOWN, viewport = 5) }
-        assertEquals(19, m.state.detailCursor, "the last line stops at the end")
-        assertEquals(15, m.state.scroll)
+        assertEquals(20, m.state.detailCursor, "the last line stops at the end")
+        assertEquals(16, m.state.scroll)
 
         repeat(30) { m.handleKey(HomeKey.UP, viewport = 5) }
-        assertEquals(0, m.state.detailCursor)
-        assertEquals(0, m.state.scroll)
+        assertEquals(1, m.state.detailCursor, "the heading above the first row is not a stop")
+        assertEquals(0, m.state.scroll, "but it scrolls into view")
 
         m.handleKey(HomeKey.ESC, viewport = 5)
         assertEquals(false, m.state.expanded)
@@ -482,6 +485,56 @@ class HomeKeysTest {
     }
 
     @Test
+    fun theRemoteTableIsGroupedByTheToolThatWillAct() {
+        val rows = listOf(update("kitty", "1", "2"), update("ruby", "3.4.8", "3.4.10", "asdf-tools"))
+        val answered = RemoteStatus.Answered(
+            updates = rows,
+            failedSources = 0,
+            tools = listOf(
+                loadout.cli.ToolUpdates("dnf", listOf("dnf"), total = 14, declared = listOf("kitty"), others = listOf("kernel", "glibc"), command = "sudo dnf upgrade -y"),
+                loadout.cli.ToolUpdates("flatpak", listOf("flatpak"), total = 0, declared = emptyList(), others = emptyList(), command = "flatpak --user update -y"),
+            ),
+            mechanismOf = mapOf("kitty" to "dnf"),
+            toolOf = mapOf("dnf" to "dnf", "flatpak" to "flatpak"),
+            mechanismsOfTool = mapOf("dnf" to listOf("dnf"), "flatpak" to listOf("flatpak")),
+            upgradableSources = setOf("asdf-tools"),
+        )
+        val lines = remoteLines(answered)
+        // dnf line, kitty under it, the cost, a gap, flatpak (clean, still
+        // shown), a gap, then the source and its item.
+        assertEquals(
+            listOf("Tool", "Program", "Others", "Gap", "Tool", "Gap", "Source", "Item"),
+            lines.map { it::class.simpleName },
+        )
+        // The tool line and its program tick the same thing: the tool.
+        assertEquals("tool:dnf", lines[0].key)
+        assertEquals("tool:dnf", lines[1].key)
+        assertEquals("item:asdf-tools/ruby", lines[7].key)
+        // Headings and gaps are not stops; the cost line is — enter lists it in full.
+        assertEquals(listOf(true, true, true, false, true, false, false, true), lines.map { it.focusable })
+
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(HomeState(sections = sections, remote = answered))
+        m.handleKey(HomeKey.OPEN, viewport = 8)
+        assertEquals(0, m.state.detailCursor)
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        assertEquals(2, m.state.detailCursor, "the cost line is a stop")
+        assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 8))
+        val list = m.state.run!!
+        assertEquals(PaneKind.LIST, list.kind, "enter on it opens the list in the pane")
+        assertEquals(listOf("kernel", "glibc"), list.log)
+        assertTrue(list.done, "nothing runs: it only shows")
+        m.handleKey(HomeKey.ENTER, viewport = 8)
+        assertNull(m.state.run, "enter closes it")
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        assertEquals(4, m.state.detailCursor, "skips the gap to the next tool")
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        assertEquals(7, m.state.detailCursor, "skips the gap and the source heading to its item")
+    }
+
+    @Test
     fun aCustomSourcesRowsTickOneByOne() {
         // A pin in a file is nothing like a package manager's transaction:
         // these select individually.
@@ -502,6 +555,7 @@ class HomeKeysTest {
                 ),
             ),
         )
+        m.handleKey(HomeKey.DOWN, viewport = 5) // past the source heading
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("item:asdf-plugins/golang"), m.state.selection, "one row, not the source")
         m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
@@ -532,9 +586,10 @@ class HomeKeysTest {
                 ),
             ),
         )
+        m.handleKey(HomeKey.DOWN, viewport = 5) // past the first source heading
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("item:asdf-tools/python"), m.state.selection)
-        m.handleKey(HomeKey.DOWN, viewport = 5)
+        m.handleKey(HomeKey.DOWN, viewport = 5) // over the second heading, onto its row
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(
             setOf("item:asdf-tools/python", "item:asdf-plugins/python"),
@@ -553,9 +608,10 @@ class HomeKeysTest {
                 remote = RemoteStatus.Answered(listOf(update("oracle", "a", "b")), failedSources = 0),
             ),
         )
+        m.handleKey(HomeKey.DOWN, viewport = 5) // past the source heading
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertTrue(m.state.selection.isEmpty())
-        assertTrue(m.state.message!!.contains("no mechanism"))
+        assertTrue(m.state.message!!.contains("can't update"))
     }
 
     @Test

@@ -18,9 +18,30 @@ data class UpdateRow(
     val note: String = "",
 )
 
+/**
+ * What one TOOL (dnf, brew, flatpak — grouped by probe, so brew formulae
+ * and casks are one line) has to offer, declared or not. The doctor's
+ * view: an upgrade is the whole tool, so this is what ticking it means.
+ */
+data class ToolUpdates(
+    val tool: String,
+    /** The mechanisms behind it that this machine maps (dnf, dnf-repo, dnf-copr). */
+    val installers: List<String>,
+    /** Every outdated package the tool reported — null when no batch oracle can say. */
+    val total: Int?,
+    /** Of those, the ones in this machine's loadout (program names). */
+    val declared: List<String>,
+    /** Of those, the ones loadout doesn't declare (package ids, as the tool named them). */
+    val others: List<String>,
+    /** The sweep that upgrades all of it, when the mechanism declares one. */
+    val command: String?,
+)
+
 /** Everything one round of asking the remotes produced. */
 internal data class OutdatedReport(
     val updates: List<UpdateRow>,
+    /** Per tool, in installer declaration order — every tool that was asked, clean ones included. */
+    val tools: List<ToolUpdates>,
     /** Custom sources that exited non-zero: label to reason. */
     val errors: List<Pair<String, String>>,
     /** Installed programs no oracle can answer for. */
@@ -91,6 +112,32 @@ internal suspend fun outdatedReport(
         }
     }
 
+    // The whole picture per tool: the batch oracle already listed every
+    // outdated package; keep the count and the undeclared names instead of
+    // throwing them away. Mechanisms sharing a probe are one tool.
+    val installerOrderAll = manifest.installers.keys.withIndex().associate { (i, k) -> k to i }
+    val pkgOf = batched.mapValues { (_, oracle) -> oracle.pkg }
+    val tools = batchCommands.keys
+        .groupBy { installer -> manifest.installers[installer]?.probe ?: installer }
+        .map { (tool, installers) ->
+            val reported = installers.flatMap { batchResults[it].orEmpty().keys }.toSet()
+            val declaredHere = batched.filterValues { it.installer in installers }
+                .filterKeys { name -> candidates[name] != null && candidates[name] != state.programs.getValue(name).version }
+                .keys.sorted()
+            // "Not in your loadout" means not declared at all — a declared
+            // package the tool listed but that isn't newer stays out of it.
+            val declaredPkgs = batched.filterValues { it.installer in installers }.values.map { it.pkg }.toSet()
+            ToolUpdates(
+                tool = tool,
+                installers = installers.sortedBy { installerOrderAll[it] ?: Int.MAX_VALUE },
+                total = reported.size,
+                declared = declaredHere,
+                others = (reported - declaredPkgs).sorted(),
+                command = installers.firstNotNullOfOrNull { manifest.installers[it]?.upgrade },
+            )
+        }
+        .sortedBy { t -> t.installers.minOf { installerOrderAll[it] ?: Int.MAX_VALUE } }
+
     // Order: program rows grouped by installer DECLARATION order (list native
     // pms first in your installers fragment), then the self row, then custom
     // oracles in their declaration order. No pm knowledge here — the repo's
@@ -111,6 +158,7 @@ internal suspend fun outdatedReport(
     return OutdatedReport(
         updates = (listOfNotNull(selfRow) + sourceRows + programRows)
             .sortedWith(compareBy({ rank(it).first }, { rank(it).second }, { it.name })),
+        tools = tools,
         errors = errors,
         unchecked = unchecked,
     )

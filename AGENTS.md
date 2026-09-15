@@ -398,11 +398,28 @@ These came from explicit user decisions; don't "improve" them away:
   row's MECHANISM (every row that sweep covers lights up, since that's what
   will actually run), a selects all, u clears the selection, enter upgrades
   it IN the floating pane — the screen stays put and refreshes when it's done.
-  Rows from a custom source tick ONE AT A TIME (`selectionKey` returns
-  `tool:<probe>` for a package row, `item:<source>/<row>` for a source row). Rows with no
-  upgradable mechanism render `[–]` and refuse selection (custom-oracle rows,
-  or an installer with no `upgrade`). `l` only ever OPENS — it never
-  dispatches, so the vim keys can't start an install by accident.
+  The table is GROUPED BY THE TOOL THAT WILL ACT (`remoteLines`, a flat
+  list of `RemoteLine`s the cursor walks, headings and notes skipped): a
+  tool line per probe — "dnf  168 updates · 2 in your loadout  sudo dnf
+  upgrade -y", built from `OutdatedReport.tools` (`ToolUpdates`: the batch
+  oracle already listed every outdated package, so keep the count and the
+  undeclared names instead of throwing them away; brew and brew-cask are
+  one tool; a tool with only per-package oracles shows "others unknown";
+  a clean tool is still listed, "up to date") — its declared programs
+  nested under it with NO box of their own, an amber "+ 166 more not in
+  your loadout · enter lists them: kernel, …" line for the sweep's honest
+  cost — a cursor stop whose enter opens the full list in the pane
+  (`PaneKind.LIST`: nothing runs, it shows; read from the TOP, the same
+  scroll keys) — then each custom source as a heading with its items. Ticking the tool line or a program
+  under it selects the tool (`tool:<probe>`); a source item ticks alone
+  (`item:<source>/<row>`); `[–]` = nothing loadout can move (a source
+  without `upgrade`, a tool without one). The row's summary is the
+  doctor's: "dnf 168 · brew 6 · flatpak 1 · 34 pins". `loadout outdated`
+  prints the same tool lines first. Batch oracles read STDOUT ONLY: an
+  empty stdout is "nothing", stderr is warnings (`brew outdated --cask`
+  once yielded packages named "Warning:" and "Please"). `l` only ever
+  OPENS — it never dispatches, so the vim keys can't start an install by
+  accident.
   The SCRIPTS row is the picker the old `maintain` command was: `l` lists
   every maintain-mode script this machine opts into (`scriptRowsOf`, in
   run order) with the verdict the last observation wrote down (✔ done,

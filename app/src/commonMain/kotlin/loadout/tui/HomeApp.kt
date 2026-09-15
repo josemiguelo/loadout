@@ -177,6 +177,7 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
     val inner = paneWidth - 4
     val frame = SPINNER[spin % SPINNER.size]
     val title = when {
+        run.kind == PaneKind.LIST -> run.title
         run.confirming -> "run this?"
         run.cancelled -> "cancelled"
         // A script that ran fine but whose check still fails isn't a failed
@@ -184,17 +185,17 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
         run.done && run.failed -> when (run.kind) {
             PaneKind.SCRIPTS -> "not all done"
             PaneKind.INSTALL -> "not all installed"
-            PaneKind.UPGRADE -> "upgrade failed"
+            else -> "upgrade failed"
         }
         run.done -> when (run.kind) {
             PaneKind.SCRIPTS -> "run finished"
             PaneKind.INSTALL -> "install finished"
-            PaneKind.UPGRADE -> "upgrade finished"
+            else -> "upgrade finished"
         }
         else -> when (run.kind) {
             PaneKind.SCRIPTS -> "running ${run.label}  $frame"
             PaneKind.INSTALL -> "installing ${run.label}  $frame"
-            PaneKind.UPGRADE -> "upgrading ${run.label}  $frame"
+            else -> "upgrading ${run.label}  $frame"
         }
     }
     val edge = if (run.failed) p.error else p.accent
@@ -202,7 +203,7 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
         val intro = when (run.kind) {
             PaneKind.SCRIPTS -> "These scripts will run, in order:"
             PaneKind.INSTALL -> "These programs will install, in order:"
-            PaneKind.UPGRADE -> "These commands will run, in order:"
+            else -> "These commands will run, in order:"
         }
         listOf(intro, "") + run.commands +
             if (run.sweeps.isEmpty()) {
@@ -220,7 +221,9 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
     // Scrolled back? Pin the window there; otherwise follow the tail. The
     // password prompt takes the bottom rows of the body as its own box.
     val promptRows = if (run.password != null) 5 else 0
-    val window = lines.dropLast(run.scrollBack).takeLast(paneRows - promptRows)
+    // A list reads from the top; a log follows its tail.
+    val window = if (run.kind == PaneKind.LIST) lines.drop(run.scrollBack).take(paneRows - promptRows)
+    else lines.dropLast(run.scrollBack).takeLast(paneRows - promptRows)
     // No background modifier: the pane's own spaces hide what's behind it,
     // so it sits on the TERMINAL's background and follows dark/light like
     // everything else. A painted panel colour would fight the theme.
@@ -273,7 +276,8 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
                 }
             }
         }
-        val scrolled = if (run.scrollBack > 0) "  ·  ${run.scrollBack} line(s) below" else ""
+        val below = if (run.kind == PaneKind.LIST) lines.size - run.scrollBack - window.size else run.scrollBack
+        val scrolled = if (below > 0) "  ·  $below more below" else ""
         val footer = when {
             run.password != null -> "type the password above  ·  enter  ·  esc back"
             run.confirming -> "enter runs it  ·  esc cancels  ·  ↑↓/pgup/pgdn scroll$scrolled"
@@ -325,7 +329,7 @@ private fun HomeSectionRow(
     // A working row spins where its answer will be, rather than a spinner
     // parked in the title bar away from the thing it describes.
     val frame = SPINNER[spin % SPINNER.size]
-    val summary = if (section.busy) frame else section.summary
+    val summary = if (section.busy) frame else clip(section.summary, 41)
     val line = "  " + section.subject.padEnd(11) + summary.padEnd(42)
     if (focused && highlight && expanded) {
         // Its detail is open and the keys live there: the selection bar
@@ -450,7 +454,12 @@ private fun FleetTable(
     return 1 + drifted.drop(scroll).take(viewport).size + if (drifted.size > viewport) 1 else 0
 }
 
-/** The `outdated` table, rendered under the row that answered it. */
+/**
+ * The `outdated` table, rendered under the row that answered it — grouped
+ * by what will ACT. A tool line says what ticking it means (every package
+ * the tool reported, not only the declared ones under it); a program
+ * under a tool ticks the tool; a custom source's items tick alone.
+ */
 @Composable
 private fun RemoteTable(
     answered: RemoteStatus.Answered?,
@@ -460,63 +469,104 @@ private fun RemoteTable(
     highlight: Boolean = true,
 ): Int {
     val p = LocalPalette.current
-    val updates = answered?.updates.orEmpty()
-    if (updates.isEmpty()) return 0
+    val lines = answered?.let { remoteLines(it) }.orEmpty()
+    if (lines.isEmpty()) return 0
+    val rows = answered!!.updates
     // Columns are capped, not just padded: one long name would otherwise
     // wrap every row and shred the table.
-    val nameWidth = updates.maxOf { it.name.length }.coerceAtMost(26) + 2
+    val nameWidth = (rows.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(26) + 2
     // Version columns get the room the terminal has: long java/sha strings
     // fit on a wide terminal and only get clipped on a narrow one.
     val versionCap = if (width >= 130) 30 else if (width >= 110) 22 else 16
-    val currentWidth = updates.maxOf { it.current.length }.coerceAtMost(versionCap) + 2
-    val candidateWidth = updates.maxOf { it.candidate.length }.coerceAtMost(versionCap) + 2
-    val sourceWidth = updates.maxOf { it.source.length }.coerceAtMost(12) + 2
-    val used = DETAIL_INDENT.length + 6 + nameWidth + currentWidth + 3 + candidateWidth + sourceWidth
-    for ((offset, row) in updates.drop(s.scroll).take(viewport).withIndex()) {
+    val currentWidth = (rows.maxOfOrNull { it.current.length } ?: 1).coerceAtMost(versionCap) + 2
+    val candidateWidth = (rows.maxOfOrNull { it.candidate.length } ?: 1).coerceAtMost(versionCap) + 2
+    val used = DETAIL_INDENT.length + 8 + nameWidth + currentWidth + 3 + candidateWidth
+    val room = (width - used).coerceAtLeast(8)
+
+    fun box(key: String?) = when {
+        key == null -> "[–] "
+        key in s.selection -> "[x] "
+        else -> "[ ] "
+    }
+    fun version(row: UpdateRow) =
+        clipVersion(row.current, currentWidth - 1).padEnd(currentWidth) + "-> " +
+            clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth)
+
+    for ((offset, line) in lines.drop(s.scroll).take(viewport).withIndex()) {
         val index = s.scroll + offset
         val focused = highlight && index == s.detailCursor
-        // [x] picked · [ ] could be · [–] loadout has no way to upgrade it.
-        // Package rows tick by TOOL (a brew row picks casks too, any dnf row
-        // picks dnf-repo and dnf-copr); a custom source's row ticks alone.
-        val key = answered?.let { selectionKey(it, row) }
-        val selected = key != null && key in s.selection
-        val box = when {
-            key == null -> "[–] "
-            selected -> "[x] "
-            else -> "[ ] "
-        }
-        val line = box + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) +
-            clipVersion(row.current, currentWidth - 1).padEnd(currentWidth) + "-> " +
-            clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth) +
-            clip("[${row.source}]", sourceWidth) +
-            if (row.note.isNotEmpty() && width - used > 12) "  " + clip(row.note, width - used - 2) else ""
-        if (focused) {
-            // Same selection bar the section list uses: a lone caret was
-            // too quiet to find.
-            Text(
-                fit(DETAIL_FOCUS + line, width),
-                color = p.selectionFg,
-                background = p.selectionBg,
-                textStyle = TextStyle.Bold,
-            )
-        } else {
-            Row {
-                Text(DETAIL_INDENT)
-                Text(box, color = if (selected) p.accent else p.dim)
-                Text("↑ ", color = p.warn)
-                Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
-                Text(clipVersion(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
-                Text("-> ", color = p.dim)
-                Text(clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
-                Text(clip("[${row.source}]", sourceWidth), color = p.dim)
-                if (row.note.isNotEmpty() && width - used > 12) {
-                    Text("  " + clip(row.note, width - used - 2), color = p.dim)
+        val selected = line.key != null && line.key in s.selection
+        when (line) {
+            is RemoteLine.Tool -> {
+                val t = line.info
+                val total = t.total?.toString() ?: "?"
+                val updates = if (t.total == 1) "1 update" else "$total updates"
+                val what = when {
+                    t.total == null -> "${t.declared.size} in your loadout · others unknown"
+                    t.total == 0 -> "up to date"
+                    t.declared.isEmpty() -> "$updates · none in your loadout"
+                    else -> "$updates · ${t.declared.size} in your loadout"
+                }
+                val text = box(line.key) + clip(t.tool, 10).padEnd(11) + what.padEnd(36) +
+                    (t.command?.let { clip(it, room) } ?: "")
+                if (focused) {
+                    Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+                } else {
+                    Row {
+                        Text(DETAIL_INDENT)
+                        Text(box(line.key), color = if (selected) p.accent else p.dim)
+                        Text(clip(t.tool, 10).padEnd(11), textStyle = TextStyle.Bold)
+                        Text(what.padEnd(36), color = if (t.total == 0) p.ok else p.warn)
+                        Text(t.command?.let { clip(it, room) } ?: "", color = p.dim)
+                    }
                 }
             }
+            is RemoteLine.Program, is RemoteLine.Item -> {
+                val row = if (line is RemoteLine.Program) line.row else (line as RemoteLine.Item).row
+                val nested = line is RemoteLine.Program
+                // A program under its tool shows no box of its own: the
+                // tool's box is the one that means anything.
+                val lead = if (nested) "    " else box(line.key)
+                val note = if (row.note.isNotEmpty() && room > 12) "  " + clip(row.note, room - 2) else ""
+                val text = lead + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) + version(row) + note
+                if (focused) {
+                    Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+                } else {
+                    Row {
+                        Text(DETAIL_INDENT)
+                        Text(lead, color = if (selected) p.accent else p.dim)
+                        Text("↑ ", color = p.warn)
+                        Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
+                        Text(clipVersion(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
+                        Text("-> ", color = p.dim)
+                        Text(clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
+                        if (note.isNotEmpty()) Text(note, color = p.dim)
+                    }
+                }
+            }
+            is RemoteLine.Others -> {
+                // The honest cost of the sweep, in the tool's own package
+                // names — amber, like every "needs your attention" mark on the
+                // screen: the part of the sweep you didn't ask for. Enter
+                // opens the whole list in the pane.
+                val head = "+ ${line.names.size} more not in your loadout · enter lists them: "
+                val shown = line.names.take(6).joinToString(", ") + if (line.names.size > 6) ", …" else ""
+                if (focused) {
+                    Text(fit(DETAIL_FOCUS + "    " + head + shown, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+                } else {
+                    Row {
+                        Text(DETAIL_INDENT + "    ")
+                        Text(head, color = p.warn, textStyle = TextStyle.Bold)
+                        Text(clip(shown, (width - DETAIL_INDENT.length - 4 - head.length).coerceAtLeast(8)), color = p.warn)
+                    }
+                }
+            }
+            is RemoteLine.Source -> Text(DETAIL_INDENT + line.name, color = p.dim, textStyle = TextStyle.Bold)
+            is RemoteLine.Gap -> Text("")
         }
     }
-    ScrollHint(updates.size, s.scroll, viewport)
-    return updates.drop(s.scroll).take(viewport).size + if (updates.size > viewport) 1 else 0
+    ScrollHint(lines.size, s.scroll, viewport)
+    return lines.drop(s.scroll).take(viewport).size + if (lines.size > viewport) 1 else 0
 }
 
 /**

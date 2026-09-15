@@ -29,6 +29,26 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
         }
         val updates = report.updates
 
+        // The doctor's line per tool first: what upgrading it would mean,
+        // declared or not — the program rows below are the part loadout
+        // knows by name.
+        if (report.tools.isNotEmpty()) {
+            val toolWidth = report.tools.maxOf { it.tool.length } + 2
+            for (t in report.tools) {
+                val total = t.total ?: 0
+                val mark = if (total == 0) Style.ok("✔") else Style.warn("↑")
+                val updates = if (total == 1) "1 update" else "$total updates"
+                val what = when {
+                    total == 0 -> Style.dim("up to date")
+                    t.declared.isEmpty() -> updates + Style.dim(" · none in your loadout")
+                    else -> updates + Style.dim(" · ${t.declared.size} in your loadout")
+                }
+                val how = t.command?.let { Style.dim("  loadout upgrade ${t.installers.first()}  →  $it") } ?: ""
+                echo(" $mark  ${t.tool.padEnd(toolWidth)}$what$how")
+            }
+            echo("")
+        }
+
         // Same visual language as status: markers + color as signal only.
         if (updates.isEmpty() && report.errors.isEmpty()) {
             echo(" " + Style.ok("✔") + "  everything is up to date")
