@@ -180,6 +180,8 @@ data class HomeState(
     val detailCursor: Int = 0,
     /** Rows ticked for upgrading, by program name. */
     val selection: Set<String> = emptySet(),
+    /** Remote-table groups folded shut (`tool:<probe>` / `source:<name>`): h/l inside the table. */
+    val collapsed: Set<String> = emptySet(),
     /** This machine's missing programs, in install order, with what would install each. */
     val missing: List<ProgramRow> = emptyList(),
     /** Missing programs ticked to install. All of them, after every re-check: missing IS the work. */
@@ -408,9 +410,38 @@ class HomeModel(private val app: AppContext) {
                 HomeKey.DOWN -> moveDetail(1, viewport)
                 HomeKey.PAGE_UP -> moveDetail(-viewport, viewport)
                 HomeKey.PAGE_DOWN -> moveDetail(viewport, viewport)
-                HomeKey.ESC, HomeKey.CLOSE ->
+                // Inside the remote table h folds the group under the cursor
+                // (landing on its heading); h on a heading already folded
+                // closes the section, like h anywhere in the other pickers.
+                HomeKey.CLOSE -> if (onRemote && answered != null) {
+                    val lines = remoteLines(answered, s.collapsed)
+                    val line = lines.getOrNull(s.detailCursor)
+                    val group = line?.group
+                    if (group != null && group !in s.collapsed) {
+                        // Find the heading in the FOLDED layout: folding can
+                        // remove the gap above it, and everything shifts up.
+                        val folded = s.collapsed + group
+                        val head = remoteLines(answered, folded).indexOfFirst { it.heading && it.group == group }.coerceAtLeast(0)
+                        state = s.copy(collapsed = folded, detailCursor = head, scroll = s.scroll.coerceAtMost(head))
+                    } else {
+                        state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
+                    }
+                } else {
                     state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
-                HomeKey.OPEN -> {} // already open
+                }
+                HomeKey.ESC ->
+                    state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
+                // l unfolds a folded heading; anywhere else it's already open.
+                HomeKey.OPEN -> if (onRemote && answered != null) {
+                    val group = remoteLines(answered, s.collapsed).getOrNull(s.detailCursor)?.group
+                    if (group != null && group in s.collapsed) {
+                        // Unfolding can put a gap back above the heading:
+                        // follow it to its new index.
+                        val unfolded = s.collapsed - group
+                        val head = remoteLines(answered, unfolded).indexOfFirst { it.heading && it.group == group }.coerceAtLeast(0)
+                        state = s.copy(collapsed = unfolded, detailCursor = head)
+                    }
+                }
                 // The scripts picker ticks one script at a time — each is its
                 // own unit, and ticking a done one is how you force it.
                 HomeKey.SELECT -> if (onPrograms) {
@@ -425,7 +456,7 @@ class HomeModel(private val app: AppContext) {
                     // A tool line, or a program under it, ticks the TOOL:
                     // loadout only does whole upgrades, and the tool line
                     // says what that means. A source row ticks itself.
-                    val line = remoteLines(answered).getOrNull(s.detailCursor)
+                    val line = remoteLines(answered, s.collapsed).getOrNull(s.detailCursor)
                     val key = line?.key
                     state = when {
                         line == null -> s
@@ -448,7 +479,7 @@ class HomeModel(private val app: AppContext) {
                     } else if (onScripts) {
                         state = s.copy(picked = if (all) s.scripts.map { it.name }.toSet() else emptySet())
                     } else if (onRemote && answered != null) {
-                        val every = remoteLines(answered).mapNotNull { it.key }.toSet()
+                        val every = remoteLines(answered, s.collapsed).mapNotNull { it.key }.toSet()
                         state = s.copy(selection = if (all) every else emptySet())
                     }
                 }
@@ -458,10 +489,10 @@ class HomeModel(private val app: AppContext) {
                     startInstalls(s.chosen)
                 } else if (onScripts) {
                     startScripts(s.picked)
-                } else if (onRemote && answered != null && remoteLines(answered).getOrNull(s.detailCursor) is RemoteLine.Others) {
+                } else if (onRemote && answered != null && remoteLines(answered, s.collapsed).getOrNull(s.detailCursor) is RemoteLine.Others) {
                     // The sweep's cost, in full: every package the tool would
                     // move that loadout doesn't declare, one per line.
-                    val others = remoteLines(answered)[s.detailCursor] as RemoteLine.Others
+                    val others = remoteLines(answered, s.collapsed)[s.detailCursor] as RemoteLine.Others
                     state = s.copy(
                         run = PaneRun(
                             steps = emptyList(),
@@ -848,7 +879,7 @@ class HomeModel(private val app: AppContext) {
         // in the same direction, or stay put at the edge.
         val lines = (s.remote as? RemoteStatus.Answered)
             ?.takeIf { s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED }
-            ?.let { remoteLines(it) }
+            ?.let { remoteLines(it, s.collapsed) }
         if (lines != null) {
             val step = if (delta < 0) -1 else 1
             while (cursor in lines.indices && !lines[cursor].focusable) cursor += step
@@ -966,12 +997,18 @@ sealed interface RemoteLine {
     val focusable: Boolean
     /** Why ticking does nothing, when it does nothing. */
     val refusal: String? get() = null
+    /** The group this line belongs to — what h folds and l unfolds. */
+    val group: String? get() = null
+    /** A heading: the line that stays when its group is folded. */
+    val heading: Boolean get() = false
 
     data class Tool(val info: ToolUpdates, override val key: String?) : RemoteLine {
         override val focusable get() = true
         override val refusal get() = if (key == null) "${info.tool} declares no upgrade command" else null
+        override val group get() = "tool:${info.tool}"
+        override val heading get() = true
     }
-    data class Program(val row: UpdateRow, override val key: String?) : RemoteLine {
+    data class Program(val row: UpdateRow, override val key: String?, override val group: String) : RemoteLine {
         override val focusable get() = true
         override val refusal get() = if (key == null) "${row.name} has no mechanism loadout can upgrade" else null
     }
@@ -980,6 +1017,7 @@ sealed interface RemoteLine {
         override val key: String? get() = null
         override val focusable get() = true
         override val refusal get() = "nothing to tick — enter lists them"
+        override val group get() = "tool:$tool"
     }
     /**
      * A custom source's heading. Its items tick one at a time, and the
@@ -989,6 +1027,8 @@ sealed interface RemoteLine {
         override val key: String? get() = null
         override val focusable get() = true
         override val refusal get() = if (itemKeys.isEmpty()) "$name can't update its items from loadout" else null
+        override val group get() = "source:$name"
+        override val heading get() = true
     }
     /** Breathing room between groups. */
     data object Gap : RemoteLine {
@@ -998,11 +1038,15 @@ sealed interface RemoteLine {
     data class Item(val row: UpdateRow, override val key: String?) : RemoteLine {
         override val focusable get() = true
         override val refusal get() = if (key == null) "${row.source} can't update its items from loadout" else null
+        override val group get() = "source:${row.source}"
     }
 }
 
-/** Pure: the remote table as lines — tools first (every one asked, clean ones too), then sources. */
-internal fun remoteLines(answered: RemoteStatus.Answered): List<RemoteLine> {
+/**
+ * Pure: the remote table as lines — tools first (every one asked, clean
+ * ones too), then sources. A group in [collapsed] keeps only its heading.
+ */
+internal fun remoteLines(answered: RemoteStatus.Answered, collapsed: Set<String> = emptySet()): List<RemoteLine> {
     val lines = mutableListOf<RemoteLine>()
     val placed = mutableSetOf<UpdateRow>()
     // A tool no batch oracle described (per-package oracles only) still
@@ -1014,21 +1058,21 @@ internal fun remoteLines(answered: RemoteStatus.Answered): List<RemoteLine> {
         .map { (tool, names) ->
             ToolUpdates(tool, answered.mechanismsOfTool[tool].orEmpty(), total = null, declared = names, others = emptyList(), command = "")
         }
-    // A blank line between groups, except between two that are up to date:
-    // clean one-liners read better stacked.
-    var previousClean = true
-    fun gap(clean: Boolean) {
-        if (lines.isNotEmpty() && !(previousClean && clean)) lines += RemoteLine.Gap
-        previousClean = clean
+    // A blank line between groups, except between two QUIET ones — up to
+    // date, or folded: one-liners read better stacked.
+    var previousQuiet = true
+    fun gap(quiet: Boolean) {
+        if (lines.isNotEmpty() && !(previousQuiet && quiet)) lines += RemoteLine.Gap
+        previousQuiet = quiet
     }
     for (tool in answered.tools + undescribed) {
-        gap(clean = tool.total == 0)
+        gap(quiet = tool.total == 0 || "tool:${tool.tool}" in collapsed)
         val key = if (tool.command != null && tool.tool in answered.mechanismsOfTool) "tool:${tool.tool}" else null
         lines += RemoteLine.Tool(tool, key)
         for (row in answered.updates) {
             if (row in placed || row.source in answered.upgradableSources || row.source == "release") continue
             if (answered.toolOf[answered.mechanismOf[row.name]] == tool.tool || row.name in tool.declared) {
-                lines += RemoteLine.Program(row, key)
+                lines += RemoteLine.Program(row, key, "tool:${tool.tool}")
                 placed += row
             }
         }
@@ -1038,12 +1082,12 @@ internal fun remoteLines(answered: RemoteStatus.Answered): List<RemoteLine> {
     // sources, and programs whose mechanism no tool line claimed.
     val rest = answered.updates.filter { it !in placed }
     for ((source, rows) in rest.groupBy { it.source }) {
-        gap(clean = false)
+        gap(quiet = "source:$source" in collapsed)
         val keys = rows.mapNotNull { selectionKey(answered, it) }
         lines += RemoteLine.Source(source, keys)
         for (row in rows) lines += RemoteLine.Item(row, selectionKey(answered, row))
     }
-    return lines
+    return lines.filter { it.heading || it.group == null || it.group !in collapsed }
 }
 
 /**
@@ -1061,7 +1105,7 @@ internal fun selectionKey(answered: RemoteStatus.Answered, row: UpdateRow): Stri
 /** The first line the cursor may rest on when a detail opens (a heading isn't one). */
 internal fun firstStop(state: HomeState, section: HomeSection?): Int =
     if (section?.action == HomeAction.REVIEW_OUTDATED) {
-        (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it).indexOfFirst { l -> l.focusable } }
+        (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it, state.collapsed).indexOfFirst { l -> l.focusable } }
             ?.coerceAtLeast(0) ?: 0
     } else {
         0
@@ -1071,7 +1115,7 @@ internal fun firstStop(state: HomeState, section: HomeSection?): Int =
 internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (section?.action) {
     HomeAction.INSTALL_MISSING -> state.missing.size
     HomeAction.RUN_SCRIPTS -> state.scripts.size
-    HomeAction.REVIEW_OUTDATED -> (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it).size } ?: 0
+    HomeAction.REVIEW_OUTDATED -> (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it, state.collapsed).size } ?: 0
     HomeAction.SHOW_DIFF -> state.fleet?.rows?.count { it.drift || it.incomplete } ?: 0
     else -> 0
 }

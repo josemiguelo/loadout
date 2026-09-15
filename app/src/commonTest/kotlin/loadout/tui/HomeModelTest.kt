@@ -177,7 +177,10 @@ class HomeKeysTest {
 
         m.handleKey(HomeKey.OPEN)
         assertTrue(m.state.expanded)
-        // ...and h closes it, where enter would now upgrade.
+        // ...and h closes it, where enter would now upgrade — the first h
+        // folds the group under the cursor, the second leaves the section.
+        m.handleKey(HomeKey.CLOSE)
+        assertTrue(m.state.expanded)
         m.handleKey(HomeKey.CLOSE)
         assertEquals(false, m.state.expanded)
     }
@@ -211,7 +214,7 @@ class HomeKeysTest {
         assertEquals(HomeAction.NONE, m.state.action)
         assertEquals(false, m.state.exit)
 
-        m.handleKey(HomeKey.CLOSE)
+        m.handleKey(HomeKey.ESC)
         assertEquals(false, m.state.expanded)
     }
 
@@ -350,7 +353,8 @@ class HomeKeysTest {
         )
         m.handleKey(HomeKey.OPEN)
         assertTrue(m.state.expanded)
-        m.handleKey(HomeKey.CLOSE)
+        m.handleKey(HomeKey.CLOSE) // folds the group under the cursor
+        m.handleKey(HomeKey.CLOSE) // then closes the section
         assertEquals(false, m.state.expanded)
 
         // `l` never acts: a row with no detail says so instead of dispatching.
@@ -537,6 +541,38 @@ class HomeKeysTest {
         assertEquals(setOf("item:asdf-tools/ruby"), m.state.selection, "the heading ticks every item under it")
         m.handleKey(HomeKey.SELECT, viewport = 8)
         assertTrue(m.state.selection.isEmpty(), "and clears them when they all are")
+
+        // h inside the table folds the group under the cursor, not the section.
+        m.handleKey(HomeKey.UP, viewport = 8) // back to flatpak
+        m.handleKey(HomeKey.UP, viewport = 8) // dnf's cost line
+        m.handleKey(HomeKey.CLOSE, viewport = 8)
+        assertTrue(m.state.expanded, "the section stays open")
+        assertEquals(setOf("tool:dnf"), m.state.collapsed)
+        assertEquals(0, m.state.detailCursor, "and the cursor lands on the folded heading")
+        assertEquals(
+            listOf("Tool", "Tool", "Gap", "Source", "Item"),
+            remoteLines(answered, m.state.collapsed).map { it::class.simpleName },
+            "a folded group keeps only its heading, and stacks on a quiet neighbour",
+        )
+        m.handleKey(HomeKey.OPEN, viewport = 8)
+        assertTrue(m.state.collapsed.isEmpty(), "l on the folded heading unfolds it")
+        m.handleKey(HomeKey.OPEN, viewport = 8)
+        assertTrue(m.state.collapsed.isEmpty(), "l on an open heading does nothing — it only ever opens")
+        m.handleKey(HomeKey.CLOSE, viewport = 8)
+        assertEquals(setOf("tool:dnf"), m.state.collapsed, "h folds")
+        // Fold a group whose gap above disappears when it folds: the cursor
+        // must follow the heading to its NEW index, not stay on the old one.
+        m.handleKey(HomeKey.DOWN, viewport = 8) // flatpak
+        m.handleKey(HomeKey.DOWN, viewport = 8) // asdf-tools heading (over the gap)
+        m.handleKey(HomeKey.CLOSE, viewport = 8)
+        val folded = remoteLines(answered, m.state.collapsed)
+        assertTrue(folded[m.state.detailCursor] is RemoteLine.Source, "the cursor sits on the folded heading, not the vanished gap")
+        m.handleKey(HomeKey.OPEN, viewport = 8)
+        val unfolded = remoteLines(answered, m.state.collapsed)
+        assertTrue(unfolded[m.state.detailCursor] is RemoteLine.Source, "and follows it back down when the gap returns")
+        m.handleKey(HomeKey.CLOSE, viewport = 8) // folds it again
+        m.handleKey(HomeKey.CLOSE, viewport = 8)
+        assertEquals(false, m.state.expanded, "h on a folded heading closes the section")
     }
 
     @Test

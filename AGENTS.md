@@ -414,8 +414,17 @@ These came from explicit user decisions; don't "improve" them away:
   A source heading has a box of its own that ticks EVERY item under it
   (`Source.itemKeys`; `[–]` for a read-only source), so a source
   upgrades one item at a time or all at once — unlike a tool, which is
-  only ever whole. A blank `Gap` separates groups except between two
-  that are up to date (clean one-liners stack). Ticking the tool line or a program
+  only ever whole. Groups FOLD: `h` on any line of a group folds it
+  (`HomeState.collapsed`, `tool:<probe>` / `source:<name>`; the heading
+  stays, marked `▸`, and the cursor lands on it), `l` on a folded heading
+  unfolds it, `h` on a folded heading closes the section (esc always
+  does). After a fold or unfold the heading's index is recomputed from
+  the NEW layout — a gap above it can appear or vanish, and a cursor
+  left at the old index sat on the gap with no highlight. A blank `Gap`
+  separates groups except between two QUIET ones — up to date or folded
+  (one-liners stack). Pane cells carry an explicit `TextStyle.Empty`:
+  Mosaic keeps an underlying cell's bold when the style is Unspecified,
+  the same way it kept its colour. Ticking the tool line or a program
   under it selects the tool (`tool:<probe>`); a source item ticks alone
   (`item:<source>/<row>`); `[–]` = nothing loadout can move (a source
   without `upgrade`, a tool without one). The row's summary is the

@@ -228,28 +228,30 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
     // so it sits on the TERMINAL's background and follows dark/light like
     // everything else. A painted panel colour would fight the theme.
     Column(modifier = Modifier.align(Alignment.Center)) {
-        Text(fit("╭─ $title ".padEnd(paneWidth - 1, '─') + "╮", paneWidth), color = edge)
-        // An explicit foreground on every cell: Mosaic composites per cell,
-        // and an uncoloured character inherits the colour of whatever was
-        // underneath — which made the half of the pane over the dim columns
-        // come out dim.
+        Text(fit("╭─ $title ".padEnd(paneWidth - 1, '─') + "╮", paneWidth), color = edge, textStyle = TextStyle.Empty)
+        // An explicit foreground AND style on every cell: Mosaic composites
+        // per cell, and an unspecified attribute inherits whatever was
+        // underneath — the half of the pane over the dim columns came out
+        // dim, and the rows over a bold heading came out bold.
+        // TextStyle.Empty is specified-and-plain; Unspecified keeps the old.
+        val plain = TextStyle.Empty
         for (line in window) {
             Row {
-                Text("│ ", color = edge)
+                Text("│ ", color = edge, textStyle = plain)
                 if (line.startsWith(RUN_DIVIDER)) {
-                    Text(clip(line, inner).padEnd(inner, '─'), color = p.dim)
+                    Text(clip(line, inner).padEnd(inner, '─'), color = p.dim, textStyle = plain)
                 } else {
-                    Text(clip(line, inner).padEnd(inner), color = p.text)
+                    Text(clip(line, inner).padEnd(inner), color = p.text, textStyle = plain)
                 }
-                Text(" │", color = edge)
+                Text(" │", color = edge, textStyle = plain)
             }
         }
         // Keep the pane a stable size while output trickles in.
         repeat((paneRows - promptRows - window.size).coerceAtLeast(0)) {
             Row {
-                Text("│ ", color = edge)
-                Text(" ".repeat(inner), color = p.text)
-                Text(" │", color = edge)
+                Text("│ ", color = edge, textStyle = plain)
+                Text(" ".repeat(inner), color = p.text, textStyle = plain)
+                Text(" │", color = edge, textStyle = plain)
             }
         }
         // The one moment the pane asks YOU something: a box of its own,
@@ -269,9 +271,9 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
             for (line in boxLines) {
                 Row {
                     Text("│ ", color = edge)
-                    Text(" ", color = p.text)
+                    Text(" ", color = p.text, textStyle = TextStyle.Empty)
                     Text(line, color = p.warn, textStyle = TextStyle.Bold)
-                    Text(" ", color = p.text)
+                    Text(" ", color = p.text, textStyle = TextStyle.Empty)
                     Text(" │", color = edge)
                 }
             }
@@ -284,7 +286,7 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
             run.done -> run.summary.ifEmpty { "enter closes" } + "  ·  ↑↓/pgup/pgdn scroll" + scrolled
             else -> "step ${run.current + 1} of ${run.steps.size}  ·  ↑↓/pgup/pgdn scroll  ·  esc cancels$scrolled"
         }
-        Text(fit("╰─ $footer ".padEnd(paneWidth - 1, '─') + "╯", paneWidth), color = edge)
+        Text(fit("╰─ $footer ".padEnd(paneWidth - 1, '─') + "╯", paneWidth), color = edge, textStyle = TextStyle.Empty)
     }
 }
 
@@ -469,7 +471,7 @@ private fun RemoteTable(
     highlight: Boolean = true,
 ): Int {
     val p = LocalPalette.current
-    val lines = answered?.let { remoteLines(it) }.orEmpty()
+    val lines = answered?.let { remoteLines(it, s.collapsed) }.orEmpty()
     if (lines.isEmpty()) return 0
     val rows = answered!!.updates
     // Columns are capped, not just padded: one long name would otherwise
@@ -499,6 +501,8 @@ private fun RemoteTable(
         when (line) {
             is RemoteLine.Tool -> {
                 val t = line.info
+                // A folded group shows a chevron where its rows would be.
+                val name = clip(t.tool, 9) + if (line.group in s.collapsed) " ▸" else ""
                 val total = t.total?.toString() ?: "?"
                 val updates = if (t.total == 1) "1 update" else "$total updates"
                 val what = when {
@@ -507,7 +511,7 @@ private fun RemoteTable(
                     t.declared.isEmpty() -> "$updates · none in your loadout"
                     else -> "$updates · ${t.declared.size} in your loadout"
                 }
-                val text = box(line.key) + clip(t.tool, 10).padEnd(11) + what.padEnd(36) +
+                val text = box(line.key) + name.padEnd(11) + what.padEnd(36) +
                     (t.command?.let { clip(it, room) } ?: "")
                 if (focused) {
                     Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
@@ -515,7 +519,7 @@ private fun RemoteTable(
                     Row {
                         Text(DETAIL_INDENT)
                         Text(box(line.key), color = if (selected) p.accent else p.dim)
-                        Text(clip(t.tool, 10).padEnd(11), textStyle = TextStyle.Bold)
+                        Text(name.padEnd(11), textStyle = TextStyle.Bold)
                         Text(what.padEnd(36), color = if (t.total == 0) p.ok else p.warn)
                         Text(t.command?.let { clip(it, room) } ?: "", color = p.dim)
                     }
@@ -569,13 +573,14 @@ private fun RemoteTable(
                     all -> "[x] "
                     else -> "[ ] "
                 }
+                val name = line.name + if (line.group in s.collapsed) " ▸" else ""
                 if (focused) {
-                    Text(fit(DETAIL_FOCUS + sbox + line.name, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+                    Text(fit(DETAIL_FOCUS + sbox + name, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
                 } else {
                     Row {
                         Text(DETAIL_INDENT)
                         Text(sbox, color = if (all) p.accent else p.dim)
-                        Text(line.name, textStyle = TextStyle.Bold)
+                        Text(name, textStyle = TextStyle.Bold)
                     }
                 }
             }
@@ -692,9 +697,9 @@ private fun HomeFooter(s: HomeState, width: Int) {
             else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter run" +
                 (if (s.picked.isEmpty()) "" else " ${s.picked.size} ticked") + "  ·  h/esc close"
         s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
-            if (tight) "↑↓ move · space select pm · a all · u none · enter upgrade · h close"
-            else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  enter upgrade" +
-                (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h/esc close"
+            if (tight) "↑↓ move · space · a all · u none · h fold/close · l unfold · enter upgrade"
+            else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  h fold, l unfold  ·  enter upgrade" +
+                (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h again/esc close"
         s.expanded ->
             if (tight) "↑↓ scroll · h close" else "↑↓/pgup/pgdn scroll  ·  h/esc close"
         else ->
