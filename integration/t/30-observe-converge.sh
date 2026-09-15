@@ -98,3 +98,34 @@ echo "$OUT" | grep -qE "file +scripts/marker.sh" || fail "explain prints the scr
 OUT=$("$BIN" --repo repo --machine m1 explain)
 echo "$OUT" | grep -q "program git" && echo "$OUT" | grep -q "script marker" || fail "bare explain covers the whole manifest"
 ok "explain prints expanded programs and scripts (all of them with no names)"
+
+# --- a check whose TOOL is absent is "not checked", never "missing" ------
+# brew off PATH once reported every brew program missing. A check through
+# a mechanism (its installer has a probe) that dies with the shell's own
+# "command not found" is a question that couldn't be asked; a check that IS
+# the program (`rg --version`, no probe) means what it says.
+mkdir -p probed/state probed/machines
+cat > probed/manifest.toml <<'TOML'
+[installers.ghostpm]
+probe = "ghostpm-definitely-not-here"
+install = "ghostpm-definitely-not-here install {pkg}"
+check = "ghostpm-definitely-not-here query {pkg}"
+regex = "([0-9.]+)"
+
+[programs.viapm]
+via = ["ghostpm"]
+
+[programs.byitself]
+[programs.byitself.version]
+command = "byitself-definitely-not-here --version"
+regex = "([0-9.]+)"
+[programs.byitself.install.manual]
+command = "false"
+TOML
+printf '[pm]\nviapm = "ghostpm"\nbyitself = "manual"\n' > probed/machines/m1.toml
+OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
+echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
+echo "$OUT" | grep -q "ghostpm-definitely-not-here: command not found" || fail "status says what wasn't there"
+echo "$OUT" | grep -qE "byitself +missing" || fail "a program's own check not found means missing"
+grep -q '"reason"' probed/state/m1.json || fail "the reason is recorded in state"
+ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'"

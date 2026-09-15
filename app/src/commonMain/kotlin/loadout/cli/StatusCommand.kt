@@ -67,21 +67,28 @@ class StatusCommand : CliktCommand(name = "status") {
         echo(Style.dim("machine ") + Style.machine(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))
         echo("")
         val nameWidth = ((state.programs.keys + state.scripts.keys).map { it.length } + 7).max()
-        echo(Style.header("  " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(11) + "VERSION"))
+        echo(Style.header("  " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(13) + "VERSION"))
         // Rows that aren't settled get boxed by echoRows, same as diff's
         // drift rows: a missing install is severe, a pending script is not.
         echoRows(
             state.programs.toList().sortedBy { it.first }.map { (name, program) ->
+                // An unknown WITH a reason is a check that couldn't run
+                // (brew off PATH): unsettled, boxed amber, the reason inside
+                // the box — never a quiet "-" that reads as nothing wrong.
                 val (mark, status, severity) = when (program.status) {
                     ProgramStatus.INSTALLED ->
-                        Triple(Style.ok("\u2714"), Style.ok("installed".padEnd(11)), null)
+                        Triple(Style.ok("\u2714"), Style.ok("installed".padEnd(13)), null)
                     ProgramStatus.MISSING ->
-                        Triple(Style.error("\u2718"), Style.error("missing".padEnd(11)), true)
-                    ProgramStatus.UNKNOWN ->
-                        Triple(Style.dim("\u00b7"), Style.dim("unknown".padEnd(11)), null)
+                        Triple(Style.error("\u2718"), Style.error("missing".padEnd(13)), true)
+                    ProgramStatus.UNKNOWN -> if (program.reason == null) {
+                        Triple(Style.dim("\u00b7"), Style.dim("unknown".padEnd(13)), null)
+                    } else {
+                        Triple(Style.warn("?"), Style.warn("not checked".padEnd(13)), false)
+                    }
                 }
                 TableRow(
-                    listOf("$mark  " + name.padEnd(nameWidth + 1) + status + (program.version ?: "-")),
+                    listOf("$mark  " + name.padEnd(nameWidth + 1) + status + (program.version ?: "-")) +
+                        listOfNotNull(program.reason?.let { Style.dim("     $it") }),
                     severity,
                 )
             },

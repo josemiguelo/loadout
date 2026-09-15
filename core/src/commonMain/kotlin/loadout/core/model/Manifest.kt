@@ -57,14 +57,17 @@ data class Manifest(
         val batch = if (explicitOutdated == null) installer?.outdatedAll else null
         val outdatedCommand = explicitOutdated ?: if (batch == null) installer?.outdated else null
         val installerName = variant.installer ?: key.takeIf { installers.containsKey(it) }
+        val probe = variant.probe ?: installer?.probe
         return ResolvedInstall(
             command = (variant.command ?: installer?.install)?.let(::sub),
+            // A check through the mechanism carries its probe; the program's
+            // own `[version]` fallback is the program itself and carries none.
             check = if (checkCommand != null && regex != null) {
-                VersionCheck(sub(checkCommand), regex)
+                VersionCheck(sub(checkCommand), regex, probe = probe)
             } else {
                 program.version
             },
-            probe = variant.probe ?: installer?.probe,
+            probe = probe,
             outdated = if (outdatedCommand != null && regex != null) {
                 VersionCheck(sub(outdatedCommand), regex)
             } else {
@@ -277,6 +280,13 @@ data class Program(
 data class VersionCheck(
     val command: String,
     val regex: String,
+    /**
+     * The tool this check asks through (the installer's probe), when the
+     * check isn't the program's own binary. Set by resolveInstall, never a
+     * manifest key: it's what lets "brew: command not found" mean "couldn't
+     * ask" instead of "not installed".
+     */
+    @Transient val probe: String? = null,
 )
 
 @Serializable

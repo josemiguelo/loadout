@@ -6,6 +6,7 @@ import loadout.core.model.ProgramStatus
 import loadout.core.model.VersionCheck
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 
@@ -23,8 +24,56 @@ class VersionCheckerTest {
 
     @Test
     fun missingWhenCommandFails() {
+        // The check IS the program (no probe): command not found = not installed.
         val state = VersionChecker(FakeProcessRunner()).check(ripgrep)
         assertEquals(ProgramStatus.MISSING, state.status)
+    }
+
+    @Test
+    fun aCheckThroughAToolThatIsNotThereIsUnknownNotMissing() {
+        // brew off PATH once reported every brew program missing. The check
+        // asks THROUGH brew (probe set), so a 127 is brew's absence, not bat's.
+        val viaBrew = VersionCheck("brew list --versions bat", "([0-9.]+)", probe = "brew")
+        val gone = VersionChecker(FakeProcessRunner()).check(viaBrew)
+        assertEquals(ProgramStatus.UNKNOWN, gone.status)
+        assertEquals("sh: command not found", gone.reason)
+
+        // brew present and saying no is a real missing, with what it said.
+        val runner = FakeProcessRunner()
+        runner.onCommand("brew list --versions bat", exitCode = 1, stderr = "Error: No such keg: bat")
+        val missing = VersionChecker(runner).check(viaBrew)
+        assertEquals(ProgramStatus.MISSING, missing.status)
+        assertEquals("Error: No such keg: bat", missing.reason)
+    }
+
+    @Test
+    fun resolvedChecksCarryTheirInstallersProbe() {
+        val manifest = ManifestLoader.parse(
+            """
+            [installers.pm]
+            probe = "pm"
+            install = "pm install {pkg}"
+            check = "pm query {pkg}"
+            regex = "([0-9.]+)"
+
+            [programs.bat]
+            via = ["pm"]
+
+            [programs.rg]
+            [programs.rg.version]
+            command = "rg --version"
+            regex = "([0-9.]+)"
+            [programs.rg.install.pm]
+            check = "rg --version"
+            """.trimIndent(),
+        )
+        // A check through the mechanism knows the tool it asks through...
+        assertEquals("pm", manifest.checkFor("bat", "pm")!!.probe)
+        // ...even when the variant overrides the command: it's still asked
+        // through the mechanism the variant is keyed by.
+        assertEquals("pm", manifest.checkFor("rg", "pm")!!.probe)
+        // The program's own [version] carries none: it IS the program.
+        assertNull(manifest.checkFor("rg", null)!!.probe)
     }
 
     @Test

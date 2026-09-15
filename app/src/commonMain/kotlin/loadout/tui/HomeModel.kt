@@ -942,6 +942,9 @@ internal fun sectionsOf(
     val programs = observed?.programs.orEmpty()
     val missing = programs.filterValues { it.status == ProgramStatus.MISSING }.keys.sorted()
     val installed = programs.count { it.value.status == ProgramStatus.INSTALLED }
+    // Checks that couldn't run (their tool wasn't there): neither installed
+    // nor missing, and nothing to install — the machine has to be fixed first.
+    val unchecked = programs.filterValues { it.status == ProgramStatus.UNKNOWN && it.reason != null }
     val scripts = observed?.scripts.orEmpty()
     val unfinished = scripts.filterValues { it.status != ScriptStatus.DONE }.keys.sorted()
     val done = scripts.count { it.value.status == ScriptStatus.DONE }
@@ -959,11 +962,23 @@ internal fun sectionsOf(
             summary = when {
                 checking -> ""
                 observed == null -> "$mapped mapped — not observed yet"
-                else -> "$installed installed · ${missing.size} missing"
+                unchecked.isEmpty() -> "$installed installed · ${missing.size} missing"
+                else -> "$installed installed · ${missing.size} missing · ${unchecked.size} not checked"
             },
-            verb = if (checking) "" else if (missing.isEmpty()) "nothing missing" else "install what's missing",
+            verb = when {
+                checking -> ""
+                missing.isNotEmpty() -> "install what's missing"
+                // Say what's wrong, not "nothing missing": the checks that
+                // failed never answered.
+                unchecked.isNotEmpty() -> unchecked.values.first().reason!!
+                else -> "nothing missing"
+            },
             action = if (missing.isEmpty()) HomeAction.NONE else HomeAction.INSTALL_MISSING,
-            severity = if (missing.isEmpty()) null else true,
+            severity = when {
+                missing.isNotEmpty() -> true
+                unchecked.isNotEmpty() -> false
+                else -> null
+            },
             neutral = checking,
             busy = checking,
             // No preview: this row's detail is the picker, and it opens on l.

@@ -21,6 +21,12 @@ data class MachineState(
 data class ProgramState(
     val status: ProgramStatus,
     val version: String? = null,
+    /**
+     * Why the check couldn't answer (UNKNOWN: "brew: command not found") or
+     * what the tool said when it said no (MISSING, when it said anything).
+     * Text for a person; never parsed.
+     */
+    val reason: String? = null,
 )
 
 @Serializable

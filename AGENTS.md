@@ -150,7 +150,20 @@ These came from explicit user decisions; don't "improve" them away:
    => `done`, else `pending` — even right after a run (the check is the truth).
    `lastRun`/`exitCode` are history from tool-executed runs only. Check-less
    scripts carry only run history. Install success = exit 0 AND re-run version
-   check no longer says missing.
+   check no longer says missing. **A check that couldn't run is not "missing"**:
+   a check that asks THROUGH a tool (`VersionCheck.probe`, set by
+   resolveInstall from the installer's/variant's probe — a @Transient
+   field, never a manifest key) and dies with the shell's own 127/126 is
+   `unknown` with `ProgramState.reason` = the shell's line
+   ("sh: brew: command not found"); `status` boxes it amber as
+   "not checked" with the reason inside, the home row counts it
+   ("· N not checked") and never offers to install it. A check with no
+   probe IS the program (`rg --version`), so its 127 means missing. brew
+   off PATH once reported every brew program missing — a confident lie.
+   Ceiling: a pipeline check (`brew tap | grep …`) exits with the LAST
+   command's code and hides the tool's absence; write
+   `x=$(tool …) && printf '%s\n' "$x" | grep …` so the tool's failure
+   propagates (the live repo's ublue-os-tap does).
 8. **State files**: written only for this machine; `updatedAt` bumps only when
    content actually changed (keeps git history clean; makes `sync` a no-op when
    idle). Unknown JSON keys ignored on read.
