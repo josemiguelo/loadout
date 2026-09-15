@@ -307,27 +307,27 @@ class HomeKeysTest {
         )
         m.handleKey(HomeKey.OPEN, viewport = 5)
         assertTrue(m.state.expanded)
-        // 21 lines: the rows' source heading, then the 20 rows. The cursor
-        // opens on the first row — a heading is never a stop.
-        assertEquals(1, m.state.detailCursor)
+        // 21 lines: the rows' source heading (a stop: space ticks all of
+        // them), then the 20 rows.
+        assertEquals(0, m.state.detailCursor)
 
         // The arrows move the focused LINE; the window follows it.
         m.handleKey(HomeKey.DOWN, viewport = 5)
-        assertEquals(2, m.state.detailCursor)
+        assertEquals(1, m.state.detailCursor)
         assertEquals(0, m.state.scroll, "no need to scroll while the line is visible")
         assertEquals(0, m.state.cursor, "arrows belong to the detail, not the section list")
 
         m.handleKey(HomeKey.PAGE_DOWN, viewport = 5)
-        assertEquals(7, m.state.detailCursor)
-        assertEquals(3, m.state.scroll)
+        assertEquals(6, m.state.detailCursor)
+        assertEquals(2, m.state.scroll)
 
         repeat(20) { m.handleKey(HomeKey.PAGE_DOWN, viewport = 5) }
         assertEquals(20, m.state.detailCursor, "the last line stops at the end")
         assertEquals(16, m.state.scroll)
 
         repeat(30) { m.handleKey(HomeKey.UP, viewport = 5) }
-        assertEquals(1, m.state.detailCursor, "the heading above the first row is not a stop")
-        assertEquals(0, m.state.scroll, "but it scrolls into view")
+        assertEquals(0, m.state.detailCursor)
+        assertEquals(0, m.state.scroll)
 
         m.handleKey(HomeKey.ESC, viewport = 5)
         assertEquals(false, m.state.expanded)
@@ -510,8 +510,9 @@ class HomeKeysTest {
         assertEquals("tool:dnf", lines[0].key)
         assertEquals("tool:dnf", lines[1].key)
         assertEquals("item:asdf-tools/ruby", lines[7].key)
-        // Headings and gaps are not stops; the cost line is — enter lists it in full.
-        assertEquals(listOf(true, true, true, false, true, false, false, true), lines.map { it.focusable })
+        // Gaps are not stops; the cost line is (enter lists it in full), and
+        // so is a source heading (space ticks everything under it).
+        assertEquals(listOf(true, true, true, false, true, false, true, true), lines.map { it.focusable })
 
         val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
         val m = model(sections)
@@ -531,7 +532,11 @@ class HomeKeysTest {
         m.handleKey(HomeKey.DOWN, viewport = 8)
         assertEquals(4, m.state.detailCursor, "skips the gap to the next tool")
         m.handleKey(HomeKey.DOWN, viewport = 8)
-        assertEquals(7, m.state.detailCursor, "skips the gap and the source heading to its item")
+        assertEquals(6, m.state.detailCursor, "skips the gap to the source heading")
+        m.handleKey(HomeKey.SELECT, viewport = 8)
+        assertEquals(setOf("item:asdf-tools/ruby"), m.state.selection, "the heading ticks every item under it")
+        m.handleKey(HomeKey.SELECT, viewport = 8)
+        assertTrue(m.state.selection.isEmpty(), "and clears them when they all are")
     }
 
     @Test
@@ -555,7 +560,7 @@ class HomeKeysTest {
                 ),
             ),
         )
-        m.handleKey(HomeKey.DOWN, viewport = 5) // past the source heading
+        m.handleKey(HomeKey.DOWN, viewport = 5) // from the source heading to its first item
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("item:asdf-plugins/golang"), m.state.selection, "one row, not the source")
         m.handleKey(HomeKey.SELECT_ALL, viewport = 5)

@@ -429,6 +429,11 @@ class HomeModel(private val app: AppContext) {
                     val key = line?.key
                     state = when {
                         line == null -> s
+                        // A source heading ticks every item under it — or
+                        // clears them all when they already are.
+                        line is RemoteLine.Source && line.itemKeys.isNotEmpty() ->
+                            if (s.selection.containsAll(line.itemKeys)) s.copy(selection = s.selection - line.itemKeys.toSet(), message = null)
+                            else s.copy(selection = s.selection + line.itemKeys, message = null)
                         key == null -> s.copy(message = line.refusal ?: "nothing to tick there")
                         key in s.selection -> s.copy(selection = s.selection - key, message = null)
                         else -> s.copy(selection = s.selection + key, message = null)
@@ -976,9 +981,14 @@ sealed interface RemoteLine {
         override val focusable get() = true
         override val refusal get() = "nothing to tick — enter lists them"
     }
-    data class Source(val name: String) : RemoteLine {
+    /**
+     * A custom source's heading. Its items tick one at a time, and the
+     * heading ticks all of them at once ([itemKeys]; empty = read-only source).
+     */
+    data class Source(val name: String, val itemKeys: List<String>) : RemoteLine {
         override val key: String? get() = null
-        override val focusable get() = false
+        override val focusable get() = true
+        override val refusal get() = if (itemKeys.isEmpty()) "$name can't update its items from loadout" else null
     }
     /** Breathing room between groups. */
     data object Gap : RemoteLine {
@@ -1004,8 +1014,15 @@ internal fun remoteLines(answered: RemoteStatus.Answered): List<RemoteLine> {
         .map { (tool, names) ->
             ToolUpdates(tool, answered.mechanismsOfTool[tool].orEmpty(), total = null, declared = names, others = emptyList(), command = "")
         }
+    // A blank line between groups, except between two that are up to date:
+    // clean one-liners read better stacked.
+    var previousClean = true
+    fun gap(clean: Boolean) {
+        if (lines.isNotEmpty() && !(previousClean && clean)) lines += RemoteLine.Gap
+        previousClean = clean
+    }
     for (tool in answered.tools + undescribed) {
-        if (lines.isNotEmpty()) lines += RemoteLine.Gap
+        gap(clean = tool.total == 0)
         val key = if (tool.command != null && tool.tool in answered.mechanismsOfTool) "tool:${tool.tool}" else null
         lines += RemoteLine.Tool(tool, key)
         for (row in answered.updates) {
@@ -1021,8 +1038,9 @@ internal fun remoteLines(answered: RemoteStatus.Answered): List<RemoteLine> {
     // sources, and programs whose mechanism no tool line claimed.
     val rest = answered.updates.filter { it !in placed }
     for ((source, rows) in rest.groupBy { it.source }) {
-        if (lines.isNotEmpty()) lines += RemoteLine.Gap
-        lines += RemoteLine.Source(source)
+        gap(clean = false)
+        val keys = rows.mapNotNull { selectionKey(answered, it) }
+        lines += RemoteLine.Source(source, keys)
         for (row in rows) lines += RemoteLine.Item(row, selectionKey(answered, row))
     }
     return lines

@@ -525,8 +525,9 @@ private fun RemoteTable(
                 val row = if (line is RemoteLine.Program) line.row else (line as RemoteLine.Item).row
                 val nested = line is RemoteLine.Program
                 // A program under its tool shows no box of its own: the
-                // tool's box is the one that means anything.
-                val lead = if (nested) "    " else box(line.key)
+                // tool's box is the one that means anything. A source item
+                // has its own, indented under the heading's.
+                val lead = if (nested) "    " else "  " + box(line.key)
                 val note = if (row.note.isNotEmpty() && room > 12) "  " + clip(row.note, room - 2) else ""
                 val text = lead + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) + version(row) + note
                 if (focused) {
@@ -549,19 +550,35 @@ private fun RemoteTable(
                 // names — amber, like every "needs your attention" mark on the
                 // screen: the part of the sweep you didn't ask for. Enter
                 // opens the whole list in the pane.
-                val head = "+ ${line.names.size} more not in your loadout · enter lists them: "
-                val shown = line.names.take(6).joinToString(", ") + if (line.names.size > 6) ", …" else ""
+                val head = "+ ${line.names.size} more not in your loadout · enter lists them"
                 if (focused) {
-                    Text(fit(DETAIL_FOCUS + "    " + head + shown, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+                    Text(fit(DETAIL_FOCUS + "    " + head, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
                 } else {
                     Row {
                         Text(DETAIL_INDENT + "    ")
                         Text(head, color = p.warn, textStyle = TextStyle.Bold)
-                        Text(clip(shown, (width - DETAIL_INDENT.length - 4 - head.length).coerceAtLeast(8)), color = p.warn)
                     }
                 }
             }
-            is RemoteLine.Source -> Text(DETAIL_INDENT + line.name, color = p.dim, textStyle = TextStyle.Bold)
+            is RemoteLine.Source -> {
+                // The heading's box ticks all of its items: [x] when every
+                // one is, [ ] otherwise, [–] when the source can't update.
+                val all = line.itemKeys.isNotEmpty() && s.selection.containsAll(line.itemKeys)
+                val sbox = when {
+                    line.itemKeys.isEmpty() -> "[–] "
+                    all -> "[x] "
+                    else -> "[ ] "
+                }
+                if (focused) {
+                    Text(fit(DETAIL_FOCUS + sbox + line.name, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+                } else {
+                    Row {
+                        Text(DETAIL_INDENT)
+                        Text(sbox, color = if (all) p.accent else p.dim)
+                        Text(line.name, textStyle = TextStyle.Bold)
+                    }
+                }
+            }
             is RemoteLine.Gap -> Text("")
         }
     }

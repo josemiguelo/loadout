@@ -407,10 +407,15 @@ These came from explicit user decisions; don't "improve" them away:
   one tool; a tool with only per-package oracles shows "others unknown";
   a clean tool is still listed, "up to date") — its declared programs
   nested under it with NO box of their own, an amber "+ 166 more not in
-  your loadout · enter lists them: kernel, …" line for the sweep's honest
-  cost — a cursor stop whose enter opens the full list in the pane
+  your loadout · enter lists them" line for the sweep's honest cost — a
+  cursor stop whose enter opens the full list in the pane
   (`PaneKind.LIST`: nothing runs, it shows; read from the TOP, the same
-  scroll keys) — then each custom source as a heading with its items. Ticking the tool line or a program
+  scroll keys) — then each custom source as a heading with its items.
+  A source heading has a box of its own that ticks EVERY item under it
+  (`Source.itemKeys`; `[–]` for a read-only source), so a source
+  upgrades one item at a time or all at once — unlike a tool, which is
+  only ever whole. A blank `Gap` separates groups except between two
+  that are up to date (clean one-liners stack). Ticking the tool line or a program
   under it selects the tool (`tool:<probe>`); a source item ticks alone
   (`item:<source>/<row>`); `[–]` = nothing loadout can move (a source
   without `upgrade`, a tool without one). The row's summary is the

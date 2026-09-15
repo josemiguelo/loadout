@@ -15,6 +15,8 @@ INSTALL_SH=$(realpath "$HERE/../install.sh")
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
+# Assertions grep plain text: keep the caller's colour forcing out of it.
+unset FORCE_COLOR CLICOLOR_FORCE
 export BIN INSTALL_SH WORK
 
 . "$HERE/lib.sh"
