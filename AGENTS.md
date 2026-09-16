@@ -652,7 +652,10 @@ installed binary's version BEFORE overwriting it, so an upgrade (including
 the first-install "Next steps" — those instructions are wrong for someone
 who already has a config repo. Testable offline via
 LOADOUT_DOWNLOAD_BASE=file://… against a local tarball; run-tests.sh covers
-both paths on Linux. The repo may not be
+both paths on both platforms — it stages one stub tarball per release name
+so `install.sh` resolves the host's own target, which is the part being
+trusted (repeating that mapping in the test would misread a Rosetta shell,
+where uname says x86_64 and macos-arm64 is still right). The repo may not be
 pushed to GitHub yet — workflows are inert until then.
 
 ## Adding programs to a config repo — the recipe
