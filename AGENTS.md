@@ -472,7 +472,9 @@ These came from explicit user decisions; don't "improve" them away:
   row rendered as a brew program and ticking it ran `brew upgrade`, which
   cannot fast-forward a git clone: it came back outdated after every
   refresh, forever. Only upgradable sources were kept out of the tool
-  groups, so a read-only source (nvim-plugins) was the unguarded case. The
+  groups, so a read-only source was the unguarded case (nvim-plugins, which
+  is upgradable since 2026-09-16 — the live repo has no read-only source
+  left, so reproducing this needs one written by hand). The
   row's summary (`remoteSummary`) answers WHERE THE WORK IS, in plain words
   a user owns: tools that have work lead ("one command fixes all of brew"),
   then one count of everything that takes an update each ("42 updates"
@@ -709,6 +711,16 @@ file never needs a check mode unless it IS the truth's only oracle.
 
 ## Working agreements with the user
 
+- **Everything new works on Linux AND macOS, both of which the user runs.**
+  Not just the Kotlin: the shell too, in this repo and in config repos. The
+  mac ships BSD tools, so `\|` alternation is not available in a BRE (use
+  `sed -nE` with real `|`), `cat -A` / `sed -i` without an argument /
+  `timeout` / GNU `readlink -f` are absent or different, and `script` takes
+  its arguments the other way round (see `pty_run`). A shell snippet that
+  fails on BSD tends to fail SILENTLY — a `sed` that matches nothing
+  returns empty, not an error: that is how every `[outdated.*]` row lost
+  its GitHub compare page on the mac while Fedora showed it for months.
+  Test on this machine, and reason about the other before claiming done.
 - **Stop the Gradle daemon when you're done**: `./gradlew --stop` at the end
   of a task (not after every build — it's what keeps rebuilds fast). The
   user doesn't want the `java … GradleDaemon` process lingering.
@@ -721,9 +733,22 @@ file never needs a check mode unless it IS the truth's only oracle.
 - Docs split (2026-08-24): **README.md** is a concise front door (concept,
   command table, quickstart, links); the GitHub **wiki** holds the guides
   (Home = concepts, Writing-Your-Manifest, A-Day-With-Loadout — local clone
-  at ../loadout.wiki). Keep README, the wiki, and **this file** updated with
-  every change; the wiki links into josemiguelo/loadouts as the live example,
-  so renames there may break wiki links.
+  at ../loadout.wiki, a SEPARATE git repo — its own clone, commit and push).
+  **A change to loadout is not done until the wiki has been re-read against
+  it**: not "updated if I remember", checked — grep the pages for the screen
+  text, keys and example output the change touches, because the guides show
+  rendered screens and a stale one teaches the wrong thing (the remote row's
+  example line survived two reworks of that very line). README and **this
+  file** the same. The wiki links into josemiguelo/loadouts as the live
+  example, so renames there may break wiki links.
+- **Wiki voice**: friendly, direct, concise, for a USER who wants to get
+  work done — not a contributor. Show an example wherever one fits; a
+  screen or a `console` block teaches faster than a paragraph about it. Do
+  NOT narrate the obvious parts of the UI: a user who sees a `▸` on a
+  folded group does not need a sentence explaining that groups without
+  rows have no `▸`, and reasons ("because the heading would promise rows
+  that aren't there") belong in THIS file, never there. When a wiki
+  sentence is only true because of how loadout is built, cut it.
 - **Word every user-visible string for the final user.** Screen text, CLI
   output and the wiki say what to do or what happened, never why the
   implementation needs it: "a step needs your sudo password", not "sudo's
