@@ -50,6 +50,56 @@ if has_pty; then
     ok "the pane says so when it cannot write the state file"
 fi
 
+# --- the remote row: the chevron means "rows are hidden here" -------------
+# Two repos with one batch oracle each: one reports nothing outdated, one
+# reports a package. A tool that heads no rows hides nothing when folded,
+# so only the second may ever show a chevron. The preseeded cache keeps the
+# self-version check off the network, so the remotes answer at once.
+mkdir -p orepo/state orepo/machines frepo/state frepo/machines cache/loadout
+echo 0.0.1 > cache/loadout/latest-release
+cat > orepo/manifest.toml <<'TOML'
+[installers.quiet]
+probe = "sh"
+install = "echo installed-{pkg} > quiet-{pkg}.txt"
+check = "echo {pkg} 1.0"
+regex = "([0-9][0-9.]*)"
+outdated-all = "true"
+upgrade = "echo swept"
+
+[programs.alpha]
+via = ["quiet"]
+TOML
+cat > frepo/manifest.toml <<'TOML'
+[installers.quiet]
+probe = "sh"
+install = "echo installed-{pkg} > quiet-{pkg}.txt"
+check = "echo {pkg} 1.0"
+regex = "([0-9][0-9.]*)"
+outdated-all = "echo 'alpha 2.0'"
+upgrade = "echo swept"
+
+[programs.alpha]
+via = ["quiet"]
+TOML
+printf '[pm]\nalpha = "quiet"\n' > orepo/machines/m1.toml
+cp orepo/machines/m1.toml frepo/machines/m1.toml
+"$BIN" --repo orepo --machine m1 status >/dev/null
+"$BIN" --repo frepo --machine m1 status >/dev/null
+if has_pty; then
+    # jj to the remote row, l opens the table with the cursor on the tool
+    # line, h, then q. The tool is named after its probe: sh.
+    fold_keys() { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf 'h'; sleep 1; printf 'q'; sleep 1; }
+    fold_keys | XDG_CACHE_HOME=$PWD/cache pty_run tui-clean.log --repo orepo --machine m1
+    grep -qa "up to date" tui-clean.log || fail "the remote table lists a tool with nothing outdated"
+    grep -qa "▸" tui-clean.log && fail "a tool that heads no rows must not show a fold chevron" || true
+    ok "the remote table never offers to fold a clean tool"
+
+    fold_keys | XDG_CACHE_HOME=$PWD/cache pty_run tui-fold.log --repo frepo --machine m1
+    grep -qa "1 update" tui-fold.log || fail "the remote table lists the tool's one update"
+    grep -qa "sh ▸" tui-fold.log || fail "h folds a tool that heads rows, and marks it"
+    ok "h still folds a tool whose rows it hides"
+fi
+
 # --- the programs row: tick missing programs, the pane asks for sudo ------
 # A fake sudo on PATH: the pane must ask for the password ITSELF (a child's
 # prompt behind it is invisible), refuse a wrong one, and run on the right.

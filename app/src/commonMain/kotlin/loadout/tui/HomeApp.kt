@@ -503,8 +503,10 @@ private fun RemoteTable(
         when (line) {
             is RemoteLine.Tool -> {
                 val t = line.info
-                // A folded group shows a chevron where its rows would be.
-                val name = clip(t.tool, 9) + if (line.group in s.collapsed) " ▸" else ""
+                // A folded group shows a chevron where its rows would be —
+                // only when it has rows: a clean tool hides nothing, so a
+                // chevron there would promise content that doesn't exist.
+                val name = clip(t.tool, 9) + if (line.foldable && line.group in s.collapsed) " ▸" else ""
                 val total = t.total?.toString() ?: "?"
                 val updates = if (t.total == 1) "1 update" else "$total updates"
                 val what = when {
@@ -576,7 +578,7 @@ private fun RemoteTable(
                     all -> "[x] "
                     else -> "[ ] "
                 }
-                val name = line.name + if (line.group in s.collapsed) " ▸" else ""
+                val name = line.name + if (line.foldable && line.group in s.collapsed) " ▸" else ""
                 if (focused) {
                     Text(fit(DETAIL_FOCUS + sbox + name, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
                 } else {

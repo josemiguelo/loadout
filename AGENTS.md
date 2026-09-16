@@ -45,7 +45,10 @@ finish its first refresh before the first key — a key on a busy row is
 refused, and a key before raw mode is lost):
 
 ```sh
+# Linux: the command is one string, the log is the last argument.
 (sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 1; printf 'q') | script -qec "$BIN --repo <repo>" /dev/null
+# macOS (BSD script): the log comes first, the command is plain argv.
+(sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 1; printf 'q') | script -q /dev/null "$BIN" --repo <repo>
 ```
 
 A run that doesn't exit usually means a coroutine kept `runMosaic` alive (see
@@ -439,7 +442,13 @@ These came from explicit user decisions; don't "improve" them away:
   (`HomeState.collapsed`, `tool:<probe>` / `source:<name>`; the heading
   stays, marked `▸`, and the cursor lands on it), `l` on a folded heading
   unfolds it, `h` on a folded heading closes the section (esc always
-  does). After a fold or unfold the heading's index is recomputed from
+  does). A heading with NO rows under it — a clean tool — is not
+  foldable: `RemoteLine.foldable` (computed in `remoteLines`, which is
+  the only place that knows what went into a group) gates the `▸`, and
+  `h` there closes the section straight away. The flag can't be derived
+  at render time: folding filters by group, so a folded tool whose rows
+  were upgraded away looks exactly like one that never had any.
+  After a fold or unfold the heading's index is recomputed from
   the NEW layout — a gap above it can appear or vanish, and a cursor
   left at the old index sat on the gap with no highlight. A blank `Gap`
   separates groups except between two QUIET ones — up to date or folded
@@ -608,7 +617,16 @@ These came from explicit user decisions; don't "improve" them away:
   `setStateForTest`; rendering is verified manually (ask the user) plus PTY
   smoke probes; `t/70-home-screen.sh` has `has_pty`-guarded `script`-driven
   tests of the home screen (bare open, a scripts run in the pane, a refused
-  state write).
+  state write, an install through the pane's own sudo prompt, the fold
+  chevron on a clean vs. a loaded tool). They run on BOTH platforms:
+  `pty_run` branches on `uname` because BSD `script` takes the log then
+  plain argv while Linux's takes `-qec "<command string>"` and the log
+  last (`has_pty` was Linux-only until 2026-09-16, which quietly skipped
+  every one of them on the user's own mac). A
+  PTY test that needs the remote row should preseed
+  `cache/loadout/latest-release` and pass that dir as `XDG_CACHE_HOME` —
+  the self-version check otherwise spends up to 5s in curl before the row
+  can answer, and an offline runner pays it every time.
 
 ## CI / release
 

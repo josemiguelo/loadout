@@ -93,13 +93,21 @@ SUDO
     rm -f "$FAKE_SUDO_STAMP"
 }
 
-# The PTY tests need Linux `script`; macOS's has a different syntax.
-has_pty() { [ "$(uname)" = "Linux" ] && command -v script >/dev/null; }
+# The PTY tests need `script`, which both platforms have — with different
+# calling conventions (see pty_run).
+has_pty() { command -v script >/dev/null; }
 
 # Drive the binary on a pseudo-terminal: keys come from stdin (a subshell
 # of printf/sleep), the screen is captured to $1. Never fails the test by
 # itself — assert on the capture.
 pty_run() {
     log=$1; shift
-    script -qec "\"$BIN\" $*" "$log" >/dev/null || true
+    if [ "$(uname)" = "Darwin" ]; then
+        # BSD script takes the log, then the command as plain argv — no -e
+        # (it already exits with the child's status) and no shell in
+        # between, so nothing re-splits the arguments.
+        script -q "$log" "$BIN" "$@" >/dev/null || true
+    else
+        script -qec "\"$BIN\" $*" "$log" >/dev/null || true
+    fi
 }

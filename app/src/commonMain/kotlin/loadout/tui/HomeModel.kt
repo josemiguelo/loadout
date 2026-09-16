@@ -428,13 +428,17 @@ class HomeModel(private val app: AppContext) {
                 HomeKey.PAGE_UP -> moveDetail(-viewport, viewport)
                 HomeKey.PAGE_DOWN -> moveDetail(viewport, viewport)
                 // Inside the remote table h folds the group under the cursor
-                // (landing on its heading); h on a heading already folded
-                // closes the section, like h anywhere in the other pickers.
+                // (landing on its heading); h on a heading already folded —
+                // or one with nothing to fold, like a clean tool — closes the
+                // section, like h anywhere in the other pickers.
                 HomeKey.CLOSE -> if (onRemote && answered != null) {
                     val lines = remoteLines(answered, s.collapsed)
                     val line = lines.getOrNull(s.detailCursor)
                     val group = line?.group
-                    if (group != null && group !in s.collapsed) {
+                    // Asked of the GROUP, not the line: h on a row means fold
+                    // the group it sits in, and that row is itself the proof.
+                    val hasRows = lines.any { it.group == group && !it.heading }
+                    if (group != null && group !in s.collapsed && hasRows) {
                         // Find the heading in the FOLDED layout: folding can
                         // remove the gap above it, and everything shifts up.
                         val folded = s.collapsed + group
@@ -1049,10 +1053,21 @@ sealed interface RemoteLine {
     val group: String? get() = null
     /** A heading: the line that stays when its group is folded. */
     val heading: Boolean get() = false
+    /**
+     * Whether folding this heading would hide anything. A clean tool heads
+     * no rows, so a chevron on it promises content that doesn't exist — and
+     * folding is filtered by group, which can't tell "folded, nothing
+     * hidden" from "folded, rows hidden" once the rows are gone.
+     */
+    val foldable: Boolean get() = false
     /** A page about this row's change, when its source printed one. */
     val link: String? get() = null
 
-    data class Tool(val info: ToolUpdates, override val key: String?) : RemoteLine {
+    data class Tool(
+        val info: ToolUpdates,
+        override val key: String?,
+        override val foldable: Boolean = false,
+    ) : RemoteLine {
         override val focusable get() = true
         override val refusal get() = if (key == null) "${info.tool} declares no upgrade command" else null
         override val group get() = "tool:${info.tool}"
@@ -1079,6 +1094,8 @@ sealed interface RemoteLine {
         override val refusal get() = if (itemKeys.isEmpty()) "$name can't update its items from loadout" else null
         override val group get() = "source:$name"
         override val heading get() = true
+        // A source exists only because it has rows.
+        override val foldable get() = true
     }
     /** Breathing room between groups. */
     data object Gap : RemoteLine {
@@ -1119,14 +1136,16 @@ internal fun remoteLines(answered: RemoteStatus.Answered, collapsed: Set<String>
     for (tool in answered.tools + undescribed) {
         gap(quiet = tool.total == 0 || "tool:${tool.tool}" in collapsed)
         val key = if (tool.command != null && tool.tool in answered.mechanismsOfTool) "tool:${tool.tool}" else null
-        lines += RemoteLine.Tool(tool, key)
-        for (row in answered.updates) {
-            // Sources keep their own rows — ALL of them, read-only included.
-            if (row in placed || row.source in answered.sources || row.source == "release") continue
-            if (answered.toolOf[answered.mechanismOf[row.name]] == tool.tool || row.name in tool.declared) {
-                lines += RemoteLine.Program(row, key, "tool:${tool.tool}")
-                placed += row
-            }
+        // Its rows, before its heading: the heading has to say whether it
+        // heads anything. Sources keep their own rows — read-only included.
+        val rows = answered.updates.filter { row ->
+            row !in placed && row.source !in answered.sources && row.source != "release" &&
+                (answered.toolOf[answered.mechanismOf[row.name]] == tool.tool || row.name in tool.declared)
+        }
+        lines += RemoteLine.Tool(tool, key, foldable = rows.isNotEmpty() || tool.others.isNotEmpty())
+        for (row in rows) {
+            lines += RemoteLine.Program(row, key, "tool:${tool.tool}")
+            placed += row
         }
         if (tool.others.isNotEmpty()) lines += RemoteLine.Others(tool.tool, tool.others)
     }

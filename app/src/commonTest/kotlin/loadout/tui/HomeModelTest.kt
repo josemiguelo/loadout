@@ -623,6 +623,44 @@ class HomeKeysTest {
     }
 
     @Test
+    fun aCleanToolHasNothingToFoldSoHLeavesTheTable() {
+        // A tool with nothing outdated heads no rows. A chevron there
+        // promises content that doesn't exist, and folding it hides nothing.
+        val answered = RemoteStatus.Answered(
+            updates = listOf(update("kitty", "1", "2")),
+            failedSources = 0,
+            tools = listOf(
+                loadout.cli.ToolUpdates("dnf", listOf("dnf"), total = 14, declared = listOf("kitty"), others = emptyList(), command = "sudo dnf upgrade -y"),
+                loadout.cli.ToolUpdates("flatpak", listOf("flatpak"), total = 0, declared = emptyList(), others = emptyList(), command = "flatpak --user update -y"),
+            ),
+            mechanismOf = mapOf("kitty" to "dnf"),
+            toolOf = mapOf("dnf" to "dnf", "flatpak" to "flatpak"),
+            mechanismsOfTool = mapOf("dnf" to listOf("dnf"), "flatpak" to listOf("flatpak")),
+        )
+        val lines = remoteLines(answered)
+        assertEquals(listOf("Tool", "Program", "Gap", "Tool"), lines.map { it::class.simpleName })
+        assertTrue(lines[0].foldable, "dnf heads a row")
+        assertFalse(lines[3].foldable, "flatpak heads nothing")
+        // Fold dnf, upgrade its row, re-ask: the group is still in `collapsed`
+        // with nothing left under it, and must not claim otherwise.
+        assertFalse(
+            remoteLines(answered, setOf("tool:flatpak")).first { it.group == "tool:flatpak" }.foldable,
+            "already folded changes nothing: there is still nothing behind it",
+        )
+
+        val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
+        val m = model(sections)
+        m.setStateForTest(HomeState(sections = sections, remote = answered))
+        m.handleKey(HomeKey.OPEN, viewport = 8)
+        m.handleKey(HomeKey.DOWN, viewport = 8) // kitty
+        m.handleKey(HomeKey.DOWN, viewport = 8) // flatpak, over the gap
+        assertEquals(3, m.state.detailCursor)
+        m.handleKey(HomeKey.CLOSE, viewport = 8)
+        assertTrue(m.state.collapsed.isEmpty(), "nothing folded — there was nothing to fold")
+        assertEquals(false, m.state.expanded, "h leaves the table instead of pretending")
+    }
+
+    @Test
     fun theRemoteTableIsGroupedByTheToolThatWillAct() {
         val rows = listOf(update("kitty", "1", "2"), update("ruby", "3.4.8", "3.4.10", "asdf-tools"))
         val answered = RemoteStatus.Answered(
