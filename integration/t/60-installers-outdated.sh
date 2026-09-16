@@ -95,6 +95,19 @@ echo "$OUT" | grep -q "boom" || fail "failing source shows its stderr detail"
 echo "$OUT" | grep -q "│" || fail "a failing source is boxed, like other attention rows"
 ok "outdated surfaces a failing custom [outdated.*] source instead of silence"
 
+# A URL in a row's trailing note is lifted out as that row's PAGE — the
+# home screen marks it ↗ and K opens it; here it must reach the output
+# without eating the rest of the note.
+cat >> instrepo/manifest.toml <<'TOML'
+
+[outdated.linked-pins]
+command = "printf 'jsplug aaa1111 bbb2222 1 commit behind https://example.test/compare/aaa1111...bbb2222\n'"
+TOML
+OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a linked source exits 0"
+echo "$OUT" | grep -q "1 commit behind" || fail "the note survives having its URL lifted out"
+echo "$OUT" | grep -q "https://example.test/compare/aaa1111...bbb2222" || fail "a URL in the note is printed as the row's page"
+ok "a custom source's row keeps the page its note pointed at"
+
 # --- status: script checks with their detail output, structured ---------
 scripts_repo scriptsrepo
 OUT=$("$BIN" --repo scriptsrepo --machine m1 setup-new-machine --dry-run)

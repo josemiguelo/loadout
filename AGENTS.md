@@ -382,7 +382,10 @@ These came from explicit user decisions; don't "improve" them away:
   itself returns 0 on silence. Any future terminal query does the same.
   Reproduce a no-reply terminal with a DETACHED tmux session (`tmux
   new-session -d`, nobody to answer) and `sample <pid>` to see the stack —
-  but use a DEBUG binary, the released one is stripped.
+  but use a DEBUG binary, the released one is stripped. `script`'s pty is
+  a no-reply terminal too (no emulator behind it), which is what makes
+  `t/71-terminal.sh` the regression test: the query bytes show up
+  unanswered in the capture and the command must still print its table.
 - **Unsettled rows are boxed**: `cli/Table.kt`'s `echoRows(List<TableRow>)` is
   the one renderer for `diff` and `status` tables — a row with a non-null
   `severity` (false = amber, true = red) is wrapped in a rounded box,
@@ -618,15 +621,21 @@ These came from explicit user decisions; don't "improve" them away:
   smoke probes; `t/70-home-screen.sh` has `has_pty`-guarded `script`-driven
   tests of the home screen (bare open, a scripts run in the pane, a refused
   state write, an install through the pane's own sudo prompt, the fold
-  chevron on a clean vs. a loaded tool). They run on BOTH platforms:
+  chevron on a clean vs. a loaded tool, the remote row's summary, and a
+  source item that shares a name with a mapped program — that last one
+  asserts on FILES the two upgrade commands write, since the tool's
+  command is printed on screen whether it ran or not). `t/71-terminal.sh`
+  is the same trick aimed at plain commands: TTY-gated colour, and a
+  terminal that never answers the background-colour query. They run on
+  BOTH platforms:
   `pty_run` branches on `uname` because BSD `script` takes the log then
   plain argv while Linux's takes `-qec "<command string>"` and the log
   last (`has_pty` was Linux-only until 2026-09-16, which quietly skipped
   every one of them on the user's own mac). A
-  PTY test that needs the remote row should preseed
-  `cache/loadout/latest-release` and pass that dir as `XDG_CACHE_HOME` —
-  the self-version check otherwise spends up to 5s in curl before the row
-  can answer, and an offline runner pays it every time.
+  PTY test that needs the remote row calls `fake_release_cache` and passes
+  `XDG_CACHE_HOME=$FAKE_CACHE` — the self-version check otherwise spends
+  up to 5s in curl before the row can answer, and an offline runner pays
+  it every time.
 
 ## CI / release
 

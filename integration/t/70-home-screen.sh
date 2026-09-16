@@ -53,10 +53,9 @@ fi
 # --- the remote row: the chevron means "rows are hidden here" -------------
 # Two repos with one batch oracle each: one reports nothing outdated, one
 # reports a package. A tool that heads no rows hides nothing when folded,
-# so only the second may ever show a chevron. The preseeded cache keeps the
-# self-version check off the network, so the remotes answer at once.
-mkdir -p orepo/state orepo/machines frepo/state frepo/machines cache/loadout
-echo 0.0.1 > cache/loadout/latest-release
+# so only the second may ever show a chevron.
+mkdir -p orepo/state orepo/machines frepo/state frepo/machines
+fake_release_cache
 cat > orepo/manifest.toml <<'TOML'
 [installers.quiet]
 probe = "sh"
@@ -89,15 +88,61 @@ if has_pty; then
     # jj to the remote row, l opens the table with the cursor on the tool
     # line, h, then q. The tool is named after its probe: sh.
     fold_keys() { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf 'h'; sleep 1; printf 'q'; sleep 1; }
-    fold_keys | XDG_CACHE_HOME=$PWD/cache pty_run tui-clean.log --repo orepo --machine m1
+    fold_keys | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-clean.log --repo orepo --machine m1
     grep -qa "up to date" tui-clean.log || fail "the remote table lists a tool with nothing outdated"
     grep -qa "▸" tui-clean.log && fail "a tool that heads no rows must not show a fold chevron" || true
     ok "the remote table never offers to fold a clean tool"
 
-    fold_keys | XDG_CACHE_HOME=$PWD/cache pty_run tui-fold.log --repo frepo --machine m1
+    fold_keys | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-fold.log --repo frepo --machine m1
     grep -qa "1 update" tui-fold.log || fail "the remote table lists the tool's one update"
     grep -qa "sh ▸" tui-fold.log || fail "h folds a tool that heads rows, and marks it"
     ok "h still folds a tool whose rows it hides"
+
+    # The row's own summary, from the same two runs: a tool leads with the
+    # count it can fix in one command, and an idle fleet says so in words
+    # (the table pads its tool name, so "sh 1" can only be the row).
+    grep -qa "everything up to date" tui-clean.log || fail "the remote row says so when nothing is outdated"
+    grep -qa "sh 1" tui-fold.log || fail "the remote row leads with the tool that has work"
+    ok "the remote row summarises where the work is"
+fi
+
+# --- the remote row: a source's item belongs to its source ----------------
+# The live repo has a `tpack` tmux plugin AND a `tpack` package. Filing a
+# row by name put the plugin under the package's tool, so ticking it ran
+# the tool's sweep — which cannot fast-forward a git clone, so the row came
+# back outdated after every refresh, forever. Each upgrade writes its own
+# file: the tool's command is printed on screen either way, so only the
+# filesystem can say which one actually ran.
+mkdir -p crepo/state crepo/machines
+cat > crepo/manifest.toml <<'TOML'
+[installers.quiet]
+probe = "sh"
+install = "echo installed-{pkg} > quiet-{pkg}.txt"
+check = "echo {pkg} 1.0"
+regex = "([0-9][0-9.]*)"
+outdated-all = "echo 'tpack 2.0'"
+upgrade = "echo swept > the-tool-swept.txt"
+
+[programs.tpack]
+via = ["quiet"]
+
+[outdated.tmux-plugins]
+command = "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'"
+upgrade = "echo pulled > pulled-{item}.txt"
+TOML
+printf '[pm]\ntpack = "quiet"\n' > crepo/machines/m1.toml
+"$BIN" --repo crepo --machine m1 status >/dev/null
+if has_pty; then
+    # jj to the remote row, l opens the table, then jjj walks the tool
+    # line, the package under it and the source heading to reach the
+    # source's OWN tpack row: space ticks it, enter asks, enter runs,
+    # enter closes the finished pane, q quits.
+    { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf 'jjj'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; sleep 1; printf '\r'; sleep 7; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-collide.log --repo crepo --machine m1
+    grep -qa "These commands will run" tui-collide.log || fail "the pane asks before upgrading"
+    [ -f crepo/pulled-tpack.txt ] || fail "the ticked row upgraded through its own source"
+    [ -f crepo/the-tool-swept.txt ] && fail "a source's item must never run the tool's sweep" || true
+    ok "a source's row upgrades through its source, not through a same-named program's tool"
 fi
 
 # --- the programs row: tick missing programs, the pane asks for sudo ------

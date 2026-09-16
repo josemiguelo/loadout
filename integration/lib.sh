@@ -93,6 +93,17 @@ SUDO
     rm -f "$FAKE_SUDO_STAMP"
 }
 
+# A fresh self-version cache, so a PTY test of the remote row doesn't wait
+# on curl: the check reads this file instead of asking GitHub (0.0.1 is
+# older than any build, so no self-update row appears either). Sets
+# FAKE_CACHE to pass as XDG_CACHE_HOME — never exported, because the next
+# test file runs in a different directory.
+fake_release_cache() {
+    mkdir -p cache/loadout
+    echo 0.0.1 > cache/loadout/latest-release
+    FAKE_CACHE=$PWD/cache
+}
+
 # The PTY tests need `script`, which both platforms have — with different
 # calling conventions (see pty_run).
 has_pty() { command -v script >/dev/null; }

@@ -597,6 +597,16 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun theShippedDnfMechanismsShareOneRefreshingSweep() {
+        // `upgrade` dedupes steps BY COMMAND, so the three dnf mechanisms
+        // have to spell theirs identically or one sweep runs three times.
+        // And it must refresh: the oracle reads a local cache, so a sweep
+        // that trusts yesterday's metadata installs yesterday's versions.
+        val sweeps = listOf("dnf", "dnf-repo", "dnf-copr").map { InstallerLibrary.installers[it]?.upgrade }
+        assertEquals(listOf("sudo dnf upgrade --refresh -y"), sweeps.distinct())
+    }
+
+    @Test
     fun theShippedLibraryParsesAndIsUsable() {
         val installers = InstallerLibrary.installers
         assertTrue(installers.keys.containsAll(setOf("dnf", "apt", "pacman", "brew", "brew-cask", "flatpak")))
