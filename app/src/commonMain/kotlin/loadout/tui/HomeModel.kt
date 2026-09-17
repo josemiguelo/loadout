@@ -505,11 +505,16 @@ class HomeModel(private val app: AppContext) {
                         val subject = homeLines(next).indexOfFirst { it is HomeLine.Subject && it.section == index }
                         state = withCursor(next, subject, viewport)
                     }
-                    // esc leaves the screen, but never while a list is open
-                    // somewhere else on it: with details left open behind
-                    // you, one esc too many would quit instead of closing.
-                    key == HomeKey.ESC && s.open.isEmpty() -> state = s.copy(exit = true)
-                    key == HomeKey.ESC -> state = s.copy(message = "esc closes the list you're in — q quits")
+                    // esc closes things; it never leaves the screen. The key
+                    // you press to back out of a list must not also be the
+                    // one that ends the session — on a tidy screen, or from
+                    // a row with nothing under it, one esc too many would.
+                    // q is the only way out.
+                    key == HomeKey.ESC -> state = s.copy(
+                        message =
+                            if (s.open.isEmpty()) "nothing to close — q quits"
+                            else "esc closes the list you're in — q quits",
+                    )
                     else -> {}
                 }
             }

@@ -472,10 +472,13 @@ These came from explicit user decisions; don't "improve" them away:
   programs picker, an upgraded source's rows vanish — and an index into a
   list that changed would highlight nothing. A detail with no rows left
   simply draws nothing and stays in `open`, so the arrows keep working and
-  the table is there again when rows come back. `esc` on a row with
-  nothing open leaves the screen, but NOT while another list is open
-  somewhere on it: it says "esc closes the list you're in — q quits", so
-  one esc too many can't quit a screen you were tidying up. Inside the
+  the table is there again when rows come back. `esc` CLOSES; it never
+  leaves the screen (2026-09-17) — the key you back out of a list with
+  must not also be the one that ends the session, or one esc too many on
+  a tidy screen drops you out of it. With nothing open under the cursor
+  it says which key does ("esc closes the list you're in — q quits", or
+  "nothing to close — q quits" when the screen is closed up); `q` is the
+  only way out. Inside the
   open remote table: space selects the focused
   row's MECHANISM (every row that sweep covers lights up, since that's what
   will actually run), a selects all, u clears the selection, enter upgrades
@@ -682,8 +685,10 @@ These came from explicit user decisions; don't "improve" them away:
   are unit-tested via
   `setStateForTest`; rendering is verified manually (ask the user) plus PTY
   smoke probes; `t/70-home-screen.sh` has `has_pty`-guarded `script`-driven
-  tests of the home screen (bare open, a scripts run in the pane, a refused
-  state write, walking out of one open list into another, an install
+  tests of the home screen (bare open, esc refusing to quit, a scripts run
+  in the pane, a refused
+  state write, walking out of one open list into another, `]` jumping to
+  the next group's heading, an install
   through the pane's own sudo prompt, the fold
   chevron on a clean vs. a loaded tool, the remote row's summary, and a
   source item that shares a name with a mapped program — that last one

@@ -3,10 +3,14 @@
 # busy row is refused, and a key before raw mode is lost.
 
 basic_repo repo
+# Every PTY test here stubs the self-version cache: the screen asks the
+# remotes the moment it opens, and up to 5s of curl behind these fixed
+# sleeps is what makes a key land on the wrong frame.
+fake_release_cache
 OUT=$("$BIN" --repo repo --machine m1 2>&1)
 echo "$OUT" | grep -q "Usage: loadout" || fail "bare loadout without a TTY still prints help"
 if has_pty; then
-    { sleep 3; printf 'q'; sleep 1; } | pty_run tui-home.log --repo repo --machine m1
+    { sleep 3; printf 'q'; sleep 1; } | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-home.log --repo repo --machine m1
     grep -qa "loadout" tui-home.log || fail "the home screen renders"
     # The footer is one clipped line, and its wording is compact on a narrow
     # terminal — assert the keys, not the sentence.
@@ -15,14 +19,20 @@ if has_pty; then
     grep -qa "programs" tui-home.log || fail "the home screen lists its subjects"
     grep -qai "Tty already bound" tui-home.log && fail "the home screen must not double-bind the tty" || true
     ok "bare loadout opens the home screen on a TTY, help without one"
+
+    # esc closes lists; it must never end the session, or a habit of
+    # pressing it on the way out of one drops you off the screen. Three of
+    # them on a row with nothing open, then q: the screen answers each and
+    # leaves on the q.
+    { sleep 3; printf '\033'; sleep 0.4; printf '\033'; sleep 0.4; printf '\033'; sleep 0.6; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-esc.log --repo repo --machine m1
+    grep -qa "nothing to close" tui-esc.log || fail "esc on a top-level row says which key quits"
+    grep -qa "q quits" tui-esc.log || fail "and names q as the way out"
+    ok "esc never quits the home screen — only q does"
 fi
 
 # --- the scripts row: open the picker -> tick all -> run in the pane -----
 scripts_repo srepo
-# Every PTY test here stubs the self-version cache: the screen asks the
-# remotes the moment it opens, and up to 5s of curl behind these fixed
-# sleeps is what makes a key land on the wrong frame.
-fake_release_cache
 "$BIN" --repo srepo --machine m1 setup-new-machine --yes >/dev/null
 rm -f srepo/bootstrap-marker.txt
 "$BIN" --repo srepo --machine m1 status >/dev/null

@@ -578,7 +578,7 @@ class HomeKeysTest {
         m.intoDetail(section = 1)
         m.handleKey(HomeKey.ESC, viewport = 5)
         assertEquals(setOf(HomeAction.RUN_SCRIPTS), m.state.open, "the other one is left alone")
-        assertEquals(false, m.state.exit, "esc closes a detail before it quits the screen")
+        assertEquals(false, m.state.exit, "esc closes a detail, it doesn't quit the screen")
 
         // Its own row has nothing open now, and the scripts picker still
         // does: esc says which key leaves rather than leaving.
@@ -586,12 +586,16 @@ class HomeKeysTest {
         assertEquals(false, m.state.exit)
         assertTrue(m.state.message!!.contains("q quits"))
 
-        // With the screen closed up again, esc is the way out.
+        // And with the whole screen closed up, esc STILL doesn't leave: the
+        // key that backs out of a list is never the key that ends the run.
         m.intoDetail(section = 0)
         m.handleKey(HomeKey.ESC, viewport = 5)
         assertTrue(m.state.open.isEmpty())
         assertEquals(false, m.state.exit)
         m.handleKey(HomeKey.ESC, viewport = 5)
+        assertEquals(false, m.state.exit, "only q quits")
+        assertTrue(m.state.message!!.contains("nothing to close"))
+        m.handleKey(HomeKey.QUIT, viewport = 5)
         assertTrue(m.state.exit)
     }
 
