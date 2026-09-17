@@ -19,6 +19,10 @@ fi
 
 # --- the scripts row: open the picker -> tick all -> run in the pane -----
 scripts_repo srepo
+# Every PTY test here stubs the self-version cache: the screen asks the
+# remotes the moment it opens, and up to 5s of curl behind these fixed
+# sleeps is what makes a key land on the wrong frame.
+fake_release_cache
 "$BIN" --repo srepo --machine m1 setup-new-machine --yes >/dev/null
 rm -f srepo/bootstrap-marker.txt
 "$BIN" --repo srepo --machine m1 status >/dev/null
@@ -27,7 +31,7 @@ if has_pty; then
     # enter asks, enter runs, wait for the refresh, enter closes, q quits
     # (a q on a finished pane closes it — it never quits the screen).
     { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
-        | pty_run tui-scripts.log --repo srepo --machine m1
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-scripts.log --repo srepo --machine m1
     grep -qa "space tick" tui-scripts.log || fail "the scripts row opens a picker"
     grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list modes=[setup] scripts" || true
     grep -qa "These scripts will run" tui-scripts.log || fail "the pane asks before running scripts"
@@ -44,10 +48,30 @@ if has_pty; then
     # directory permission.
     chmod 400 srepo/state/m1.json
     { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf 'q'; sleep 0.5; printf 'q'; sleep 1; } \
-        | pty_run tui-nowrite.log --repo srepo --machine m1
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-nowrite.log --repo srepo --machine m1
     chmod 600 srepo/state/m1.json
     grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in the pane"
     ok "the pane says so when it cannot write the state file"
+fi
+
+# --- one cursor for the whole screen --------------------------------------
+# k off a table's first row used to stop dead there: the only way to another
+# subject was to close the table first. The cursor walks the whole body now,
+# and every list you opened stays open behind it.
+scripts_repo nrepo
+fake_release_cache
+"$BIN" --repo nrepo --machine m1 status >/dev/null
+if has_pty; then
+    # l opens the programs picker (mytool is missing), k walks out onto the
+    # programs row, jj walks back through the picker onto the scripts row,
+    # and l opens ITS picker — with the first one still open above it.
+    { sleep 5; printf 'l'; sleep 0.6; printf 'k'; sleep 0.4; printf 'jj'; sleep 0.6; printf 'l'; sleep 1.5; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-nav.log --repo nrepo --machine m1
+    grep -qa "mytool" tui-nav.log || fail "the programs picker lists the missing program"
+    # Within a few lines of each other: one frame holding both tables.
+    grep -a -A4 "mytool" tui-nav.log | grep -qa "drifted" \
+        || fail "the scripts picker must open with the programs one still open above it"
+    ok "the cursor walks out of an open list, and opening another keeps it open"
 fi
 
 # --- the remote row: the chevron means "rows are hidden here" -------------
@@ -169,7 +193,7 @@ if has_pty; then
     # yes -> the password field; a wrong password is refused, the right one
     # runs both installs; enter closes the finished pane, q quits.
     { sleep 4; printf 'l'; sleep 0.5; printf '\r'; sleep 0.5; printf '\r'; sleep 0.7; printf 'nope\r'; sleep 1; printf 'secret\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
-        | PATH="$FAKE_SUDO_PATH:$PATH" pty_run tui-install.log --repo irepo --machine m1
+        | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-install.log --repo irepo --machine m1
     grep -qa "These programs will install" tui-install.log || fail "the pane asks before installing"
     grep -qa "sudo password:" tui-install.log || fail "the pane asks for the sudo password itself"
     grep -qa "sorry, try again" tui-install.log || fail "a wrong password is refused on the field"

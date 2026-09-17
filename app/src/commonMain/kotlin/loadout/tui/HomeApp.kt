@@ -96,11 +96,12 @@ private fun HomeApp(model: HomeModel) {
         }
     }
     val width = if (size > 0) size else 80
-    // Detail lines an open section may use. Count the chrome exactly or the
-    // header scrolls off the top: header + blank + 4 rows + scroll hint +
-    // 3 footer lines + 1 spare, plus a line when there's a message.
-    val viewport = (rows - 11 - (if (s.message != null) 1 else 0)).coerceAtLeast(3)
-    // A page in the pane is the PANE's height, not the section list's.
+    // Body lines the screen can show at once — subject rows and open detail
+    // lines share them, and the whole body scrolls as one. Count the chrome
+    // exactly or the header scrolls off the top: header + blank + 3 footer
+    // lines + 1 spare, plus a line when there's a message.
+    val viewport = (rows - 6 - (if (s.message != null) 1 else 0)).coerceAtLeast(3)
+    // A page in the pane is the PANE's height, not the body's.
     val paneRows = (rows * 8 / 10).coerceIn(6, rows - 3)
 
     CompositionLocalProvider(LocalPalette provides paletteFor(s.dark)) {
@@ -116,46 +117,41 @@ private fun HomeApp(model: HomeModel) {
         ) {
             HomeHeader(s, width)
             Text("")
-            var body = 2
             // While the pane is up, nothing underneath is focused: a selection
             // bar's background would bleed through the pane's cells, and the
             // keyboard belongs to the pane regardless.
             val overlay = s.run != null
-            for ((index, section) in s.sections.withIndex()) {
-                val focused = index == s.cursor
-                HomeSectionRow(
-                    section,
-                    focused = focused,
-                    highlight = !overlay,
-                    width = width,
-                    rows = rows,
-                    expanded = s.expanded,
-                    spin = spin,
-                )
-                body++
-                // The detail, opened in place: the answer is already here, so
-                // showing it shouldn't mean leaving the screen.
-                if (focused && s.expanded) {
-                    body += when (section.action) {
-                        HomeAction.INSTALL_MISSING ->
-                            MissingTable(s, viewport, width, highlight = !overlay)
-                        HomeAction.RUN_SCRIPTS ->
-                            ScriptsTable(s, viewport, width, highlight = !overlay)
-                        HomeAction.REVIEW_OUTDATED ->
-                            RemoteTable(s.remote as? RemoteStatus.Answered, s, viewport, width, highlight = !overlay)
-                        HomeAction.SHOW_DIFF ->
-                            FleetTable(s.fleet, s.scroll, viewport, width, if (overlay) -1 else s.detailCursor)
-                        else -> 0
-                    }
-                } else if (focused && section.offenders.isNotEmpty()) {
-                    body += offenderLines(section, rows)
+            // One list, one window: subject rows and the lines of every open
+            // detail, exactly as the cursor walks them.
+            val lines = homeLines(s)
+            val focus = if (overlay) -1 else snapCursor(lines, s.cursor)
+            val scroll = s.scroll.coerceIn(0, (lines.size - viewport).coerceAtLeast(0))
+            val window = lines.drop(scroll).take(viewport)
+            val widths = DetailWidths(s, width)
+            for ((offset, line) in window.withIndex()) {
+                val index = scroll + offset
+                val section = s.sections[line.section]
+                when (line) {
+                    is HomeLine.Subject -> HomeSectionRow(
+                        section,
+                        focused = index == focus,
+                        highlight = !overlay,
+                        width = width,
+                        open = section.action in s.open,
+                        spin = spin,
+                    )
+                    // The detail, opened in place: the answer is already here,
+                    // so showing it shouldn't mean leaving the screen.
+                    is HomeLine.Header -> FleetHeaderRow(s, widths)
+                    is HomeLine.Detail ->
+                        DetailRow(s, section, line.index, focused = index == focus, width = width, widths = widths)
                 }
             }
             // Fill the terminal: the footer belongs at the bottom.
             val footer = 3 + (if (s.message != null) 1 else 0)
             // -1: filling the last line scrolls the header off the top.
-            repeat((rows - body - footer - 1).coerceAtLeast(0)) { Text("") }
-            HomeFooter(s, width)
+            repeat((rows - 2 - window.size - footer - 1).coerceAtLeast(0)) { Text("") }
+            HomeFooter(s, width, lines.size, scroll, window.size)
         }
         s.run?.let { RunPane(it, spin, width, paneRows) }
       }
@@ -312,8 +308,7 @@ private fun HomeSectionRow(
     section: HomeSection,
     focused: Boolean,
     width: Int,
-    rows: Int,
-    expanded: Boolean = false,
+    open: Boolean = false,
     spin: Int = 0,
     highlight: Boolean = true,
 ) {
@@ -335,23 +330,23 @@ private fun HomeSectionRow(
     val frame = SPINNER[spin % SPINNER.size]
     val summary = if (section.busy) frame else clip(section.summary, SUMMARY_WIDTH)
     val line = "  " + section.subject.padEnd(11) + summary.padEnd(SUMMARY_WIDTH + 1)
-    if (focused && highlight && expanded) {
-        // Its detail is open and the keys live there: the selection bar
-        // belongs to the inner row, so the parent reads as the open heading
-        // — accent, bold, no bar — and the two can't be confused.
+    // ▾ while its table is open below — the cursor is often somewhere else
+    // by then, so the row itself has to say which subjects are open.
+    val arrow = if (open) "▾ " else "→ "
+    if (focused && highlight) {
+        Text(
+            fit(" $marker$line" + (if (section.verb.isEmpty()) "" else arrow + section.verb), width),
+            color = p.selectionFg,
+            background = p.selectionBg,
+            textStyle = TextStyle.Bold,
+        )
+    } else if (open) {
         Row {
             Text(" ")
             Text(marker, color = markerColor, textStyle = TextStyle.Bold)
             Text(line, color = p.accent, textStyle = TextStyle.Bold)
             Text("▾ ${section.verb}", color = p.accent, textStyle = TextStyle.Bold)
         }
-    } else if (focused && highlight) {
-        Text(
-            fit(" $marker$line" + (if (section.verb.isEmpty()) "" else "→ ${section.verb}"), width),
-            color = p.selectionFg,
-            background = p.selectionBg,
-            textStyle = TextStyle.Bold,
-        )
     } else {
         Row {
             Text(" ")
@@ -360,24 +355,6 @@ private fun HomeSectionRow(
             Text("  ${section.verb}", color = p.dim)
         }
     }
-    // The offenders themselves, so nothing needs another screen to name them.
-    if (focused && !expanded && section.offenders.isNotEmpty()) {
-        val room = offenderRoom(rows)
-        for (name in section.offenders.take(room)) {
-            Text(DETAIL_INDENT + name, color = p.dim)
-        }
-        if (section.offenders.size > room) {
-            Text(DETAIL_INDENT + "… and ${section.offenders.size - room} more", color = p.dim)
-        }
-    }
-}
-
-private fun offenderRoom(rows: Int) = (rows - 12).coerceIn(1, 6)
-
-/** Lines the focused row's offender preview draws (for the filler). */
-private fun offenderLines(section: HomeSection, rows: Int): Int {
-    val room = offenderRoom(rows)
-    return section.offenders.take(room).size + if (section.offenders.size > room) 1 else 0
 }
 
 /** Detail lines sit one step in from their row, so the nesting reads. */
@@ -394,98 +371,127 @@ private fun clip(text: String, max: Int) = if (text.length <= max) text else tex
  */
 private fun clipVersion(text: String, max: Int) = if (text.length <= max) text else "…" + text.takeLast(max - 1)
 
-/** Where you are in a list too long to show at once. */
-@Composable
-private fun ScrollHint(total: Int, scroll: Int, viewport: Int) {
-    val p = LocalPalette.current
-    if (total <= viewport) return
-    val last = (scroll + viewport).coerceAtMost(total)
-    Text(DETAIL_INDENT + "${scroll + 1}-$last of $total  ·  ↑↓ scrolls", color = p.dim)
+/**
+ * Every open detail's column widths, measured once a frame. The rows are
+ * drawn one at a time now (the body is one scrolling list), so the widths
+ * can't be worked out row by row — a column is only straight if every row
+ * of the table agrees on it.
+ */
+private class DetailWidths(s: HomeState, val width: Int) {
+    val missingName = (s.missing.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(30) + 2
+    val missingKey = (s.missing.maxOfOrNull { it.installKey.length } ?: 4).coerceAtMost(12) + 2
+    val missingRoom = (width - DETAIL_INDENT.length - 6 - missingName - missingKey).coerceAtLeast(8)
+
+    val scriptName = (s.scripts.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(30) + 2
+
+    private val updates = (s.remote as? RemoteStatus.Answered)?.updates.orEmpty()
+    // Columns are capped, not just padded: one long name would otherwise
+    // wrap every row and shred the table.
+    val remoteName = (updates.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(26) + 2
+    // Version columns get the room the terminal has: long java/sha strings
+    // fit on a wide terminal and only get clipped on a narrow one.
+    private val versionCap = if (width >= 130) 30 else if (width >= 110) 22 else 16
+    val current = (updates.maxOfOrNull { it.current.length } ?: 1).coerceAtMost(versionCap) + 2
+    val candidate = (updates.maxOfOrNull { it.candidate.length } ?: 1).coerceAtMost(versionCap) + 2
+    val remoteRoom =
+        (width - (DETAIL_INDENT.length + 8 + remoteName + current + 3 + candidate)).coerceAtLeast(8)
+
+    private val drifted = driftedRows(s)
+    val fleetName = (drifted.maxOfOrNull { it.program.length } ?: 8).coerceAtMost(26) + 2
+    // Every machine gets a column: share what's left of the terminal.
+    val fleetColumn = s.fleet?.let { report ->
+        ((width - 8 - fleetName) / report.machines.size.coerceAtLeast(1))
+            .coerceAtMost((report.machines.maxOfOrNull { it.length } ?: 6) + 2)
+            .coerceAtLeast(8)
+    } ?: 8
 }
 
-/** The drifting half of `diff`, rendered under the fleet row. */
+/** One line of some subject's open detail — whichever subject it belongs to. */
 @Composable
-private fun FleetTable(
-    report: loadout.core.diff.DiffReport?,
-    scroll: Int,
-    viewport: Int,
+private fun DetailRow(
+    s: HomeState,
+    section: HomeSection,
+    row: Int,
+    focused: Boolean,
     width: Int,
-    cursor: Int,
-): Int {
+    widths: DetailWidths,
+) {
+    when (section.action) {
+        HomeAction.INSTALL_MISSING -> s.missing.getOrNull(row)?.let { MissingRow(s, it, focused, width, widths) }
+        HomeAction.RUN_SCRIPTS -> s.scripts.getOrNull(row)?.let { ScriptLine(s, it, focused, width, widths) }
+        HomeAction.REVIEW_OUTDATED -> (s.remote as? RemoteStatus.Answered)?.let { answered ->
+            remoteLines(answered, s.collapsed).getOrNull(row)?.let { RemoteRow(s, it, focused, width, widths) }
+        }
+        HomeAction.SHOW_DIFF -> driftedRows(s).getOrNull(row)?.let { FleetRow(s, it, focused, width, widths) }
+        else -> {}
+    }
+}
+
+/** The fleet table's own heading: which machine each column belongs to. */
+@Composable
+private fun FleetHeaderRow(s: HomeState, w: DetailWidths) {
     val p = LocalPalette.current
-    val drifted = report?.rows?.filter { it.drift || it.incomplete }.orEmpty()
-    if (report == null || drifted.isEmpty()) return 0
-    val nameWidth = drifted.maxOf { it.program.length }.coerceAtMost(26) + 2
-    // Every machine gets a column: share what's left of the terminal.
-    val colWidth = ((width - 8 - nameWidth) / report.machines.size.coerceAtLeast(1))
-        .coerceIn(8, report.machines.maxOf { it.length } + 2)
+    val report = s.fleet ?: return
     Row {
         Text(DETAIL_INDENT + "  ")
-        Text("".padEnd(nameWidth), color = p.dim)
-        for (machine in report.machines) Text(clip(machine, colWidth - 1).padEnd(colWidth), color = p.machine)
-    }
-    for ((offset, row) in drifted.drop(scroll).take(viewport).withIndex()) {
-        val cells = report.machines.joinToString("") { machine ->
-            val cell = when (val state = row.perMachine.getValue(machine)) {
-                is InstallState.Installed -> state.version ?: "ok"
-                InstallState.Missing -> "missing"
-                InstallState.Unknown -> "-"
-            }
-            clip(cell, colWidth - 1).padEnd(colWidth)
-        }
-        if (scroll + offset == cursor) {
-            Text(
-                fit(
-                    DETAIL_FOCUS + (if (row.incomplete) "✘ " else "! ") +
-                        clip(row.program, nameWidth - 1).padEnd(nameWidth) + cells,
-                    width,
-                ),
-                color = p.selectionFg,
-                background = p.selectionBg,
-                textStyle = TextStyle.Bold,
-            )
-        } else {
-            Row {
-                Text(DETAIL_INDENT)
-                Text(if (row.incomplete) "✘ " else "! ", color = if (row.incomplete) p.error else p.warn)
-                Text(clip(row.program, nameWidth - 1).padEnd(nameWidth))
-                Text(cells, color = if (row.drift) p.warn else p.dim)
-            }
+        Text("".padEnd(w.fleetName), color = p.dim)
+        for (machine in report.machines) {
+            Text(clip(machine, w.fleetColumn - 1).padEnd(w.fleetColumn), color = p.machine)
         }
     }
-    ScrollHint(drifted.size, scroll, viewport)
-    // +1 for the machine-name heading.
-    return 1 + drifted.drop(scroll).take(viewport).size + if (drifted.size > viewport) 1 else 0
+}
+
+/** One drifting program of `diff`, rendered under the fleet row. */
+@Composable
+private fun FleetRow(
+    s: HomeState,
+    // Not the TUI's ProgramRow: the fleet's, one program across machines.
+    row: loadout.core.diff.ProgramRow,
+    focused: Boolean,
+    width: Int,
+    w: DetailWidths,
+) {
+    val p = LocalPalette.current
+    val machines = s.fleet?.machines.orEmpty()
+    val cells = machines.joinToString("") { machine ->
+        val cell = when (val state = row.perMachine.getValue(machine)) {
+            is InstallState.Installed -> state.version ?: "ok"
+            InstallState.Missing -> "missing"
+            InstallState.Unknown -> "-"
+        }
+        clip(cell, w.fleetColumn - 1).padEnd(w.fleetColumn)
+    }
+    if (focused) {
+        Text(
+            fit(
+                DETAIL_FOCUS + (if (row.incomplete) "✘ " else "! ") +
+                    clip(row.program, w.fleetName - 1).padEnd(w.fleetName) + cells,
+                width,
+            ),
+            color = p.selectionFg,
+            background = p.selectionBg,
+            textStyle = TextStyle.Bold,
+        )
+    } else {
+        Row {
+            Text(DETAIL_INDENT)
+            Text(if (row.incomplete) "✘ " else "! ", color = if (row.incomplete) p.error else p.warn)
+            Text(clip(row.program, w.fleetName - 1).padEnd(w.fleetName))
+            Text(cells, color = if (row.drift) p.warn else p.dim)
+        }
+    }
 }
 
 /**
- * The `outdated` table, rendered under the row that answered it — grouped
- * by what will ACT. A tool line says what ticking it means (every package
- * the tool reported, not only the declared ones under it); a program
+ * One line of the `outdated` table, rendered under the row that answered it
+ * — grouped by what will ACT. A tool line says what ticking it means (every
+ * package the tool reported, not only the declared ones under it); a program
  * under a tool ticks the tool; a custom source's items tick alone.
  */
 @Composable
-private fun RemoteTable(
-    answered: RemoteStatus.Answered?,
-    s: HomeState,
-    viewport: Int,
-    width: Int,
-    highlight: Boolean = true,
-): Int {
+private fun RemoteRow(s: HomeState, line: RemoteLine, focused: Boolean, width: Int, w: DetailWidths) {
     val p = LocalPalette.current
-    val lines = answered?.let { remoteLines(it, s.collapsed) }.orEmpty()
-    if (lines.isEmpty()) return 0
-    val rows = answered!!.updates
-    // Columns are capped, not just padded: one long name would otherwise
-    // wrap every row and shred the table.
-    val nameWidth = (rows.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(26) + 2
-    // Version columns get the room the terminal has: long java/sha strings
-    // fit on a wide terminal and only get clipped on a narrow one.
-    val versionCap = if (width >= 130) 30 else if (width >= 110) 22 else 16
-    val currentWidth = (rows.maxOfOrNull { it.current.length } ?: 1).coerceAtMost(versionCap) + 2
-    val candidateWidth = (rows.maxOfOrNull { it.candidate.length } ?: 1).coerceAtMost(versionCap) + 2
-    val used = DETAIL_INDENT.length + 8 + nameWidth + currentWidth + 3 + candidateWidth
-    val room = (width - used).coerceAtLeast(8)
+    val selected = line.key != null && line.key in s.selection
 
     fun box(key: String?) = when {
         key == null -> "[–] "
@@ -493,226 +499,208 @@ private fun RemoteTable(
         else -> "[ ] "
     }
     fun version(row: UpdateRow) =
-        clipVersion(row.current, currentWidth - 1).padEnd(currentWidth) + "-> " +
-            clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth)
+        clipVersion(row.current, w.current - 1).padEnd(w.current) + "-> " +
+            clipVersion(row.candidate, w.candidate - 1).padEnd(w.candidate)
 
-    for ((offset, line) in lines.drop(s.scroll).take(viewport).withIndex()) {
-        val index = s.scroll + offset
-        val focused = highlight && index == s.detailCursor
-        val selected = line.key != null && line.key in s.selection
-        when (line) {
-            is RemoteLine.Tool -> {
-                val t = line.info
-                // A folded group shows a chevron where its rows would be —
-                // only when it has rows: a clean tool hides nothing, so a
-                // chevron there would promise content that doesn't exist.
-                val name = clip(t.tool, 9) + if (line.foldable && line.group in s.collapsed) " ▸" else ""
-                val total = t.total?.toString() ?: "?"
-                val updates = if (t.total == 1) "1 update" else "$total updates"
-                val what = when {
-                    t.total == null -> "${t.declared.size} in your loadout · others unknown"
-                    t.total == 0 -> "up to date"
-                    t.declared.isEmpty() -> "$updates · none in your loadout"
-                    else -> "$updates · ${t.declared.size} in your loadout"
-                }
-                val text = box(line.key) + name.padEnd(11) + what.padEnd(36) +
-                    (t.command?.let { clip(it, room) } ?: "")
-                if (focused) {
-                    Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
-                } else {
-                    Row {
-                        Text(DETAIL_INDENT)
-                        Text(box(line.key), color = if (selected) p.accent else p.dim)
-                        Text(name.padEnd(11), textStyle = TextStyle.Bold)
-                        Text(what.padEnd(36), color = if (t.total == 0) p.ok else p.warn)
-                        Text(t.command?.let { clip(it, room) } ?: "", color = p.dim)
-                    }
+    when (line) {
+        is RemoteLine.Tool -> {
+            val t = line.info
+            // A folded group shows a chevron where its rows would be —
+            // only when it has rows: a clean tool hides nothing, so a
+            // chevron there would promise content that doesn't exist.
+            val name = clip(t.tool, 9) + if (line.foldable && line.group in s.collapsed) " ▸" else ""
+            val total = t.total?.toString() ?: "?"
+            val updates = if (t.total == 1) "1 update" else "$total updates"
+            val what = when {
+                t.total == null -> "${t.declared.size} in your loadout · others unknown"
+                t.total == 0 -> "up to date"
+                t.declared.isEmpty() -> "$updates · none in your loadout"
+                else -> "$updates · ${t.declared.size} in your loadout"
+            }
+            val text = box(line.key) + name.padEnd(11) + what.padEnd(36) +
+                (t.command?.let { clip(it, w.remoteRoom) } ?: "")
+            if (focused) {
+                Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+            } else {
+                Row {
+                    Text(DETAIL_INDENT)
+                    Text(box(line.key), color = if (selected) p.accent else p.dim)
+                    Text(name.padEnd(11), textStyle = TextStyle.Bold)
+                    Text(what.padEnd(36), color = if (t.total == 0) p.ok else p.warn)
+                    Text(t.command?.let { clip(it, w.remoteRoom) } ?: "", color = p.dim)
                 }
             }
-            is RemoteLine.Program, is RemoteLine.Item -> {
-                val row = if (line is RemoteLine.Program) line.row else (line as RemoteLine.Item).row
-                val nested = line is RemoteLine.Program
-                // A program under its tool shows no box of its own: the
-                // tool's box is the one that means anything. A source item
-                // has its own, indented under the heading's.
-                val lead = if (nested) "    " else "  " + box(line.key)
-                val note = (if (row.note.isNotEmpty() && room > 12) "  " + clip(row.note, room - 2) else "") +
-                    (if (row.link != null) "  ↗" else "")
-                val text = lead + "↑ " + clip(row.name, nameWidth - 1).padEnd(nameWidth) + version(row) + note
-                if (focused) {
-                    Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
-                } else {
-                    Row {
-                        Text(DETAIL_INDENT)
-                        Text(lead, color = if (selected) p.accent else p.dim)
-                        Text("↑ ", color = p.warn)
-                        Text(clip(row.name, nameWidth - 1).padEnd(nameWidth))
-                        Text(clipVersion(row.current, currentWidth - 1).padEnd(currentWidth), color = p.dim)
-                        Text("-> ", color = p.dim)
-                        Text(clipVersion(row.candidate, candidateWidth - 1).padEnd(candidateWidth), color = p.warn)
-                        if (note.isNotEmpty()) Text(note, color = p.dim)
-                    }
-                }
-            }
-            is RemoteLine.Others -> {
-                // The honest cost of the sweep, in the tool's own package
-                // names — amber, like every "needs your attention" mark on the
-                // screen: the part of the sweep you didn't ask for. Enter
-                // opens the whole list in the pane.
-                val head = "+ ${line.names.size} more not in your loadout · enter lists them"
-                if (focused) {
-                    Text(fit(DETAIL_FOCUS + "    " + head, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
-                } else {
-                    Row {
-                        Text(DETAIL_INDENT + "    ")
-                        Text(head, color = p.warn, textStyle = TextStyle.Bold)
-                    }
-                }
-            }
-            is RemoteLine.Source -> {
-                // The heading's box ticks all of its items: [x] when every
-                // one is, [ ] otherwise, [–] when the source can't update.
-                val all = line.itemKeys.isNotEmpty() && s.selection.containsAll(line.itemKeys)
-                val sbox = when {
-                    line.itemKeys.isEmpty() -> "[–] "
-                    all -> "[x] "
-                    else -> "[ ] "
-                }
-                val name = line.name + if (line.foldable && line.group in s.collapsed) " ▸" else ""
-                if (focused) {
-                    Text(fit(DETAIL_FOCUS + sbox + name, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
-                } else {
-                    Row {
-                        Text(DETAIL_INDENT)
-                        Text(sbox, color = if (all) p.accent else p.dim)
-                        Text(name, textStyle = TextStyle.Bold)
-                    }
-                }
-            }
-            is RemoteLine.Gap -> Text("")
         }
+        is RemoteLine.Program, is RemoteLine.Item -> {
+            val row = if (line is RemoteLine.Program) line.row else (line as RemoteLine.Item).row
+            val nested = line is RemoteLine.Program
+            // A program under its tool shows no box of its own: the
+            // tool's box is the one that means anything. A source item
+            // has its own, indented under the heading's.
+            val lead = if (nested) "    " else "  " + box(line.key)
+            val note = (if (row.note.isNotEmpty() && w.remoteRoom > 12) "  " + clip(row.note, w.remoteRoom - 2) else "") +
+                (if (row.link != null) "  ↗" else "")
+            val text = lead + "↑ " + clip(row.name, w.remoteName - 1).padEnd(w.remoteName) + version(row) + note
+            if (focused) {
+                Text(fit(DETAIL_FOCUS + text, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+            } else {
+                Row {
+                    Text(DETAIL_INDENT)
+                    Text(lead, color = if (selected) p.accent else p.dim)
+                    Text("↑ ", color = p.warn)
+                    Text(clip(row.name, w.remoteName - 1).padEnd(w.remoteName))
+                    Text(clipVersion(row.current, w.current - 1).padEnd(w.current), color = p.dim)
+                    Text("-> ", color = p.dim)
+                    Text(clipVersion(row.candidate, w.candidate - 1).padEnd(w.candidate), color = p.warn)
+                    if (note.isNotEmpty()) Text(note, color = p.dim)
+                }
+            }
+        }
+        is RemoteLine.Others -> {
+            // The honest cost of the sweep, in the tool's own package
+            // names — amber, like every "needs your attention" mark on the
+            // screen: the part of the sweep you didn't ask for. Enter
+            // opens the whole list in the pane.
+            val head = "+ ${line.names.size} more not in your loadout · enter lists them"
+            if (focused) {
+                Text(fit(DETAIL_FOCUS + "    " + head, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+            } else {
+                Row {
+                    Text(DETAIL_INDENT + "    ")
+                    Text(head, color = p.warn, textStyle = TextStyle.Bold)
+                }
+            }
+        }
+        is RemoteLine.Source -> {
+            // The heading's box ticks all of its items: [x] when every
+            // one is, [ ] otherwise, [–] when the source can't update.
+            val all = line.itemKeys.isNotEmpty() && s.selection.containsAll(line.itemKeys)
+            val sbox = when {
+                line.itemKeys.isEmpty() -> "[–] "
+                all -> "[x] "
+                else -> "[ ] "
+            }
+            val name = line.name + if (line.foldable && line.group in s.collapsed) " ▸" else ""
+            if (focused) {
+                Text(fit(DETAIL_FOCUS + sbox + name, width), color = p.selectionFg, background = p.selectionBg, textStyle = TextStyle.Bold)
+            } else {
+                Row {
+                    Text(DETAIL_INDENT)
+                    Text(sbox, color = if (all) p.accent else p.dim)
+                    Text(name, textStyle = TextStyle.Bold)
+                }
+            }
+        }
+        is RemoteLine.Gap -> Text("")
     }
-    ScrollHint(lines.size, s.scroll, viewport)
-    return lines.drop(s.scroll).take(viewport).size + if (lines.size > viewport) 1 else 0
 }
 
 /**
- * The programs picker, rendered under the programs row: every program the
- * last observation found missing, with what would install it, all ticked.
+ * One row of the programs picker, under the programs row: a program the last
+ * observation found missing, with what would install it.
  */
 @Composable
-private fun MissingTable(s: HomeState, viewport: Int, width: Int, highlight: Boolean = true): Int {
+private fun MissingRow(s: HomeState, row: ProgramRow, focused: Boolean, width: Int, w: DetailWidths) {
     val p = LocalPalette.current
-    val rows = s.missing
-    if (rows.isEmpty()) return 0
-    val nameWidth = rows.maxOf { it.name.length }.coerceAtMost(30) + 2
-    val keyWidth = rows.maxOf { it.installKey.length }.coerceAtMost(12) + 2
-    val used = DETAIL_INDENT.length + 6 + nameWidth + keyWidth
-    for ((offset, row) in rows.drop(s.scroll).take(viewport).withIndex()) {
-        val index = s.scroll + offset
-        val focused = highlight && index == s.detailCursor
-        val chosen = row.name in s.chosen
-        val box = if (chosen) "[x] " else "[ ] "
-        val name = clip(row.name, nameWidth - 1).padEnd(nameWidth)
-        val key = clip("[${row.installKey}]", keyWidth - 1).padEnd(keyWidth)
-        val command = clip(row.command, (width - used).coerceAtLeast(8))
-        if (focused) {
-            Text(
-                fit(DETAIL_FOCUS + box + "✘ " + name + key + command, width),
-                color = p.selectionFg,
-                background = p.selectionBg,
-                textStyle = TextStyle.Bold,
-            )
-        } else {
-            Row {
-                Text(DETAIL_INDENT)
-                Text(box, color = if (chosen) p.accent else p.dim)
-                Text("✘ ", color = p.error)
-                Text(name)
-                Text(key, color = p.dim)
-                Text(command, color = p.dim)
-            }
+    val chosen = row.name in s.chosen
+    val box = if (chosen) "[x] " else "[ ] "
+    val name = clip(row.name, w.missingName - 1).padEnd(w.missingName)
+    val key = clip("[${row.installKey}]", w.missingKey - 1).padEnd(w.missingKey)
+    val command = clip(row.command, w.missingRoom)
+    if (focused) {
+        Text(
+            fit(DETAIL_FOCUS + box + "✘ " + name + key + command, width),
+            color = p.selectionFg,
+            background = p.selectionBg,
+            textStyle = TextStyle.Bold,
+        )
+    } else {
+        Row {
+            Text(DETAIL_INDENT)
+            Text(box, color = if (chosen) p.accent else p.dim)
+            Text("✘ ", color = p.error)
+            Text(name)
+            Text(key, color = p.dim)
+            Text(command, color = p.dim)
         }
     }
-    ScrollHint(rows.size, s.scroll, viewport)
-    return rows.drop(s.scroll).take(viewport).size + if (rows.size > viewport) 1 else 0
 }
 
 /**
- * The scripts picker, rendered under the scripts row: every maintenance
- * script this machine opts into, its last verdict, and a tick box. Ticking
- * a done one is how you force it.
+ * One row of the scripts picker, under the scripts row: a maintenance script
+ * this machine opts into, its last verdict, and a tick box. Ticking a done
+ * one is how you force it.
  */
 @Composable
-private fun ScriptsTable(s: HomeState, viewport: Int, width: Int, highlight: Boolean = true): Int {
+private fun ScriptLine(s: HomeState, row: ScriptRow, focused: Boolean, width: Int, w: DetailWidths) {
     val p = LocalPalette.current
-    val rows = s.scripts
-    if (rows.isEmpty()) return 0
-    val nameWidth = rows.maxOf { it.name.length }.coerceAtMost(30) + 2
-    for ((offset, row) in rows.drop(s.scroll).take(viewport).withIndex()) {
-        val index = s.scroll + offset
-        val focused = highlight && index == s.detailCursor
-        val picked = row.name in s.picked
-        val box = if (picked) "[x] " else "[ ] "
-        // Same marks as the status table: ✔ done, ! pending, ✘ failed, and
-        // · for a script nothing has observed here yet.
-        val (mark, markColor, verdict) = when (row.status) {
-            ScriptStatus.DONE -> Triple("✔ ", p.ok, "done")
-            ScriptStatus.PENDING -> Triple("! ", p.warn, "pending")
-            ScriptStatus.FAILED -> Triple("✘ ", p.error, "failed")
-            null -> Triple("· ", p.dim, "not observed")
-        }
-        val name = clip(row.name, nameWidth - 1).padEnd(nameWidth)
-        if (focused) {
-            Text(
-                fit(DETAIL_FOCUS + box + mark + name + verdict, width),
-                color = p.selectionFg,
-                background = p.selectionBg,
-                textStyle = TextStyle.Bold,
-            )
-        } else {
-            Row {
-                Text(DETAIL_INDENT)
-                Text(box, color = if (picked) p.accent else p.dim)
-                Text(mark, color = markColor)
-                Text(name)
-                Text(verdict, color = if (row.status == ScriptStatus.DONE) p.dim else markColor)
-            }
+    val picked = row.name in s.picked
+    val box = if (picked) "[x] " else "[ ] "
+    // Same marks as the status table: ✔ done, ! pending, ✘ failed, and
+    // · for a script nothing has observed here yet.
+    val (mark, markColor, verdict) = when (row.status) {
+        ScriptStatus.DONE -> Triple("✔ ", p.ok, "done")
+        ScriptStatus.PENDING -> Triple("! ", p.warn, "pending")
+        ScriptStatus.FAILED -> Triple("✘ ", p.error, "failed")
+        null -> Triple("· ", p.dim, "not observed")
+    }
+    val name = clip(row.name, w.scriptName - 1).padEnd(w.scriptName)
+    if (focused) {
+        Text(
+            fit(DETAIL_FOCUS + box + mark + name + verdict, width),
+            color = p.selectionFg,
+            background = p.selectionBg,
+            textStyle = TextStyle.Bold,
+        )
+    } else {
+        Row {
+            Text(DETAIL_INDENT)
+            Text(box, color = if (picked) p.accent else p.dim)
+            Text(mark, color = markColor)
+            Text(name)
+            Text(verdict, color = if (row.status == ScriptStatus.DONE) p.dim else markColor)
         }
     }
-    ScrollHint(rows.size, s.scroll, viewport)
-    return rows.drop(s.scroll).take(viewport).size + if (rows.size > viewport) 1 else 0
 }
 
 @Composable
-private fun HomeFooter(s: HomeState, width: Int) {
+private fun HomeFooter(s: HomeState, width: Int, total: Int, scroll: Int, shown: Int) {
     val p = LocalPalette.current
     Text("")
     s.message?.let { Text(fit(" $it", width), color = p.warn) }
     // Two fixed lines, clipped to the terminal: a wrapped footer unpins the
     // bottom and the filler math goes with it.
     val tight = width < 100
+    // The keys the cursor's own line answers to. It may sit on a subject row
+    // with its table open below, so this follows the SUBJECT, not whether
+    // the cursor is inside the list.
+    val lines = homeLines(s)
+    val at = snapCursor(lines, s.cursor)
+    val section = lines.getOrNull(at)?.let { s.sections.getOrNull(it.section) }
+    val open = section != null && section.action in s.open
     val context = when {
-        s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.INSTALL_MISSING ->
+        open && section.action == HomeAction.INSTALL_MISSING ->
             if (tight) "↑↓ move · space tick · a all · u none · enter install · h close"
             else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter install" +
                 (if (s.chosen.isEmpty()) "" else " ${s.chosen.size} ticked") + "  ·  h/esc close"
-        s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.RUN_SCRIPTS ->
+        open && section.action == HomeAction.RUN_SCRIPTS ->
             if (tight) "↑↓ move · space tick · a all · u none · enter run · h close"
             else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter run" +
                 (if (s.picked.isEmpty()) "" else " ${s.picked.size} ticked") + "  ·  h/esc close"
-        s.expanded && s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED ->
+        open && section.action == HomeAction.REVIEW_OUTDATED ->
             if (tight) "↑↓ move · space · a all · u none · h fold/close · l unfold · K diff · enter upgrade"
             else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  h fold, l unfold  ·  K diff ↗  ·  enter upgrade" +
                 (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h again/esc close"
-        s.expanded ->
-            if (tight) "↑↓ scroll · h close" else "↑↓/pgup/pgdn scroll  ·  h/esc close"
+        open ->
+            if (tight) "↑↓ move · h close" else "↑↓/pgup/pgdn move  ·  h/esc close"
         else ->
             if (tight) "↑↓ move · l open · enter act" else "↑↓/jk move  ·  l/→ open  ·  enter act on this line"
     }
+    // The whole screen scrolls now, so say where in it you are.
+    val where = if (total > shown) "  ·  ${scroll + 1}-${scroll + shown} of $total" else ""
     val verbs =
         if (tight) "r re-check · S sync · U self-upgrade · C set up · t theme · q quit"
         else "r re-check  ·  S sync  ·  U upgrade loadout  ·  C set up this machine  ·  t theme  ·  q quit"
-    Text(fit(" $context", width), color = p.dim)
+    Text(fit(" $context$where", width), color = p.dim)
     Text(fit(" $verbs", width), color = p.dim)
 }

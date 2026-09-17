@@ -430,14 +430,47 @@ These came from explicit user decisions; don't "improve" them away:
 - **Home screen** (bare `loadout` on a TTY; a pipe still gets help):
   `tui/HomeModel.kt` + `HomeApp.kt`. Four subject rows (programs, scripts,
   remote, fleet) each carrying its verdict and the ONE verb that resolves
-  it; ↑↓/jk move, l/h (or ←/→) open and close a detail, pgup/pgdn scroll it,
-  and enter ACTS — it never opens or closes, so inside the remote table it
-  is the upgrade key. Nothing acts on a row still marked busy: enter used to
+  it; ↑↓/jk move, l/h (or ←/→) open and close a detail, pgup/pgdn a page at
+  a time, and enter ACTS — it never opens or closes, so inside the remote
+  table it is the upgrade key. Nothing acts on a row still marked busy: enter used to
   dispatch `outdated` on top of the ask already running. Machine-wide verbs are their own keys, not
   rows, because they belong to no single subject: r re-check, S sync,
   U self-upgrade, C setup-new-machine, t theme, q quit — capitals for the
-  ones that push, replace the binary, or converge the machine. Inside the
-  open remote table: ↑↓ move the focused line, space selects the focused
+  ones that push, replace the binary, or converge the machine.
+  **ONE cursor for the whole screen** (2026-09-16): `homeLines(state)` is
+  the body as a flat list — a `HomeLine.Subject` per row, a
+  `HomeLine.Detail` per line of every OPEN detail (plus `Header` for the
+  fleet's column names), in draw order — and `HomeState.cursor` is an
+  index into it, walked by `moveCursor` one STOP at a time (gaps and
+  headers skipped). So a table can never capture the arrows: `k` off its
+  first row lands on its subject row and keeps going up. `HomeState.open`
+  is a SET of actions, so several details are open at once and only an
+  explicit h/esc on the one under the cursor closes it — walking away or
+  opening another leaves it exactly as it was (a subject row with its
+  table open below wears `▾`). A closed table also keeps YOUR PLACE in
+  it: `HomeState.lastRow` (written by `withCursor` whenever the cursor
+  lands on a detail line) is the row each subject was last on, and `l`
+  reopens there rather than at the top — `detailStop` resolves it against
+  the table as it is NOW (first stop at or after it, else the last),
+  since a re-check or an upgrade can take rows away while it is closed. Before that, `expanded` was a single
+  boolean tied to the focused row and `detailCursor` an index inside that
+  one table: `k` at its top row stopped dead, and the only way to another
+  subject was to close the table first. The body scrolls as ONE window
+  (`HomeState.scroll` over `homeLines`, the footer saying "1-24 of 57"),
+  not per table — with two tables open, per-table windows have no height
+  to divide. Every key acts on the line under the cursor, and the pickers'
+  keys (space/a/u/enter) work from the subject row too, since the ticks
+  belong to the subject, not to the cursor's exact line. `snapCursor`
+  resolves the cursor against the CURRENT layout (nearest stop at or
+  above): the body reshapes under it constantly — a refresh empties the
+  programs picker, an upgraded source's rows vanish — and an index into a
+  list that changed would highlight nothing. A detail with no rows left
+  simply draws nothing and stays in `open`, so the arrows keep working and
+  the table is there again when rows come back. `esc` on a row with
+  nothing open leaves the screen, but NOT while another list is open
+  somewhere on it: it says "esc closes the list you're in — q quits", so
+  one esc too many can't quit a screen you were tidying up. Inside the
+  open remote table: space selects the focused
   row's MECHANISM (every row that sweep covers lights up, since that's what
   will actually run), a selects all, u clears the selection, enter upgrades
   it IN the floating pane — the screen stays put and refreshes when it's done.
@@ -460,15 +493,15 @@ These came from explicit user decisions; don't "improve" them away:
   only ever whole. Groups FOLD: `h` on any line of a group folds it
   (`HomeState.collapsed`, `tool:<probe>` / `source:<name>`; the heading
   stays, marked `▸`, and the cursor lands on it), `l` on a folded heading
-  unfolds it, `h` on a folded heading closes the section (esc always
-  does). A heading with NO rows under it — a clean tool — is not
+  unfolds it, `h` on a folded heading closes the section (esc never folds:
+  it closes the detail straight away). A heading with NO rows under it — a clean tool — is not
   foldable: `RemoteLine.foldable` (computed in `remoteLines`, which is
   the only place that knows what went into a group) gates the `▸`, and
   `h` there closes the section straight away. The flag can't be derived
   at render time: folding filters by group, so a folded tool whose rows
   were upgraded away looks exactly like one that never had any.
-  After a fold or unfold the heading's index is recomputed from
-  the NEW layout — a gap above it can appear or vanish, and a cursor
+  After a fold or unfold the heading's body line is recomputed from
+  the NEW layout (`headingLine`) — a gap above it can appear or vanish, and a cursor
   left at the old index sat on the gap with no highlight. A blank `Gap`
   separates groups except between two QUIET ones — up to date or folded
   (one-liners stack). Pane cells carry an explicit `TextStyle.Empty`:
@@ -547,6 +580,11 @@ These came from explicit user decisions; don't "improve" them away:
   DiffEngine compares, `cli/OutdatedQuery.kt`'s `outdatedReport()` asks the
   remotes for BOTH this screen and the `outdated` command, and every action
   dispatches to a real subcommand through `cli/Actions.kt`'s `dispatch()`.
+  Rendering follows the same flat list: `HomeApp` windows `homeLines` and
+  draws ONE line at a time (`DetailRow` dispatches on the subject's
+  action), so a table's column widths are measured once a frame from all
+  of its rows (`DetailWidths`) — a column worked out row by row would only
+  be as wide as the rows that happen to be on screen.
 - **Floating pane**: Mosaic composites `Box` children in order, so the home
   screen renders its run pane as a real overlay — `Box(fillMaxSize) { body;
   RunPane() }` with `Modifier.align(Alignment.Center)`. One pane, three
@@ -634,11 +672,13 @@ These came from explicit user decisions; don't "improve" them away:
   subject = a new file); run just that file with a name pattern while
   iterating. Never share state across files through `$WORK`.
 - TUI: reducers (`handleKey`) and the pure row builders (`sectionsOf`,
-  `scriptRowsOf`, `preselect`, `selectionKey`) are unit-tested via
+  `scriptRowsOf`, `preselect`, `selectionKey`, `homeLines`, `snapCursor`)
+  are unit-tested via
   `setStateForTest`; rendering is verified manually (ask the user) plus PTY
   smoke probes; `t/70-home-screen.sh` has `has_pty`-guarded `script`-driven
   tests of the home screen (bare open, a scripts run in the pane, a refused
-  state write, an install through the pane's own sudo prompt, the fold
+  state write, walking out of one open list into another, an install
+  through the pane's own sudo prompt, the fold
   chevron on a clean vs. a loaded tool, the remote row's summary, and a
   source item that shares a name with a mapped program — that last one
   asserts on FILES the two upgrade commands write, since the tool's
@@ -649,11 +689,15 @@ These came from explicit user decisions; don't "improve" them away:
   `pty_run` branches on `uname` because BSD `script` takes the log then
   plain argv while Linux's takes `-qec "<command string>"` and the log
   last (`has_pty` was Linux-only until 2026-09-16, which quietly skipped
-  every one of them on the user's own mac). A
-  PTY test that needs the remote row calls `fake_release_cache` and passes
-  `XDG_CACHE_HOME=$FAKE_CACHE` — the self-version check otherwise spends
-  up to 5s in curl before the row can answer, and an offline runner pays
-  it every time.
+  every one of them on the user's own mac). EVERY
+  PTY test of the home screen calls `fake_release_cache` and passes
+  `XDG_CACHE_HOME=$FAKE_CACHE` — not only the ones that read the remote
+  row: the screen asks the remotes the moment it opens, so the
+  self-version check otherwise spends up to 5s in curl behind the test's
+  fixed sleeps, and a key that lands on the wrong frame hangs the whole
+  suite (the sudo-prompt install test did, once — with a password field
+  up, printable keys are eaten, so the final `q` types instead of
+  quitting).
 
 ## CI / release
 

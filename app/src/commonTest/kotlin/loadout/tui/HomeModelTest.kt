@@ -68,15 +68,11 @@ class HomeSectionsTest {
 
         val programs = sections.first { it.subject == "programs" }
         assertEquals(HomeAction.INSTALL_MISSING, programs.action)
-        // Its detail is the picker (opens on l), so nothing spills on focus.
-        assertTrue(programs.offenders.isEmpty())
         assertEquals(true, programs.severity)
 
         val scripts = sections.first { it.subject == "scripts" }
         assertEquals(HomeAction.RUN_SCRIPTS, scripts.action)
         assertEquals(false, scripts.severity)
-        // Its detail is the picker (opens on l), so nothing spills on focus.
-        assertTrue(scripts.offenders.isEmpty())
     }
 
     @Test
@@ -86,12 +82,9 @@ class HomeSectionsTest {
         // Settled, but still openable: ticking a done script is how you force it.
         assertEquals(HomeAction.RUN_SCRIPTS, scripts.action)
         assertNull(scripts.severity)
-        assertTrue(scripts.offenders.isEmpty())
         // No state files to compare: the fleet row can't act either.
         val fleet = sections.first { it.subject == "fleet" }
         assertEquals(HomeAction.NONE, fleet.action)
-        // Its detail opens on enter, so nothing spills under the cursor.
-        assertTrue(fleet.offenders.isEmpty())
     }
 
     @Test
@@ -112,9 +105,6 @@ class HomeSectionsTest {
         )
         assertEquals("2 updates · dnf 2", answered.summary)
         assertEquals(false, answered.severity)
-        // The names are NOT spilled under the row on focus: enter opens the
-        // table instead, so moving the cursor stays quiet.
-        assertTrue(answered.offenders.isEmpty())
 
         val clean = remote(RemoteStatus.Answered(emptyList(), failedSources = 0))
         assertEquals("everything up to date", clean.summary)
@@ -224,6 +214,25 @@ class HomeKeysTest {
         return m
     }
 
+    /** Drop the cursor on the first stop inside [section]'s open detail. */
+    private fun HomeModel.intoDetail(section: Int = 0) {
+        val first = homeLines(state)
+            .indexOfFirst { it is HomeLine.Detail && it.section == section && it.focusable }
+        setStateForTest(state.copy(cursor = first))
+    }
+
+    /** The detail row the cursor is on, or -1 when it's on a subject row. */
+    private val HomeModel.detailRow: Int
+        get() {
+            val lines = homeLines(state)
+            return (lines.getOrNull(snapCursor(lines, state.cursor)) as? HomeLine.Detail)?.index ?: -1
+        }
+
+    /** The remote line the cursor is on, whatever the body around it looks like. */
+    private val HomeModel.remoteRow: RemoteLine?
+        get() = (state.remote as? RemoteStatus.Answered)
+            ?.let { remoteLines(it, state.collapsed).getOrNull(detailRow) }
+
     private val sections = listOf(
         HomeSection("programs", "", "", HomeAction.NONE),
         HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
@@ -250,7 +259,7 @@ class HomeKeysTest {
         assertTrue(m.state.message!!.contains("still asking"))
 
         m.handleKey(HomeKey.OPEN)
-        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.open.isEmpty())
     }
 
     @Test
@@ -265,17 +274,19 @@ class HomeKeysTest {
         )
         // enter no longer opens: it says which key does.
         m.handleKey(HomeKey.ENTER)
-        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.open.isEmpty())
         assertTrue(m.state.message!!.contains("press l"))
 
         m.handleKey(HomeKey.OPEN)
-        assertTrue(m.state.expanded)
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open)
+        assertEquals(0, m.detailRow, "l opens onto the table's first row")
         // ...and h closes it, where enter would now upgrade — the first h
         // folds the group under the cursor, the second leaves the section.
         m.handleKey(HomeKey.CLOSE)
-        assertTrue(m.state.expanded)
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open)
         m.handleKey(HomeKey.CLOSE)
-        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.open.isEmpty())
+        assertEquals(-1, m.detailRow, "and the cursor comes out onto the subject row")
     }
 
     @Test
@@ -303,12 +314,14 @@ class HomeKeysTest {
         )
         // Already answered: the table shows here, it doesn't leave to ask again.
         m.handleKey(HomeKey.OPEN)
-        assertTrue(m.state.expanded)
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open)
         assertEquals(HomeAction.NONE, m.state.action)
         assertEquals(false, m.state.exit)
 
+        // esc never folds — it closes the detail the cursor is in.
         m.handleKey(HomeKey.ESC)
-        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.open.isEmpty())
+        assertEquals(false, m.state.exit)
     }
 
     @Test
@@ -341,7 +354,7 @@ class HomeKeysTest {
         assertEquals(false, m.handleKey(HomeKey.ENTER), "the picker opens on l; enter looks")
         assertTrue(m.state.message!!.contains("press l"))
         m.handleKey(HomeKey.OPEN)
-        assertTrue(m.state.expanded)
+        assertEquals(setOf(HomeAction.INSTALL_MISSING), m.state.open)
         assertEquals(HomeAction.NONE, m.state.action)
     }
 
@@ -383,7 +396,10 @@ class HomeKeysTest {
 
         val sections = listOf(HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING))
         val m = model(sections)
-        m.setStateForTest(HomeState(sections = sections, expanded = true, missing = rows, chosen = setOf("kitty")))
+        m.setStateForTest(
+            HomeState(sections = sections, open = setOf(HomeAction.INSTALL_MISSING), missing = rows, chosen = setOf("kitty")),
+        )
+        m.intoDetail()
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(emptySet(), m.state.chosen)
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
@@ -393,41 +409,132 @@ class HomeKeysTest {
         assertEquals(setOf("kitty"), m.state.chosen)
     }
 
+    /**
+     * The arrows walk the WHOLE screen: an open table is passed through, not
+     * locked into. Pressing k at its first row used to stop dead there, and
+     * the only way to another subject was to close the table first.
+     */
     @Test
-    fun anOpenDetailTakesTheArrowsAndStaysInBounds() {
-        val sections = listOf(HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED))
+    fun theArrowsWalkOutOfAnOpenTableAndLeaveItOpen() {
+        val sections = listOf(
+            HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS),
+            HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED),
+        )
         val m = model(sections)
         val updates = (1..20).map { update("pkg$it", "1", "2") }
         m.setStateForTest(
-            HomeState(sections = sections, remote = RemoteStatus.Answered(updates, failedSources = 0)),
+            HomeState(
+                sections = sections,
+                cursor = 1,
+                scripts = listOf(ScriptRow("pull", "sh pull")),
+                remote = RemoteStatus.Answered(updates, failedSources = 0),
+            ),
         )
         m.handleKey(HomeKey.OPEN, viewport = 5)
-        assertTrue(m.state.expanded)
-        // 21 lines: the rows' source heading (a stop: space ticks all of
-        // them), then the 20 rows.
-        assertEquals(0, m.state.detailCursor)
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open)
+        // 21 detail lines: the rows' source heading (a stop: space ticks all
+        // of them), then the 20 rows. l opens onto the first.
+        assertEquals(0, m.detailRow)
+        assertEquals(2, m.state.cursor, "two subject rows come first")
 
-        // The arrows move the focused LINE; the window follows it.
+        // The arrows move one stop at a time; the window follows them.
         m.handleKey(HomeKey.DOWN, viewport = 5)
-        assertEquals(1, m.state.detailCursor)
+        assertEquals(1, m.detailRow)
         assertEquals(0, m.state.scroll, "no need to scroll while the line is visible")
-        assertEquals(0, m.state.cursor, "arrows belong to the detail, not the section list")
 
         m.handleKey(HomeKey.PAGE_DOWN, viewport = 5)
-        assertEquals(6, m.state.detailCursor)
-        assertEquals(2, m.state.scroll)
+        assertEquals(6, m.detailRow)
+        assertEquals(4, m.state.scroll)
 
         repeat(20) { m.handleKey(HomeKey.PAGE_DOWN, viewport = 5) }
-        assertEquals(20, m.state.detailCursor, "the last line stops at the end")
-        assertEquals(16, m.state.scroll)
+        assertEquals(20, m.detailRow, "the last row stops at the end")
+        assertEquals(18, m.state.scroll)
 
-        repeat(30) { m.handleKey(HomeKey.UP, viewport = 5) }
-        assertEquals(0, m.state.detailCursor)
+        // Up and out: the table's first row, then the subject it belongs to,
+        // then the subject above — all with the table still open.
+        repeat(21) { m.handleKey(HomeKey.UP, viewport = 5) }
+        assertEquals(-1, m.detailRow, "k off the top row lands on the subject row")
+        assertEquals(1, m.state.cursor)
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open, "moving away closes nothing")
+
+        m.handleKey(HomeKey.UP, viewport = 5)
+        assertEquals(0, m.state.cursor, "and keeps going to the subject above")
         assertEquals(0, m.state.scroll)
+        m.handleKey(HomeKey.UP, viewport = 5)
+        assertEquals(0, m.state.cursor, "the first line of the screen is the end of the road")
 
+        // From up here the other subject opens too, and both stay open.
+        m.handleKey(HomeKey.OPEN, viewport = 5)
+        assertEquals(setOf(HomeAction.RUN_SCRIPTS, HomeAction.REVIEW_OUTDATED), m.state.open)
+        assertEquals(
+            listOf("Subject", "Detail", "Subject", "Detail"),
+            homeLines(m.state).take(4).map { it::class.simpleName },
+            "the scripts picker and the remote table are both in the body",
+        )
+    }
+
+    /**
+     * Closing a table to read another row shouldn't cost your place in it:
+     * reopening lands on the line you left, and on the last one when the
+     * table has since lost rows.
+     */
+    @Test
+    fun reopeningATableLandsOnTheRowYouLeftIt() {
+        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
+        val m = model(sections)
+        val scripts = (1..6).map { ScriptRow("s$it", "sh s$it") }
+        m.setStateForTest(HomeState(sections = sections, scripts = scripts))
+
+        m.handleKey(HomeKey.OPEN, viewport = 5)
+        repeat(3) { m.handleKey(HomeKey.DOWN, viewport = 5) }
+        assertEquals(3, m.detailRow)
+
+        m.handleKey(HomeKey.CLOSE, viewport = 5)
+        assertEquals(-1, m.detailRow, "h comes out onto the subject row")
+        m.handleKey(HomeKey.OPEN, viewport = 5)
+        assertEquals(3, m.detailRow, "and l goes back to the row it was on")
+
+        // A re-check ran the last three: the row that was focused is gone,
+        // so the cursor lands on the last one there is.
+        m.handleKey(HomeKey.CLOSE, viewport = 5)
+        m.setStateForTest(m.state.copy(scripts = scripts.take(2)))
+        m.handleKey(HomeKey.OPEN, viewport = 5)
+        assertEquals(1, m.detailRow, "the remembered row is past the end now")
+    }
+
+    @Test
+    fun escClosesOnlyTheDetailTheCursorIsIn() {
+        val sections = listOf(
+            HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS),
+            HomeSection("remote", "", "review them", HomeAction.REVIEW_OUTDATED),
+        )
+        val m = model(sections)
+        m.setStateForTest(
+            HomeState(
+                sections = sections,
+                open = setOf(HomeAction.RUN_SCRIPTS, HomeAction.REVIEW_OUTDATED),
+                scripts = listOf(ScriptRow("pull", "sh pull")),
+                remote = RemoteStatus.Answered(listOf(update("kitty", "1", "2")), failedSources = 0),
+            ),
+        )
+        m.intoDetail(section = 1)
         m.handleKey(HomeKey.ESC, viewport = 5)
-        assertEquals(false, m.state.expanded)
-        assertEquals(false, m.state.exit, "esc closes the detail before it quits the screen")
+        assertEquals(setOf(HomeAction.RUN_SCRIPTS), m.state.open, "the other one is left alone")
+        assertEquals(false, m.state.exit, "esc closes a detail before it quits the screen")
+
+        // Its own row has nothing open now, and the scripts picker still
+        // does: esc says which key leaves rather than leaving.
+        m.handleKey(HomeKey.ESC, viewport = 5)
+        assertEquals(false, m.state.exit)
+        assertTrue(m.state.message!!.contains("q quits"))
+
+        // With the screen closed up again, esc is the way out.
+        m.intoDetail(section = 0)
+        m.handleKey(HomeKey.ESC, viewport = 5)
+        assertTrue(m.state.open.isEmpty())
+        assertEquals(false, m.state.exit)
+        m.handleKey(HomeKey.ESC, viewport = 5)
+        assertTrue(m.state.exit)
     }
 
     @Test
@@ -445,15 +552,15 @@ class HomeKeysTest {
             ),
         )
         m.handleKey(HomeKey.OPEN)
-        assertTrue(m.state.expanded)
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open)
         m.handleKey(HomeKey.CLOSE) // folds the group under the cursor
         m.handleKey(HomeKey.CLOSE) // then closes the section
-        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.open.isEmpty())
 
         // `l` never acts: a row with no detail says so instead of dispatching.
         m.setStateForTest(HomeState(sections = sections, cursor = 0))
         m.handleKey(HomeKey.OPEN)
-        assertEquals(false, m.state.expanded)
+        assertTrue(m.state.open.isEmpty())
         assertEquals(false, m.state.exit)
         assertEquals(HomeAction.NONE, m.state.action)
         assertTrue(m.state.message!!.contains("nothing to open"))
@@ -481,7 +588,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                expanded = true,
+                open = setOf(HomeAction.REVIEW_OUTDATED),
                 remote = RemoteStatus.Answered(listOf(update("kitty", "1", "2")), failedSources = 0),
             ),
         )
@@ -497,7 +604,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                expanded = true,
+                open = setOf(HomeAction.REVIEW_OUTDATED),
                 remote = RemoteStatus.Answered(
                     updates = rows,
                     failedSources = 0,
@@ -507,6 +614,7 @@ class HomeKeysTest {
                 ),
             ),
         )
+        m.intoDetail()
         // One key, one mechanism — loadout never upgrades a single package.
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("tool:pm"), m.state.selection)
@@ -657,10 +765,10 @@ class HomeKeysTest {
         m.handleKey(HomeKey.OPEN, viewport = 8)
         m.handleKey(HomeKey.DOWN, viewport = 8) // kitty
         m.handleKey(HomeKey.DOWN, viewport = 8) // flatpak, over the gap
-        assertEquals(3, m.state.detailCursor)
+        assertEquals(3, m.detailRow)
         m.handleKey(HomeKey.CLOSE, viewport = 8)
         assertTrue(m.state.collapsed.isEmpty(), "nothing folded — there was nothing to fold")
-        assertEquals(false, m.state.expanded, "h leaves the table instead of pretending")
+        assertTrue(m.state.open.isEmpty(), "h leaves the table instead of pretending")
     }
 
     @Test
@@ -697,10 +805,10 @@ class HomeKeysTest {
         val m = model(sections)
         m.setStateForTest(HomeState(sections = sections, remote = answered))
         m.handleKey(HomeKey.OPEN, viewport = 8)
-        assertEquals(0, m.state.detailCursor)
+        assertEquals(0, m.detailRow)
         m.handleKey(HomeKey.DOWN, viewport = 8)
         m.handleKey(HomeKey.DOWN, viewport = 8)
-        assertEquals(2, m.state.detailCursor, "the cost line is a stop")
+        assertEquals(2, m.detailRow, "the cost line is a stop")
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 8))
         val list = m.state.run!!
         assertEquals(PaneKind.LIST, list.kind, "enter on it opens the list in the pane")
@@ -709,9 +817,9 @@ class HomeKeysTest {
         m.handleKey(HomeKey.ENTER, viewport = 8)
         assertNull(m.state.run, "enter closes it")
         m.handleKey(HomeKey.DOWN, viewport = 8)
-        assertEquals(4, m.state.detailCursor, "skips the gap to the next tool")
+        assertEquals(4, m.detailRow, "skips the gap to the next tool")
         m.handleKey(HomeKey.DOWN, viewport = 8)
-        assertEquals(6, m.state.detailCursor, "skips the gap to the source heading")
+        assertEquals(6, m.detailRow, "skips the gap to the source heading")
         m.handleKey(HomeKey.SELECT, viewport = 8)
         assertEquals(setOf("item:asdf-tools/ruby"), m.state.selection, "the heading ticks every item under it")
         m.handleKey(HomeKey.SELECT, viewport = 8)
@@ -721,9 +829,9 @@ class HomeKeysTest {
         m.handleKey(HomeKey.UP, viewport = 8) // back to flatpak
         m.handleKey(HomeKey.UP, viewport = 8) // dnf's cost line
         m.handleKey(HomeKey.CLOSE, viewport = 8)
-        assertTrue(m.state.expanded, "the section stays open")
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open, "the section stays open")
         assertEquals(setOf("tool:dnf"), m.state.collapsed)
-        assertEquals(0, m.state.detailCursor, "and the cursor lands on the folded heading")
+        assertEquals(0, m.detailRow, "and the cursor lands on the folded heading")
         assertEquals(
             listOf("Tool", "Tool", "Gap", "Source", "Item"),
             remoteLines(answered, m.state.collapsed).map { it::class.simpleName },
@@ -740,14 +848,12 @@ class HomeKeysTest {
         m.handleKey(HomeKey.DOWN, viewport = 8) // flatpak
         m.handleKey(HomeKey.DOWN, viewport = 8) // asdf-tools heading (over the gap)
         m.handleKey(HomeKey.CLOSE, viewport = 8)
-        val folded = remoteLines(answered, m.state.collapsed)
-        assertTrue(folded[m.state.detailCursor] is RemoteLine.Source, "the cursor sits on the folded heading, not the vanished gap")
+        assertTrue(m.remoteRow is RemoteLine.Source, "the cursor sits on the folded heading, not the vanished gap")
         m.handleKey(HomeKey.OPEN, viewport = 8)
-        val unfolded = remoteLines(answered, m.state.collapsed)
-        assertTrue(unfolded[m.state.detailCursor] is RemoteLine.Source, "and follows it back down when the gap returns")
+        assertTrue(m.remoteRow is RemoteLine.Source, "and follows it back down when the gap returns")
         m.handleKey(HomeKey.CLOSE, viewport = 8) // folds it again
         m.handleKey(HomeKey.CLOSE, viewport = 8)
-        assertEquals(false, m.state.expanded, "h on a folded heading closes the section")
+        assertTrue(m.state.open.isEmpty(), "h on a folded heading closes the section")
     }
 
     @Test
@@ -761,11 +867,12 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                expanded = true,
+                open = setOf(HomeAction.REVIEW_OUTDATED),
                 remote = RemoteStatus.Answered(updates = rows, failedSources = 0, sources = mapOf("asdf-plugins" to true)),
             ),
         )
         assertEquals("https://github.com/x/y/compare/a...b", remoteLines(m.state.remote as RemoteStatus.Answered)[1].link)
+        m.intoDetail()
         m.handleKey(HomeKey.DOWN, viewport = 5)
         m.handleKey(HomeKey.DOWN, viewport = 5) // nodejs: no link
         m.handleKey(HomeKey.OPEN_LINK, viewport = 5)
@@ -785,7 +892,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                expanded = true,
+                open = setOf(HomeAction.REVIEW_OUTDATED),
                 remote = RemoteStatus.Answered(
                     updates = rows,
                     failedSources = 0,
@@ -793,6 +900,7 @@ class HomeKeysTest {
                 ),
             ),
         )
+        m.intoDetail()
         m.handleKey(HomeKey.DOWN, viewport = 5) // from the source heading to its first item
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("item:asdf-plugins/golang"), m.state.selection, "one row, not the source")
@@ -816,7 +924,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                expanded = true,
+                open = setOf(HomeAction.REVIEW_OUTDATED),
                 remote = RemoteStatus.Answered(
                     updates = rows,
                     failedSources = 0,
@@ -824,6 +932,7 @@ class HomeKeysTest {
                 ),
             ),
         )
+        m.intoDetail()
         m.handleKey(HomeKey.DOWN, viewport = 5) // past the first source heading
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertEquals(setOf("item:asdf-tools/python"), m.state.selection)
@@ -842,10 +951,11 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                expanded = true,
+                open = setOf(HomeAction.REVIEW_OUTDATED),
                 remote = RemoteStatus.Answered(listOf(update("oracle", "a", "b")), failedSources = 0),
             ),
         )
+        m.intoDetail()
         m.handleKey(HomeKey.DOWN, viewport = 5) // past the source heading
         m.handleKey(HomeKey.SELECT, viewport = 5)
         assertTrue(m.state.selection.isEmpty())
@@ -879,7 +989,7 @@ class HomeKeysTest {
         m.handleKey(HomeKey.ENTER)
         assertTrue(m.state.message!!.contains("press l"))
         m.handleKey(HomeKey.OPEN)
-        assertTrue(m.state.expanded)
+        assertEquals(setOf(HomeAction.RUN_SCRIPTS), m.state.open)
 
         // space on a done script ticks it: that is the force.
         m.handleKey(HomeKey.DOWN, viewport = 5)
@@ -910,7 +1020,10 @@ class HomeKeysTest {
     fun enterWithNothingTickedSaysSo() {
         val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
         val m = model(sections)
-        m.setStateForTest(HomeState(sections = sections, expanded = true, scripts = listOf(ScriptRow("pull", "sh pull"))))
+        m.setStateForTest(
+            HomeState(sections = sections, open = setOf(HomeAction.RUN_SCRIPTS), scripts = listOf(ScriptRow("pull", "sh pull"))),
+        )
+        // From the subject row of an open picker: enter acts on the subject.
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
         assertNull(m.state.run)
         assertTrue(m.state.message!!.contains("nothing ticked"))
@@ -933,19 +1046,29 @@ class HomeKeysTest {
     }
 
     @Test
-    fun aDetailThatEmptiedClosesItselfOnTheNextKey() {
-        // Every missing program got installed while the picker was open:
-        // the arrows must move the section cursor again, not a table of
-        // nothing.
+    fun aDetailThatEmptiedIsRememberedWithoutSwallowingTheArrows() {
+        // Every missing program got installed while the picker was open: it
+        // has no rows to draw, so the arrows walk the subjects again — and
+        // the picker is still open for when a program goes missing again.
         val sections = listOf(
-            HomeSection("programs", "", "", HomeAction.NONE),
+            HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
             HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS),
         )
         val m = model(sections)
-        m.setStateForTest(HomeState(sections = sections, expanded = true, missing = emptyList()))
+        m.setStateForTest(
+            HomeState(sections = sections, open = setOf(HomeAction.INSTALL_MISSING), missing = emptyList()),
+        )
         m.handleKey(HomeKey.DOWN, viewport = 5)
-        assertEquals(false, m.state.expanded)
         assertEquals(1, m.state.cursor)
+        assertEquals(setOf(HomeAction.INSTALL_MISSING), m.state.open)
+
+        val rows = listOf(ProgramRow("kitty", "dnf", "sudo dnf install -y kitty"))
+        m.setStateForTest(m.state.copy(missing = rows))
+        assertEquals(
+            listOf("Subject", "Detail", "Subject"),
+            homeLines(m.state).map { it::class.simpleName },
+            "the row came back under the subject it belongs to",
+        )
     }
 
     @Test

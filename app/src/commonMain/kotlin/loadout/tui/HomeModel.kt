@@ -170,13 +170,18 @@ data class HomeSection(
     val neutral: Boolean = false,
     /** This subject is being (re)checked right now — the row spins. */
     val busy: Boolean = false,
-    val offenders: List<String> = emptyList(),
 )
 
 data class HomeState(
     val machine: String = "",
     val system: String = "",
     val sections: List<HomeSection> = emptyList(),
+    /**
+     * The focused body line — an index into [homeLines], which counts
+     * subject rows and the lines of every open detail alike. One cursor for
+     * the whole screen: moving up off a table's first row lands on its
+     * subject row, and then on the subject above it.
+     */
     val cursor: Int = 0,
     val loading: Boolean = false,
     /** The verdicts are the last `status`'s, not this moment's. */
@@ -184,12 +189,19 @@ data class HomeState(
     val remote: RemoteStatus? = null,
     /** The fleet comparison, kept so the fleet row can open it in place. */
     val fleet: loadout.core.diff.DiffReport? = null,
-    /** The focused section's detail is open in place (the remote table). */
-    val expanded: Boolean = false,
-    /** First visible line of the open detail. */
+    /**
+     * Every subject whose detail is open, by action — several at once. Only
+     * an explicit h/esc closes one: walking away from a table, or opening
+     * another, leaves it exactly as it was.
+     */
+    val open: Set<HomeAction> = emptySet(),
+    /** First visible body line: the whole screen scrolls, not each table. */
     val scroll: Int = 0,
-    /** Focused line inside the open detail. */
-    val detailCursor: Int = 0,
+    /**
+     * The detail line each subject was last focused on, so reopening its
+     * table puts you back where you left instead of at its first row.
+     */
+    val lastRow: Map<HomeAction, Int> = emptyMap(),
     /** Rows ticked for upgrading, by program name. */
     val selection: Set<String> = emptySet(),
     /** Remote-table groups folded shut (`tool:<probe>` / `source:<name>`): h/l inside the table. */
@@ -407,76 +419,113 @@ class HomeModel(private val app: AppContext) {
             HomeKey.CONVERGE -> return leaveFor(HomeAction.SETUP)
             else -> {}
         }
-        // A detail that emptied under you (every program installed, every
-        // update taken, a re-check that found nothing) closes itself: an
-        // open table with no rows would swallow the arrows and feel dead.
-        if (s.expanded && detailLines(s, s.sections.getOrNull(s.cursor)) == 0) {
-            state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
-            return handleKey(key, viewport)
-        }
-        // With a detail open the arrows belong to it, not to the section list.
-        if (s.expanded) {
-            val answered = s.remote as? RemoteStatus.Answered
-            val onRemote = s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED
-            val onScripts = s.sections.getOrNull(s.cursor)?.action == HomeAction.RUN_SCRIPTS
-            val onPrograms = s.sections.getOrNull(s.cursor)?.action == HomeAction.INSTALL_MISSING
-            when (key) {
-                HomeKey.UP -> moveDetail(-1, viewport)
-                HomeKey.DOWN -> moveDetail(1, viewport)
-                HomeKey.PAGE_UP -> moveDetail(-viewport, viewport)
-                HomeKey.PAGE_DOWN -> moveDetail(viewport, viewport)
-                // Inside the remote table h folds the group under the cursor
-                // (landing on its heading); h on a heading already folded —
-                // or one with nothing to fold, like a clean tool — closes the
-                // section, like h anywhere in the other pickers.
-                HomeKey.CLOSE -> if (onRemote && answered != null) {
-                    val lines = remoteLines(answered, s.collapsed)
-                    val line = lines.getOrNull(s.detailCursor)
-                    val group = line?.group
-                    // Asked of the GROUP, not the line: h on a row means fold
-                    // the group it sits in, and that row is itself the proof.
-                    val hasRows = lines.any { it.group == group && !it.heading }
-                    if (group != null && group !in s.collapsed && hasRows) {
-                        // Find the heading in the FOLDED layout: folding can
-                        // remove the gap above it, and everything shifts up.
-                        val folded = s.collapsed + group
-                        val head = remoteLines(answered, folded).indexOfFirst { it.heading && it.group == group }.coerceAtLeast(0)
-                        state = s.copy(collapsed = folded, detailCursor = head, scroll = s.scroll.coerceAtMost(head))
-                    } else {
-                        state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
-                    }
-                } else {
-                    state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
-                }
-                HomeKey.ESC ->
-                    state = s.copy(expanded = false, scroll = 0, detailCursor = 0)
-                // l unfolds a folded heading; anywhere else it's already open.
-                HomeKey.OPEN -> if (onRemote && answered != null) {
-                    val group = remoteLines(answered, s.collapsed).getOrNull(s.detailCursor)?.group
+        // ONE cursor for the whole screen: subject rows and the lines of
+        // every open detail are the same list, so no table can capture the
+        // arrows — k off a table's first row lands on its subject row, and
+        // then on the subject above it, with the table still open behind.
+        val lines = homeLines(s)
+        val at = snapCursor(lines, s.cursor)
+        // Nothing on screen to focus yet: only the keys above answer.
+        if (at < 0) return false
+        val focus = lines[at]
+        val index = focus.section
+        val section = s.sections[index]
+        val open = section.action in s.open
+        // Which row of this subject's own detail the cursor is on; -1 means
+        // the subject row itself.
+        val row = (focus as? HomeLine.Detail)?.index ?: -1
+        val inDetail = row >= 0
+        val answered = s.remote as? RemoteStatus.Answered
+        val onRemote = section.action == HomeAction.REVIEW_OUTDATED
+        val onScripts = section.action == HomeAction.RUN_SCRIPTS
+        val onPrograms = section.action == HomeAction.INSTALL_MISSING
+        when (key) {
+            HomeKey.UP -> moveCursor(-1, viewport)
+            HomeKey.DOWN -> moveCursor(1, viewport)
+            HomeKey.PAGE_UP -> moveCursor(-viewport, viewport)
+            HomeKey.PAGE_DOWN -> moveCursor(viewport, viewport)
+            // `l` only ever OPENS — it never dispatches, so the vim keys
+            // can't start an install by accident. Inside the remote table it
+            // unfolds a folded group.
+            HomeKey.OPEN -> when {
+                inDetail && onRemote && answered != null -> {
+                    val group = remoteLines(answered, s.collapsed).getOrNull(row)?.group
                     if (group != null && group in s.collapsed) {
                         // Unfolding can put a gap back above the heading:
-                        // follow it to its new index.
-                        val unfolded = s.collapsed - group
-                        val head = remoteLines(answered, unfolded).indexOfFirst { it.heading && it.group == group }.coerceAtLeast(0)
-                        state = s.copy(collapsed = unfolded, detailCursor = head)
+                        // follow it to its new place.
+                        val next = s.copy(collapsed = s.collapsed - group)
+                        state = withCursor(next, headingLine(next, index, group), viewport)
                     }
+                }
+                // Already open, from its row or from inside it: l has
+                // nothing left to do, and h is what closes it.
+                inDetail || open -> {}
+                section.busy -> state = s.copy(message = "still asking — the rows fill in as answers land")
+                detailLines(s, section) > 0 -> {
+                    // The table is what you opened, so the cursor goes into
+                    // it — onto the row you last left it on, since closing a
+                    // table to read another row shouldn't cost your place in
+                    // it — and walks back out on k.
+                    val next = s.copy(open = s.open + section.action)
+                    val stop = detailStop(next, index, s.lastRow[section.action] ?: 0)
+                    state = withCursor(next, if (stop < 0) at else stop, viewport)
+                }
+                else -> state = s.copy(message = "nothing to open there")
+            }
+            // h inside the remote table folds the group under the cursor,
+            // landing on its heading; a group already folded — or one with
+            // nothing to fold, like a clean tool — closes the detail instead,
+            // like h anywhere in the other pickers. esc never folds.
+            HomeKey.CLOSE, HomeKey.ESC -> {
+                val fold = if (key == HomeKey.CLOSE && inDetail && onRemote && answered != null) {
+                    val group = remoteLines(answered, s.collapsed).getOrNull(row)?.group
+                    // Asked of the GROUP, not the line: h on a row means fold
+                    // the group it sits in, and that row is itself the proof.
+                    group?.takeIf {
+                        it !in s.collapsed && remoteLines(answered, s.collapsed).any { l -> l.group == it && !l.heading }
+                    }
+                } else {
+                    null
+                }
+                when {
+                    fold != null -> {
+                        val next = s.copy(collapsed = s.collapsed + fold)
+                        state = withCursor(next, headingLine(next, index, fold), viewport)
+                    }
+                    // Only the detail the cursor is in closes; every other
+                    // open one stays exactly as it was, and the cursor comes
+                    // out onto the subject row it was under.
+                    open -> {
+                        val next = s.copy(open = s.open - section.action)
+                        val subject = homeLines(next).indexOfFirst { it is HomeLine.Subject && it.section == index }
+                        state = withCursor(next, subject, viewport)
+                    }
+                    // esc leaves the screen, but never while a list is open
+                    // somewhere else on it: with details left open behind
+                    // you, one esc too many would quit instead of closing.
+                    key == HomeKey.ESC && s.open.isEmpty() -> state = s.copy(exit = true)
+                    key == HomeKey.ESC -> state = s.copy(message = "esc closes the list you're in — q quits")
+                    else -> {}
+                }
+            }
+            // space ticks the row under the cursor, whichever subject it
+            // belongs to — one unit at a time.
+            HomeKey.SELECT -> when {
+                !inDetail -> state = s.copy(message = if (open) "space ticks a row in the list below" else "press l to open it")
+                onPrograms -> s.missing.getOrNull(row)?.let { program ->
+                    state = s.copy(chosen = if (program.name in s.chosen) s.chosen - program.name else s.chosen + program.name)
                 }
                 // The scripts picker ticks one script at a time — each is its
                 // own unit, and ticking a done one is how you force it.
-                HomeKey.SELECT -> if (onPrograms) {
-                    s.missing.getOrNull(s.detailCursor)?.let { row ->
-                        state = s.copy(chosen = if (row.name in s.chosen) s.chosen - row.name else s.chosen + row.name)
-                    }
-                } else if (onScripts) {
-                    s.scripts.getOrNull(s.detailCursor)?.let { row ->
-                        state = s.copy(picked = if (row.name in s.picked) s.picked - row.name else s.picked + row.name)
-                    }
-                } else if (onRemote && answered != null) {
+                onScripts -> s.scripts.getOrNull(row)?.let { script ->
+                    state = s.copy(picked = if (script.name in s.picked) s.picked - script.name else s.picked + script.name)
+                }
+                onRemote && answered != null -> {
                     // A tool line, or a program under it, ticks the TOOL:
                     // loadout only does whole upgrades, and the tool line
                     // says what that means. A source row ticks itself.
-                    val line = remoteLines(answered, s.collapsed).getOrNull(s.detailCursor)
-                    val key = line?.key
+                    val line = remoteLines(answered, s.collapsed).getOrNull(row)
+                    val tick = line?.key
                     state = when {
                         line == null -> s
                         // A source heading ticks every item under it — or
@@ -484,104 +533,93 @@ class HomeModel(private val app: AppContext) {
                         line is RemoteLine.Source && line.itemKeys.isNotEmpty() ->
                             if (s.selection.containsAll(line.itemKeys)) s.copy(selection = s.selection - line.itemKeys.toSet(), message = null)
                             else s.copy(selection = s.selection + line.itemKeys, message = null)
-                        key == null -> s.copy(message = line.refusal ?: "nothing to tick there")
-                        key in s.selection -> s.copy(selection = s.selection - key, message = null)
-                        else -> s.copy(selection = s.selection + key, message = null)
+                        tick == null -> s.copy(message = line.refusal ?: "nothing to tick there")
+                        tick in s.selection -> s.copy(selection = s.selection - tick, message = null)
+                        else -> s.copy(selection = s.selection + tick, message = null)
                     }
                 }
-                // K opens the page the row's source pointed at — the GitHub
-                // compare of the two shas, like Lazy's K — in the browser.
-                HomeKey.OPEN_LINK -> if (onRemote && answered != null) {
-                    val link = remoteLines(answered, s.collapsed).getOrNull(s.detailCursor)?.link
-                    if (link == null) {
-                        state = s.copy(message = "no page to open for this row")
-                    } else {
-                        state = s.copy(message = "opening $link")
-                        openInBrowser(link)
-                    }
+                else -> {}
+            }
+            // K opens the page the row's source pointed at — the GitHub
+            // compare of the two shas, like Lazy's K — in the browser.
+            HomeKey.OPEN_LINK -> {
+                val link = if (inDetail && onRemote && answered != null) {
+                    remoteLines(answered, s.collapsed).getOrNull(row)?.link
+                } else {
+                    null
                 }
-                // a ticks everything, u unticks everything — two keys, so
-                // neither has to guess what you meant from what's ticked.
-                HomeKey.SELECT_ALL, HomeKey.SELECT_NONE -> {
-                    val all = key == HomeKey.SELECT_ALL
-                    if (onPrograms) {
-                        state = s.copy(chosen = if (all) s.missing.map { it.name }.toSet() else emptySet())
-                    } else if (onScripts) {
-                        state = s.copy(picked = if (all) s.scripts.map { it.name }.toSet() else emptySet())
-                    } else if (onRemote && answered != null) {
+                if (link == null) {
+                    state = s.copy(message = "no page to open for this row")
+                } else {
+                    state = s.copy(message = "opening $link")
+                    openInBrowser(link)
+                }
+            }
+            // a ticks everything, u unticks everything — two keys, so neither
+            // has to guess what you meant from what's ticked. They belong to
+            // the subject the cursor is in, from its row or from inside it.
+            HomeKey.SELECT_ALL, HomeKey.SELECT_NONE -> {
+                val all = key == HomeKey.SELECT_ALL
+                when {
+                    !open -> state = s.copy(message = if (detailLines(s, section) > 0) "press l to open it" else "nothing to tick there")
+                    onPrograms -> state = s.copy(chosen = if (all) s.missing.map { it.name }.toSet() else emptySet())
+                    onScripts -> state = s.copy(picked = if (all) s.scripts.map { it.name }.toSet() else emptySet())
+                    onRemote && answered != null -> {
                         val every = remoteLines(answered, s.collapsed).mapNotNull { it.key }.toSet()
                         state = s.copy(selection = if (all) every else emptySet())
                     }
-                }
-                // enter IS the action here — opening and closing belong to
-                // l/h, so enter is free to mean "do it".
-                HomeKey.ENTER -> if (onPrograms) {
-                    startInstalls(s.chosen)
-                } else if (onScripts) {
-                    startScripts(s.picked)
-                } else if (onRemote && answered != null && remoteLines(answered, s.collapsed).getOrNull(s.detailCursor) is RemoteLine.Others) {
-                    // The sweep's cost, in full: every package the tool would
-                    // move that loadout doesn't declare, one per line.
-                    val others = remoteLines(answered, s.collapsed)[s.detailCursor] as RemoteLine.Others
-                    state = s.copy(
-                        run = PaneRun(
-                            steps = emptyList(),
-                            kind = PaneKind.LIST,
-                            title = "${others.tool}: ${others.names.size} packages not in your loadout",
-                            log = others.names,
-                            done = true,
-                            summary = "these upgrade too when you upgrade ${others.tool} — enter closes",
-                        ),
-                    )
-                } else if (onRemote && answered != null && s.selection.isNotEmpty()) {
-                    startUpgrade(answered, s.selection)
-                }
-                HomeKey.THEME -> state = s.copy(dark = !s.dark)
-                HomeKey.REFRESH -> refresh()
-                HomeKey.QUIT -> state = s.copy(exit = true)
-                else -> {}
-            }
-            return false
-        }
-        when (key) {
-            HomeKey.UP -> state = s.copy(cursor = (s.cursor - 1).coerceAtLeast(0))
-            HomeKey.DOWN ->
-                state = s.copy(cursor = (s.cursor + 1).coerceAtMost(s.sections.lastIndex.coerceAtLeast(0)))
-            // `l` only ever opens a detail; enter also acts when there is none.
-            HomeKey.OPEN -> {
-                val section = s.sections.getOrNull(s.cursor)
-                state = when {
-                    section?.busy == true -> s.copy(message = "still asking — the rows fill in as answers land")
-                    detailLines(s, section) > 0 -> s.copy(expanded = true, scroll = 0, detailCursor = firstStop(s, section))
-                    else -> s.copy(message = "nothing to open there")
+                    else -> {}
                 }
             }
-            HomeKey.CLOSE -> {} // nothing open
-            HomeKey.ENTER -> {
-                val section = s.sections.getOrNull(s.cursor) ?: return false
-                when {
-                    // Never act on an answer that hasn't arrived: enter used
-                    // to fire the outdated command over the one still running.
-                    section.busy ->
-                        state = s.copy(message = "still asking — the rows fill in as answers land")
-                    // Rows whose detail is already here are LOOKED at, and
-                    // looking is l's job.
-                    detailLines(s, section) > 0 ->
-                        state = s.copy(message = "press l to open it")
-                    // A remote row that couldn't be asked, a fleet in sync:
-                    // there is nothing to open, and leaving to print the same
-                    // answer from a command is what this screen replaced.
-                    section.action == HomeAction.REVIEW_OUTDATED ->
-                        state = s.copy(message = if (s.remote is RemoteStatus.Unavailable) "the remotes couldn't be asked — r tries again" else "everything up to date")
-                    section.action == HomeAction.SHOW_DIFF ->
-                        state = s.copy(message = "the fleet is in sync — nothing to compare")
-                    else -> state = s.copy(message = "nothing to do there")
+            // enter ACTS on the subject the cursor is in — opening and
+            // closing belong to l/h, so it is free to mean "do it". From the
+            // subject row or from inside its list: the ticks are the same.
+            HomeKey.ENTER -> when {
+                // Never act on an answer that hasn't arrived: enter used to
+                // fire the outdated command over the one still running.
+                section.busy -> state = s.copy(message = "still asking — the rows fill in as answers land")
+                open && onPrograms -> startInstalls(s.chosen)
+                open && onScripts -> startScripts(s.picked)
+                open && onRemote && answered != null -> {
+                    val line = if (inDetail) remoteLines(answered, s.collapsed).getOrNull(row) else null
+                    when {
+                        // The sweep's cost, in full: every package the tool
+                        // would move that loadout doesn't declare, one per line.
+                        line is RemoteLine.Others -> state = s.copy(
+                            run = PaneRun(
+                                steps = emptyList(),
+                                kind = PaneKind.LIST,
+                                title = "${line.tool}: ${line.names.size} packages not in your loadout",
+                                log = line.names,
+                                done = true,
+                                summary = "these upgrade too when you upgrade ${line.tool} — enter closes",
+                            ),
+                        )
+                        s.selection.isNotEmpty() -> startUpgrade(answered, s.selection)
+                        else -> state = s.copy(message = "nothing selected — space selects one, a selects all")
+                    }
                 }
+                open && section.action == HomeAction.SHOW_DIFF ->
+                    state = s.copy(message = "this table is the comparison — there is nothing to run")
+                // A closed row whose detail is already here is LOOKED at, and
+                // looking is l's job.
+                detailLines(s, section) > 0 -> state = s.copy(message = "press l to open it")
+                // A remote row that couldn't be asked, a fleet in sync: there
+                // is nothing to open, and leaving to print the same answer
+                // from a command is what this screen replaced.
+                onRemote -> state = s.copy(
+                    message = if (s.remote is RemoteStatus.Unavailable) "the remotes couldn't be asked — r tries again" else "everything up to date",
+                )
+                section.action == HomeAction.SHOW_DIFF ->
+                    state = s.copy(message = "the fleet is in sync — nothing to compare")
+                else -> state = s.copy(message = "nothing to do there")
             }
             HomeKey.REFRESH -> refresh()
             HomeKey.THEME -> state = s.copy(dark = !s.dark)
-            HomeKey.QUIT, HomeKey.ESC -> state = s.copy(exit = true)
-            else -> {}
+            HomeKey.QUIT -> state = s.copy(exit = true)
+            // No else: the machine-wide verbs returned above, and a new key
+            // should have to say what it does on a line.
+            HomeKey.SYNC, HomeKey.UPGRADE, HomeKey.CONVERGE -> {}
         }
         return false
     }
@@ -919,36 +957,77 @@ class HomeModel(private val app: AppContext) {
         return true
     }
 
-    /** Move the focused detail line, keeping it inside the visible window. */
-    private fun moveDetail(delta: Int, viewport: Int) {
+    /**
+     * Move the cursor by [delta] STOPS through the whole body — subject rows
+     * and open detail lines alike, skipping gaps and column headings. It
+     * stops at the first and last stop on the screen and nowhere in
+     * between: an open table is walked through, not locked into.
+     */
+    private fun moveCursor(delta: Int, viewport: Int) {
         val s = state
-        val total = detailLines(s, s.sections.getOrNull(s.cursor))
-        if (total == 0) return
-        var cursor = (s.detailCursor + delta).coerceIn(0, total - 1)
-        // Headings and notes in the remote table aren't stops: keep going
-        // in the same direction, or stay put at the edge.
-        val lines = (s.remote as? RemoteStatus.Answered)
-            ?.takeIf { s.sections.getOrNull(s.cursor)?.action == HomeAction.REVIEW_OUTDATED }
-            ?.let { remoteLines(it, s.collapsed) }
-        if (lines != null) {
-            val step = if (delta < 0) -1 else 1
-            while (cursor in lines.indices && !lines[cursor].focusable) cursor += step
-            if (cursor !in lines.indices) return
-            // Back at the first stop: show the heading above it too.
-            if (lines.take(cursor).none { it.focusable }) {
-                state = s.copy(detailCursor = cursor, scroll = 0)
-                return
+        val lines = homeLines(s)
+        val from = snapCursor(lines, s.cursor)
+        if (from < 0) return
+        val step = if (delta < 0) -1 else 1
+        var target = from
+        var left = if (delta < 0) -delta else delta
+        var i = from + step
+        while (i in lines.indices && left > 0) {
+            if (lines[i].focusable) {
+                target = i
+                left--
             }
+            i += step
         }
-        val scroll = s.scroll.coerceIn((cursor - viewport + 1).coerceAtLeast(0), cursor)
-        state = s.copy(detailCursor = cursor, scroll = scroll.coerceAtMost((total - viewport).coerceAtLeast(0)))
+        state = withCursor(s, target, viewport)
     }
 
-    private fun scrollBy(delta: Int, viewport: Int) {
-        val s = state
-        val total = detailLines(s, s.sections.getOrNull(s.cursor))
-        val max = (total - viewport).coerceAtLeast(0)
-        state = s.copy(scroll = (s.scroll + delta).coerceIn(0, max))
+    /**
+     * Put the cursor on [target], scroll the body just enough to show it,
+     * and — when it lands inside a table — remember that line as the one
+     * that subject is on, for the next time it opens.
+     */
+    private fun withCursor(s: HomeState, target: Int, viewport: Int): HomeState {
+        val lines = homeLines(s)
+        val at = snapCursor(lines, target)
+        if (at < 0) return s.copy(cursor = 0, scroll = 0)
+        val max = (lines.size - viewport).coerceAtLeast(0)
+        val scroll = s.scroll.coerceIn((at - viewport + 1).coerceAtLeast(0), at).coerceAtMost(max)
+        val line = lines[at]
+        val lastRow = if (line is HomeLine.Detail) {
+            s.sections.getOrNull(line.section)
+                ?.let { s.lastRow + (it.action to line.index) }
+                ?: s.lastRow
+        } else {
+            s.lastRow
+        }
+        return s.copy(cursor = at, scroll = scroll, lastRow = lastRow)
+    }
+
+    /**
+     * The body line [section]'s cursor belongs on when its detail opens:
+     * [row] — where it was left — or the first stop after it, or the last
+     * one. The table can lose rows while it is closed (a re-check finds a
+     * program installed, an upgrade clears a source), so the row you left
+     * may not be there when you come back.
+     */
+    private fun detailStop(s: HomeState, section: Int, row: Int): Int {
+        val stops = homeLines(s).withIndex()
+            .filter { (_, line) -> line is HomeLine.Detail && line.section == section && line.focusable }
+        val at = stops.firstOrNull { (_, line) -> (line as HomeLine.Detail).index >= row } ?: stops.lastOrNull()
+        return at?.index ?: -1
+    }
+
+    /**
+     * Where [group]'s heading sits in the body of [s] — the state AFTER the
+     * fold or unfold. Folding can remove the gap above a heading and
+     * unfolding can put it back, so everything below shifts and a cursor
+     * left at the old index lands on the gap, highlighting nothing.
+     */
+    private fun headingLine(s: HomeState, section: Int, group: String): Int {
+        val answered = s.remote as? RemoteStatus.Answered ?: return 0
+        val heading = remoteLines(answered, s.collapsed).indexOfFirst { it.heading && it.group == group }
+        return homeLines(s).indexOfFirst { it is HomeLine.Detail && it.section == section && it.index == heading }
     }
 }
 
@@ -1177,21 +1256,88 @@ internal fun selectionKey(answered: RemoteStatus.Answered, row: UpdateRow): Stri
     return "tool:$tool"
 }
 
-/** The first line the cursor may rest on when a detail opens (a heading isn't one). */
-internal fun firstStop(state: HomeState, section: HomeSection?): Int =
-    if (section?.action == HomeAction.REVIEW_OUTDATED) {
-        (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it, state.collapsed).indexOfFirst { l -> l.focusable } }
-            ?.coerceAtLeast(0) ?: 0
-    } else {
-        0
+/**
+ * One line of the body, as both the cursor and the renderer see it. There is
+ * ONE cursor for the whole screen and it walks this list, so a table can
+ * never capture it: k off a table's first row lands on the subject row above
+ * it and keeps going, with the table still open behind.
+ */
+sealed interface HomeLine {
+    /** The subject this line belongs to — an index into [HomeState.sections]. */
+    val section: Int
+    /** A cursor stop. The remote table's gaps and a table's own column heading are not. */
+    val focusable: Boolean
+
+    data class Subject(override val section: Int) : HomeLine {
+        override val focusable get() = true
     }
+
+    /** Row [index] of that subject's open detail: a remote line, a script, a program, a drifted row. */
+    data class Detail(
+        override val section: Int,
+        val index: Int,
+        override val focusable: Boolean = true,
+    ) : HomeLine
+
+    /** A table's own column heading (the fleet's machine names) — part of the table, never a stop. */
+    data class Header(override val section: Int) : HomeLine {
+        override val focusable get() = false
+    }
+}
+
+/** Pure: the body, subject rows and every open detail, in the order it's drawn. */
+internal fun homeLines(state: HomeState): List<HomeLine> {
+    val lines = mutableListOf<HomeLine>()
+    for ((index, section) in state.sections.withIndex()) {
+        lines += HomeLine.Subject(index)
+        if (section.action !in state.open) continue
+        when (section.action) {
+            HomeAction.REVIEW_OUTDATED -> {
+                val answered = state.remote as? RemoteStatus.Answered
+                answered?.let { remote ->
+                    remoteLines(remote, state.collapsed).forEachIndexed { row, line ->
+                        lines += HomeLine.Detail(index, row, focusable = line.focusable)
+                    }
+                }
+            }
+            HomeAction.RUN_SCRIPTS -> state.scripts.indices.forEach { lines += HomeLine.Detail(index, it) }
+            HomeAction.INSTALL_MISSING -> state.missing.indices.forEach { lines += HomeLine.Detail(index, it) }
+            HomeAction.SHOW_DIFF -> driftedRows(state).indices.let { rows ->
+                if (rows.isEmpty()) return@let
+                lines += HomeLine.Header(index)
+                rows.forEach { lines += HomeLine.Detail(index, it) }
+            }
+            else -> {}
+        }
+    }
+    return lines
+}
+
+/**
+ * The line the cursor really sits on: the nearest stop at or above [cursor].
+ * The body reshapes under it constantly — a refresh empties the programs
+ * picker, a source's rows are upgraded away — and a cursor left on a line
+ * that no longer exists would highlight nothing. Above first: an emptied
+ * table drops you on its own subject row, not on the next one down.
+ */
+internal fun snapCursor(lines: List<HomeLine>, cursor: Int): Int {
+    if (lines.isEmpty()) return -1
+    val at = cursor.coerceIn(0, lines.lastIndex)
+    for (i in at downTo 0) if (lines[i].focusable) return i
+    for (i in at..lines.lastIndex) if (lines[i].focusable) return i
+    return -1
+}
+
+/** The drifting half of the fleet comparison — the only part the table shows. */
+internal fun driftedRows(state: HomeState) =
+    state.fleet?.rows?.filter { it.drift || it.incomplete }.orEmpty()
 
 /** How many detail lines this section can open in place (0 = none). */
 internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (section?.action) {
     HomeAction.INSTALL_MISSING -> state.missing.size
     HomeAction.RUN_SCRIPTS -> state.scripts.size
     HomeAction.REVIEW_OUTDATED -> (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it, state.collapsed).size } ?: 0
-    HomeAction.SHOW_DIFF -> state.fleet?.rows?.count { it.drift || it.incomplete } ?: 0
+    HomeAction.SHOW_DIFF -> driftedRows(state).size
     else -> 0
 }
 
@@ -1316,8 +1462,6 @@ internal fun sectionsOf(
             },
             neutral = checking,
             busy = checking,
-            // No preview: this row's detail is the picker, and it opens on l.
-            offenders = emptyList(),
         ),
         HomeSection(
             subject = "scripts",
@@ -1331,8 +1475,6 @@ internal fun sectionsOf(
             severity = if (unfinished.isEmpty()) null else false,
             neutral = checking,
             busy = checking,
-            // No preview: this row's detail is the picker, and it opens on l.
-            offenders = emptyList(),
         ),
         HomeSection(
             subject = "remote",
@@ -1352,9 +1494,6 @@ internal fun sectionsOf(
             },
             neutral = remote == null || remote is RemoteStatus.Asking || remote is RemoteStatus.Unavailable,
             busy = remote is RemoteStatus.Asking,
-            // No inline preview here: this row's detail is the full table,
-            // and it opens on enter — moving the cursor shouldn't spill it.
-            offenders = emptyList(),
         ),
         HomeSection(
             subject = "fleet",
@@ -1366,9 +1505,6 @@ internal fun sectionsOf(
             verb = if (fleet == null) "nothing to compare" else "compare the fleet",
             action = if (fleet == null) HomeAction.NONE else HomeAction.SHOW_DIFF,
             severity = if (drifted == 0) null else false,
-            // Like the remote row: the detail opens on enter, it doesn't
-            // spill under the cursor.
-            offenders = emptyList(),
         ),
     )
 }
