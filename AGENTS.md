@@ -386,6 +386,22 @@ These came from explicit user decisions; don't "improve" them away:
   a no-reply terminal too (no emulator behind it), which is what makes
   `t/71-terminal.sh` the regression test: the query bytes show up
   unanswered in the capture and the command must still print its table.
+- **A terminal that won't answer gets TOLD: `LOADOUT_THEME=dark|light`.**
+  Silence from the query means the dark default, so the popup above renders
+  a light terminal in dark colours. That is not loadout's to detect around:
+  tmux passthrough (`ESC P tmux ;` …, escapes doubled) was tried and does
+  not reach a popup's nested client either, so it was reverted rather than
+  kept as speculative code. `theme/forcedDark` is the explicit answer —
+  consulted BEFORE `terminalBackgroundLuma()`, so a told palette costs no
+  query — and the popup binding is where the platform knowledge belongs
+  (`popup -E 'LOADOUT_THEME=$(defaults read -g AppleInterfaceStyle
+  >/dev/null 2>&1 && echo dark || echo light) tmux new -A -s floating'`).
+  A value that is neither is a refusal, not a shrug, and it is checked in
+  **Main.kt**, not at the use site: the palette is chosen inside `object
+  Style`'s initializer, and Kotlin/Native wraps a throw from one of those
+  in `FileFailedToInitializeException` — not a `LoadoutException`, so it
+  escapes Main's catch as a stack trace (contract 9). Anything else that
+  must refuse from an object initializer validates in Main the same way.
 - **Unsettled rows are boxed**: `cli/Table.kt`'s `echoRows(List<TableRow>)` is
   the one renderer for `diff` and `status` tables — a row with a non-null
   `severity` (false = amber, true = red) is wrapped in a rounded box,

@@ -24,10 +24,8 @@ import loadout.core.engine.UpgradeEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.exec.RunningProcess
 import loadout.core.platform.blockingDispatcher
-import loadout.core.platform.envVar
 import loadout.core.platform.nowIso
-import loadout.core.platform.terminalBackgroundLuma
-import loadout.theme.detectDarkTerminal
+import loadout.theme.terminalIsDark
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -224,7 +222,7 @@ data class HomeState(
 class HomeModel(private val app: AppContext) {
     var state by mutableStateOf(
         // Before Mosaic owns the terminal (OSC 11 query).
-        HomeState(dark = detectDarkTerminal(terminalBackgroundLuma(), envVar("COLORFGBG"))),
+        HomeState(dark = terminalIsDark()),
     )
         private set
 

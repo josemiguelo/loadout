@@ -8,9 +8,12 @@ import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
+import loadout.theme.ThemeException
 import loadout.theme.detectDarkTerminal
+import loadout.theme.forcedDark
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -969,6 +972,22 @@ class ThemeDetectionTest {
         assertEquals(true, detectDarkTerminal(null, null))
         assertEquals(true, detectDarkTerminal(null, "garbage"))
         assertEquals(false, detectDarkTerminal(null, "12;default;15"))
+    }
+
+    @Test
+    fun loadoutThemeAnswersForTerminalsThatCannotBeAsked() {
+        assertEquals(true, forcedDark("dark"))
+        assertEquals(false, forcedDark("light"))
+        assertEquals(false, forcedDark(" LIGHT "))
+        assertNull(forcedDark(null))
+        assertNull(forcedDark(""))
+    }
+
+    @Test
+    fun anUnreadableLoadoutThemeIsRefusedNotIgnored() {
+        // Ignoring it would look exactly like the bug it was set to fix.
+        val e = assertFailsWith<ThemeException> { forcedDark("lite") }
+        assertTrue("lite" in e.message!!, e.message!!)
     }
 }
 

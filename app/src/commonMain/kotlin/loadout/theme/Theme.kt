@@ -1,5 +1,9 @@
 package loadout.theme
 
+import loadout.core.LoadoutException
+import loadout.core.platform.envVar
+import loadout.core.platform.terminalBackgroundLuma
+
 /**
  * The one source of truth for loadout's visual identity, shared by the
  * home screen (Mosaic colors) and the CLI (24-bit ANSI). Color is signal,
@@ -65,3 +69,25 @@ fun detectDarkTerminal(bgLuma: Double?, colorFgBg: String?): Boolean {
     val bg = colorFgBg?.substringAfterLast(';')?.toIntOrNull() ?: return true
     return bg != 7 && bg != 15
 }
+
+class ThemeException(message: String) : LoadoutException(message)
+
+/**
+ * The palette LOADOUT_THEME asks for, or null to detect one. Some terminals
+ * can't be asked: a tmux popup running its own tmux client answers no
+ * background query at all, so a light one gets painted dark. This is the
+ * explicit answer for those — and being explicit, it also spares the
+ * terminal the question. A value that is neither is a refusal, not a
+ * shrug: a typo that silently kept detecting would look exactly like the
+ * bug it was set to fix.
+ */
+fun forcedDark(loadoutTheme: String?): Boolean? = when (loadoutTheme?.trim()?.lowercase()) {
+    null, "" -> null
+    "dark" -> true
+    "light" -> false
+    else -> throw ThemeException("LOADOUT_THEME must be dark or light, not \"${loadoutTheme.trim()}\"")
+}
+
+/** The answer both surfaces use: what was asked for, else what was detected. */
+fun terminalIsDark(): Boolean =
+    forcedDark(envVar("LOADOUT_THEME")) ?: detectDarkTerminal(terminalBackgroundLuma(), envVar("COLORFGBG"))
