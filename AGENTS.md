@@ -447,7 +447,13 @@ These came from explicit user decisions; don't "improve" them away:
   is a SET of actions, so several details are open at once and only an
   explicit h/esc on the one under the cursor closes it — walking away or
   opening another leaves it exactly as it was (a subject row with its
-  table open below wears `▾`). A closed table also keeps YOUR PLACE in
+  table open below wears `▾`). `[`/`]` jump between HEADINGS —
+  `HomeLine.heading` (subject rows, and the remote table's tool/source
+  headings) — because a 40-row group is several pages of arrows to cross
+  and what you're steering by is the heading, not the row count. Not
+  `H`/`L`, though they were the first idea: vim reads those as the
+  screen's top and bottom, and a missed shift on `H` would `h` — closing
+  the very list you were moving around in. A closed table also keeps YOUR PLACE in
   it: `HomeState.lastRow` (written by `withCursor` whenever the cursor
   lands on a detail line) is the row each subject was last on, and `l`
   reopens there rather than at the top — `detailStop` resolves it against

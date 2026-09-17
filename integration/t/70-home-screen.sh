@@ -167,6 +167,17 @@ if has_pty; then
     [ -f crepo/pulled-tpack.txt ] || fail "the ticked row upgraded through its own source"
     [ -f crepo/the-tool-swept.txt ] && fail "a source's item must never run the tool's sweep" || true
     ok "a source's row upgrades through its source, not through a same-named program's tool"
+
+    # ] goes over the rows to the next group's heading: from the tool line
+    # straight to the source, skipping the package under it. Which line it
+    # landed on is a filesystem question again — ticking a source heading
+    # covers its item, ticking a tool line sweeps the tool.
+    rm -f crepo/pulled-tpack.txt crepo/the-tool-swept.txt
+    { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf ']'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; sleep 1; printf '\r'; sleep 7; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-jump.log --repo crepo --machine m1
+    [ -f crepo/pulled-tpack.txt ] || fail "] landed on the source heading, whose tick covers its item"
+    [ -f crepo/the-tool-swept.txt ] && fail "] skips the rows under a heading, it doesn't tick the tool" || true
+    ok "] jumps to the next group's heading, over the rows under it"
 fi
 
 # --- the programs row: tick missing programs, the pane asks for sudo ------

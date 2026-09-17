@@ -228,6 +228,13 @@ class HomeKeysTest {
             return (lines.getOrNull(snapCursor(lines, state.cursor)) as? HomeLine.Detail)?.index ?: -1
         }
 
+    /** The subject the cursor's line belongs to. */
+    private val HomeModel.focusedSection: Int
+        get() {
+            val lines = homeLines(state)
+            return lines[snapCursor(lines, state.cursor)].section
+        }
+
     /** The remote line the cursor is on, whatever the body around it looks like. */
     private val HomeModel.remoteRow: RemoteLine?
         get() = (state.remote as? RemoteStatus.Answered)
@@ -471,6 +478,57 @@ class HomeKeysTest {
             homeLines(m.state).take(4).map { it::class.simpleName },
             "the scripts picker and the remote table are both in the body",
         )
+    }
+
+    /**
+     * `[`/`]` go over the rows to what heads them — the next group in the
+     * remote table, then the next subject row. Paging through 40 rows to
+     * reach the group below is the thing they replace.
+     */
+    @Test
+    fun bracketsJumpBetweenHeadingsNotRows() {
+        val sections = listOf(
+            HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED),
+            HomeSection("fleet", "", "compare", HomeAction.SHOW_DIFF),
+        )
+        val m = model(sections)
+        // dnf with two rows of its own, a clean flatpak, then a source.
+        val answered = RemoteStatus.Answered(
+            updates = listOf(update("kitty", "1", "2"), update("bat", "1", "2"), update("ruby", "a", "b", "asdf-tools")),
+            failedSources = 0,
+            tools = listOf(
+                loadout.cli.ToolUpdates("dnf", listOf("dnf"), total = 2, declared = listOf("kitty", "bat"), others = emptyList(), command = "sudo dnf upgrade -y"),
+                loadout.cli.ToolUpdates("flatpak", listOf("flatpak"), total = 0, declared = emptyList(), others = emptyList(), command = "flatpak --user update -y"),
+            ),
+            mechanismOf = mapOf("kitty" to "dnf", "bat" to "dnf"),
+            toolOf = mapOf("dnf" to "dnf", "flatpak" to "flatpak"),
+            mechanismsOfTool = mapOf("dnf" to listOf("dnf"), "flatpak" to listOf("flatpak")),
+            sources = mapOf("asdf-tools" to true),
+        )
+        m.setStateForTest(HomeState(sections = sections, remote = answered))
+        m.handleKey(HomeKey.OPEN, viewport = 20)
+        assertEquals(0, m.detailRow, "the dnf heading")
+
+        m.handleKey(HomeKey.NEXT_HEADING, viewport = 20)
+        assertTrue(m.remoteRow is RemoteLine.Tool, "] skipped dnf's own rows to the next tool")
+        assertEquals("tool:flatpak", m.remoteRow!!.group)
+        m.handleKey(HomeKey.NEXT_HEADING, viewport = 20)
+        assertTrue(m.remoteRow is RemoteLine.Source, "and then the source's heading")
+
+        // Out of the table's groups: the next heading is the subject below.
+        m.handleKey(HomeKey.NEXT_HEADING, viewport = 20)
+        assertEquals(-1, m.detailRow)
+        assertEquals(1, m.focusedSection, "the fleet row, below the whole table")
+        val bottom = m.state.cursor
+        m.handleKey(HomeKey.NEXT_HEADING, viewport = 20)
+        assertEquals(bottom, m.state.cursor, "nothing below: the cursor stays put")
+
+        // And back up through the same stops.
+        m.handleKey(HomeKey.PREV_HEADING, viewport = 20)
+        assertTrue(m.remoteRow is RemoteLine.Source)
+        repeat(3) { m.handleKey(HomeKey.PREV_HEADING, viewport = 20) }
+        assertEquals(0, m.state.cursor, "the remote row itself, above its table")
+        assertEquals(setOf(HomeAction.REVIEW_OUTDATED), m.state.open, "jumping closes nothing")
     }
 
     /**
@@ -854,6 +912,18 @@ class HomeKeysTest {
         m.handleKey(HomeKey.CLOSE, viewport = 8) // folds it again
         m.handleKey(HomeKey.CLOSE, viewport = 8)
         assertTrue(m.state.open.isEmpty(), "h on a folded heading closes the section")
+
+        // The two keys are NOT the same key: esc is the way out of the table
+        // from wherever you are in it, so on a row h would fold it leaves
+        // the section and folds nothing on its way.
+        m.handleKey(HomeKey.OPEN, viewport = 8)
+        m.setStateForTest(m.state.copy(collapsed = emptySet()))
+        m.intoDetail(section = 0)
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        assertTrue(m.remoteRow is RemoteLine.Program, "a row whose group h would fold")
+        m.handleKey(HomeKey.ESC, viewport = 8)
+        assertTrue(m.state.open.isEmpty(), "esc closed the whole section")
+        assertTrue(m.state.collapsed.isEmpty(), "and folded nothing")
     }
 
     @Test

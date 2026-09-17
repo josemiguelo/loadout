@@ -48,6 +48,10 @@ private fun homeKeyOf(event: KeyEvent): HomeKey? = when (event) {
     KeyEvent("ArrowLeft"), KeyEvent("h") -> HomeKey.CLOSE
     KeyEvent("PageUp") -> HomeKey.PAGE_UP
     KeyEvent("PageDown") -> HomeKey.PAGE_DOWN
+    // vim's section jump: over the rows to the next heading. Not H/L — a
+    // missed shift there would close the very list you're moving around in.
+    KeyEvent("[") -> HomeKey.PREV_HEADING
+    KeyEvent("]") -> HomeKey.NEXT_HEADING
     KeyEvent("Enter") -> HomeKey.ENTER
     KeyEvent("Escape") -> HomeKey.ESC
     KeyEvent(" ") -> HomeKey.SELECT
@@ -692,9 +696,12 @@ private fun HomeFooter(s: HomeState, width: Int, total: Int, scroll: Int, shown:
             else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  h fold, l unfold  ·  K diff ↗  ·  enter upgrade" +
                 (if (s.selection.isEmpty()) "" else " ${s.selection.size} selected") + "  ·  h again/esc close"
         open ->
-            if (tight) "↑↓ move · h close" else "↑↓/pgup/pgdn move  ·  h/esc close"
+            if (tight) "↑↓ move · [ ] jump · h close" else "↑↓/pgup/pgdn move  ·  [ ] jump  ·  h/esc close"
+        // The jump is on the lines with room for it: the pickers' own keys
+        // fill theirs, and a footer that wraps unpins the bottom of the screen.
         else ->
-            if (tight) "↑↓ move · l open · enter act" else "↑↓/jk move  ·  l/→ open  ·  enter act on this line"
+            if (tight) "↑↓ move · [ ] jump · l open · enter act"
+            else "↑↓/jk move  ·  [ ] jump to next list  ·  l/→ open  ·  enter act on this line"
     }
     // The whole screen scrolls now, so say where in it you are.
     val where = if (total > shown) "  ·  ${scroll + 1}-${scroll + shown} of $total" else ""

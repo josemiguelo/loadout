@@ -73,7 +73,7 @@ data class PaneRun(
 )
 
 enum class HomeKey {
-    UP, DOWN, PAGE_UP, PAGE_DOWN, ENTER, OPEN, CLOSE, ESC,
+    UP, DOWN, PAGE_UP, PAGE_DOWN, PREV_HEADING, NEXT_HEADING, ENTER, OPEN, CLOSE, ESC,
     SELECT, SELECT_ALL, SELECT_NONE, OPEN_LINK,
     REFRESH, SYNC, UPGRADE, CONVERGE, THEME, QUIT,
 }
@@ -444,6 +444,11 @@ class HomeModel(private val app: AppContext) {
             HomeKey.DOWN -> moveCursor(1, viewport)
             HomeKey.PAGE_UP -> moveCursor(-viewport, viewport)
             HomeKey.PAGE_DOWN -> moveCursor(viewport, viewport)
+            // Over the rows rather than through them: the next thing that
+            // heads a run of them — a subject row, or a group inside the
+            // remote table. A page is a distance; this is a structure.
+            HomeKey.PREV_HEADING -> moveToHeading(-1, viewport)
+            HomeKey.NEXT_HEADING -> moveToHeading(1, viewport)
             // `l` only ever OPENS — it never dispatches, so the vim keys
             // can't start an install by accident. Inside the remote table it
             // unfolds a folded group.
@@ -983,6 +988,29 @@ class HomeModel(private val app: AppContext) {
     }
 
     /**
+     * Jump to the nearest heading in [step]'s direction — the next group in
+     * the remote table, or the next subject row once its groups run out. A
+     * table of 40 rows is three arrow keys' worth of paging otherwise, and
+     * the thing you are looking for is the heading, not the row count.
+     * Nothing to jump to leaves the cursor where it is, like the arrows do
+     * at either end of the body.
+     */
+    private fun moveToHeading(step: Int, viewport: Int) {
+        val s = state
+        val lines = homeLines(s)
+        val from = snapCursor(lines, s.cursor)
+        if (from < 0) return
+        var i = from + step
+        while (i in lines.indices) {
+            if (lines[i].heading && lines[i].focusable) {
+                state = withCursor(s, i, viewport)
+                return
+            }
+            i += step
+        }
+    }
+
+    /**
      * Put the cursor on [target], scroll the body just enough to show it,
      * and — when it lands inside a table — remember that line as the one
      * that subject is on, for the next time it opens.
@@ -1267,9 +1295,12 @@ sealed interface HomeLine {
     val section: Int
     /** A cursor stop. The remote table's gaps and a table's own column heading are not. */
     val focusable: Boolean
+    /** Heads a run of rows — what `[`/`]` jump between: a subject row, or a remote group's heading. */
+    val heading: Boolean
 
     data class Subject(override val section: Int) : HomeLine {
         override val focusable get() = true
+        override val heading get() = true
     }
 
     /** Row [index] of that subject's open detail: a remote line, a script, a program, a drifted row. */
@@ -1277,11 +1308,13 @@ sealed interface HomeLine {
         override val section: Int,
         val index: Int,
         override val focusable: Boolean = true,
+        override val heading: Boolean = false,
     ) : HomeLine
 
     /** A table's own column heading (the fleet's machine names) — part of the table, never a stop. */
     data class Header(override val section: Int) : HomeLine {
         override val focusable get() = false
+        override val heading get() = false
     }
 }
 
@@ -1296,7 +1329,7 @@ internal fun homeLines(state: HomeState): List<HomeLine> {
                 val answered = state.remote as? RemoteStatus.Answered
                 answered?.let { remote ->
                     remoteLines(remote, state.collapsed).forEachIndexed { row, line ->
-                        lines += HomeLine.Detail(index, row, focusable = line.focusable)
+                        lines += HomeLine.Detail(index, row, focusable = line.focusable, heading = line.heading)
                     }
                 }
             }
