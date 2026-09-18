@@ -158,31 +158,25 @@ These came from explicit user decisions; don't "improve" them away:
    fragments sorted by filename); scripts by script-to-script `after` edges.
    Sequential execution, never parallel (only read-only checks run concurrently).
    `after` orders but never pulls anything in; `depends-on` pulls in transitively.
-7. **Script status is observation**: on every refresh the `check` runs — exit 0
-   => `done`, else `pending` — even right after a run (the check is the truth).
-   `lastRun`/`exitCode` are history from tool-executed runs only. Check-less
-   scripts carry only run history. Install success = exit 0 AND re-run version
-   check no longer says missing. **A check that couldn't run is not "missing"**:
-   a check that asks THROUGH a tool (`VersionCheck.probe`, set by
-   resolveInstall from the installer's/variant's probe — a @Transient
-   field, never a manifest key) and dies with the shell's own 127/126 is
-   `unknown` with `ProgramState.reason` = the shell's line
-   ("sh: brew: command not found"); `status` boxes it amber as
-   "not checked" with the reason inside, the home row counts it
-   ("· N not checked") and never offers to install it. A check with no
-   probe IS the program (`rg --version`), so its 127 means missing. brew
-   off PATH once reported every brew program missing — a confident lie.
-   The refresh then groups those rows by tool and asks about each tool
-   ONCE (`command -v`): `StatusEngine.lastToolsDown` (surfaced like
-   lastScriptDetail, via AppContext) — `status` prints "⚠ brew is not on
-   PATH — 22 program(s) not checked (bat, …)" after the table, the home
-   screen shows the sentence on its message line and "brew is not on
-   PATH" as the programs row's verb. The per-row reason says WHICH; the
-   sentence says WHAT, once, in loadout's words.
-   Ceiling: a pipeline check (`brew tap | grep …`) exits with the LAST
+7. **Script status is observation**: every refresh re-runs each `check` —
+   exit 0 => `done`, else `pending` — even right after a run (the check is
+   the truth, not `lastRun`/`exitCode`, which are history from
+   tool-executed runs only). Check-less scripts carry only run history.
+   Install success = exit 0 AND a re-run version check no longer says
+   missing. **A check that couldn't run is not "missing"**: a check that
+   goes THROUGH a tool (`VersionCheck.probe`, from the installer's/
+   variant's probe) that dies with the shell's own 127/126 is `unknown`
+   with `ProgramState.reason` set to the shell's line; a check with no
+   probe IS the program, so its 127 means missing (a tool off PATH would
+   otherwise report every one of its programs missing — a confident lie).
+   The refresh groups unknown rows by tool and asks about each ONCE
+   (`command -v`): `StatusEngine.lastToolsDown` — `status` reports it once
+   after the table, the home screen shows it on its message line, and
+   affected programs are never offered for install.
+   Ceiling: a pipeline check (`tool | grep …`) exits with the LAST
    command's code and hides the tool's absence; write
    `x=$(tool …) && printf '%s\n' "$x" | grep …` so the tool's failure
-   propagates (the live repo's ublue-os-tap does).
+   propagates.
 8. **State files**: written only for this machine; `updatedAt` bumps only when
    content actually changed (keeps git history clean; makes `sync` a no-op when
    idle). Unknown JSON keys ignored on read.
@@ -219,90 +213,47 @@ These came from explicit user decisions; don't "improve" them away:
     opted-in scripts regardless and `run` ignores modes (explicit escape
     hatch). Empty or unknown modes are load errors.
 13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
-    (probe / install / check / outdated / regex patterns, `{pkg}` substituted) define
-    each mechanism once, repo-unique, fragment-definable. Core SHIPS a
-    library of them (`core/manifest/InstallerLibrary.kt`, since 0.8.0: dnf,
-    brew, brew-cask, flatpak with oracles; apt, pacman install/check only)
-    as TOML **text**, parsed once and merged UNDER the repo's own in
-    `loadRepo` — a repo `[installers.<name>]` replaces the built-in of that
-    name outright, `Manifest.builtinInstallers` (a `@Transient` field, never
-    a manifest key) records which survived so `explain`/`installers` can say
-    `(built-in)` vs `(repo)`. This is knowledge, never DETECTION: nothing
-    probes the machine to pick an installer, mapping still decides
-    everything, and `loadout installers --eject` writes the library into the
-    repo when you want to own it. A repo that relies on built-ins should
-    declare `[meta] min-tool-version` — an older binary fails with "unknown
-    installer". A program's install
-    entry is a variant table `{installer, pkg, command, check, regex, probe}`
-    — every field optional, defaulting from its installer (explicit
-    `installer = ...`, else the installer its key names) with `pkg`
-    defaulting to the program name. An installer may also declare
-    `params = ["copr", ...]`: named values it needs per program, supplied by
-    each variant in a nested `[...install.<key>.with]` table and substituted
-    like `{pkg}` into every pattern. Declared, never inferred — a missing
-    declared param, an undeclared `with` key, and a `with` on a variant with
-    no installer are all load errors, so an unsubstituted `{placeholder}`
-    can never reach a shell. `pkg` is reserved. This is what lets one
-    `dnf-repo`/`dnf-copr` mechanism replace a pile of near-identical install
-    scripts (recipe 5); `via = [...]` is shorthand for one
-    all-defaults variant per named installer (expandVia; explicit variant for
-    the same key wins). Resolution lives in Manifest.resolveInstall/checkFor
-    — all engines/UIs go through it. Field fallback: command → installer
-    install pattern (else load error); check → installer check (else
-    program `[version]`); probe → installer probe (else none); outdated →
-    variant outdated (explicit override), else installer `outdated-all`
-    (batch: ONE command per installer printing `<pkg> <candidate text>`
-    lines, per-program regex extracts the version from the text — 8x faster
-    than per-pkg), else installer outdated per-pkg pattern (else no oracle —
-    `loadout outdated` skips and reports it). Per-pkg oracles print ONLY the
-    candidate version (shape the output in the command; the shared regex
-    extracts); exit codes are ignored either way (dnf check-update exits 100
-    when updates exist). Old binaries ignore `outdated-all`
-    (ignoreUnknownNames) and fall back to per-pkg — keep both in config
-    repos until the fleet upgrades. Repos may also declare custom
-    `[outdated.<name>]` sources (command prints `<item> <current>
-    <candidate> [note…]` lines — the optional tail renders as a dim
-    annotation, and a URL token in it is lifted out as the row's LINK
-    (`SourceRow.link`/`UpdateRow.link`: the GitHub compare page for the
-    two shas, say — the home screen marks the row `↗` and `K` opens it
-    in the browser via xdg-open/open, detached; `outdated` prints it dim);
-    `file:` allowed, fragment-definable, repo-unique) —
-    outdated runs them concurrently and tags rows with the source name; the
-    hardcoded self-version row is conceptually the first of these. UNLIKE the
-    installer oracles, a custom source's exit code is NOT ignored: it is a
-    plain user script and MUST exit 0 when it ran fine, so a non-zero exit is
-    surfaced as a loud `outdated source [name] failed: exited N: <last
-    stderr>` line (UpdateChecker.sourceRows returns SourceResult{rows,error};
-    OutdatedCommand prints errors even when no updates exist) — a crashing
-    oracle can't masquerade as "nothing outdated" and silently hide updates
-    forever. Installers may also declare `upgrade`: the ONE command that
-    moves everything the mechanism manages (`sudo dnf upgrade --refresh -y` — refresh, because the oracle is cache-only and the sweep must not trust yesterday's metadata;
-    `brew upgrade`) — no `{pkgs}` placeholder, since loadout never upgrades
-    single packages (contract 15). Never write cross-variant `||` chains in
-    checks.
-15. **Converge installs; `upgrade` upgrades — a whole mechanism at a time.**
-    `setup-new-machine`/`install` add what's MISSING and never touch a
-    version already there (the manifest declares "have kitty", not "have
-    kitty 0.49"). Moving versions is its own verb, `loadout upgrade
-    <installers…>|--all` (UpgradeEngine), and it NEVER upgrades single
-    packages: partial upgrades are unsupported on Arch, discouraged on
-    Fedora, and pointless elsewhere since the package manager resolves its
-    own transaction anyway. Naming a program is an error pointing at its
-    mechanism. Mechanisms sharing a command (dnf, dnf-repo, dnf-copr all run
-    `dnf upgrade -y`) are ONE step, deduped by command, and the UI groups by
-    the TOOL they drive (their probe), so ticking a brew row ticks casks too.
-    `plan` REFUSES an installer this machine's mapping doesn't use — without
-    that, a repo that maps nothing to brew could still run the real
-    `brew upgrade` through a built-in (it did, once, during development).
-    Custom `[outdated.<name>]` sources upgrade the OTHER way: they may
-    declare `upgrade = "... {item}"`, run ONCE PER ROW you pick
-    (`planSourceItems`), because a pin in a file or a plugin clone is
-    independent — nothing is shared, and one failure doesn't take the rest.
-    A source without that command keeps read-only rows (`[–]`). The sweep touches
-    packages loadout doesn't declare — the plan says so. Afterwards EVERY
-    mapped program is re-checked, because the transaction moves what it
-    moves. The binary's own update is `self-upgrade` (renamed in 0.10.0;
-    needs no repo, so it survives a version-floor refusal).
+    (probe / install / check / outdated / regex, `{pkg}` substituted) define
+    a mechanism once, repo-unique, fragment-definable. Core ships a library
+    of them (`core/manifest/InstallerLibrary.kt`: dnf, brew, brew-cask,
+    flatpak with oracles; apt, pacman install/check only) as TOML text,
+    merged UNDER the repo's own in `loadRepo` — a repo definition of the
+    same name replaces the built-in outright; `Manifest.builtinInstallers`
+    records which survived so `explain`/`installers` can label
+    `(built-in)` vs `(repo)`. This is knowledge, never detection — nothing
+    probes the machine to pick an installer; `installers --eject` writes
+    the library into the repo to let a user own it, and a repo that relies
+    on built-ins should declare `[meta] min-tool-version`.
+    A program's install entry is a variant table `{installer, pkg, command,
+    check, regex, probe}`, every field optional and defaulting from its
+    installer; `pkg` defaults to the program name. An installer may declare
+    `params = [...]`: named values a variant supplies via a nested
+    `[...install.<key>.with]` table and substitutes like `{pkg}`. All
+    declared, never inferred — a missing param, an undeclared `with` key,
+    or a `with` on a variant with no installer are load errors, so an
+    unsubstituted `{placeholder}` can never reach a shell. This is what
+    lets one `dnf-repo`/`dnf-copr` mechanism replace a pile of
+    near-identical install scripts (recipe 5); `via = [...]` is shorthand
+    for one all-defaults variant per named installer.
+    Resolution (`Manifest.resolveInstall`/`checkFor`, used by every
+    engine/UI): command → installer install pattern (else load error);
+    check → installer check (else program `[version]`); probe → installer
+    probe (else none); outdated → variant override, else installer
+    `outdated-all` (one batch command per installer, per-program regex
+    extracts — much faster than per-pkg; old binaries ignore it and fall
+    back to per-pkg automatically), else installer per-pkg pattern, else no
+    oracle (`outdated` skips and reports it). Exit codes are always ignored
+    for these oracles.
+    Repos may also declare `[outdated.<name>]` custom sources (`<item>
+    <current> <candidate> [note…]` lines; a URL in the note becomes the
+    row's link, opened with `K`; `file:` allowed, repo-unique). UNLIKE
+    installer oracles, a source's exit code is NOT ignored — a non-zero
+    exit surfaces as `outdated source [name] failed: ...` so a crashing
+    oracle can't silently hide updates.
+    Installers may declare `upgrade`: the ONE command that moves everything
+    the mechanism manages — no `{pkgs}` placeholder, since loadout never
+    upgrades single packages (contract 15). Never write cross-variant `||`
+    chains in checks.
 14. **Versioning contract.** Since 0.2.0 the manifest format evolves
     ADDITIVELY only (new optional fields; never repurpose existing ones) —
     0.2.0 itself broke 0.1 repos (string install values became variant
@@ -316,6 +267,23 @@ These came from explicit user decisions; don't "improve" them away:
     warning (surfaced via `StateStore.lastWarnings` — new read paths must
     echo/log them). Bump SCHEMA_VERSION only with a real schema break, and
     handle older schemas via defaults.
+15. **Converge installs; `upgrade` upgrades — a whole mechanism at a time.**
+    `setup-new-machine`/`install` add what's MISSING and never touch a
+    version already there. Moving versions is its own verb, `loadout
+    upgrade <installers…>|--all` (`UpgradeEngine`), and it never upgrades
+    single packages — naming a program is an error pointing at its
+    mechanism. Mechanisms sharing a command (dnf, dnf-repo, dnf-copr all
+    run `dnf upgrade -y`) are ONE step, deduped by command; the UI groups
+    by the TOOL they drive (their probe), so ticking a brew row ticks
+    casks too. `plan` refuses an installer this machine's mapping doesn't
+    use, so a repo that maps nothing to brew can't accidentally sweep it.
+    Custom `[outdated.<name>]` sources upgrade the other way: a declared
+    `upgrade = "... {item}"` runs once per row picked, since each item (a
+    pin, a clone) is independent and one failure shouldn't take the rest; a
+    source without that command stays read-only (`[–]`). Afterwards EVERY
+    mapped program is re-checked, since the transaction can move packages
+    loadout doesn't declare. The binary's own update is `self-upgrade` —
+    needs no repo, so it survives a version-floor refusal.
 
 ## Toolchain facts (hard-won — don't rediscover)
 
@@ -437,203 +405,89 @@ These came from explicit user decisions; don't "improve" them away:
   `blockingDispatcher` (a blocking call on runBlocking's own thread would
   freeze the spinner) and draws nothing when stdout isn't a TTY.
 - **Home screen** (bare `loadout` on a TTY; a pipe still gets help):
-  `tui/HomeModel.kt` + `HomeApp.kt`. Four subject rows (programs, scripts,
-  remote, fleet) each carrying its verdict and the ONE verb that resolves
-  it; ↑↓/jk move, l/h (or ←/→) open and close a detail, pgup/pgdn a page at
-  a time, and enter ACTS — it never opens or closes, so inside the remote
-  table it is the upgrade key. Nothing acts on a row still marked busy: enter used to
-  dispatch `outdated` on top of the ask already running. Machine-wide verbs are their own keys, not
-  rows, because they belong to no single subject: r re-check, S sync,
-  U self-upgrade, C setup-new-machine, t theme, q quit — capitals for the
-  ones that push, replace the binary, or converge the machine.
-  **ONE cursor for the whole screen** (2026-09-16): `homeLines(state)` is
-  the body as a flat list — a `HomeLine.Subject` per row, a
-  `HomeLine.Detail` per line of every OPEN detail (plus `Header` for the
-  fleet's column names), in draw order — and `HomeState.cursor` is an
-  index into it, walked by `moveCursor` one STOP at a time (gaps and
-  headers skipped). So a table can never capture the arrows: `k` off its
-  first row lands on its subject row and keeps going up. `HomeState.open`
-  is a SET of actions, so several details are open at once and only an
-  explicit h/esc on the one under the cursor closes it — walking away or
-  opening another leaves it exactly as it was (a subject row with its
-  table open below wears `▾`). `[`/`]` jump between HEADINGS —
-  `HomeLine.heading` (subject rows, and the remote table's tool/source
-  headings) — because a 40-row group is several pages of arrows to cross
-  and what you're steering by is the heading, not the row count. Not
-  `H`/`L`, though they were the first idea: vim reads those as the
-  screen's top and bottom, and a missed shift on `H` would `h` — closing
-  the very list you were moving around in. A closed table also keeps YOUR PLACE in
-  it: `HomeState.lastRow` (written by `withCursor` whenever the cursor
-  lands on a detail line) is the row each subject was last on, and `l`
-  reopens there rather than at the top — `detailStop` resolves it against
-  the table as it is NOW (first stop at or after it, else the last),
-  since a re-check or an upgrade can take rows away while it is closed. Before that, `expanded` was a single
-  boolean tied to the focused row and `detailCursor` an index inside that
-  one table: `k` at its top row stopped dead, and the only way to another
-  subject was to close the table first. The body scrolls as ONE window
-  (`HomeState.scroll` over `homeLines`, the footer saying "1-24 of 57"),
-  not per table — with two tables open, per-table windows have no height
-  to divide. Every key acts on the line under the cursor, and the pickers'
-  keys (space/a/u/enter) work from the subject row too, since the ticks
-  belong to the subject, not to the cursor's exact line. `snapCursor`
-  resolves the cursor against the CURRENT layout (nearest stop at or
-  above): the body reshapes under it constantly — a refresh empties the
-  programs picker, an upgraded source's rows vanish — and an index into a
-  list that changed would highlight nothing. A detail with no rows left
-  simply draws nothing and stays in `open`, so the arrows keep working and
-  the table is there again when rows come back. `esc` CLOSES; it never
-  leaves the screen (2026-09-17) — the key you back out of a list with
-  must not also be the one that ends the session, or one esc too many on
-  a tidy screen drops you out of it. With nothing open under the cursor
-  it says which key does ("esc closes the list you're in — q quits", or
-  "nothing to close — q quits" when the screen is closed up); `q` is the
-  only way out. Inside the
-  open remote table: space selects the focused
-  row's MECHANISM (every row that sweep covers lights up, since that's what
-  will actually run), a selects all, u clears the selection, enter upgrades
-  it IN the floating pane — the screen stays put and refreshes when it's done.
-  The table is GROUPED BY THE TOOL THAT WILL ACT (`remoteLines`, a flat
-  list of `RemoteLine`s the cursor walks, headings and notes skipped): a
-  tool line per probe — "dnf  168 updates · 2 in your loadout  sudo dnf
-  upgrade -y", built from `OutdatedReport.tools` (`ToolUpdates`: the batch
-  oracle already listed every outdated package, so keep the count and the
-  undeclared names instead of throwing them away; brew and brew-cask are
-  one tool; a tool with only per-package oracles shows "others unknown";
-  a clean tool is still listed, "up to date") — its declared programs
-  nested under it with NO box of their own, an amber "+ 166 more not in
-  your loadout · enter lists them" line for the sweep's honest cost — a
-  cursor stop whose enter opens the full list in the pane
-  (`PaneKind.LIST`: nothing runs, it shows; read from the TOP, the same
-  scroll keys) — then each custom source as a heading with its items.
-  A source heading has a box of its own that ticks EVERY item under it
-  (`Source.itemKeys`; `[–]` for a read-only source), so a source
-  upgrades one item at a time or all at once — unlike a tool, which is
-  only ever whole. Groups FOLD: `h` on any line of a group folds it
-  (`HomeState.collapsed`, `tool:<probe>` / `source:<name>`; the heading
-  stays, marked `▸`, and the cursor lands on it), `l` on a folded heading
-  unfolds it, `h` on a folded heading closes the section (esc never folds:
-  it closes the detail straight away). A heading with NO rows under it — a clean tool — is not
-  foldable: `RemoteLine.foldable` (computed in `remoteLines`, which is
-  the only place that knows what went into a group) gates the `▸`, and
-  `h` there closes the section straight away. The flag can't be derived
-  at render time: folding filters by group, so a folded tool whose rows
-  were upgraded away looks exactly like one that never had any.
-  After a fold or unfold the heading's body line is recomputed from
-  the NEW layout (`headingLine`) — a gap above it can appear or vanish, and a cursor
-  left at the old index sat on the gap with no highlight. A blank `Gap`
-  separates groups except between two QUIET ones — up to date or folded
-  (one-liners stack). Pane cells carry an explicit `TextStyle.Empty`:
-  Mosaic keeps an underlying cell's bold when the style is Unspecified,
-  the same way it kept its colour. Ticking the tool line or a program
-  under it selects the tool (`tool:<probe>`); a source item ticks alone
-  (`item:<source>/<row>`); `[–]` = nothing loadout can move (a source
-  without `upgrade`, a tool without one). **A row belongs to where it came
-  from, never to what it is called**: `RemoteStatus.Answered.sources` is
-  EVERY custom source mapped to whether it can `upgrade` one item (one
-  field, so "is a source" and "is upgradable" can't drift — and
-  `upgradableSources` is derived from it), `mechanismOf` holds PROGRAM rows
-  only, and `selectionKey` gives a source's row either its own
-  `item:` key or null. Keying by name instead filed a source item under the
-  mapped program of the same name — the live repo has a `tpack` tmux plugin
-  and a `tpack` brew cask, a `rust` asdf pin and a `rust` package — so the
-  row rendered as a brew program and ticking it ran `brew upgrade`, which
-  cannot fast-forward a git clone: it came back outdated after every
-  refresh, forever. Only upgradable sources were kept out of the tool
-  groups, so a read-only source was the unguarded case (nvim-plugins, which
-  is upgradable since 2026-09-16 — the live repo has no read-only source
-  left, so reproducing this needs one written by hand). The
-  row's summary (`remoteSummary`) answers WHERE THE WORK IS, in plain words
-  a user owns: tools that have work lead ("one command fixes all of brew"),
-  then one count of everything that takes an update each ("42 updates"
-  alone, "42 more" after a tool), then the biggest of those groups by name
-  while `SUMMARY_WIDTH` lasts, then "+N more". An idle tool is NOT named —
-  the line used to read "brew 0 · 42 pins", spending its first characters
-  on the only thing with nothing to do while the 42 that did stayed
-  anonymous behind jargon. Never merge the two counts into one total: a
-  sweep and 42 individual pins are not the same work, and size-ranking a
-  tool buries the cheapest win. A crashed source outranks the group names.
-  `loadout outdated`
-  prints the same tool lines first. `K` on a row whose source printed a
-  link opens it (Lazy's key for the diff; `openInBrowser` runs
-  `nohup sh -c 'xdg-open || open'` in the background). Batch oracles read STDOUT ONLY: an
-  empty stdout is "nothing", stderr is warnings (`brew outdated --cask`
-  once yielded packages named "Warning:" and "Please"). `l` only ever
-  OPENS — it never dispatches, so the vim keys can't start an install by
-  accident.
-  The SCRIPTS row is the picker the old `maintain` command was: `l` lists
-  every maintain-mode script this machine opts into (`scriptRowsOf`, in
-  run order) with the verdict the last observation wrote down (✔ done,
-  ! pending, ✘ failed, · never observed), anything not done pre-ticked
-  (`preselect` — re-applied after EVERY refresh, so picks follow verdicts);
-  space ticks one script (a done one too: that is the force), a all, u
-  none, enter runs the ticks in the pane, forced, each under its own rule. The
-  pane then runs the same `refreshAndWriteState` the r key does (3s on the
-  live repo — the checks ARE the verdicts, so the pane never streams a
-  check itself), names what is "Still not done" with the first line each
-  failing check printed (`app.lastScriptDetail`), and titles itself "not
-  all done" rather than "failed" — a script that exited 0 with a check
-  still failing is work left, not a crash. A refresh that can't write
-  ends with "state not written — the run above is not recorded" in red.
-  The scripts row never leaves the screen; `run <names> --force` is the
-  same run without it (`run --pending` existed to back the old enter and
-  was removed with it: a scripted retry of everything failed is a bad
-  cron job, and the rule it encoded — `preselect` — is the screen's).
-  The PROGRAMS row is the same picker over what the last observation
-  found missing (`missingRowsOf`: name, mapped key, the command its
-  variant would run), all ticked; enter plans the ticks with
-  `InstallEngine.plan` (dependencies first, the same refusals `install`
-  raises) and installs them in the pane. Every row's answer is in hand
-  (programs, scripts, remote, fleet): `l` OPENS IT IN PLACE and they show
-  nothing on focus, because their detail is that table; when there is
-  nothing to open (remotes unreachable, fleet in sync) enter says so
-  instead of leaving to print the same answer from a command. NO ROW EVER
-  LEAVES THE SCREEN; only S/U/C do (sync, self-upgrade, setup own the
-  terminal). It
-  opens on the stored state, then runs a real `status` refresh (3s on the
-  live repo, published like `status` does) and then asks the remotes (4s)
-  — both land as they finish, so the screen is usable while they run. The
-  remote row uses the CACHED self-version check: this screen opens
-  constantly and GitHub's unauthenticated API is rate-limited; `outdated`
-  asks fresh. HomeModel owns no domain logic: StatusEngine observes,
-  DiffEngine compares, `cli/OutdatedQuery.kt`'s `outdatedReport()` asks the
-  remotes for BOTH this screen and the `outdated` command, and every action
-  dispatches to a real subcommand through `cli/Actions.kt`'s `dispatch()`.
-  Rendering follows the same flat list: `HomeApp` windows `homeLines` and
-  draws ONE line at a time (`DetailRow` dispatches on the subject's
-  action), so a table's column widths are measured once a frame from all
-  of its rows (`DetailWidths`) — a column worked out row by row would only
-  be as wide as the rows that happen to be on screen.
-- **Floating pane**: Mosaic composites `Box` children in order, so the home
-  screen renders its run pane as a real overlay — `Box(fillMaxSize) { body;
-  RunPane() }` with `Modifier.align(Alignment.Center)`. One pane, three
-  planners: `startUpgrade` (mechanism sweeps + source items),
-  `startScripts` (ticked scripts) and `startInstalls` (ticked missing
-  programs) each hand `ask()` a list of `PaneStep`s and `confirmRun()`
-  streams them — `PaneRun.kind` only changes the words and the ending
-  (scripts merge their run history into the refresh, installs count what
-  is still missing, upgrades re-ask the remotes). A child's own prompt
-  behind the pane is invisible, so THE PANE ASKS FOR SUDO'S PASSWORD
-  ITSELF: `ask` notes whether any step (or a script's CHECK — the refresh
-  runs it the same way) invokes sudo (`commandNeedsSudo`, a word, not a
-  substring); on the yes, if `sudo -n true` fails, a bold AMBER box takes
-  the bottom of the pane body with a masked field (`PaneRun.password`;
-  `HomeApp` routes printable keys to `passwordKey`, enter/esc stay with
-  the reducer — the one moment the pane asks you something, so it must
-  not look like a log line), enter hands the line to
-  `sudo -S -p '' -v` on STDIN (`ProcessRunner.capture(input=)` — never
-  argv, never env, never the log) so sudo stamps its own cache, a wrong
-  one says "sorry, try again" on the field, esc backs out to the
-  question. A keepalive (`sudo -n -v` every 60s) holds the stamp for the
-  run's duration. A `file:` script that reads stdin on its own is still
-  invisible — nothing can catch that but the author. The pane opens as a
-  QUESTION — the exact commands, enter runs them, esc changes nothing —
-  then becomes the live log: a dim rule
-  (`RUN_DIVIDER`) before each step, ↑↓/pgup scroll back through it (0
-  follows the tail), esc cancels a run (kills the child), enter closes a
-  finished one (clearing an upgrade's selection, never the scripts' picks
-  — those follow the verdicts), and the rows refresh underneath without
-  leaving the screen. Output goes through `displayLines` (\r progress
-  collapsed, ANSI stripped, tabs expanded).
+  `tui/HomeModel.kt` (all state + logic, unit-tested) + `HomeApp.kt`
+  (composables). Four subject rows — programs, scripts, remote, fleet —
+  each carry their verdict and the ONE verb that resolves it. ↑↓/jk move,
+  l/h (or ←/→) open/close a detail, pgup/pgdn page, enter ACTS (never
+  opens/closes — inside the remote table it's the upgrade key, and never
+  fires on a row still busy). Machine-wide verbs are their own keys, not
+  rows, since they belong to no single subject: r re-check, S sync,
+  U self-upgrade, C setup-new-machine, t theme, q quit.
+- **One cursor for the whole screen**: `homeLines(state)` flattens the
+  body into subject rows plus every OPEN detail's lines, in draw order;
+  `HomeState.cursor` walks it one stop at a time (gaps/headers skipped),
+  so a table can never capture the arrows — `k` off its top row lands on
+  the owning subject row and keeps going. `HomeState.open` is a SET, so
+  several details stay open at once; only an explicit h/esc on the one
+  under the cursor closes it. `[`/`]` jump between headings instead of
+  `H`/`L` (which vim reads as screen top/bottom — a missed shift on `H`
+  would close the very list you're in). A closed table keeps your place
+  (`HomeState.lastRow`), resolved against the CURRENT rows on reopen since
+  a refresh or upgrade can remove them; `snapCursor` re-resolves the
+  cursor the same way after every reshape (nearest stop at or above), so
+  a picker emptied by a refresh doesn't leave the highlight on nothing.
+- **esc CLOSES, never quits**: only `q` leaves the screen. With nothing
+  open under the cursor the message line says which key does what ("esc
+  closes the list you're in" / "nothing to close — q quits").
+- **Remote table** is grouped by the TOOL that will act (`remoteLines`,
+  built from `OutdatedReport.tools`): a heading per probe (brew and
+  brew-cask count as one tool) with its declared programs nested under it
+  and an amber "N more not in your loadout" line for the sweep's honest
+  cost, then each custom source as its own heading with its items. space
+  selects a tool's whole mechanism (ticking any row under it lights up
+  the tool) or a source's one item, a selects all, u clears, enter
+  upgrades the ticked ones in the floating pane. Groups FOLD (h/l;
+  `RemoteLine.foldable` makes an empty heading — a clean tool — unfoldable,
+  since folding can't be derived at render time once its rows are gone).
+  **A row is keyed by where it came from, never by name**
+  (`selectionKey`/`mechanismOf`) — keying by name instead let a source
+  item collide with a same-named mapped program (a plugin and a package
+  sharing one name) and upgrade through the wrong mechanism, silently
+  never actually moving the source. `remoteSummary` names tools with
+  work first, then one count of everything else, then the biggest named
+  group, then "+N more" — an idle tool is never named, and the two kinds
+  of count are never merged into one total (a sweep and N independent
+  pins are not the same work). `K` opens a row's link when its source
+  printed one; batch oracles read STDOUT ONLY, since stderr can carry
+  warnings mistaken for package names. `l` only ever opens — it never
+  dispatches, so the vim keys can't start an install by accident.
+- **Scripts row** is the picker the old `maintain` command was: lists
+  maintain-mode scripts in run order with their last verdict, anything
+  not done pre-ticked (`preselect`, re-applied after every refresh so
+  picks follow verdicts), runs the ticks in the pane forced, then
+  re-verifies via the same `refreshAndWriteState` the r key uses — a
+  script that exited 0 but still fails its check is "not all done," not
+  a crash. **Programs row** is the same picker over what the last
+  observation found missing, planned with `InstallEngine.plan`
+  (dependencies first, the same refusals `install` raises) and installed
+  in the pane.
+- Every row's answer is in hand already: `l` opens it in place, and enter
+  says so instead of leaving the screen when there's nothing to open
+  (remotes unreachable, fleet in sync). NO ROW EVER LEAVES THE SCREEN;
+  only S/U/C do. It opens on the stored state, then runs a real `status`
+  refresh (published like `status` does) and asks the remotes, each
+  landing independently as it finishes. The remote row uses the CACHED
+  self-version check (GitHub's API is rate-limited and this screen opens
+  constantly); `outdated` asks fresh. HomeModel owns no domain logic —
+  StatusEngine/DiffEngine/`cli/OutdatedQuery.kt`'s `outdatedReport()` do
+  the work, and every action dispatches to a real subcommand through
+  `cli/Actions.kt`'s `dispatch()`. Rendering windows `homeLines` and
+  measures each table's column widths once a frame from ALL of its rows,
+  not just the ones on screen.
+- **Floating pane**: rendered as a real overlay (`Box(fillMaxSize) {
+  body; RunPane() }`) so the screen stays visible underneath. One pane,
+  three planners — `startUpgrade`, `startScripts`, `startInstalls` — each
+  hand `ask()` a list of steps and `confirmRun()` streams them. A step's
+  own prompt would be invisible behind the pane, so **the pane asks for
+  sudo's password itself**: if a step (or a script's check) needs sudo
+  and `sudo -n true` fails, a masked field appears and the line goes to
+  `sudo -S -p '' -v` on STDIN only — never argv, env, or the log; a
+  keepalive holds the stamp for the run. A `file:` script that reads
+  stdin on its own is still invisible to this — nothing catches that but
+  the author. The pane opens as a QUESTION (exact commands; enter runs,
+  esc changes nothing), then becomes a live log (↑↓/pgup scroll, esc
+  cancels and kills the child, enter closes a finished run without
+  leaving the screen).
 - **Own frame loop, not `runMosaicBlocking`**: the screen starts through
   `tui/TuiApp.kt`'s `runTui {}`, which binds the tty (`Tty.tryBind()` +
   `asTerminalIn`) and drives Mosaic's public `Mosaic(...)` composition
@@ -654,20 +508,14 @@ These came from explicit user decisions; don't "improve" them away:
   outdated / diff / sync / setup / self-upgrade) and the process ends. Any
   "return to the home screen" loop needs re-exec, not a second runMosaic.
 - **The picker opens on the LAST OBSERVED verdicts** — `load()` reads
-  `state/<machine>.json`; the refresh that follows re-asks them (3s on the
-  live repo) and the rows update in place. Check-less scripts report their exit code (done/failed);
-  a script's verdict is otherwise its check, re-run by the refresh after
-  the pane's run — a run's verdict counts only the scripts it ran (rows can
-  be pending without being ticked). Live output comes from
-  `ProcessRunner.stream`, which prepends `exec 2>&1` (merges stderr without
-  a subshell so sh tail-execs and `kill()` reaches the real process) and
-  reads kommand's `Child.bufferedStdout().readLine()`. Ceiling: kill hits
-  the direct child only; a grandchild holding the pipe open delays the
-  reader. On esc-cancel the model marks the run cancelled immediately and
-  the zombie stream return is guarded off (`cancelled`) — don't let a late
-  return mutate state. `status` is the report side: it prints script
-  statuses with each failing check's detail (StatusEngine.lastScriptDetail,
-  surfaced like StateStore.lastWarnings).
+  `state/<machine>.json`, and the refresh that follows re-asks and updates
+  the rows in place; a script's verdict is always its check, re-run after
+  the pane's run finishes. Live output comes from `ProcessRunner.stream`,
+  which prepends `exec 2>&1` (merges stderr without a subshell so `kill()`
+  reaches the real process) — kill hits the direct child only, so a
+  grandchild holding the pipe open can delay the reader. On esc-cancel the
+  run is marked cancelled immediately and a late stream return is guarded
+  off — don't let it mutate state after the fact.
 - ktoml quirk insurance: manifest schema sticks to plain nested tables (no
   inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
 - `.toml.sample` files in `machines/` and `manifest.d/` are deliberately
@@ -691,33 +539,18 @@ These came from explicit user decisions; don't "improve" them away:
   iterating. Never share state across files through `$WORK`.
 - TUI: reducers (`handleKey`) and the pure row builders (`sectionsOf`,
   `scriptRowsOf`, `preselect`, `selectionKey`, `homeLines`, `snapCursor`)
-  are unit-tested via
-  `setStateForTest`; rendering is verified manually (ask the user) plus PTY
-  smoke probes; `t/70-home-screen.sh` has `has_pty`-guarded `script`-driven
-  tests of the home screen (bare open, esc refusing to quit, a scripts run
-  in the pane, a refused
-  state write, walking out of one open list into another, `]` jumping to
-  the next group's heading, an install
-  through the pane's own sudo prompt, the fold
-  chevron on a clean vs. a loaded tool, the remote row's summary, and a
-  source item that shares a name with a mapped program — that last one
-  asserts on FILES the two upgrade commands write, since the tool's
-  command is printed on screen whether it ran or not). `t/71-terminal.sh`
-  is the same trick aimed at plain commands: TTY-gated colour, and a
-  terminal that never answers the background-colour query. They run on
-  BOTH platforms:
-  `pty_run` branches on `uname` because BSD `script` takes the log then
-  plain argv while Linux's takes `-qec "<command string>"` and the log
-  last (`has_pty` was Linux-only until 2026-09-16, which quietly skipped
-  every one of them on the user's own mac). EVERY
-  PTY test of the home screen calls `fake_release_cache` and passes
-  `XDG_CACHE_HOME=$FAKE_CACHE` — not only the ones that read the remote
-  row: the screen asks the remotes the moment it opens, so the
-  self-version check otherwise spends up to 5s in curl behind the test's
-  fixed sleeps, and a key that lands on the wrong frame hangs the whole
-  suite (the sudo-prompt install test did, once — with a password field
-  up, printable keys are eaten, so the final `q` types instead of
-  quitting).
+  are unit-tested via `setStateForTest`; rendering is verified manually
+  (ask the user) plus PTY smoke probes. `t/70-home-screen.sh`
+  (`has_pty`-guarded, `script`-driven) and `t/71-terminal.sh` (the same
+  trick for plain commands — TTY-gated colour, a terminal that never
+  answers the background-colour query) run on BOTH platforms; `pty_run`
+  branches on `uname` since BSD `script` takes the log then plain argv
+  while Linux's takes `-qec "<command>"` with the log last. EVERY PTY
+  test of the home screen calls `fake_release_cache` and passes
+  `XDG_CACHE_HOME=$FAKE_CACHE`, even ones that don't read the remote row
+  — the screen asks the remotes the moment it opens, and an unmocked
+  self-version check can eat several seconds of a test's fixed sleeps and
+  land a key on the wrong frame, hanging the whole suite.
 
 ## CI / release
 
