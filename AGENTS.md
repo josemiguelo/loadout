@@ -4,6 +4,15 @@ Source of truth for coding agents working on this repo. The README is the
 *user-facing* tour; this file is the *contributor-facing* knowledge base.
 Keep both updated when behavior changes — and keep them consistent.
 
+Add an entry here only when it stops a future agent from reverting a
+deliberate-looking decision (Design contract) or re-paying for a
+non-obvious, costly-to-discover failure (Toolchain facts) — most changes
+belong in the commit message alone, not here. State what is true now, in
+one clause folded into the relevant existing bullet where possible; never
+add a "used to X, now Y" history — git log already holds that, and a
+change that repeats itself in both places is a change repeated for no
+reader's benefit.
+
 ## What this is
 
 `loadout` is a single Kotlin/Native binary (no JVM at runtime) that sets up
