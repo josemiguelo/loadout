@@ -1,0 +1,11 @@
+windows:
+  - name: agent
+    panes:
+      - command: <agent>
+        focus: true
+  - name: repo
+    panes:
+      - {}
+  - name: master
+    panes:
+      - command: cd ../master && exec $SHELL
