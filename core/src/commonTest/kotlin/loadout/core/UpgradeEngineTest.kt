@@ -103,6 +103,39 @@ class UpgradeEngineTest {
     }
 
     @Test
+    fun aDeclaredSudoRidesOnTheUpgradeStep() {
+        val manifest = ManifestLoader.parse(
+            """
+            [installers.omarchy-pkg]
+            install = "omarchy pkg add {pkg}"
+            upgrade = "omarchy update -y"
+            check = "pacman -Q {pkg}"
+            regex = "([0-9.]+)"
+            sudo = true
+
+            [programs.zsh]
+            via = ["omarchy-pkg"]
+
+            [machines.m.pm]
+            zsh = "omarchy-pkg"
+
+            [outdated.pins]
+            command = "list-pins"
+            upgrade = "repin {item}"
+            sudo = true
+
+            [outdated.plain]
+            command = "list"
+            upgrade = "bump {item}"
+            """.trimIndent(),
+        )
+        assertTrue(engine().plan(manifest, "m", listOf("omarchy-pkg")).single().sudo)
+        assertTrue(engine().planSourceItems(manifest, "pins", listOf("golang")).single().sudo)
+        assertEquals(false, engine().planSourceItems(manifest, "plain", listOf("x")).single().sudo)
+        assertEquals(false, engine().plan(MANIFEST, "m1", listOf("pm")).single().sudo, "undeclared = no")
+    }
+
+    @Test
     fun aSourceWithNoUpgradeCommandIsRefused() {
         val manifest = ManifestLoader.parse(
             """

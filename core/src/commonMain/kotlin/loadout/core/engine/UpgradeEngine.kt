@@ -17,6 +17,8 @@ data class UpgradeStep(
     val sweep: Boolean = true,
     /** The tool the sweep's mechanisms all drive (their shared probe), when they do. */
     val tool: String? = null,
+    /** [command] needs sudo's password without saying so (a declared `sudo = true`). */
+    val sudo: Boolean = false,
 ) {
     /**
      * What to call this step on screen: a sweep is the TOOL it drives when
@@ -77,7 +79,8 @@ object UpgradeEngine {
         source: String,
         items: Collection<String>,
     ): List<UpgradeStep> {
-        val pattern = manifest.outdated[source]?.upgrade
+        val declared = manifest.outdated[source]
+        val pattern = declared?.upgrade
             ?: throw UpgradeException(
                 "cannot upgrade:\n  - outdated source '$source' declares no upgrade command",
             )
@@ -87,6 +90,7 @@ object UpgradeEngine {
                 command = expandFilePrefix(pattern).replace("{item}", item),
                 covers = listOf(item),
                 sweep = false,
+                sudo = declared.sudo,
             )
         }
     }
@@ -129,6 +133,7 @@ object UpgradeEngine {
                 command = command,
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
                 tool = probes.singleOrNull()?.takeIf { it != null },
+                sudo = mechanisms.any { manifest.installers[it]?.sudo == true },
             )
         }
     }

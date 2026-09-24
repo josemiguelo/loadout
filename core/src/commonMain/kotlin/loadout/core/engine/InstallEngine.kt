@@ -15,8 +15,16 @@ class ResolutionException(message: String) : LoadoutException(message)
 sealed interface PlanItem {
     val program: String
 
-    /** Will run [command] (the [installKey] entry of the program's install table). */
-    data class Install(override val program: String, val installKey: String, val command: String) : PlanItem
+    /**
+     * Will run [command] (the [installKey] entry of the program's install
+     * table); [sudo] = it needs sudo's password without saying so.
+     */
+    data class Install(
+        override val program: String,
+        val installKey: String,
+        val command: String,
+        val sudo: Boolean = false,
+    ) : PlanItem
 
     /** Already installed at [version]; nothing to do. */
     data class AlreadyInstalled(override val program: String, val version: String?) : PlanItem
@@ -84,8 +92,8 @@ class InstallEngine(
             } else {
                 // Key existence and command resolvability are validated at
                 // manifest load, as is the existence of any file: script.
-                val raw = manifest.resolveInstall(name, installKey).command!!
-                items += PlanItem.Install(name, installKey, expandFilePrefix(raw))
+                val resolved = manifest.resolveInstall(name, installKey)
+                items += PlanItem.Install(name, installKey, expandFilePrefix(resolved.command!!), resolved.sudo)
             }
         }
 

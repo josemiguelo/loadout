@@ -394,6 +394,40 @@ class HomeKeysTest {
     }
 
     @Test
+    fun aDeclaredSudoMakesThePaneAskEvenWhenNoCommandSaysSudo() {
+        // setup-brew hung here: Homebrew's installer prompted for sudo from
+        // behind the pane, because nothing in `sh setup-brew.sh` says sudo.
+        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
+        val m = model(sections)
+        val rows = listOf(ScriptRow("brew", "sh setup-brew.sh", sudo = true), ScriptRow("pull", "sh pull"))
+        m.setStateForTest(HomeState(sections = sections, scripts = rows))
+        m.startScripts(setOf("brew"))
+        assertEquals(true, m.state.run!!.needsSudo, "declared")
+        m.setStateForTest(HomeState(sections = sections, scripts = rows))
+        m.startScripts(setOf("pull"))
+        assertEquals(false, m.state.run!!.needsSudo, "neither said nor declared")
+    }
+
+    @Test
+    fun theScriptsRowCarriesASudoDeclarationFromTheManifest() {
+        val manifest = ManifestLoader.parse(
+            """
+            [scripts.hid]
+            run = "true"
+            sudo = true
+
+            [scripts.plain]
+            run = "true"
+
+            [machines.m1]
+            scripts = ["hid", "plain"]
+            """.trimIndent(),
+        )
+        val rows = scriptRowsOf(manifest, SYSTEM, null).associate { it.name to it.sudo }
+        assertEquals(mapOf("hid" to true, "plain" to false), rows)
+    }
+
+    @Test
     fun theProgramsPickerTicksAndAsksBeforeInstalling() {
         val rows = missingRowsOf(MANIFEST, SYSTEM, state())
         // kitty is missing in the fixture state, git is installed.

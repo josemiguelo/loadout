@@ -59,6 +59,7 @@ data class Manifest(
         val installerName = variant.installer ?: key.takeIf { installers.containsKey(it) }
         val probe = variant.probe ?: installer?.probe
         return ResolvedInstall(
+            sudo = variant.sudo ?: installer?.sudo ?: false,
             command = (variant.command ?: installer?.install)?.let(::sub),
             // A check through the mechanism carries its probe; the program's
             // own `[version]` fallback is the program itself and carries none.
@@ -105,6 +106,8 @@ data class ResolvedInstall(
     val outdatedAll: BatchOracle? = null,
     /** How this variant upgrades in place, when its mechanism can. */
     val upgradeWith: UpgradeMechanism? = null,
+    /** [command] needs sudo's password without saying `sudo` itself (see [Installer.sudo]). */
+    val sudo: Boolean = false,
 )
 
 /** How a variant's mechanism upgrades: all of it, in one command. */
@@ -166,6 +169,15 @@ data class Installer(
      * `loadout upgrade` is the explicit verb.
      */
     val upgrade: String? = null,
+    /**
+     * [install] and [upgrade] need sudo's password but don't say `sudo`
+     * themselves — they call it from inside (`omarchy pkg add`, Homebrew's
+     * installer, a `file:` script). The home screen's pane can't show a
+     * prompt from behind it, so it only knows to ask for the password up
+     * front when a command visibly runs sudo or declares this. Declared,
+     * never guessed: nothing reads a script to find sudo in it.
+     */
+    val sudo: Boolean = false,
 )
 
 /**
@@ -195,6 +207,8 @@ data class InstallVariant(
      * Each becomes `{copr}` in the resolved commands.
      */
     val with: Map<String, String> = emptyMap(),
+    /** Replaces the installer's [Installer.sudo] for this variant's install command. */
+    val sudo: Boolean? = null,
 )
 
 @Serializable
@@ -309,6 +323,8 @@ data class ScriptStep(
      * script regardless, and `run <name>` is the explicit escape hatch.
      */
     val modes: List<String> = listOf("setup", "maintain"),
+    /** The script (or its check) needs sudo's password without saying `sudo`; see [Installer.sudo]. */
+    val sudo: Boolean = false,
 ) {
     fun appliesTo(osFamily: OsFamily): Boolean = os.isEmpty() || os.contains(osFamily.id)
 
@@ -328,4 +344,6 @@ data class OutdatedSource(
      * read-only. `file:` allowed.
      */
     val upgrade: String? = null,
+    /** [upgrade] needs sudo's password without saying `sudo`; see [Installer.sudo]. */
+    val sudo: Boolean = false,
 )

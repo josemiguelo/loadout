@@ -53,6 +53,8 @@ class InstallersCommand : CliktCommand(name = "installers") {
                 installer.probe?.let { "probe" to it },
                 installer.params.takeIf { it.isNotEmpty() }?.let { "params" to it.joinToString() },
                 installer.install?.let { "install" to it },
+                installer.upgrade?.let { "upgrade" to it },
+                ("sudo" to "yes — install and upgrade ask for the password before running").takeIf { installer.sudo },
                 installer.check?.let { "check" to it },
                 installer.regex?.let { "regex" to it },
                 installer.outdated?.let { "outdated" to it },

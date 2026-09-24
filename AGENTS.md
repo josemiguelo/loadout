@@ -480,11 +480,15 @@ These came from explicit user decisions; don't "improve" them away:
   hand `ask()` a list of steps and `confirmRun()` streams them. A step's
   own prompt would be invisible behind the pane, so **the pane asks for
   sudo's password itself**: if a step (or a script's check) needs sudo
-  and `sudo -n true` fails, a masked field appears and the line goes to
+  — its text says `sudo`, or it DECLARES `sudo = true` (installer,
+  variant, script, `[outdated.*]` source) because it calls sudo from
+  inside (`omarchy pkg add`, Homebrew's installer) — and `sudo -n true`
+  fails, a masked field appears and the line goes to
   `sudo -S -p '' -v` on STDIN only — never argv, env, or the log; a
-  keepalive holds the stamp for the run. A `file:` script that reads
-  stdin on its own is still invisible to this — nothing catches that but
-  the author. The pane opens as a QUESTION (exact commands; enter runs,
+  keepalive holds the stamp for the run. The declaration is never
+  inferred: nothing reads a `file:` script (or what it downloads) looking
+  for sudo. A `file:` script that reads stdin on its own is still
+  invisible to this — nothing catches that but the author. The pane opens as a QUESTION (exact commands; enter runs,
   esc changes nothing), then becomes a live log (↑↓/pgup scroll, esc
   cancels and kills the child, enter closes a finished run without
   leaving the screen).

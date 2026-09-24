@@ -55,6 +55,38 @@ class InstallEngineTest {
     }
 
     @Test
+    fun aDeclaredSudoRidesOnThePlannedInstall() {
+        // `omarchy pkg add` and Homebrew's installer call sudo from inside:
+        // the command says nothing, so the installer declares it. A variant
+        // may take it back.
+        val m = ManifestLoader.parse(
+            """
+            [installers.omarchy-pkg]
+            install = "omarchy pkg add {pkg}"
+            sudo = true
+
+            [programs.zsh]
+            via = ["omarchy-pkg"]
+
+            [programs.quiet.install.omarchy-pkg]
+            command = "true"
+            sudo = false
+
+            [programs.plain.install.script]
+            command = "true"
+
+            [machines.m.pm]
+            zsh = "omarchy-pkg"
+            quiet = "omarchy-pkg"
+            plain = "script"
+            """.trimIndent(),
+        )
+        val plan = engine().plan(m, "m", listOf("zsh", "quiet", "plain"), emptyMap()) { true }
+            .filterIsInstance<PlanItem.Install>().associate { it.program to it.sudo }
+        assertEquals(mapOf("zsh" to true, "quiet" to false, "plain" to false), plan)
+    }
+
+    @Test
     fun fileInstallValuesRunAsRepoScripts() {
         val withFile = ManifestLoader.parse(
             """

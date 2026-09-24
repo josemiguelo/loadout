@@ -92,6 +92,8 @@ data class ScriptRow(
     val command: String,
     /** Its check with args applied, when it has one (sudo guard only: the refresh re-asks it). */
     val check: String? = null,
+    /** Declared `sudo = true`: it needs the password without saying `sudo`. */
+    val sudo: Boolean = false,
     /** The last observed verdict; null = never observed here. */
     val status: ScriptStatus? = null,
 )
@@ -658,7 +660,7 @@ class HomeModel(private val app: AppContext) {
             return
         }
         if (plan.isEmpty()) return
-        ask(plan.map { PaneStep(it.label, it.command, sweep = it.sweep) }, PaneKind.UPGRADE)
+        ask(plan.map { PaneStep(it.label, it.command, sweep = it.sweep, sudo = it.sudo) }, PaneKind.UPGRADE)
     }
 
     /**
@@ -687,7 +689,7 @@ class HomeModel(private val app: AppContext) {
             state = state.copy(message = "already installed — r re-checks")
             return
         }
-        ask(installs.map { PaneStep(it.program, it.command) }, PaneKind.INSTALL)
+        ask(installs.map { PaneStep(it.program, it.command, sudo = it.sudo) }, PaneKind.INSTALL)
     }
 
     /**
@@ -702,14 +704,15 @@ class HomeModel(private val app: AppContext) {
             state = state.copy(message = "nothing ticked — space ticks a script, a ticks them all")
             return
         }
-        ask(steps.map { PaneStep(it.name, it.command, check = it.check) }, PaneKind.SCRIPTS)
+        ask(steps.map { PaneStep(it.name, it.command, check = it.check, sudo = it.sudo) }, PaneKind.SCRIPTS)
     }
 
     /**
      * Ask before touching anything: these commands change the machine, and
      * the sweep ones change more than the rows you picked. A step that
      * needs sudo is noted (the check counts too: the refresh runs it the
-     * same way) — the yes will ask for the password if sudo's cache is
+     * same way; so does a declared `sudo = true`, for commands that call
+     * sudo from inside where no text match can see it) — the yes will ask for the password if sudo's cache is
      * cold, because a child's own prompt behind the pane is invisible.
      * The pane is an overlay: whatever was open stays open underneath, so
      * closing it shows the screen exactly as it was left.
@@ -720,7 +723,7 @@ class HomeModel(private val app: AppContext) {
             run = PaneRun(
                 steps = plan.map { it.label },
                 kind = kind,
-                needsSudo = plan.any { commandNeedsSudo(it.command) || it.check?.let(::commandNeedsSudo) == true },
+                needsSudo = plan.any { it.sudo || commandNeedsSudo(it.command) || it.check?.let(::commandNeedsSudo) == true },
                 label = plan.joinToString(", ") { it.label },
                 confirming = true,
                 commands = plan.map { "[${it.label}]  ${it.command}" },
@@ -1077,6 +1080,8 @@ private data class PaneStep(
     val check: String? = null,
     /** A package manager about to upgrade everything it manages. */
     val sweep: Boolean = false,
+    /** Declared `sudo = true`: the command calls sudo from inside. */
+    val sudo: Boolean = false,
 )
 
 private val SUDO = Regex("(^|[^-\\w])sudo\\b")
@@ -1121,6 +1126,7 @@ internal fun scriptRowsOf(manifest: Manifest, system: SystemInfo, observed: Mach
                 name = name,
                 command = ScriptRunner.commandFor(step, args),
                 check = step.check?.let { ScriptRunner.withArgs(it, args) },
+                sudo = step.sudo,
                 status = verdicts[name]?.status,
             )
         }

@@ -224,3 +224,35 @@ if has_pty; then
     grep -c '"status": "installed"' irepo/state/m1.json | grep -qx 2 || fail "the re-check recorded both as installed"
     ok "the programs row installs ticked programs in the pane, asking for sudo's password itself"
 fi
+
+# --- sudo called from INSIDE a command: only a declaration can tell ------
+# `omarchy pkg add`, Homebrew's installer: the command never says sudo, so
+# without `sudo = true` the pane would start it and the prompt would hang
+# invisibly behind it (the fake sudo refuses without a stamp instead).
+mkdir -p hrepo/state hrepo/machines
+cat > hrepo/inner.sh <<'SH'
+sudo sh -c "echo installed-$1 > fake-$1.txt"
+SH
+cat > hrepo/manifest.toml <<'TOML'
+[installers.hidden]
+probe = "sh"
+install = "sh inner.sh {pkg}"
+check = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
+regex = "([0-9][0-9.]*)"
+sudo = true
+
+[programs.gamma]
+via = ["hidden"]
+TOML
+printf '[pm]\ngamma = "hidden"\n' > hrepo/machines/m1.toml
+fake_sudo
+"$BIN" --repo hrepo --machine m1 status >/dev/null
+OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
+echo "$OUT" | grep -qE "sudo.hidden +yes" || fail "explain shows the declared sudo"
+if has_pty; then
+    { sleep 4; printf 'l'; sleep 0.5; printf '\r'; sleep 0.5; printf '\r'; sleep 0.7; printf 'secret\r'; sleep 4; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+        | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-hidden.log --repo hrepo --machine m1
+    grep -qa "sudo password:" tui-hidden.log || fail "a declared sudo makes the pane ask, though no command says sudo"
+    [ -f hrepo/fake-gamma.txt ] || fail "the install ran with the stamped sudo"
+    ok "an installer declaring sudo = true gets its password asked up front"
+fi
