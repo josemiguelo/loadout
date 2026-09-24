@@ -96,6 +96,20 @@ check = "rpm -q {pkg}"
 outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 
+# Arch repo packages. The oracle is `checkupdates` (pacman-contrib), not
+# `pacman -Qu`: nothing on Arch refreshes the sync databases between
+# upgrades, so -Qu answers from whenever the last -Syu ran, while
+# checkupdates syncs a private copy without root. Its lines read
+# "<pkg> <installed> -> <candidate>". Without pacman-contrib installed the
+# oracle finds nothing — map pacman-contrib itself so status catches that.
+[installers.pacman]
+probe = "pacman"
+install = "sudo pacman -S --noconfirm {pkg}"
+upgrade = "sudo pacman -Syu --noconfirm"
+check = "pacman -Q {pkg}"
+outdated-all = "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
 # --- best effort: install/check only, no update oracle -------------------
 # Not exercised by the maintainer; `loadout outdated` reports "no oracle"
 # for programs mapped here. Override in your repo to add one.
@@ -104,13 +118,6 @@ probe = "apt-get"
 install = "sudo apt-get install -y {pkg}"
 upgrade = "sudo apt-get upgrade -y"
 check = "dpkg-query -W {pkg}"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
-
-[installers.pacman]
-probe = "pacman"
-install = "sudo pacman -S --noconfirm {pkg}"
-upgrade = "sudo pacman -Syu --noconfirm"
-check = "pacman -Q {pkg}"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 """.trimIndent() + "\n"
 

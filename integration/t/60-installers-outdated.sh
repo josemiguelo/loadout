@@ -68,6 +68,38 @@ echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must 
 echo "$OUT" | grep -qE "sh +2 updates · 1 in your loadout" || fail "outdated leads with the tool's whole count (fake3's probe is sh)"
 ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
+# --- the shipped pacman mechanism: pacman -Q + checkupdates ---------------
+# No [installers.pacman] in the repo — this exercises the built-in's own
+# awk against checkupdates' "<pkg> <installed> -> <candidate>" lines
+# (epochs and pkgrels included), with both tools faked on PATH.
+mkdir -p pacrepo/state pacrepo/machines pacbin
+cat > pacbin/pacman <<'SH'
+#!/bin/sh
+[ "$1" = -Q ] && [ "$2" = fooapp ] && { echo "fooapp 1:1.2.0-1"; exit 0; }
+[ "$1" = -Q ] && [ "$2" = barapp ] && { echo "barapp 2.0.0-3"; exit 0; }
+echo "error: package '$2' was not found" >&2; exit 1
+SH
+cat > pacbin/checkupdates <<'SH'
+#!/bin/sh
+printf 'fooapp 1:1.2.0-1 -> 1:1.3.0-2\nnotmine 5.1-1 -> 5.2-1\n'
+SH
+chmod +x pacbin/pacman pacbin/checkupdates
+cat > pacrepo/manifest.toml <<'TOML'
+[programs.fooapp]
+via = ["pacman"]
+
+[programs.barapp]
+via = ["pacman"]
+TOML
+printf '[pm]\nfooapp = "pacman"\nbarapp = "pacman"\n' > pacrepo/machines/m1.toml
+PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
+grep -q '"version": "1.2.0"' pacrepo/state/m1.json || fail "pacman -Q's version is observed past the epoch"
+OUT=$(PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 outdated) || fail "outdated through the built-in pacman"
+echo "$OUT" | grep -qE "fooapp +1.2.0 +-> 1.3.0" || fail "checkupdates' candidate is reported"
+echo "$OUT" | grep -q "barapp" && fail "a package checkupdates doesn't list is up to date" || true
+echo "$OUT" | grep -qE "pacman +2 updates · 1 in your loadout" || fail "the pacman sweep counts every package checkupdates listed"
+ok "the built-in pacman installer checks with pacman -Q and asks checkupdates for updates"
+
 # --- custom [outdated.*] sources: arbitrary rows, the source as the tag --
 cat >> instrepo/manifest.toml <<'TOML'
 

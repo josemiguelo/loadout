@@ -216,7 +216,7 @@ These came from explicit user decisions; don't "improve" them away:
     (probe / install / check / outdated / regex, `{pkg}` substituted) define
     a mechanism once, repo-unique, fragment-definable. Core ships a library
     of them (`core/manifest/InstallerLibrary.kt`: dnf, brew, brew-cask,
-    flatpak with oracles; apt, pacman install/check only) as TOML text,
+    flatpak, pacman with oracles; apt install/check only) as TOML text,
     merged UNDER the repo's own in `loadRepo` — a repo definition of the
     same name replaces the built-in outright; `Manifest.builtinInstallers`
     records which survived so `explain`/`installers` can label
