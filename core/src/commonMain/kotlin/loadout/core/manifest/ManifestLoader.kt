@@ -387,6 +387,11 @@ object ManifestLoader {
                 }
             }
             for ((key, variant) in program.install) {
+                for (dep in variant.dependsOn) {
+                    if (dep !in manifest.programs) {
+                        errors += "programs.$name.install.$key depends-on unknown program '$dep'"
+                    }
+                }
                 if (variant.installer != null && variant.installer !in manifest.installers) {
                     errors += "programs.$name.install.$key references unknown installer '${variant.installer}'"
                     continue
@@ -470,7 +475,11 @@ object ManifestLoader {
             }
         }
 
-        findCycle(manifest.programs.mapValues { it.value.dependsOn })?.let { cycle ->
+        // Every variant's edges count: a cycle that only one machine's mapping
+        // would walk is still a cycle in the manifest.
+        findCycle(
+            manifest.programs.mapValues { (_, p) -> (p.dependsOn + p.install.values.flatMap { it.dependsOn }).distinct() },
+        )?.let { cycle ->
             errors += "dependency cycle among programs: ${cycle.joinToString(" -> ")}"
         }
         findCycle(
@@ -513,17 +522,23 @@ object ManifestLoader {
     }
 
     /**
-     * Programs in dependency order (dependencies before dependents).
-     * Assumes [validate] passed, i.e. the graph is acyclic.
+     * Programs in dependency order (dependencies before dependents), each
+     * program's edges being those of the variant [mapping] picks for it
+     * ([Manifest.dependenciesOf]). Assumes [validate] passed, i.e. the graph
+     * is acyclic.
      */
-    fun installOrder(manifest: Manifest, names: Collection<String> = manifest.programs.keys): List<String> {
+    fun installOrder(
+        manifest: Manifest,
+        names: Collection<String> = manifest.programs.keys,
+        mapping: Map<String, String> = emptyMap(),
+    ): List<String> {
         val result = mutableListOf<String>()
         val seen = mutableSetOf<String>()
 
         fun visit(name: String) {
             if (name in seen || name !in manifest.programs) return
             seen += name
-            manifest.programs.getValue(name).dependsOn.forEach(::visit)
+            manifest.dependenciesOf(name, mapping[name]).forEach(::visit)
             result += name
         }
 

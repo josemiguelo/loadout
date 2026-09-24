@@ -55,6 +55,36 @@ class InstallEngineTest {
     }
 
     @Test
+    fun aVariantsDependenciesOnlyComeWithThatVariant() {
+        // kitty from a COPR needs dnf-plugins-core first; kitty from pacman
+        // needs nothing — and must not drag a dnf package into the plan.
+        val m = ManifestLoader.parse(
+            """
+            [programs.dnf-plugins-core.install.dnf]
+            command = "dnf install dnf-plugins-core"
+
+            [programs.kitty.install.copr]
+            command = "dnf copr enable kitty"
+            depends-on = ["dnf-plugins-core"]
+
+            [programs.kitty.install.pacman]
+            command = "pacman -S kitty"
+
+            [machines.fedora.pm]
+            kitty = "copr"
+            dnf-plugins-core = "dnf"
+
+            [machines.arch.pm]
+            kitty = "pacman"
+            """.trimIndent(),
+        )
+        val fedora = engine().plan(m, "fedora", listOf("kitty"), emptyMap()) { true }
+        assertEquals(listOf("dnf-plugins-core", "kitty"), fedora.map { it.program })
+        val arch = engine().plan(m, "arch", listOf("kitty"), emptyMap()) { true }
+        assertEquals(listOf("kitty"), arch.map { it.program })
+    }
+
+    @Test
     fun aDeclaredSudoRidesOnThePlannedInstall() {
         // `omarchy pkg add` and Homebrew's installer call sudo from inside:
         // the command says nothing, so the installer declares it. A variant

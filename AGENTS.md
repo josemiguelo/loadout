@@ -158,6 +158,10 @@ These came from explicit user decisions; don't "improve" them away:
    fragments sorted by filename); scripts by script-to-script `after` edges.
    Sequential execution, never parallel (only read-only checks run concurrently).
    `after` orders but never pulls anything in; `depends-on` pulls in transitively.
+   A variant may carry its own `depends-on`, added to the program's only on
+   machines mapping that variant (`Manifest.dependenciesOf`) — so a COPR's
+   dnf-plugins-core never lands on a pacman machine; validation and cycle
+   detection count every variant's edges.
 7. **Script status is observation**: every refresh re-runs each `check` —
    exit 0 => `done`, else `pending` — even right after a run (the check is
    the truth, not `lastRun`/`exitCode`, which are history from
@@ -592,7 +596,8 @@ program" is the user-facing long form). Match top-down, first fit wins:
    by the installer so check/probe derive. Key by what it IS: a cask gets
    `brew-cask`, not `brew`.
 4. Prerequisite step (tap/repo/remote) → its own program + `depends-on`,
-   never `&&`-chained into another program's command.
+   never `&&`-chained into another program's command. On the variant when
+   only that mechanism needs it (a COPR's dnf-plugins-core).
 5. Repo-script install that lands in a pm's database → variant keyed by that
    pm with `command = "file:..."`; check/probe derive; override `regex` for
    odd version formats. When several programs need the SAME shaped script

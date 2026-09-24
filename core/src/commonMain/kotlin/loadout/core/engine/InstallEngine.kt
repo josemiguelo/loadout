@@ -71,7 +71,7 @@ class InstallEngine(
 
         // Membership: converge covers only mapped programs (declaration order).
         val targets = requested.ifEmpty { manifest.programs.keys.filter { it in mapping } }
-        val ordered = ManifestLoader.installOrder(manifest, targets)
+        val ordered = ManifestLoader.installOrder(manifest, targets, mapping)
 
         val errors = mutableListOf<String>()
         val items = mutableListOf<PlanItem>()

@@ -130,3 +130,26 @@ echo "$OUT" | grep -qE "byitself +missing" || fail "a program's own check not fo
 grep -q '"reason"' probed/state/m1.json || fail "the reason is recorded in state"
 echo "$OUT" | grep -q "ghostpm-definitely-not-here is not on PATH — 1 program(s) not checked" || fail "status says, once and in words, which tool was missing"
 ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'"
+
+# --- a variant's own depends-on comes only with that variant --------------
+mkdir -p vdeps/state vdeps/machines
+cat > vdeps/manifest.toml <<'TOML'
+[programs.prereq.install.manual]
+command = "true"
+
+[programs.tool.install.withprereq]
+command = "true"
+depends-on = ["prereq"]
+
+[programs.tool.install.plain]
+command = "true"
+TOML
+printf '[pm]\ntool = "withprereq"\nprereq = "manual"\n' > vdeps/machines/m1.toml
+printf '[pm]\ntool = "plain"\n' > vdeps/machines/m2.toml
+OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
+echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
+OUT=$("$BIN" --repo vdeps --machine m2 install tool --dry-run) || fail "the other variant needs no mapping for it"
+echo "$OUT" | grep -q "prereq" && fail "another variant's dependency must not be planned" || true
+OUT=$("$BIN" --repo vdeps --machine m1 explain tool)
+echo "$OUT" | grep -qE "depends-on.withprereq +prereq" || fail "explain shows a variant's depends-on"
+ok "a variant's depends-on is planned only on machines mapping that variant"

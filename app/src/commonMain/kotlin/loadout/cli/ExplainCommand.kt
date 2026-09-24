@@ -59,6 +59,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         }
                         resolved.probe?.let { rows += "probe.$key" to it }
                         if (resolved.sudo) rows += "sudo.$key" to "yes — asks for the password before running"
+                        if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
                         notes += "! not mapped for ${system.machine} (add it to machines/${system.machine}.toml)"

@@ -108,6 +108,34 @@ class ManifestLoaderTest {
     }
 
     @Test
+    fun aVariantsDependenciesAreValidatedAndCountTowardCycles() {
+        val unknown = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                """
+                [programs.kitty.install.dnf-copr]
+                command = "true"
+                depends-on = ["dnf-plugins-core"]
+                """.trimIndent(),
+            )
+        }
+        assertTrue("programs.kitty.install.dnf-copr depends-on unknown program 'dnf-plugins-core'" in unknown.message.orEmpty())
+
+        // A cycle only one variant walks is still a cycle in the manifest.
+        val cycle = assertFailsWith<ManifestException> {
+            ManifestLoader.parse(
+                """
+                [programs.a]
+                depends-on = ["b"]
+                [programs.b.install.x]
+                command = "true"
+                depends-on = ["a"]
+                """.trimIndent(),
+            )
+        }
+        assertTrue("cycle" in cycle.message.orEmpty())
+    }
+
+    @Test
     fun rejectsDependencyCycle() {
         val text = """
             [programs.a]

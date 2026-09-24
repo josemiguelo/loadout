@@ -86,6 +86,18 @@ data class Manifest(
     /** The version check to observe [programName] with when mapped to [key] (null = unmapped). */
     fun checkFor(programName: String, key: String?): VersionCheck? =
         if (key == null) programs[programName]?.version else resolveInstall(programName, key).check
+
+    /**
+     * What [programName] needs installed first on a machine mapping it to
+     * [key]: the program's own `depends-on`, then that variant's (a COPR
+     * needs dnf-plugins-core; the same program from pacman needs nothing).
+     * A null [key] (no machine in view) gives the program's alone.
+     */
+    fun dependenciesOf(programName: String, key: String?): List<String> {
+        val program = programs[programName] ?: return emptyList()
+        val variant = key?.let { program.install[it] }
+        return (program.dependsOn + variant?.dependsOn.orEmpty()).distinct()
+    }
 }
 
 /** A program's install variant with all installer defaults applied. */
@@ -209,6 +221,13 @@ data class InstallVariant(
     val with: Map<String, String> = emptyMap(),
     /** Replaces the installer's [Installer.sudo] for this variant's install command. */
     val sudo: Boolean? = null,
+    /**
+     * Programs THIS variant needs first, on top of the program's own
+     * `depends-on` — for prerequisites of one mechanism only, which would
+     * otherwise drag e.g. a dnf package onto a pacman machine.
+     */
+    @SerialName("depends-on")
+    val dependsOn: List<String> = emptyList(),
 )
 
 @Serializable
