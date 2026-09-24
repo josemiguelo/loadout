@@ -19,6 +19,11 @@ kotlin {
         }
         // Applies to the run and test binaries alike.
         target.binaries.all {
+            // Kotlin/Native's platform.posix klib links -lcrypt, which its
+            // glibc-2.19 sysroot resolves to libcrypt.so.1 — shipped only by a
+            // compat package on Arch and current Fedora. Nothing here calls
+            // crypt(), so --as-needed drops the dependency (core does the same).
+            if (target.name.startsWith("linux")) linkerOpts("-Wl,--as-needed")
             @OptIn(KotlinNativeCacheApi::class)
             disableNativeCache(
                 DisableCacheInKotlinVersion.`2_4_0`,

@@ -4,8 +4,10 @@ plugins {
 }
 
 kotlin {
-    linuxX64()
-    linuxArm64()
+    // Test binaries only link here; see app/build.gradle.kts for why.
+    listOf(linuxX64(), linuxArm64()).forEach { target ->
+        target.binaries.all { linkerOpts("-Wl,--as-needed") }
+    }
     macosX64()
     macosArm64()
 
