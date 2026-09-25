@@ -30,9 +30,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /** What a pane run is doing — the words and the ending differ, nothing else. LIST runs nothing: it shows. */
 enum class PaneKind { UPGRADE, SCRIPTS, INSTALL, LIST }
@@ -249,14 +249,32 @@ class HomeModel(private val app: AppContext) {
     private val scope = CoroutineScope(SupervisorJob() + blockingDispatcher)
 
     /**
-     * Serializes the refresh's two writers — the status check and the
-     * remotes, each landing on its own IO thread. Both end in a read-modify-
-     * write of [state]; unguarded, the status write could copy the remote
-     * row's `Asking` over an answer that landed between its read and its
-     * write, and the row spun forever (nothing asks again). Each writer
-     * re-reads [state] inside the lock; the slow work stays outside it.
+     * Held for every write of [state] — see [update]. A spin lock, not a
+     * coroutine Mutex: keys write from the UI thread, outside any coroutine.
      */
-    private val landing = Mutex()
+    @OptIn(ExperimentalAtomicApi::class)
+    private val writing = AtomicBoolean(false)
+
+    /**
+     * The ONE way [state] changes: [change] gets the state as it is at that
+     * moment and returns the next one, with no other write in between.
+     * Keys land on the UI thread, the status check, the remotes and a pane
+     * run each on their own IO thread; a writer that copied a state it read
+     * earlier would put back whatever landed since — the remote row's
+     * `Asking` over its answer (the row spun forever), a tick over a
+     * refresh. [change] must stay a pure copy: the slow work goes before
+     * the call, and it must not call [update] itself (the lock isn't
+     * reentrant).
+     */
+    @OptIn(ExperimentalAtomicApi::class)
+    private fun update(change: (HomeState) -> HomeState) {
+        while (!writing.compareAndSet(false, true)) { /* another write is mid-copy */ }
+        try {
+            state = change(state)
+        } finally {
+            writing.store(false)
+        }
+    }
     private var running: RunningProcess? = null
     private var cancelled = false
     private var pending: List<PaneStep>? = null
@@ -277,18 +295,20 @@ class HomeModel(private val app: AppContext) {
         val report = fleet()
         val scripts = scriptRowsOf(m, sys, stored)
         val missing = missingRowsOf(m, sys, stored)
-        state = state.copy(
-            machine = sys.machine,
-            system = "${sys.os.id}${sys.distro?.let { "/$it" }.orEmpty()} · ${sys.arch}",
-            sections = sectionsOf(m, sys, stored, report, null),
-            fleet = report,
-            missing = missing,
-            chosen = missing.map { it.name }.toSet(),
-            scripts = scripts,
-            picked = preselect(scripts),
-            stale = stored != null,
-            message = app.stateStore.lastWarnings.firstOrNull(),
-        )
+        update {
+            it.copy(
+                machine = sys.machine,
+                system = "${sys.os.id}${sys.distro?.let { "/$it" }.orEmpty()} · ${sys.arch}",
+                sections = sectionsOf(m, sys, stored, report, null),
+                fleet = report,
+                missing = missing,
+                chosen = missing.map { it.name }.toSet(),
+                scripts = scripts,
+                picked = preselect(scripts),
+                stale = stored != null,
+                message = app.stateStore.lastWarnings.firstOrNull(),
+            )
+        }
     }
 
     /**
@@ -304,11 +324,8 @@ class HomeModel(private val app: AppContext) {
         if (state.loading) return
         // Recompute the rows too: "asking…" has to show the moment we start,
         // not when the first answer lands.
-        state = state.copy(
-            loading = true,
-            remote = RemoteStatus.Asking,
-            sections = sectionsOf(m, sys, stored, fleet(), RemoteStatus.Asking, checking = true),
-        )
+        val sections = sectionsOf(m, sys, stored, fleet(), RemoteStatus.Asking, checking = true)
+        update { it.copy(loading = true, remote = RemoteStatus.Asking, sections = sections) }
 
         val known = stored
         if (known != null) scope.launch { askRemotes(m, sys, known) }
@@ -320,12 +337,13 @@ class HomeModel(private val app: AppContext) {
             val report = fleet()
             val scripts = scriptRowsOf(m, sys, observed)
             val missing = missingRowsOf(m, sys, observed)
-            landing.withLock {
-                state = state.copy(
+            val toolsDown = app.lastToolsDown
+            update {
+                it.copy(
                     loading = false,
                     stale = fresh.isFailure,
                     fleet = report,
-                    sections = sectionsOf(m, sys, observed, report, state.remote, toolsDown = app.lastToolsDown),
+                    sections = sectionsOf(m, sys, observed, report, it.remote, toolsDown = toolsDown),
                     missing = missing,
                     chosen = missing.map { it.name }.toSet(),
                     scripts = scripts,
@@ -333,7 +351,7 @@ class HomeModel(private val app: AppContext) {
                     // A tool the checks go through wasn't there: one sentence,
                     // here, where a person reads — not only a count in a row.
                     message = fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()
-                        ?: app.lastToolsDown.firstOrNull()?.let { "${it.message} · r re-checks once it is fixed" },
+                        ?: toolsDown.firstOrNull()?.let { down -> "${down.message} · r re-checks once it is fixed" },
                 )
             }
             // A machine with no state file yet couldn't be asked about above.
@@ -373,10 +391,13 @@ class HomeModel(private val app: AppContext) {
                     RemoteStatus.Unavailable(e.message?.lineSequence()?.firstOrNull() ?: "unreachable")
                 },
             )
-        landing.withLock {
-            state = state.copy(
+        val known = stored
+        val report = fleet()
+        val toolsDown = app.lastToolsDown
+        update {
+            it.copy(
                 remote = remote,
-                sections = sectionsOf(m, sys, stored, fleet(), remote, checking = state.loading, toolsDown = app.lastToolsDown),
+                sections = sectionsOf(m, sys, known, report, remote, checking = it.loading, toolsDown = toolsDown),
             )
         }
     }
@@ -399,7 +420,7 @@ class HomeModel(private val app: AppContext) {
             if (run.password != null) {
                 when (key) {
                     HomeKey.ENTER -> submitPassword()
-                    HomeKey.ESC -> update { it.copy(password = null, passwordError = null) }
+                    HomeKey.ESC -> updateRun { it.copy(password = null, passwordError = null) }
                     else -> {}
                 }
                 return false
@@ -408,14 +429,14 @@ class HomeModel(private val app: AppContext) {
                 HomeKey.ESC, HomeKey.QUIT -> when {
                     run.confirming -> {
                         pending = null
-                        state = s.copy(run = null)
+                        update { it.copy(run = null) }
                     }
-                    run.done -> state = closed(s, run)
+                    run.done -> update { closed(it, run) }
                     else -> cancelRun()
                 }
                 HomeKey.ENTER -> when {
                     run.confirming -> confirmRun()
-                    run.done -> state = closed(s, run)
+                    run.done -> update { closed(it, run) }
                     else -> {}
                 }
                 // Scrolling back pins the window; coming back to 0 follows
@@ -424,7 +445,7 @@ class HomeModel(private val app: AppContext) {
                 HomeKey.DOWN -> scrollRun(-1, viewport)
                 HomeKey.PAGE_UP -> scrollRun(viewport, viewport)
                 HomeKey.PAGE_DOWN -> scrollRun(-viewport, viewport)
-                HomeKey.THEME -> state = s.copy(dark = !s.dark)
+                HomeKey.THEME -> update { it.copy(dark = !it.dark) }
                 else -> {}
             }
             return false
@@ -476,24 +497,28 @@ class HomeModel(private val app: AppContext) {
                     if (group != null && group in s.collapsed) {
                         // Unfolding can put a gap back above the heading:
                         // follow it to its new place.
-                        val next = s.copy(collapsed = s.collapsed - group)
-                        state = withCursor(next, headingLine(next, index, group), viewport)
+                        update {
+                            val next = it.copy(collapsed = it.collapsed - group)
+                            withCursor(next, headingLine(next, index, group), viewport)
+                        }
                     }
                 }
                 // Already open, from its row or from inside it: l has
                 // nothing left to do, and h is what closes it.
                 inDetail || open -> {}
-                section.busy -> state = s.copy(message = "still asking — the rows fill in as answers land")
+                section.busy -> say("still asking — the rows fill in as answers land")
                 detailLines(s, section) > 0 -> {
                     // The table is what you opened, so the cursor goes into
                     // it — onto the row you last left it on, since closing a
                     // table to read another row shouldn't cost your place in
                     // it — and walks back out on k.
-                    val next = s.copy(open = s.open + section.action)
-                    val stop = detailStop(next, index, s.lastRow[section.action] ?: 0)
-                    state = withCursor(next, if (stop < 0) at else stop, viewport)
+                    update {
+                        val next = it.copy(open = it.open + section.action)
+                        val stop = detailStop(next, index, it.lastRow[section.action] ?: 0)
+                        withCursor(next, if (stop < 0) at else stop, viewport)
+                    }
                 }
-                else -> state = s.copy(message = "nothing to open there")
+                else -> say("nothing to open there")
             }
             // h inside the remote table folds the group under the cursor,
             // landing on its heading; a group already folded — or one with
@@ -512,26 +537,29 @@ class HomeModel(private val app: AppContext) {
                 }
                 when {
                     fold != null -> {
-                        val next = s.copy(collapsed = s.collapsed + fold)
-                        state = withCursor(next, headingLine(next, index, fold), viewport)
+                        update {
+                            val next = it.copy(collapsed = it.collapsed + fold)
+                            withCursor(next, headingLine(next, index, fold), viewport)
+                        }
                     }
                     // Only the detail the cursor is in closes; every other
                     // open one stays exactly as it was, and the cursor comes
                     // out onto the subject row it was under.
                     open -> {
-                        val next = s.copy(open = s.open - section.action)
-                        val subject = homeLines(next).indexOfFirst { it is HomeLine.Subject && it.section == index }
-                        state = withCursor(next, subject, viewport)
+                        update {
+                            val next = it.copy(open = it.open - section.action)
+                            val subject = homeLines(next).indexOfFirst { line -> line is HomeLine.Subject && line.section == index }
+                            withCursor(next, subject, viewport)
+                        }
                     }
                     // esc closes things; it never leaves the screen. The key
                     // you press to back out of a list must not also be the
                     // one that ends the session — on a tidy screen, or from
                     // a row with nothing under it, one esc too many would.
                     // q is the only way out.
-                    key == HomeKey.ESC -> state = s.copy(
-                        message =
-                            if (s.open.isEmpty()) "nothing to close — q quits"
-                            else "esc closes the list you're in — q quits",
+                    key == HomeKey.ESC -> say(
+                        if (s.open.isEmpty()) "nothing to close — q quits"
+                        else "esc closes the list you're in — q quits",
                     )
                     else -> {}
                 }
@@ -539,14 +567,14 @@ class HomeModel(private val app: AppContext) {
             // space ticks the row under the cursor, whichever subject it
             // belongs to — one unit at a time.
             HomeKey.SELECT -> when {
-                !inDetail -> state = s.copy(message = if (open) "space ticks a row in the list below" else "press l to open it")
+                !inDetail -> say(if (open) "space ticks a row in the list below" else "press l to open it")
                 onPrograms -> s.missing.getOrNull(row)?.let { program ->
-                    state = s.copy(chosen = if (program.name in s.chosen) s.chosen - program.name else s.chosen + program.name)
+                    update { it.copy(chosen = if (program.name in it.chosen) it.chosen - program.name else it.chosen + program.name) }
                 }
                 // The scripts picker ticks one script at a time — each is its
                 // own unit, and ticking a done one is how you force it.
                 onScripts -> s.scripts.getOrNull(row)?.let { script ->
-                    state = s.copy(picked = if (script.name in s.picked) s.picked - script.name else s.picked + script.name)
+                    update { it.copy(picked = if (script.name in it.picked) it.picked - script.name else it.picked + script.name) }
                 }
                 onRemote && answered != null -> {
                     // A tool line, or a program under it, ticks the TOOL:
@@ -554,16 +582,18 @@ class HomeModel(private val app: AppContext) {
                     // says what that means. A source row ticks itself.
                     val line = remoteLines(answered, s.collapsed).getOrNull(row)
                     val tick = line?.key
-                    state = when {
-                        line == null -> s
-                        // A source heading ticks every item under it — or
-                        // clears them all when they already are.
-                        line is RemoteLine.Source && line.itemKeys.isNotEmpty() ->
-                            if (s.selection.containsAll(line.itemKeys)) s.copy(selection = s.selection - line.itemKeys.toSet(), message = null)
-                            else s.copy(selection = s.selection + line.itemKeys, message = null)
-                        tick == null -> s.copy(message = line.refusal ?: "nothing to tick there")
-                        tick in s.selection -> s.copy(selection = s.selection - tick, message = null)
-                        else -> s.copy(selection = s.selection + tick, message = null)
+                    update {
+                        when {
+                            line == null -> it
+                            // A source heading ticks every item under it — or
+                            // clears them all when they already are.
+                            line is RemoteLine.Source && line.itemKeys.isNotEmpty() ->
+                                if (it.selection.containsAll(line.itemKeys)) it.copy(selection = it.selection - line.itemKeys.toSet(), message = null)
+                                else it.copy(selection = it.selection + line.itemKeys, message = null)
+                            tick == null -> it.copy(message = line.refusal ?: "nothing to tick there")
+                            tick in it.selection -> it.copy(selection = it.selection - tick, message = null)
+                            else -> it.copy(selection = it.selection + tick, message = null)
+                        }
                     }
                 }
                 else -> {}
@@ -577,9 +607,9 @@ class HomeModel(private val app: AppContext) {
                     null
                 }
                 if (link == null) {
-                    state = s.copy(message = "no page to open for this row")
+                    say("no page to open for this row")
                 } else {
-                    state = s.copy(message = "opening $link")
+                    say("opening $link")
                     openInBrowser(link)
                 }
             }
@@ -589,12 +619,12 @@ class HomeModel(private val app: AppContext) {
             HomeKey.SELECT_ALL, HomeKey.SELECT_NONE -> {
                 val all = key == HomeKey.SELECT_ALL
                 when {
-                    !open -> state = s.copy(message = if (detailLines(s, section) > 0) "press l to open it" else "nothing to tick there")
-                    onPrograms -> state = s.copy(chosen = if (all) s.missing.map { it.name }.toSet() else emptySet())
-                    onScripts -> state = s.copy(picked = if (all) s.scripts.map { it.name }.toSet() else emptySet())
+                    !open -> say(if (detailLines(s, section) > 0) "press l to open it" else "nothing to tick there")
+                    onPrograms -> update { it.copy(chosen = if (all) it.missing.map { p -> p.name }.toSet() else emptySet()) }
+                    onScripts -> update { it.copy(picked = if (all) it.scripts.map { r -> r.name }.toSet() else emptySet()) }
                     onRemote && answered != null -> {
                         val every = remoteLines(answered, s.collapsed).mapNotNull { it.key }.toSet()
-                        state = s.copy(selection = if (all) every else emptySet())
+                        update { it.copy(selection = if (all) every else emptySet()) }
                     }
                     else -> {}
                 }
@@ -605,7 +635,7 @@ class HomeModel(private val app: AppContext) {
             HomeKey.ENTER -> when {
                 // Never act on an answer that hasn't arrived: enter used to
                 // fire the outdated command over the one still running.
-                section.busy -> state = s.copy(message = "still asking — the rows fill in as answers land")
+                section.busy -> say("still asking — the rows fill in as answers land")
                 open && onPrograms -> startInstalls(s.chosen)
                 open && onScripts -> startScripts(s.picked)
                 open && onRemote && answered != null -> {
@@ -613,38 +643,40 @@ class HomeModel(private val app: AppContext) {
                     when {
                         // The sweep's cost, in full: every package the tool
                         // would move that loadout doesn't declare, one per line.
-                        line is RemoteLine.Others -> state = s.copy(
-                            run = PaneRun(
-                                steps = emptyList(),
-                                kind = PaneKind.LIST,
-                                title = "${line.tool}: ${line.names.size} packages not in your loadout",
-                                log = line.names,
-                                done = true,
-                                summary = "these upgrade too when you upgrade ${line.tool} — enter closes",
-                            ),
-                        )
+                        line is RemoteLine.Others -> update {
+                            it.copy(
+                                run = PaneRun(
+                                    steps = emptyList(),
+                                    kind = PaneKind.LIST,
+                                    title = "${line.tool}: ${line.names.size} packages not in your loadout",
+                                    log = line.names,
+                                    done = true,
+                                    summary = "these upgrade too when you upgrade ${line.tool} — enter closes",
+                                ),
+                            )
+                        }
                         s.selection.isNotEmpty() -> startUpgrade(answered, s.selection)
-                        else -> state = s.copy(message = "nothing selected — space selects one, a selects all")
+                        else -> say("nothing selected — space selects one, a selects all")
                     }
                 }
                 open && section.action == HomeAction.SHOW_DIFF ->
-                    state = s.copy(message = "this table is the comparison — there is nothing to run")
+                    say("this table is the comparison — there is nothing to run")
                 // A closed row whose detail is already here is LOOKED at, and
                 // looking is l's job.
-                detailLines(s, section) > 0 -> state = s.copy(message = "press l to open it")
+                detailLines(s, section) > 0 -> say("press l to open it")
                 // A remote row that couldn't be asked, a fleet in sync: there
                 // is nothing to open, and leaving to print the same answer
                 // from a command is what this screen replaced.
-                onRemote -> state = s.copy(
-                    message = if (s.remote is RemoteStatus.Unavailable) "the remotes couldn't be asked — r tries again" else "everything up to date",
+                onRemote -> say(
+                    if (s.remote is RemoteStatus.Unavailable) "the remotes couldn't be asked — r tries again" else "everything up to date",
                 )
                 section.action == HomeAction.SHOW_DIFF ->
-                    state = s.copy(message = "the fleet is in sync — nothing to compare")
-                else -> state = s.copy(message = "nothing to do there")
+                    say("the fleet is in sync — nothing to compare")
+                else -> say("nothing to do there")
             }
             HomeKey.REFRESH -> refresh()
-            HomeKey.THEME -> state = s.copy(dark = !s.dark)
-            HomeKey.QUIT -> state = s.copy(exit = true)
+            HomeKey.THEME -> update { it.copy(dark = !it.dark) }
+            HomeKey.QUIT -> update { it.copy(exit = true) }
             // No else: the machine-wide verbs returned above, and a new key
             // should have to say what it does on a line.
             HomeKey.SYNC, HomeKey.UPGRADE, HomeKey.CONVERGE -> {}
@@ -672,7 +704,7 @@ class HomeModel(private val app: AppContext) {
             engine.plan(m, sys.machine, tools.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted()) +
                 items.flatMap { (source, rows) -> engine.planSourceItems(m, source, rows.sorted()) }
         }.getOrElse { e ->
-            state = state.copy(message = e.message?.lineSequence()?.firstOrNull())
+            say(e.message?.lineSequence()?.firstOrNull())
             return
         }
         if (plan.isEmpty()) return
@@ -688,7 +720,7 @@ class HomeModel(private val app: AppContext) {
         if (state.run != null) return
         val names = state.missing.filter { it.name in chosen }.map { it.name }
         if (names.isEmpty()) {
-            state = state.copy(message = "nothing ticked — space ticks a program, a ticks them all")
+            say("nothing ticked — space ticks a program, a ticks them all")
             return
         }
         val m = manifest ?: return
@@ -697,12 +729,12 @@ class HomeModel(private val app: AppContext) {
         val plan = runCatching {
             engine.plan(m, sys.machine, names, stored?.programs.orEmpty()) { app.detection.isBinaryAvailable(it) }
         }.getOrElse { e ->
-            state = state.copy(message = e.message?.lineSequence()?.firstOrNull())
+            say(e.message?.lineSequence()?.firstOrNull())
             return
         }
         val installs = plan.filterIsInstance<PlanItem.Install>()
         if (installs.isEmpty()) {
-            state = state.copy(message = "already installed — r re-checks")
+            say("already installed — r re-checks")
             return
         }
         ask(installs.map { PaneStep(it.program, it.command, sudo = it.sudo) }, PaneKind.INSTALL)
@@ -717,7 +749,7 @@ class HomeModel(private val app: AppContext) {
         if (state.run != null) return
         val steps = state.scripts.filter { it.name in picked }
         if (steps.isEmpty()) {
-            state = state.copy(message = "nothing ticked — space ticks a script, a ticks them all")
+            say("nothing ticked — space ticks a script, a ticks them all")
             return
         }
         ask(steps.map { PaneStep(it.name, it.command, check = it.check, sudo = it.sudo) }, PaneKind.SCRIPTS)
@@ -735,8 +767,7 @@ class HomeModel(private val app: AppContext) {
      */
     private fun ask(plan: List<PaneStep>, kind: PaneKind) {
         pending = plan
-        state = state.copy(
-            run = PaneRun(
+        val run = PaneRun(
                 steps = plan.map { it.label },
                 kind = kind,
                 needsSudo = plan.any { it.sudo || commandNeedsSudo(it.command) || it.check?.let(::commandNeedsSudo) == true },
@@ -744,8 +775,8 @@ class HomeModel(private val app: AppContext) {
                 confirming = true,
                 commands = plan.map { "[${it.label}]  ${it.command}" },
                 sweeps = plan.filter { it.sweep }.map { it.label },
-            ),
-        )
+            )
+        update { it.copy(run = run) }
     }
 
     /**
@@ -756,7 +787,7 @@ class HomeModel(private val app: AppContext) {
     fun confirmRun() {
         val run = state.run ?: return
         if (run.needsSudo && run.password == null && !app.runner.capture("sudo -n true").success) {
-            update { it.copy(password = "", passwordError = null) }
+            updateRun { it.copy(password = "", passwordError = null) }
             return
         }
         startRun()
@@ -768,11 +799,10 @@ class HomeModel(private val app: AppContext) {
      * typed here is ever logged or echoed — the field renders as dots.
      */
     fun passwordKey(key: String): Boolean {
-        val run = state.run ?: return false
-        val typed = run.password ?: return false
+        if (state.run?.password == null) return false
         when {
-            key == "Backspace" -> update { it.copy(password = typed.dropLast(1)) }
-            key.length == 1 && !key[0].isISOControl() -> update { it.copy(password = typed + key) }
+            key == "Backspace" -> updateRun { it.copy(password = it.password?.dropLast(1)) }
+            key.length == 1 && !key[0].isISOControl() -> updateRun { it.copy(password = it.password?.plus(key)) }
             else -> return false
         }
         return true
@@ -788,10 +818,10 @@ class HomeModel(private val app: AppContext) {
         val typed = state.run?.password ?: return
         val stamped = app.runner.capture("sudo -S -p '' -v", input = typed).success
         if (stamped) {
-            update { it.copy(password = null, passwordError = null) }
+            updateRun { it.copy(password = null, passwordError = null) }
             startRun()
         } else {
-            update { it.copy(password = "", passwordError = "sorry, try again") }
+            updateRun { it.copy(password = "", passwordError = "sorry, try again") }
         }
     }
 
@@ -804,7 +834,7 @@ class HomeModel(private val app: AppContext) {
         val kind = state.run?.kind ?: PaneKind.UPGRADE
         val scripts = kind == PaneKind.SCRIPTS
         val needsSudo = state.run?.needsSudo == true
-        state = state.copy(run = state.run?.copy(confirming = false, label = plan.first().label))
+        updateRun { it.copy(confirming = false, label = plan.first().label) }
         // sudo's cache expires (5 min on Fedora); a plan whose third step
         // needs sudo after a ten-minute brew step would otherwise fail with
         // "a terminal is required". Keep the stamp fresh while we run.
@@ -824,7 +854,7 @@ class HomeModel(private val app: AppContext) {
                 // A rule before each step: five commands' output in one
                 // scroll is otherwise one undifferentiated stream.
                 val divider = "$RUN_DIVIDER${index + 1}/${plan.size}  ${step.label} "
-                update {
+                updateRun {
                     it.copy(
                         current = index,
                         label = step.label,
@@ -846,15 +876,15 @@ class HomeModel(private val app: AppContext) {
                         exitCode = exit,
                     )
                 }
-                if (exit != 0) update { it.copy(failed = true, failures = it.failures + step.label) }
+                if (exit != 0) updateRun { it.copy(failed = true, failures = it.failures + step.label) }
             }
             if (cancelled) {
-                update { it.copy(done = true, cancelled = true, summary = "cancelled — state not refreshed") }
+                updateRun { it.copy(done = true, cancelled = true, summary = "cancelled — state not refreshed") }
                 return@launch
             }
             // The transaction moved what it moved, the scripts did what they
             // did: re-ask everything, the same observation `status` makes.
-            update {
+            updateRun {
                 it.copy(
                     label = "checking",
                     log = it.log + "" + when (kind) {
@@ -904,28 +934,33 @@ class HomeModel(private val app: AppContext) {
             // Name what failed: "finished with failures" makes you scroll
             // back through everything to find out which.
             val failed = (state.run?.failures.orEmpty() + stillNot + stillMissing).distinct()
-            state = state.copy(
-                sections = sectionsOf(m, sys, stored, fleet(), state.remote, toolsDown = app.lastToolsDown),
-                scripts = rows,
-                picked = preselect(rows),
-                missing = missing,
-                chosen = missing.map { it.name }.toSet(),
-                // The table underneath still lists what was just upgraded;
-                // ask again so it's true when the pane closes.
-                remote = if (kind == PaneKind.UPGRADE) RemoteStatus.Asking else state.remote,
-                run = state.run?.copy(
-                    log = state.run?.log.orEmpty() + recheck,
-                    done = true,
-                    failed = fresh.isFailure || failed.isNotEmpty(),
-                    summary = when {
-                        fresh.isFailure -> "state not written — the run above is not recorded"
-                        failed.isNotEmpty() -> "not done: ${failed.joinToString()} — scroll up for the output"
-                        scripts -> "all ${results.size} done — enter closes"
-                        kind == PaneKind.INSTALL -> "all ${plan.size} installed — enter closes"
-                        else -> "$changed program(s) changed version — enter closes"
-                    },
-                ),
-            )
+            val observed = stored
+            val report = fleet()
+            val toolsDown = app.lastToolsDown
+            update {
+                it.copy(
+                    sections = sectionsOf(m, sys, observed, report, it.remote, toolsDown = toolsDown),
+                    scripts = rows,
+                    picked = preselect(rows),
+                    missing = missing,
+                    chosen = missing.map { it.name }.toSet(),
+                    // The table underneath still lists what was just upgraded;
+                    // ask again so it's true when the pane closes.
+                    remote = if (kind == PaneKind.UPGRADE) RemoteStatus.Asking else it.remote,
+                    run = it.run?.copy(
+                        log = it.run.log + recheck,
+                        done = true,
+                        failed = fresh.isFailure || failed.isNotEmpty(),
+                        summary = when {
+                            fresh.isFailure -> "state not written — the run above is not recorded"
+                            failed.isNotEmpty() -> "not done: ${failed.joinToString()} — scroll up for the output"
+                            scripts -> "all ${results.size} done — enter closes"
+                            kind == PaneKind.INSTALL -> "all ${plan.size} installed — enter closes"
+                            else -> "$changed program(s) changed version — enter closes"
+                        },
+                    ),
+                )
+            }
             if (kind == PaneKind.UPGRADE) stored?.let { askRemotes(m, sys, it) }
           } finally {
             keepalive?.cancel()
@@ -947,8 +982,8 @@ class HomeModel(private val app: AppContext) {
                 "sh -c 'command -v xdg-open >/dev/null 2>&1 && exec xdg-open \"\$1\" || exec open \"\$1\"' sh $quoted </dev/null",
             )
             val said = (result.stderr + result.stdout).lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
-            state = state.copy(
-                message = if (result.success) "opened $url"
+            say(
+                if (result.success) "opened $url"
                 else "could not open a browser (${said ?: "exit ${result.exitCode}"}) — $url",
             )
         }
@@ -957,13 +992,16 @@ class HomeModel(private val app: AppContext) {
     private fun closed(s: HomeState, run: PaneRun) =
         s.copy(run = null, selection = if (run.kind == PaneKind.UPGRADE) emptySet() else s.selection)
 
-    private fun update(transform: (PaneRun) -> PaneRun) {
-        state = state.copy(run = state.run?.let(transform))
+    /** The line under the rows: what a key did, or why it did nothing. */
+    private fun say(message: String?) = update { it.copy(message = message) }
+
+    private fun updateRun(transform: (PaneRun) -> PaneRun) {
+        update { it.copy(run = it.run?.let(transform)) }
     }
 
     private fun appendRun(lines: List<String>) {
         if (lines.isEmpty()) return
-        update { it.copy(log = (it.log + lines).takeLast(MAX_RUN_LINES)) }
+        updateRun { it.copy(log = (it.log + lines).takeLast(MAX_RUN_LINES)) }
     }
 
     private fun scrollRun(delta: Int, viewport: Int) {
@@ -973,7 +1011,7 @@ class HomeModel(private val app: AppContext) {
         // A log is read from its tail (scrollBack counts up from the bottom);
         // a list from its top, so the same keys move the other way.
         val step = if (run.kind == PaneKind.LIST) -delta else delta
-        update { it.copy(scrollBack = (it.scrollBack + step).coerceIn(0, max)) }
+        updateRun { it.copy(scrollBack = (it.scrollBack + step).coerceIn(0, max)) }
     }
 
     private fun cancelRun() {
@@ -982,7 +1020,7 @@ class HomeModel(private val app: AppContext) {
     }
 
     private fun leaveFor(action: HomeAction): Boolean {
-        state = state.copy(action = action, exit = true)
+        update { it.copy(action = action, exit = true) }
         return true
     }
 
@@ -1008,7 +1046,7 @@ class HomeModel(private val app: AppContext) {
             }
             i += step
         }
-        state = withCursor(s, target, viewport)
+        update { withCursor(it, target, viewport) }
     }
 
     /**
@@ -1027,7 +1065,7 @@ class HomeModel(private val app: AppContext) {
         var i = from + step
         while (i in lines.indices) {
             if (lines[i].heading && lines[i].focusable) {
-                state = withCursor(s, i, viewport)
+                update { withCursor(it, i, viewport) }
                 return
             }
             i += step

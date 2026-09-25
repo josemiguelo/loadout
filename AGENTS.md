@@ -324,8 +324,12 @@ These came from explicit user decisions; don't "improve" them away:
   read-modify-write race: the refresh's status write once copied the remote
   row's `Asking` over an answer that landed mid-write, and the row spun
   forever (nothing asks again) — about 1 open in 5 with instant oracles.
-  Concurrent background writers take `HomeModel.landing` (a Mutex) and
-  re-read `state` inside it; keep slow work outside the lock.
+  Every write goes through `HomeModel.update { it.copy(…) }` — keys from
+  the UI thread included — which hands the lambda the state as it is under
+  a spin lock (not a Mutex: keys aren't in a coroutine). Never assign
+  `state` directly; keep the lambda a pure copy (slow work before the call)
+  and never call `update` inside it (not reentrant). The unit test
+  `writesFromManyThreadsAreNeverLost` fails without the lock.
 - **TUI size**: Mosaic 0.18's `LocalTerminalState.size` does NOT report the
   real TTY size — TuiApp polls `platform.terminalRows()`/`terminalColumns()`
   (TIOCGWINSZ) every 300ms instead, with 24x80 fallback; the polling effect

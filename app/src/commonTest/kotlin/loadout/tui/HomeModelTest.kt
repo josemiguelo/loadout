@@ -11,6 +11,9 @@ import loadout.core.model.SystemInfo
 import loadout.theme.ThemeException
 import loadout.theme.detectDarkTerminal
 import loadout.theme.forcedDark
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -363,6 +366,22 @@ class HomeKeysTest {
         m.handleKey(HomeKey.OPEN)
         assertEquals(setOf(HomeAction.INSTALL_MISSING), m.state.open)
         assertEquals(HomeAction.NONE, m.state.action)
+    }
+
+    @Test
+    fun writesFromManyThreadsAreNeverLost() {
+        // Keys on the UI thread, answers on IO threads: every write lands on
+        // the state as it is, so none puts back a copy read before another.
+        // Typed characters and theme flips touch different fields; a lost
+        // write shows up as a short password or a flipped theme.
+        val m = model(emptyList())
+        m.setStateForTest(HomeState(dark = true, run = PaneRun(steps = emptyList(), password = "")))
+        runBlocking(Dispatchers.Default) {
+            repeat(4) { launch { repeat(500) { m.passwordKey("x") } } }
+            launch { repeat(1000) { m.handleKey(HomeKey.THEME) } }
+        }
+        assertEquals(2000, m.state.run!!.password!!.length)
+        assertTrue(m.state.dark, "an even number of flips ends where it started")
     }
 
     @Test
