@@ -1,16 +1,17 @@
-# The home screen, driven on a pseudo-terminal. Give the screen ~4s to bind
-# the tty and finish its first refresh before the first key: a key on a
-# busy row is refused, and a key before raw mode is lost.
+# The home screen, driven on a pseudo-terminal. Key feeders wait on the
+# screen itself (wait_settled / wait_screen), never on a fixed sleep: a key
+# on a busy row is refused, a key before raw mode is lost, and how long the
+# rows take to answer depends on the machine.
 
 basic_repo repo
 # Every PTY test here stubs the self-version cache: the screen asks the
-# remotes the moment it opens, and up to 5s of curl behind these fixed
-# sleeps is what makes a key land on the wrong frame.
+# remotes the moment it opens, and an unstubbed check is seconds of curl
+# before the remote row can settle.
 fake_release_cache
 OUT=$("$BIN" --repo repo --machine m1 2>&1)
 echo "$OUT" | grep -q "Usage: loadout" || fail "bare loadout without a TTY still prints help"
 if has_pty; then
-    { sleep 3; printf 'q'; sleep 1; } | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-home.log --repo repo --machine m1
+    { wait_settled tui-home.log; printf 'q'; sleep 1; } | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-home.log --repo repo --machine m1
     grep -qa "loadout" tui-home.log || fail "the home screen renders"
     # The footer is one clipped line, and its wording is compact on a narrow
     # terminal — assert the keys, not the sentence.
@@ -24,7 +25,7 @@ if has_pty; then
     # pressing it on the way out of one drops you off the screen. Three of
     # them on a row with nothing open, then q: the screen answers each and
     # leaves on the q.
-    { sleep 3; printf '\033'; sleep 0.4; printf '\033'; sleep 0.4; printf '\033'; sleep 0.6; printf 'q'; sleep 1; } \
+    { wait_settled tui-esc.log; printf '\033'; sleep 0.4; printf '\033'; sleep 0.4; printf '\033'; sleep 0.6; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-esc.log --repo repo --machine m1
     grep -qa "nothing to close" tui-esc.log || fail "esc on a top-level row says which key quits"
     grep -qa "q quits" tui-esc.log || fail "and names q as the way out"
@@ -40,7 +41,9 @@ if has_pty; then
     # j to the scripts row, l opens the picker, a ticks every script,
     # enter asks, enter runs, wait for the refresh, enter closes, q quits
     # (a q on a finished pane closes it — it never quits the screen).
-    { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-scripts.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-scripts.log 'space tick'
+      printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-scripts.log 'These scripts will run'
+      printf '\r'; wait_pane_done tui-scripts.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-scripts.log --repo srepo --machine m1
     grep -qa "space tick" tui-scripts.log || fail "the scripts row opens a picker"
     grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list modes=[setup] scripts" || true
@@ -57,7 +60,9 @@ if has_pty; then
     # read-only directory would not: rewriting an existing file needs no
     # directory permission.
     chmod 400 srepo/state/m1.json
-    { sleep 4; printf 'j'; sleep 1; printf 'l'; sleep 0.5; printf 'a'; sleep 0.5; printf '\r'; sleep 1; printf '\r'; sleep 6; printf 'q'; sleep 0.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-nowrite.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-nowrite.log 'space tick'
+      printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-nowrite.log 'These scripts will run'
+      printf '\r'; wait_pane_done tui-nowrite.log; printf 'q'; sleep 0.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-nowrite.log --repo srepo --machine m1
     chmod 600 srepo/state/m1.json
     grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in the pane"
@@ -75,7 +80,8 @@ if has_pty; then
     # l opens the programs picker (mytool is missing), k walks out onto the
     # programs row, jj walks back through the picker onto the scripts row,
     # and l opens ITS picker — with the first one still open above it.
-    { sleep 5; printf 'l'; sleep 0.6; printf 'k'; sleep 0.4; printf 'jj'; sleep 0.6; printf 'l'; sleep 1.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-nav.log; printf 'l'; wait_screen tui-nav.log 'mytool'
+      printf 'k'; sleep 0.4; printf 'jj'; sleep 0.6; printf 'l'; wait_screen tui-nav.log 'drifted'; sleep 0.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-nav.log --repo nrepo --machine m1
     grep -qa "mytool" tui-nav.log || fail "the programs picker lists the missing program"
     # Within a few lines of each other: one frame holding both tables.
@@ -121,13 +127,13 @@ cp orepo/machines/m1.toml frepo/machines/m1.toml
 if has_pty; then
     # jj to the remote row, l opens the table with the cursor on the tool
     # line, h, then q. The tool is named after its probe: sh.
-    fold_keys() { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf 'h'; sleep 1; printf 'q'; sleep 1; }
-    fold_keys | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-clean.log --repo orepo --machine m1
+    fold_keys() { wait_settled "$1"; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 0.6; printf 'h'; sleep 1; printf 'q'; sleep 1; }
+    fold_keys tui-clean.log | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-clean.log --repo orepo --machine m1
     grep -qa "up to date" tui-clean.log || fail "the remote table lists a tool with nothing outdated"
     grep -qa "▸" tui-clean.log && fail "a tool that heads no rows must not show a fold chevron" || true
     ok "the remote table never offers to fold a clean tool"
 
-    fold_keys | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-fold.log --repo frepo --machine m1
+    fold_keys tui-fold.log | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-fold.log --repo frepo --machine m1
     grep -qa "1 update" tui-fold.log || fail "the remote table lists the tool's one update"
     grep -qa "sh ▸" tui-fold.log || fail "h folds a tool that heads rows, and marks it"
     ok "h still folds a tool whose rows it hides"
@@ -171,7 +177,9 @@ if has_pty; then
     # line, the package under it and the source heading to reach the
     # source's OWN tpack row: space ticks it, enter asks, enter runs,
     # enter closes the finished pane, q quits.
-    { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf 'jjj'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; sleep 1; printf '\r'; sleep 7; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-collide.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-collide.log '156 commit'
+      printf 'jjj'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; wait_screen tui-collide.log 'These commands will run'
+      printf '\r'; wait_pane_done tui-collide.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-collide.log --repo crepo --machine m1
     grep -qa "These commands will run" tui-collide.log || fail "the pane asks before upgrading"
     [ -f crepo/pulled-tpack.txt ] || fail "the ticked row upgraded through its own source"
@@ -183,7 +191,9 @@ if has_pty; then
     # landed on is a filesystem question again — ticking a source heading
     # covers its item, ticking a tool line sweeps the tool.
     rm -f crepo/pulled-tpack.txt crepo/the-tool-swept.txt
-    { sleep 5; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; sleep 1; printf ']'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; sleep 1; printf '\r'; sleep 7; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-jump.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-jump.log '156 commit'
+      printf ']'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; wait_screen tui-jump.log 'These commands will run'
+      printf '\r'; wait_pane_done tui-jump.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-jump.log --repo crepo --machine m1
     [ -f crepo/pulled-tpack.txt ] || fail "] landed on the source heading, whose tick covers its item"
     [ -f crepo/the-tool-swept.txt ] && fail "] skips the rows under a heading, it doesn't tick the tool" || true
@@ -213,7 +223,10 @@ if has_pty; then
     # l opens the picker (both missing, both ticked), enter asks, enter says
     # yes -> the password field; a wrong password is refused, the right one
     # runs both installs; enter closes the finished pane, q quits.
-    { sleep 4; printf 'l'; sleep 0.5; printf '\r'; sleep 0.5; printf '\r'; sleep 0.7; printf 'nope\r'; sleep 1; printf 'secret\r'; sleep 6; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-install.log; printf 'l'; wait_screen tui-install.log 'space tick'
+      printf '\r'; wait_screen tui-install.log 'These programs will install'
+      printf '\r'; wait_screen tui-install.log 'sudo password:'; printf 'nope\r'; wait_screen tui-install.log 'sorry, try again'
+      printf 'secret\r'; wait_pane_done tui-install.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
         | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-install.log --repo irepo --machine m1
     grep -qa "These programs will install" tui-install.log || fail "the pane asks before installing"
     grep -qa "sudo password:" tui-install.log || fail "the pane asks for the sudo password itself"
@@ -250,7 +263,10 @@ fake_sudo
 OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
 echo "$OUT" | grep -qE "sudo.hidden +yes" || fail "explain shows the declared sudo"
 if has_pty; then
-    { sleep 4; printf 'l'; sleep 0.5; printf '\r'; sleep 0.5; printf '\r'; sleep 0.7; printf 'secret\r'; sleep 4; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+    { wait_settled tui-hidden.log; printf 'l'; wait_screen tui-hidden.log 'space tick'
+      printf '\r'; wait_screen tui-hidden.log 'These programs will install'
+      printf '\r'; wait_screen tui-hidden.log 'sudo password:'; printf 'secret\r'; wait_pane_done tui-hidden.log
+      printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
         | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-hidden.log --repo hrepo --machine m1
     grep -qa "sudo password:" tui-hidden.log || fail "a declared sudo makes the pane ask, though no command says sudo"
     [ -f hrepo/fake-gamma.txt ] || fail "the install ran with the stamped sudo"

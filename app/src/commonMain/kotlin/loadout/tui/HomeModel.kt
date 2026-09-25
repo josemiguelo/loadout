@@ -30,6 +30,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 
 /** What a pane run is doing — the words and the ending differ, nothing else. LIST runs nothing: it shows. */
@@ -245,6 +247,16 @@ class HomeModel(private val app: AppContext) {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + blockingDispatcher)
+
+    /**
+     * Serializes the refresh's two writers — the status check and the
+     * remotes, each landing on its own IO thread. Both end in a read-modify-
+     * write of [state]; unguarded, the status write could copy the remote
+     * row's `Asking` over an answer that landed between its read and its
+     * write, and the row spun forever (nothing asks again). Each writer
+     * re-reads [state] inside the lock; the slow work stays outside it.
+     */
+    private val landing = Mutex()
     private var running: RunningProcess? = null
     private var cancelled = false
     private var pending: List<PaneStep>? = null
@@ -308,20 +320,22 @@ class HomeModel(private val app: AppContext) {
             val report = fleet()
             val scripts = scriptRowsOf(m, sys, observed)
             val missing = missingRowsOf(m, sys, observed)
-            state = state.copy(
-                loading = false,
-                stale = fresh.isFailure,
-                fleet = report,
-                sections = sectionsOf(m, sys, observed, report, state.remote, toolsDown = app.lastToolsDown),
-                missing = missing,
-                chosen = missing.map { it.name }.toSet(),
-                scripts = scripts,
-                picked = preselect(scripts),
-                // A tool the checks go through wasn't there: one sentence,
-                // here, where a person reads — not only a count in a row.
-                message = fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()
-                    ?: app.lastToolsDown.firstOrNull()?.let { "${it.message} · r re-checks once it is fixed" },
-            )
+            landing.withLock {
+                state = state.copy(
+                    loading = false,
+                    stale = fresh.isFailure,
+                    fleet = report,
+                    sections = sectionsOf(m, sys, observed, report, state.remote, toolsDown = app.lastToolsDown),
+                    missing = missing,
+                    chosen = missing.map { it.name }.toSet(),
+                    scripts = scripts,
+                    picked = preselect(scripts),
+                    // A tool the checks go through wasn't there: one sentence,
+                    // here, where a person reads — not only a count in a row.
+                    message = fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()
+                        ?: app.lastToolsDown.firstOrNull()?.let { "${it.message} · r re-checks once it is fixed" },
+                )
+            }
             // A machine with no state file yet couldn't be asked about above.
             if (known == null && observed != null) askRemotes(m, sys, observed)
         }
@@ -359,10 +373,12 @@ class HomeModel(private val app: AppContext) {
                     RemoteStatus.Unavailable(e.message?.lineSequence()?.firstOrNull() ?: "unreachable")
                 },
             )
-        state = state.copy(
-            remote = remote,
-            sections = sectionsOf(m, sys, stored, fleet(), remote, checking = state.loading, toolsDown = app.lastToolsDown),
-        )
+        landing.withLock {
+            state = state.copy(
+                remote = remote,
+                sections = sectionsOf(m, sys, stored, fleet(), remote, checking = state.loading, toolsDown = app.lastToolsDown),
+            )
+        }
     }
 
     private fun fleet() = manifest?.let { m ->

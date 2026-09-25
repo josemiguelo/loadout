@@ -109,16 +109,59 @@ fake_release_cache() {
 has_pty() { command -v script >/dev/null; }
 
 # Drive the binary on a pseudo-terminal: keys come from stdin (a subshell
-# of printf/sleep), the screen is captured to $1. Never fails the test by
-# itself — assert on the capture.
+# of printf and wait_screen), the screen is captured to $1 — flushed as it
+# is drawn (-F / -f), so the key feeder can wait on what is on screen. Never
+# fails the test by itself — assert on the capture. Each run needs a log
+# name of its own: the feeder starts before this truncates the file.
 pty_run() {
     log=$1; shift
     if [ "$(uname)" = "Darwin" ]; then
         # BSD script takes the log, then the command as plain argv — no -e
         # (it already exits with the child's status) and no shell in
         # between, so nothing re-splits the arguments.
-        script -q "$log" "$BIN" "$@" >/dev/null || true
+        script -qF "$log" "$BIN" "$@" >/dev/null || true
     else
-        script -qec "\"$BIN\" $*" "$log" >/dev/null || true
+        script -qfec "\"$BIN\" $*" "$log" >/dev/null || true
     fi
+}
+
+# For key feeders: block until the live capture $1 shows every extended
+# regex that follows (escape codes stripped), then return — or give up after
+# WAIT_SCREEN_TIMEOUT seconds (default 30), say so, and let the assertions
+# fail. Waiting on the screen instead of a fixed sleep is what keeps a key
+# off a row still busy asking: the remote row answered in ~1s on one machine
+# and after 6 on another, and every fixed sleep was too short somewhere.
+wait_screen() {
+    log=$1; shift
+    deadline=$(( $(date +%s) + ${WAIT_SCREEN_TIMEOUT:-30} ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if [ -f "$log" ]; then
+            screen=$(perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a\e]*(\a|\e\\)//g' "$log" 2>/dev/null)
+            seen=1
+            for pattern in "$@"; do
+                printf '%s' "$screen" | grep -qaE -- "$pattern" || { seen=0; break; }
+            done
+            [ "$seen" = 1 ] && return 0
+        fi
+        sleep 0.2
+    done
+    echo "wait_screen: $log never showed: $*" >&2
+    return 1
+}
+
+# The home screen has answered on every subject row: a busy row shows no
+# verb, so each verb on screen is an answer landed (the model starts its
+# refresh before the first frame, so none is left over from the stored
+# state). Keys before this can land on a row that refuses them. Verbs are
+# matched by their start: the row under the cursor clips its own
+# ("install what's mis…").
+wait_settled() {
+    wait_screen "$1" 'review th' '(nothing miss|install wh)' '(nothing pend|run wh)'
+}
+
+# The pane's run is over, however it went: its title names the outcome
+# (HomeApp's pane title) — a script whose check still fails ends "not all
+# done", not "run finished", and waiting on the happy title alone hung.
+wait_pane_done() {
+    wait_screen "$1" '(run finished|not all done|install finished|not all installed|upgrade finished|upgrade failed)'
 }

@@ -49,9 +49,10 @@ All three suites must pass before claiming work done. The integration script
 builds nothing — link the binary first.
 
 **Testing the TUI without a human**: Mosaic needs a real TTY; use `script` to
-fake one and pipe keys with sleeps (give the screen ~4s to bind the tty and
-finish its first refresh before the first key — a key on a busy row is
-refused, and a key before raw mode is lost):
+fake one and pipe keys in (give the screen time to bind the tty and finish
+its first refresh before the first key — a key on a busy row is refused, and
+a key before raw mode is lost). By hand, sleeps do; the integration suite
+waits on the screen instead (see Testing conventions):
 
 ```sh
 # Linux: the command is one string, the log is the last argument.
@@ -318,7 +319,13 @@ These came from explicit user decisions; don't "improve" them away:
   (`rememberCoroutineScope`) — a lingering job there keeps `runMosaic` from
   ever finishing (caused a q-after-refresh hang). HomeModel owns its own
   `CoroutineScope(SupervisorJob() + blockingDispatcher)`; UI calls
-  `model.handleKey(key)`. Keep it that way.
+  `model.handleKey(key)`. Keep it that way. Because that scope is
+  multi-threaded, `state = state.copy(…)` from two coroutines is a
+  read-modify-write race: the refresh's status write once copied the remote
+  row's `Asking` over an answer that landed mid-write, and the row spun
+  forever (nothing asks again) — about 1 open in 5 with instant oracles.
+  Concurrent background writers take `HomeModel.landing` (a Mutex) and
+  re-read `state` inside it; keep slow work outside the lock.
 - **TUI size**: Mosaic 0.18's `LocalTerminalState.size` does NOT report the
   real TTY size — TuiApp polls `platform.terminalRows()`/`terminalColumns()`
   (TIOCGWINSZ) every 300ms instead, with 24x80 fallback; the polling effect
@@ -557,8 +564,17 @@ These came from explicit user decisions; don't "improve" them away:
   test of the home screen calls `fake_release_cache` and passes
   `XDG_CACHE_HOME=$FAKE_CACHE`, even ones that don't read the remote row
   — the screen asks the remotes the moment it opens, and an unmocked
-  self-version check can eat several seconds of a test's fixed sleeps and
-  land a key on the wrong frame, hanging the whole suite.
+  self-version check is seconds of curl before the remote row settles.
+  **Key feeders wait on the screen, never on fixed sleeps**: `pty_run`
+  flushes its capture as it's drawn (`-f` / BSD `-F`), and the feeder
+  blocks on `wait_settled <log>` (every subject row shows its verb — busy
+  rows show none, and the refresh starts before the first frame),
+  `wait_screen <log> <ERE>…` (a picker, a prompt) and `wait_pane_done <log>`
+  (any finished-pane title: "not all done" as well as "run finished").
+  Fixed sleeps failed a different remote-row test per run once a machine's
+  remotes answered in 6s instead of 1. Match a row's verb by its start: the
+  row under the cursor clips its own ("install what's mis…"). Short sleeps
+  between keys that act synchronously are fine.
 
 ## CI / release
 
