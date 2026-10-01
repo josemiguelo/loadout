@@ -67,7 +67,7 @@ composition alive (see Toolchain facts). Rendering changes still need a
 human check: ask the user to run it.
 
 Manual testing target: the user's live config repo at `~/.config/loadouts`
-(machine name = hostname; the user runs Fedora and Omarchy/Arch machines).
+(machine name = hostname; the user's machines run Omarchy/Arch and macOS).
 `status`/`diff`/`--dry-run` against it are fine; installing/removing
 packages or pushing git needs the user's OK. Opening the home screen
 writes the machine's state file there.
