@@ -208,8 +208,12 @@ Explicit user decisions; don't "improve" them away.
     makes repos bump their floor). Don't reintroduce it.
 12. **Scripts are opt-in per machine**: a machine's top-level `scripts`
     list (in machines/<name>.toml, ABOVE any table header) has entries
-    "name" or "name args...", parsed by MachineConfig.scriptArgs(). Only
-    opted-in scripts converge and are observed; `run` errors on others.
+    "name" or "name args...", parsed by `scriptEntry` (the one parser; any
+    whitespace separates words, newlines included, so a long entry can be a
+    TOML multi-line string; args are re-joined with single spaces because
+    they're pasted into a shell command line, where a newline would run the
+    next line as a command). Only opted-in scripts converge and are
+    observed; `run` errors on others.
     Args become positional params for the file script AND its check (`set
     --`, see ScriptRunner.withArgs); args on inline `run` scripts are a
     validation error. No implicit script application, no os/bootc

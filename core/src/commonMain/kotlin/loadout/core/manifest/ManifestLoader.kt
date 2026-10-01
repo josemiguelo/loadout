@@ -12,6 +12,7 @@ import loadout.core.model.Manifest
 import loadout.core.model.Meta
 import loadout.core.model.Program
 import loadout.core.model.VersionCheck
+import loadout.core.model.scriptEntry
 import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
@@ -324,7 +325,7 @@ object ManifestLoader {
             val childScripts = config.scriptArgs().keys
             val result = config.copy(
                 pm = parent.pm + config.pm,
-                scripts = parent.scripts.filterNot { it.substringBefore(' ') in childScripts } + config.scripts,
+                scripts = parent.scripts.filterNot { scriptEntry(it).first in childScripts } + config.scripts,
             )
             flattened[name] = result
             return result
@@ -450,7 +451,7 @@ object ManifestLoader {
         }
 
         for ((machine, config) in manifest.machines) {
-            val scriptNames = config.scripts.map { it.substringBefore(' ') }
+            val scriptNames = config.scripts.map { scriptEntry(it).first }
             scriptNames.groupBy { it }.filterValues { it.size > 1 }.keys.forEach { dup ->
                 errors += "$MACHINES_DIR/$machine.toml lists script '$dup' more than once"
             }

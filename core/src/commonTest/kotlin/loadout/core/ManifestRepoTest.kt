@@ -204,6 +204,42 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun aScriptEntryMaySpanLinesAndItsArgumentsReachOneShellLine() {
+        val fs = fs(
+            mapOf(
+                "manifest.toml" to """
+                    [scripts.dotfiles]
+                    run = "true"
+                    [scripts.setup-ssh]
+                    file = "scripts/setup-ssh.sh"
+                """.trimIndent(),
+                "scripts/setup-ssh.sh" to "#!/bin/sh\n",
+                "machines/base/fedora.toml" to """
+                    base = true
+                    scripts = [
+                      '''setup-ssh
+                         https://example.com/one.git
+                         https://example.com/two.git''',
+                      "dotfiles",
+                    ]
+                """.trimIndent(),
+                "machines/laptop.toml" to "extends = \"fedora\"",
+                "machines/desktop.toml" to "extends = \"fedora\"\nscripts = ['''setup-ssh\n  only''']",
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        // Newlines and indentation become single spaces: the arguments are
+        // pasted into a shell command, where a newline would end it.
+        assertEquals(
+            mapOf("setup-ssh" to "https://example.com/one.git https://example.com/two.git", "dotfiles" to ""),
+            manifest.machines.getValue("laptop").scriptArgs(),
+        )
+        // A multi-line child entry still replaces the base's by name.
+        assertEquals(mapOf("dotfiles" to "", "setup-ssh" to "only"), manifest.machines.getValue("desktop").scriptArgs())
+        assertEquals("name" to "a b", loadout.core.model.scriptEntry("  name\n\ta \n  b  "))
+    }
+
+    @Test
     fun baseChainsFlattenThroughIntermediateBases() {
         val fs = fs(
             mapOf(

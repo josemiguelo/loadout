@@ -46,3 +46,21 @@ grep -qx "fedora" repo/arg-marker.txt || fail "argument reached the script"
 OUT=$("$BIN" --repo repo --machine m2 run argscript)
 echo "$OUT" | grep -q "already done" || fail "check with args should pass after run"
 ok "script arguments reach the file script and its check"
+
+# A long opt-in can be a TOML multi-line string: its lines are arguments,
+# never commands. If the newline reached the shell, `touch pwned.txt` would run.
+printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/scripts/argcount.sh
+cat >> repo/manifest.toml <<'TOML'
+
+[scripts.argcount]
+file = "scripts/argcount.sh"
+TOML
+printf "scripts = ['''argcount one\n  touch pwned.txt''']\n\n[pm]\ngit = \"manual\"\n" > repo/machines/m3.toml
+"$BIN" --repo repo --machine m3 run argcount >/dev/null || fail "run with a multi-line entry exits 0"
+grep -qx "3:one touch pwned.txt" repo/argcount.txt || fail "a multi-line entry's lines arrive as arguments"
+[ -e repo/pwned.txt ] && fail "a multi-line entry's line must never run as a command" || true
+# The name alone on the first line works too.
+printf "scripts = ['''argcount\n  a\n  b''']\n\n[pm]\ngit = \"manual\"\n" > repo/machines/m4.toml
+"$BIN" --repo repo --machine m4 run argcount >/dev/null || fail "a name alone on the first line is still the name"
+grep -qx "2:a b" repo/argcount.txt || fail "the lines after a lone name are its arguments"
+ok "a multi-line script entry passes its lines as arguments"

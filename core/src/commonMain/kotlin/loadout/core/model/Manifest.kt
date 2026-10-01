@@ -247,15 +247,27 @@ data class MachineConfig(
     /**
      * Scripts this machine opts into: entries are `"name"` or
      * `"name args..."` (first word = script name, rest = arguments passed as
-     * positional parameters to `file` scripts and their checks). Scripts run
-     * and are observed only on machines that opt in.
+     * positional parameters to `file` scripts and their checks). Any
+     * whitespace separates words, newlines included, so a long entry can be a
+     * TOML multi-line string. Scripts run and are observed only on machines
+     * that opt in.
      */
     val scripts: List<String> = emptyList(),
 ) {
-    /** [scripts] parsed into script name -> argument string. */
-    fun scriptArgs(): Map<String, String> = scripts.associate { entry ->
-        entry.substringBefore(' ') to entry.substringAfter(' ', "").trim()
-    }
+    /** [scripts] parsed into script name -> argument string (see [scriptEntry]). */
+    fun scriptArgs(): Map<String, String> = scripts.associate(::scriptEntry)
+}
+
+private val WHITESPACE = Regex("\\s+")
+
+/**
+ * One `scripts` entry as (name, arguments): words split on any whitespace
+ * and the arguments re-joined with single spaces. The arguments are pasted
+ * into a shell command line, where a newline would end the command.
+ */
+fun scriptEntry(entry: String): Pair<String, String> {
+    val words = entry.trim().split(WHITESPACE)
+    return words.first() to words.drop(1).joinToString(" ")
 }
 
 @Serializable

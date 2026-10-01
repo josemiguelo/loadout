@@ -152,8 +152,8 @@ sealed interface RemoteStatus {
 enum class HomeAction {
     NONE,
 
-    // Row verbs: what the focused subject needs. None of these leaves the
-    // screen: each opens its table in place and acts from it, in the pane.
+    // Row verbs: what the focused subject needs. Each opens its table in
+    // place; acting on its ticks is a HAND_OFF.
     RUN_SCRIPTS, INSTALL_MISSING, REVIEW_OUTDATED, SHOW_DIFF,
 
     // Whole-machine verbs, on their own keys — they belong to no single row.
