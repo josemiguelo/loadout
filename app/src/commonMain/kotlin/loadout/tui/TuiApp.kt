@@ -85,10 +85,9 @@ internal fun fit(text: String, width: Int): String =
  * each row, clear below when the frame shrank.
  *
  * The screen lives on the terminal's alternate screen (`?1049h`), like any
- * full-screen app: it takes the whole window, and leaving it gives back
- * the normal screen as it was. Hand-offs run on the normal screen, so a
- * command that opens its own full-screen program (a pager, an editor)
- * works there, and its output stays in the scrollback.
+ * full-screen app. Hand-offs run there too, so the normal screen is
+ * untouched until loadout exits; the caller ([ALT_SCREEN_OFF]) leaves the
+ * alternate screen once, at the end, not this function.
  *
  * Callable again in the same process. Mosaic allows one Tty binding at a
  * time, and closing the Terminal only resets tty modes; Tty.close() frees
@@ -106,14 +105,16 @@ internal fun runTui(content: @Composable () -> Unit) {
             }
         }
     } finally {
-        print("\u001b[?25h$ALT_SCREEN_OFF")
+        print("\u001b[?25h")
     }
 }
 
 private const val ALT_SCREEN_ON = "\u001b[?1049h"
-private const val ALT_SCREEN_OFF = "\u001b[?1049l"
 
-/** Clear the normal screen and home the cursor: a hand-off's command starts on a fresh window. */
+/** Leaves the alternate screen: the normal screen comes back exactly as it was. */
+internal const val ALT_SCREEN_OFF = "\u001b[?1049l"
+
+/** Clear the screen and home the cursor: a hand-off's command starts on a fresh window. */
 internal const val CLEAR_SCREEN = "\u001b[H\u001b[2J"
 
 private suspend fun runFrames(terminal: Terminal, content: @Composable () -> Unit) = coroutineScope {

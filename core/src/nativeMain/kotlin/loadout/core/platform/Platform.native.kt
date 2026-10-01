@@ -90,6 +90,30 @@ private const val REPLY_TIMEOUT_DECISECONDS: UByte = 2u
 private const val MAX_REPLY_READS = 3
 
 @OptIn(ExperimentalForeignApi::class)
+actual fun readKey(): Char? = memScoped {
+    val fd = open("/dev/tty", O_RDWR)
+    if (fd < 0) return null
+    val saved = alloc<termios>()
+    if (tcgetattr(fd, saved.ptr) != 0) {
+        close(fd)
+        return null
+    }
+    try {
+        val raw = alloc<termios>()
+        tcgetattr(fd, raw.ptr)
+        // Raw: no line buffering, no echo, Ctrl-C arrives as a byte (0x03).
+        // cfmakeraw leaves VMIN=1, VTIME=0: block until a byte arrives.
+        cfmakeraw(raw.ptr)
+        tcsetattr(fd, TCSANOW, raw.ptr)
+        val buf = allocArray<ByteVar>(1)
+        if (read(fd, buf, 1u) <= 0L) null else buf.readBytes(1)[0].toInt().toChar()
+    } finally {
+        tcsetattr(fd, TCSANOW, saved.ptr)
+        close(fd)
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
 actual fun terminalBackgroundLuma(): Double? = memScoped {
     val fd = open("/dev/tty", O_RDWR)
     if (fd < 0) return null

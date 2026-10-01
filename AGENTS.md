@@ -479,13 +479,24 @@ Explicit user decisions; don't "improve" them away.
     enter presses, y/n press directly, esc/q cancel. The pane is sized to
     its content (`paneLayout`, `READABLE` max width, text wraps).
   - The yes sets `HomeAction.HAND_OFF` + `Handoff(kind, args)` and exits the
-    screen. `RootCommand.home` clears the normal screen (the home screen is
-    on the alternate one, see the frame loop), pauses the model (waits for
-    background checks: none may run beside the command or write state after
-    it), prints a `━━ loadout <command>` rule, runs `install --yes` / `run
-    --force` / `upgrade … --item <source>/<name> --yes` via `dispatch()`,
-    then a closing rule (`✔ done` / `✘ exit N` / `interrupted`) and "enter
-    returns to loadout, q quits".
+    screen. `RootCommand.home` clears the screen (still the alternate one,
+    see the frame loop), pauses the model (waits for background checks:
+    none may run beside the command or write state after it), prints a
+    `━━ loadout <command>` rule, and runs `install --yes` / `run --force` /
+    `upgrade … --item <source>/<name> --yes` as a **child loadout under
+    script(1)** (`cli/Recorded.kt`): the child gets a terminal, so prompts
+    work, and its output is recorded to a transcript in `$XDG_RUNTIME_DIR`
+    (Linux) or `$TMPDIR` (macOS). The child is found with `selfExecutable()`
+    (`/proc/self/exe`; macOS: the main bundle, in `core/src/macosMain`);
+    `recordCommand` builds util-linux's `script -qfec "<cmd>" <log>` or
+    BSD's `script -qF <log> <argv…>` from `uname`. `PAGER`/`GIT_PAGER` are
+    `cat`: a pager would leave the alternate screen when it exits. Then a
+    closing rule (`✔ done` / `✘ exit N` / `interrupted`) and a one-key pause
+    (`readKey`: raw `/dev/tty`, no Enter): Enter returns, `v` shows the
+    transcript in `less -RX` from the top (`-X` stays on the alternate
+    screen; `TRANSCRIPT_AWK` keeps each line's text after its last `\r` and
+    drops util-linux's header/footer; awk because BSD sed can't read `\r`),
+    `q` or Ctrl-C quits. The transcript is deleted when the user moves on.
   - `HomeScreen.resume()` reopens the same model: cursor (nearest row left,
     `lineNear`), open tables, folds and ticks kept. Rows re-read the state
     file the command wrote; an upgrade also re-asks the remotes, sync/setup
@@ -510,13 +521,14 @@ Explicit user decisions; don't "improve" them away.
   clear-and-write each row, clear below on shrink); Mosaic's `runMosaic` is
   not used. Needs mosaic-terminal / mosaic-tty / mosaic-tty-terminal as
   compile deps (runtime-only transitives of mosaic-runtime).
-  The screen draws on the terminal's **alternate screen** (`?1049h`,
-  cleared; left with `?1049l` in the same `finally` that shows the cursor):
-  full window, and leaving gives the normal screen back. Hand-offs run on
-  the normal screen, not a second alternate one, so a command that opens
-  its own full-screen program (pager, editor) works, and its output stays
-  in the scrollback. The frame never fills the last row: a newline there
-  would scroll the alternate screen.
+  Everything happens on the terminal's **alternate screen** (`?1049h`,
+  entered by `runTui`), hand-offs included; `RootCommand.home` leaves it
+  (`?1049l`) once, in a `finally`, so quitting gives back the normal screen
+  exactly as it was. The alternate screen keeps no scrollback, hence the
+  transcript. A command that opens its own full-screen program and quits it
+  sends the terminal back to the normal screen; pagers are off for that
+  reason, an editor isn't covered. The frame never fills the last row: a
+  newline there would scroll the alternate screen.
 - **One tty binding at a time**: Mosaic's `Tty.tryBind()` refuses a second
   binding ("Tty already bound") until `Tty.close()`; closing the `Terminal`
   from `asTerminalIn` only resets tty modes. `runTui` closes the Tty in a

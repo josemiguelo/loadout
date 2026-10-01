@@ -30,6 +30,16 @@ expect fun trapInterrupts(on: Boolean)
 /** Whether Ctrl-C arrived since the last call; resets it. */
 expect fun takeInterrupt(): Boolean
 
+/** This binary's own path (Linux: /proc/self/exe; macOS: the main bundle), or null when unreadable. */
+expect fun selfExecutable(): String?
+
+/**
+ * One key from the terminal, without waiting for Enter or echoing it: the
+ * first byte the key sends (an arrow key's escape sequence arrives as
+ * several calls). Null when there's no terminal.
+ */
+expect fun readKey(): Char?
+
 /** Terminal height in rows (TIOCGWINSZ on stdout), or null when unknown. */
 expect fun terminalRows(): Int?
 

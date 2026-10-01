@@ -63,7 +63,32 @@ if has_pty; then
     grep -q '"exitCode": 0' srepo/state/m1.json || fail "the recorded exit code is the script's own"
     seen_after_back tui-scripts.log 'space tick' || fail "the screen comes back with the picker still open"
     grep -qai "Tty already bound" tui-scripts.log && fail "the screen must reopen in the same process" || true
+    # The command ran on the alternate screen too: it is left once, on quit,
+    # so the normal screen never received the command's output.
+    [ "$(grep -ao "$(printf '\033')\[?1049l" tui-scripts.log | wc -l)" -eq 1 ] \
+        || fail "the alternate screen is left only once, when loadout quits"
     ok "the home screen hands ticked scripts to the terminal and comes back as it was"
+
+    # The pause takes one key: v pages through the command's whole output
+    # from its first line (script(1)'s own header lines stripped), q quits.
+    # The transcript is gone afterwards.
+    mkdir -p rt vrepo/scripts vrepo/machines vrepo/state
+    printf '#!/bin/sh\necho FIRST-OUTPUT-LINE\nseq 1 80\necho LAST-OUTPUT-LINE\n' > vrepo/scripts/longrun.sh
+    printf '[scripts.longrun]\nfile = "scripts/longrun.sh"\ncheck = "false"\n' > vrepo/manifest.toml
+    printf 'scripts = ["longrun"]\n' > vrepo/machines/m1.toml
+    { wait_settled tui-view.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-view.log 'space tick'
+      printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-view.log 'These scripts will run'
+      printf '\r'; wait_back tui-view.log; printf 'v'; sleep 1.5
+      printf 'q'; sleep 1; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE XDG_RUNTIME_DIR=$PWD/rt pty_run tui-view.log --repo vrepo --machine m1
+    seen tui-view.log "v views the full output" || fail "the pause offers the full output"
+    [ "$(plain_screen tui-view.log | grep -c 'FIRST-OUTPUT-LINE')" -ge 2 ] \
+        || fail "v shows the output from its first line, past what scrolled off"
+    # Once: the test harness's own capture is a script(1) log with its header.
+    [ "$(plain_screen tui-view.log | grep -c 'Script started on')" -eq 1 ] \
+        || fail "the viewer strips the transcript's script(1) header"
+    [ -z "$(ls rt)" ] || fail "the transcript is deleted once the user moves on"
+    ok "v pages through a command's whole output; one key acts, and the transcript goes"
 
     # A state write that fails must be said out loud, not swallowed: the runs
     # happened, nothing recorded them. A read-only state FILE forces it — a

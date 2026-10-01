@@ -11,10 +11,15 @@ import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.versionOption
 import loadout.core.LoadoutException
 import loadout.core.exec.InterruptedByUser
+import loadout.core.platform.envVar
 import loadout.core.platform.isStdoutTty
+import loadout.core.platform.readKey
+import loadout.core.platform.selfExecutable
 import loadout.core.platform.takeInterrupt
 import loadout.core.platform.terminalColumns
 import loadout.core.platform.trapInterrupts
+import loadout.core.platform.unameInfo
+import loadout.tui.ALT_SCREEN_OFF
 import loadout.tui.CLEAR_SCREEN
 import loadout.tui.Handoff
 import loadout.tui.HomeAction
@@ -79,50 +84,107 @@ class RootCommand : CliktCommand(name = "loadout") {
      * runs inside the screen: sudo, `gum confirm` and pagers need the
      * keyboard. Ends on q, or after self-upgrade (the binary on disk is then
      * a different version).
+     *
+     * Everything, commands included, happens on the alternate screen, so
+     * quitting gives back the normal screen exactly as it was.
      */
     private fun home(app: AppContext) {
+        try {
+            homeLoop(app)
+        } finally {
+            print(ALT_SCREEN_OFF)
+        }
+    }
+
+    private fun homeLoop(app: AppContext) {
         val screen = HomeScreen(app)
         while (true) {
             val closed = screen.show()
-            if (closed.action == HomeAction.UPGRADE) {
-                screen.pause()
-                val code = dispatch(SelfUpgradeCommand(), app)
-                echo("")
-                echo(Style.dim("`loadout` opens the new version's screen."))
-                if (code != 0) throw ProgramResult(code)
-                return
-            }
             val (command, args) = when (closed.action) {
                 HomeAction.NONE, HomeAction.INSTALL_MISSING, HomeAction.RUN_SCRIPTS,
-                HomeAction.REVIEW_OUTDATED, HomeAction.SHOW_DIFF, HomeAction.UPGRADE -> return
+                HomeAction.REVIEW_OUTDATED, HomeAction.SHOW_DIFF -> return
+                HomeAction.UPGRADE -> SelfUpgradeCommand() to emptyList()
                 HomeAction.SYNC -> SyncCommand() to emptyList()
                 HomeAction.SETUP -> SetupCommand() to emptyList()
                 HomeAction.HAND_OFF -> closed.handoff?.let { commandFor(it) to argsFor(it) } ?: return
             }
-            // The command gets a fresh window on the normal screen; the home
-            // screen (alternate screen) covers it again on return.
+            // A fresh window for the command, still on the alternate screen.
             print(CLEAR_SCREEN)
             if (screen.busy) echo(Style.dim("finishing the checks still running…"))
             screen.pause()
             // Rules frame the command's output; the top one names the exact
             // command (also how to run it by hand).
             echo(rule("loadout " + (listOf(command.commandName) + args).joinToString(" "), Style::accent))
-            val code = handOff { dispatch(command, app, args) }
-            echo(
-                when (code) {
-                    0 -> rule("✔ done", Style::ok)
-                    INTERRUPTED -> rule("interrupted", Style::warn)
-                    else -> rule("✘ exit $code", Style::error)
-                },
-            )
-            echo(Style.dim("enter returns to loadout, q quits"))
-            val answer = readlnOrNull()?.trim()
-            if (answer == null || answer.equals("q", ignoreCase = true)) {
-                if (code != 0) throw ProgramResult(code)
-                return
+            val transcript = transcriptFile()
+            try {
+                val code = handOff { runRecorded(app, command.commandName, args, transcript) }
+                // The terminal echoed ^C where the cursor was: start the rule on a line of its own.
+                if (code == INTERRUPTED) echo("")
+                echo(
+                    when (code) {
+                        0 -> rule("✔ done", Style::ok)
+                        INTERRUPTED -> rule("interrupted", Style::warn)
+                        else -> rule("✘ exit $code", Style::error)
+                    },
+                )
+                // Self-upgrade ends loadout: the binary on disk is now another version.
+                val back = if (closed.action == HomeAction.UPGRADE) "enter quits" else "enter returns to loadout"
+                val keys = Style.dim("$back · v views the full output · q quits")
+                // One key, no Enter: Enter goes back, v views, q (or Ctrl-C,
+                // or no terminal) quits; anything else is ignored.
+                echo(keys)
+                var quit: Boolean
+                while (true) {
+                    val key = readKey()
+                    if (key == 'v' || key == 'V') {
+                        viewTranscript(app, transcript)
+                        echo(keys)
+                        continue
+                    }
+                    quit = key == null || key == 'q' || key == 'Q' || key == '\u0003'
+                    if (quit || key == '\r' || key == '\n') break
+                }
+                if (quit || closed.action == HomeAction.UPGRADE) {
+                    if (code != 0) throw ProgramResult(code)
+                    return
+                }
+                screen.resume(closed, ok = code == 0)
+            } finally {
+                // The output exists only while it's watched.
+                app.fs.delete(transcript, mustExist = false)
             }
-            screen.resume(closed, ok = code == 0)
         }
+    }
+
+    /** Where a hand-off's output is recorded: the per-user runtime dir (Linux) or TMPDIR (macOS). */
+    private fun transcriptFile(): okio.Path {
+        val dir = (envVar("XDG_RUNTIME_DIR") ?: envVar("TMPDIR") ?: "/tmp").toPath()
+        return dir / "loadout-handoff-${kotlin.random.Random.nextLong().toULong()}.log"
+    }
+
+    /**
+     * [subcommand] as a child loadout under script(1) (see Recorded.kt),
+     * recording into [transcript]. Pagers are off, so none takes over the
+     * screen: one that did would leave the alternate screen on exit.
+     */
+    private fun runRecorded(app: AppContext, subcommand: String, args: List<String>, transcript: okio.Path): Int {
+        val self = selfExecutable() ?: throw HandoffException("can't find loadout's own binary to run the command")
+        val argv = buildList {
+            add(self)
+            add("--repo"); add(app.repoRoot.toString())
+            add("--manifest"); add(app.manifestName)
+            app.machineOverride?.let { add("--machine"); add(it) }
+            if (app.verbose) add("-v")
+            add(subcommand)
+            addAll(args)
+        }
+        val script = recordCommand(argv, transcript.toString(), darwin = unameInfo().sysname == "Darwin")
+        return app.runner.inherit("PAGER=cat GIT_PAGER=cat $script </dev/tty")
+    }
+
+    /** The whole recorded output in `less`, from the top, on this screen (-X keeps it off the normal one). */
+    private fun viewTranscript(app: AppContext, transcript: okio.Path) {
+        app.runner.inherit("awk ${shQuote(TRANSCRIPT_AWK)} ${shQuote(transcript.toString())} | less -RX")
     }
 
     /**
@@ -166,6 +228,9 @@ class RootCommand : CliktCommand(name = "loadout") {
 
 /** The exit a shell reports for a command stopped by Ctrl-C. */
 private const val INTERRUPTED = 130
+
+/** A hand-off that couldn't start. */
+class HandoffException(message: String) : LoadoutException(message)
 
 /** A heavy rule across the terminal with [label] in it: `━━ label ━━━━…`. */
 private fun rule(label: String, color: (String) -> String): String {
