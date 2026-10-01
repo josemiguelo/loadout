@@ -15,6 +15,7 @@ import loadout.core.platform.isStdoutTty
 import loadout.core.platform.takeInterrupt
 import loadout.core.platform.terminalColumns
 import loadout.core.platform.trapInterrupts
+import loadout.tui.CLEAR_SCREEN
 import loadout.tui.Handoff
 import loadout.tui.HomeAction
 import loadout.tui.HomeScreen
@@ -98,11 +99,13 @@ class RootCommand : CliktCommand(name = "loadout") {
                 HomeAction.SETUP -> SetupCommand() to emptyList()
                 HomeAction.HAND_OFF -> closed.handoff?.let { commandFor(it) to argsFor(it) } ?: return
             }
+            // The command gets a fresh window on the normal screen; the home
+            // screen (alternate screen) covers it again on return.
+            print(CLEAR_SCREEN)
             if (screen.busy) echo(Style.dim("finishing the checks still running…"))
             screen.pause()
             // Rules frame the command's output; the top one names the exact
             // command (also how to run it by hand).
-            echo("")
             echo(rule("loadout " + (listOf(command.commandName) + args).joinToString(" "), Style::accent))
             val code = handOff { dispatch(command, app, args) }
             echo(

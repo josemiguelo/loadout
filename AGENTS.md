@@ -404,7 +404,9 @@ Explicit user decisions; don't "improve" them away.
   `cli/Spinner.kt`'s `CliktCommand.spinning(message) { ... }`, never a bare
   `echo("Doing x...")` + `runBlocking`. It runs the work on
   `blockingDispatcher` (blocking runBlocking's own thread would freeze the
-  spinner) and draws nothing when stdout isn't a TTY.
+  spinner) and draws nothing when stdout isn't a TTY. The final line erase
+  (`\r` + `ESC[K`) goes out with `print`, not `echo`: Mordant drops it, and
+  a shorter line printed next keeps the spinner line's tail.
 - **Home screen** (bare `loadout` on a TTY; a pipe gets help):
   `tui/HomeModel.kt` (all state + logic, unit-tested) + `HomeApp.kt`
   (composables). Four subject rows (programs, scripts, remote, fleet), each
@@ -477,9 +479,10 @@ Explicit user decisions; don't "improve" them away.
     enter presses, y/n press directly, esc/q cancel. The pane is sized to
     its content (`paneLayout`, `READABLE` max width, text wraps).
   - The yes sets `HomeAction.HAND_OFF` + `Handoff(kind, args)` and exits the
-    screen. `RootCommand.home` pauses the model (waits for background
-    checks: none may run beside the command or write state after it),
-    prints a `━━ loadout <command>` rule, runs `install --yes` / `run
+    screen. `RootCommand.home` clears the normal screen (the home screen is
+    on the alternate one, see the frame loop), pauses the model (waits for
+    background checks: none may run beside the command or write state after
+    it), prints a `━━ loadout <command>` rule, runs `install --yes` / `run
     --force` / `upgrade … --item <source>/<name> --yes` via `dispatch()`,
     then a closing rule (`✔ done` / `✘ exit N` / `interrupted`) and "enter
     returns to loadout, q quits".
@@ -507,6 +510,13 @@ Explicit user decisions; don't "improve" them away.
   clear-and-write each row, clear below on shrink); Mosaic's `runMosaic` is
   not used. Needs mosaic-terminal / mosaic-tty / mosaic-tty-terminal as
   compile deps (runtime-only transitives of mosaic-runtime).
+  The screen draws on the terminal's **alternate screen** (`?1049h`,
+  cleared; left with `?1049l` in the same `finally` that shows the cursor):
+  full window, and leaving gives the normal screen back. Hand-offs run on
+  the normal screen, not a second alternate one, so a command that opens
+  its own full-screen program (pager, editor) works, and its output stays
+  in the scrollback. The frame never fills the last row: a newline there
+  would scroll the alternate screen.
 - **One tty binding at a time**: Mosaic's `Tty.tryBind()` refuses a second
   binding ("Tty already bound") until `Tty.close()`; closing the `Terminal`
   from `asTerminalIn` only resets tty modes. `runTui` closes the Tty in a

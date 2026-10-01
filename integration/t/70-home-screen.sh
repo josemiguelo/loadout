@@ -19,6 +19,10 @@ if has_pty; then
     grep -qa "l open" tui-home.log || fail "the home screen says how to look"
     grep -qa "programs" tui-home.log || fail "the home screen lists its subjects"
     grep -qai "Tty already bound" tui-home.log && fail "the home screen must not double-bind the tty" || true
+    # Full-window, like any full-screen app: on the alternate screen, which
+    # q leaves, giving the normal screen back.
+    grep -qa "$(printf '\033')\[?1049h" tui-home.log || fail "the home screen opens on the alternate screen"
+    grep -qa "$(printf '\033')\[?1049l" tui-home.log || fail "quitting leaves the alternate screen"
     ok "bare loadout opens the home screen on a TTY, help without one"
 
     # esc closes lists; it must never end the session, or a habit of

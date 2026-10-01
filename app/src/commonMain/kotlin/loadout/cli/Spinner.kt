@@ -38,6 +38,8 @@ fun <T> CliktCommand.spinning(message: String, work: suspend () -> T): T {
             spinner?.cancelAndJoin()
         }
     }
-    if (isStdoutTty()) echo("\r\u001b[K", trailingNewline = false)
+    // Straight to stdout: through echo, Mordant drops the erase sequence and
+    // a shorter line printed next keeps the spinner line's tail.
+    if (isStdoutTty()) print("\r\u001b[K")
     return result
 }
