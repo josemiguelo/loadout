@@ -30,15 +30,30 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 
 /**
- * Opens the home screen and returns what the user chose. The caller runs it
- * — outside Mosaic, so the action owns the terminal.
+ * The home screen across hand-offs. [show] draws it until the user picks an
+ * action, then returns the state with the terminal released. The caller
+ * runs the action, then [resume]s and shows it again: one model, so the
+ * cursor, open tables and answers persist.
  */
-fun runHomeTui(app: AppContext): HomeAction {
-    val model = HomeModel(app)
-    model.load()
-    model.refresh()
-    runTui { HomeApp(model) }
-    return model.state.action
+class HomeScreen(app: AppContext) {
+    private val model = HomeModel(app).also {
+        it.load()
+        it.refresh()
+    }
+
+    fun show(): HomeState {
+        runTui { HomeApp(model) }
+        return model.state
+    }
+
+    /** Background checks are running; [pause] waits for them. */
+    val busy: Boolean get() = model.busy
+
+    /** Call before the command runs; see [HomeModel.pause]. */
+    fun pause() = model.pause()
+
+    /** Call after it; see [HomeModel.resume]. */
+    fun resume(closed: HomeState, ok: Boolean) = model.resume(closed, ok)
 }
 
 private fun homeKeyOf(event: KeyEvent): HomeKey? = when (event) {
@@ -67,6 +82,9 @@ private fun homeKeyOf(event: KeyEvent): HomeKey? = when (event) {
     KeyEvent("C") -> HomeKey.CONVERGE
     KeyEvent("t") -> HomeKey.THEME
     KeyEvent("q") -> HomeKey.QUIT
+    KeyEvent("Tab") -> HomeKey.SWITCH
+    KeyEvent("y") -> HomeKey.YES
+    KeyEvent("n") -> HomeKey.NO
     else -> null
 }
 
@@ -75,7 +93,7 @@ private fun HomeApp(model: HomeModel) {
     val s = model.state
 
     var spin by remember { mutableIntStateOf(0) }
-    val spinning = s.loading || s.remote is RemoteStatus.Asking || s.run?.done == false
+    val spinning = s.loading || s.remote is RemoteStatus.Asking
     // EVERY effect must stop on exit: one still running keeps runMosaic alive
     // forever — quitting mid-refresh used to hang the screen.
     if (!s.exit) {
@@ -105,17 +123,18 @@ private fun HomeApp(model: HomeModel) {
     // exactly or the header scrolls off the top: header + blank + 3 footer
     // lines + 1 spare, plus a line when there's a message.
     val viewport = (rows - 6 - (if (s.message != null) 1 else 0)).coerceAtLeast(3)
-    // A page in the pane is the PANE's height, not the body's.
-    val paneRows = (rows * 8 / 10).coerceIn(6, rows - 3)
+    // Lines the pane shows at once: 80% of the screen minus PANE_CHROME.
+    val paneRows = (rows * 8 / 10 - PANE_CHROME).coerceIn(3, (rows - 3 - PANE_CHROME).coerceAtLeast(3))
 
     CompositionLocalProvider(LocalPalette provides paletteFor(s.dark)) {
       Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.onKeyEvent { event ->
-                // A password field eats printable keys; enter/esc still reduce.
-                if (s.run?.password != null && model.passwordKey(event.key)) return@onKeyEvent true
-                homeKeyOf(event)?.let {
-                    model.handleKey(it, if (s.run != null) paneRows else viewport)
+                homeKeyOf(event)?.let { key ->
+                    // The model counts unwrapped lines: shrink the page by
+                    // the lines wrapping adds.
+                    val page = s.run?.let { run -> paneRows - (paneLayout(run, width).first.size - paneLines(run).size) }
+                    model.handleKey(key, page ?: viewport)
                 } != null
             },
         ) {
@@ -157,7 +176,7 @@ private fun HomeApp(model: HomeModel) {
             repeat((rows - 2 - window.size - footer - 1).coerceAtLeast(0)) { Text("") }
             HomeFooter(s, width, lines.size, scroll, window.size)
         }
-        s.run?.let { RunPane(it, spin, width, paneRows) }
+        s.run?.let { RunPane(it, width, paneRows) }
       }
     }
     if (!s.exit) {
@@ -165,67 +184,52 @@ private fun HomeApp(model: HomeModel) {
     }
 }
 
+/** The pane's rows besides its lines: two borders, a gap and the buttons. */
+private const val PANE_CHROME = 4
+
+/** Space either side of a button's label, like gum's (padding "0 3"). */
+private const val BUTTON_PAD = 3
+
+/** The pane's buttons, each with whether it's focused. */
+private fun paneButtons(run: PaneRun) =
+    if (run.asking) listOf("Run" to !run.cancelFocused, "Cancel" to run.cancelFocused) else listOf("Close" to true)
+
+private fun buttonsWidth(buttons: List<Pair<String, Boolean>>) =
+    buttons.sumOf { (label, _) -> label.length + 2 * BUTTON_PAD } + 2 * (buttons.size - 1)
+
+/** The pane's widest text; longer lines wrap. */
+private const val READABLE = 72
+
 /**
- * The floating pane: a real overlay (Mosaic's Box composites children in
- * order), centred over the screen, tailing whatever is running. Only
- * non-interactive commands stream here — a password prompt behind a pane is
- * invisible, so sudo's cache has to be warm before we start.
+ * The pane's wrapped lines and inner width on a [width]-column screen: as
+ * wide as its longest line, at most [READABLE] (or 90% of a narrower
+ * screen). Shared by the view and the scroll bound.
+ */
+private fun paneLayout(run: PaneRun, width: Int): Pair<List<String>, Int> {
+    val title = if (run.asking) "run this?" else run.title
+    val longest = paneLines(run).maxOfOrNull { it.length } ?: 0
+    val inner = maxOf(minOf(longest, READABLE), title.length + 3, buttonsWidth(paneButtons(run)), 40)
+        .coerceAtMost((width * 9 / 10 - 4).coerceAtLeast(30))
+    return paneLines(run, inner) to inner
+}
+
+/**
+ * The floating pane: an overlay (Mosaic's Box composites children in
+ * order), centred, sized to its content (see [paneLayout]) and scrolling
+ * past 80% of the height. A question (Run / Cancel) or a list (Close);
+ * commands never run in it.
  */
 @Composable
-private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int) {
+private fun BoxScope.RunPane(run: PaneRun, width: Int, paneRows: Int) {
     val p = LocalPalette.current
-    // 80% of the viewport, both ways.
-    val paneWidth = (width * 8 / 10).coerceIn(40, width - 2)
-    val inner = paneWidth - 4
-    val frame = SPINNER[spin % SPINNER.size]
-    val title = when {
-        run.kind == PaneKind.LIST -> run.title
-        run.confirming -> "run this?"
-        run.cancelled -> "cancelled"
-        // A script that ran fine but whose check still fails isn't a failed
-        // run — it's work that isn't done yet. Same for a program still missing.
-        run.done && run.failed -> when (run.kind) {
-            PaneKind.SCRIPTS -> "not all done"
-            PaneKind.INSTALL -> "not all installed"
-            else -> "upgrade failed"
-        }
-        run.done -> when (run.kind) {
-            PaneKind.SCRIPTS -> "run finished"
-            PaneKind.INSTALL -> "install finished"
-            else -> "upgrade finished"
-        }
-        else -> when (run.kind) {
-            PaneKind.SCRIPTS -> "running ${run.label}  $frame"
-            PaneKind.INSTALL -> "installing ${run.label}  $frame"
-            else -> "upgrading ${run.label}  $frame"
-        }
-    }
-    val edge = if (run.failed) p.error else p.accent
-    val lines = if (run.confirming) {
-        val intro = when (run.kind) {
-            PaneKind.SCRIPTS -> "These scripts will run, in order:"
-            PaneKind.INSTALL -> "These programs will install, in order:"
-            else -> "These commands will run, in order:"
-        }
-        listOf(intro, "") + run.commands +
-            if (run.sweeps.isEmpty()) {
-                emptyList()
-            } else {
-                listOf(
-                    "",
-                    "Note: ${run.sweeps.joinToString(", ")} will upgrade every package it manages,",
-                    "not only the ones listed above — that is how these package managers work.",
-                )
-            }
-    } else {
-        run.log
-    }
-    // Scrolled back? Pin the window there; otherwise follow the tail. The
-    // password prompt takes the bottom rows of the body as its own box.
-    val promptRows = if (run.password != null) 5 else 0
-    // A list reads from the top; a log follows its tail.
-    val window = if (run.kind == PaneKind.LIST) lines.drop(run.scrollBack).take(paneRows - promptRows)
-    else lines.dropLast(run.scrollBack).takeLast(paneRows - promptRows)
+    val title = if (run.asking) "run this?" else run.title
+    val edge = p.accent
+    val buttons = paneButtons(run)
+    val buttonsWidth = buttonsWidth(buttons)
+    val (lines, inner) = paneLayout(run, width)
+    val paneWidth = inner + 4
+    // Read from the top; scrolling moves the window down.
+    val window = lines.drop(run.scrollBack).take(paneRows)
     // No background modifier: the pane's own spaces hide what's behind it,
     // so it sits on the TERMINAL's background and follows dark/light like
     // everything else. A painted panel colour would fight the theme.
@@ -237,58 +241,36 @@ private fun BoxScope.RunPane(run: PaneRun, spin: Int, width: Int, paneRows: Int)
         // dim, and the rows over a bold heading came out bold.
         // TextStyle.Empty is specified-and-plain; Unspecified keeps the old.
         val plain = TextStyle.Empty
+        @Composable
+        fun paneRow(content: @Composable () -> Unit) = Row {
+            Text("│ ", color = edge, textStyle = plain)
+            content()
+            Text(" │", color = edge, textStyle = plain)
+        }
         for (line in window) {
-            Row {
-                Text("│ ", color = edge, textStyle = plain)
-                if (line.startsWith(RUN_DIVIDER)) {
-                    Text(clip(line, inner).padEnd(inner, '─'), color = p.dim, textStyle = plain)
-                } else {
-                    Text(clip(line, inner).padEnd(inner), color = p.text, textStyle = plain)
-                }
-                Text(" │", color = edge, textStyle = plain)
+            paneRow { Text(clip(line, inner).padEnd(inner), color = p.text, textStyle = plain) }
+        }
+        paneRow { Text(" ".repeat(inner), color = p.text, textStyle = plain) }
+        // Buttons as gum draws them: focused in the accent, the other grey.
+        val left = (inner - buttonsWidth) / 2
+        paneRow {
+            Text(" ".repeat(left), color = p.text, textStyle = plain)
+            for ((index, button) in buttons.withIndex()) {
+                val (label, focused) = button
+                if (index > 0) Text("  ", color = p.text, textStyle = plain)
+                Text(
+                    " ".repeat(BUTTON_PAD) + label + " ".repeat(BUTTON_PAD),
+                    color = if (focused) p.onAccent else p.idleFg,
+                    background = if (focused) p.accent else p.idleBg,
+                    textStyle = if (focused) TextStyle.Bold else plain,
+                )
             }
+            Text(" ".repeat(inner - left - buttonsWidth), color = p.text, textStyle = plain)
         }
-        // Keep the pane a stable size while output trickles in.
-        repeat((paneRows - promptRows - window.size).coerceAtLeast(0)) {
-            Row {
-                Text("│ ", color = edge, textStyle = plain)
-                Text(" ".repeat(inner), color = p.text, textStyle = plain)
-                Text(" │", color = edge, textStyle = plain)
-            }
-        }
-        // The one moment the pane asks YOU something: a box of its own,
-        // amber and bold, so it can't be mistaken for another log line.
-        run.password?.let { typed ->
-            val boxWidth = inner - 2
-            val boxInner = boxWidth - 4
-            val field = "sudo password: " + "•".repeat(typed.length) + "_"
-            val hint = run.passwordError ?: "enter confirms  ·  esc goes back"
-            val boxLines = listOf(
-                "╭" + "─".repeat(boxWidth - 2) + "╮",
-                "│ " + fit("a step needs your sudo password", boxInner) + " │",
-                "│ " + fit(field, boxInner) + " │",
-                "│ " + fit(hint, boxInner) + " │",
-                "╰" + "─".repeat(boxWidth - 2) + "╯",
-            )
-            for (line in boxLines) {
-                Row {
-                    Text("│ ", color = edge)
-                    Text(" ", color = p.text, textStyle = TextStyle.Empty)
-                    Text(line, color = p.warn, textStyle = TextStyle.Bold)
-                    Text(" ", color = p.text, textStyle = TextStyle.Empty)
-                    Text(" │", color = edge)
-                }
-            }
-        }
-        val below = if (run.kind == PaneKind.LIST) lines.size - run.scrollBack - window.size else run.scrollBack
-        val scrolled = if (below > 0) "  ·  $below more below" else ""
-        val footer = when {
-            run.password != null -> "type the password above  ·  enter  ·  esc back"
-            run.confirming -> "enter runs it  ·  esc cancels  ·  ↑↓/pgup/pgdn scroll$scrolled"
-            run.done -> run.summary.ifEmpty { "enter closes" } + "  ·  ↑↓/pgup/pgdn scroll" + scrolled
-            else -> "step ${run.current + 1} of ${run.steps.size}  ·  ↑↓/pgup/pgdn scroll  ·  esc cancels$scrolled"
-        }
-        Text(fit("╰─ $footer ".padEnd(paneWidth - 1, '─') + "╯", paneWidth), color = edge, textStyle = TextStyle.Empty)
+        val below = lines.size - run.scrollBack - window.size
+        val bottom = if (below > 0) "╰─ $below more below · ↑↓ scroll ".padEnd(paneWidth - 1, '─') + "╯"
+        else "╰" + "─".repeat(paneWidth - 2) + "╯"
+        Text(fit(bottom, paneWidth), color = edge, textStyle = TextStyle.Empty)
     }
 }
 

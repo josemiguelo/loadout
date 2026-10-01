@@ -58,7 +58,6 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             rows += "check.$key" to "${it.command}  =~ /${it.regex}/"
                         }
                         resolved.probe?.let { rows += "probe.$key" to it }
-                        if (resolved.sudo) rows += "sudo.$key" to "yes — asks for the password before running"
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
@@ -82,7 +81,6 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     if (script.os.isNotEmpty()) rows += "os" to script.os.joinToString()
                     if (script.after.isNotEmpty()) rows += "after" to script.after.joinToString()
                     if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
-                    if (script.sudo) rows += "sudo" to "yes — asks for the password before running"
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
                         enabled == null -> "no — add it to the scripts list in machines/${system.machine}.toml"

@@ -17,8 +17,6 @@ data class UpgradeStep(
     val sweep: Boolean = true,
     /** The tool the sweep's mechanisms all drive (their shared probe), when they do. */
     val tool: String? = null,
-    /** [command] needs sudo's password without saying so (a declared `sudo = true`). */
-    val sudo: Boolean = false,
 ) {
     /**
      * What to call this step on screen: a sweep is the TOOL it drives when
@@ -49,12 +47,11 @@ class UpgradeException(message: String) : LoadoutException(message)
  * that implies anyway. Picking a program in the UI means "upgrade the
  * mechanism it came from".
  *
- * A planner only: it decides WHAT runs and refuses what mustn't. Running
- * the steps belongs to the caller, because that is where the two callers
- * differ — the CLI inherits stdio (sudo may prompt there), the home
- * screen's pane streams (it can't show a prompt). Verification is the same
- * for both and is not here either: re-observe everything the way `status`
- * does (AppContext.refreshAndWriteState) and diff the versions.
+ * A planner only: it decides WHAT runs and refuses what mustn't. `loadout
+ * upgrade` runs the steps on the terminal (sudo may prompt there); the home
+ * screen plans with it too, to describe each step and refuse before handing
+ * off. Verification is not here either: re-observe everything the way
+ * `status` does (AppContext.refreshAndWriteState) and diff the versions.
  */
 object UpgradeEngine {
     /** The installers this machine's mapping uses that can upgrade themselves. */
@@ -90,7 +87,6 @@ object UpgradeEngine {
                 command = expandFilePrefix(pattern).replace("{item}", item),
                 covers = listOf(item),
                 sweep = false,
-                sudo = declared.sudo,
             )
         }
     }
@@ -133,7 +129,6 @@ object UpgradeEngine {
                 command = command,
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
                 tool = probes.singleOrNull()?.takeIf { it != null },
-                sudo = mechanisms.any { manifest.installers[it]?.sudo == true },
             )
         }
     }

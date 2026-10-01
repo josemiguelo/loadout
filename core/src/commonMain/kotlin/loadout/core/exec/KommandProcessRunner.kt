@@ -1,7 +1,16 @@
 package loadout.core.exec
 
 import com.kgit2.kommand.process.Command
+import com.kgit2.kommand.exception.KommandException
 import com.kgit2.kommand.process.Stdio
+import loadout.core.LoadoutException
+import loadout.core.platform.takeInterrupt
+
+/** Ctrl-C stopped a command the home screen handed the terminal to. */
+class InterruptedByUser : LoadoutException("interrupted")
+
+/** The exit code reported for a child killed by a signal, which has none. */
+private const val KILLED = -1
 
 class KommandProcessRunner : ProcessRunner {
     private fun command(command: String, workDir: String?): Command {
@@ -10,23 +19,12 @@ class KommandProcessRunner : ProcessRunner {
         return cmd
     }
 
-    override fun capture(command: String, workDir: String?, input: String?): ExecResult {
-        val cmd = command(command, workDir)
+    override fun capture(command: String, workDir: String?): ExecResult {
+        val output = command(command, workDir)
             .stdout(Stdio.Pipe)
             .stderr(Stdio.Pipe)
-        val output = if (input == null) {
-            cmd.output()
-        } else {
-            val child = cmd.stdin(Stdio.Pipe).spawn()
-            child.bufferedStdin()?.apply {
-                writeLine(input)
-                flush()
-                // No close() here: waitWithOutput drops stdin itself, and
-                // kommand's writer frees the handle twice if we beat it to
-                // it (a double free, seen as an abort).
-            }
-            child.waitWithOutput()
-        }
+            .output()
+        stopIfInterrupted()
         return ExecResult(
             exitCode = output.status ?: -1,
             stdout = output.stdout.orEmpty(),
@@ -35,41 +33,27 @@ class KommandProcessRunner : ProcessRunner {
     }
 
     override fun inherit(command: String, workDir: String?): Int {
-        return command(command, workDir)
+        val child = command(command, workDir)
             .stdout(Stdio.Inherit)
             .stderr(Stdio.Inherit)
             .spawn()
-            .wait()
+        // A child killed by a signal (Ctrl-C, the OOM killer) has no exit
+        // code; kommand's wait() throws for it. Report a failure instead.
+        val exit = try {
+            child.wait()
+        } catch (e: KommandException) {
+            KILLED
+        }
+        stopIfInterrupted()
+        return exit
     }
 
-    override fun stream(
-        command: String,
-        workDir: String?,
-        onStart: (RunningProcess) -> Unit,
-        onLine: (String) -> Unit,
-    ): Int {
-        // `exec 2>&1` merges stderr into the stdout pipe without a subshell,
-        // so sh can tail-exec the command and kill() reaches the real process.
-        // ponytail: kill() hits the direct child only — a grandchild that
-        // keeps the pipe open delays the reader until it exits; process-group
-        // kill if that ever bites.
-        val child = command("exec 2>&1\n$command", workDir)
-            .stdout(Stdio.Pipe)
-            .stderr(Stdio.Pipe)
-            .spawn()
-        onStart(object : RunningProcess {
-            override fun kill() {
-                runCatching { child.kill() }
-            }
-        })
-        val stdout = child.bufferedStdout()
-        runCatching {
-            while (true) onLine(stdout?.readLine() ?: break)
-        }.onFailure {
-            // Say it in the log: a pipe that breaks mid-run used to look
-            // exactly like a command that finished quietly.
-            onLine("[output stream ended: ${it.message ?: it::class.simpleName}]")
-        }
-        return runCatching { child.wait() }.getOrDefault(-1)
+    /**
+     * After a Ctrl-C during a home-screen hand-off, stop the command too,
+     * not just the child, so it doesn't go on to its next step. Outside a
+     * hand-off Ctrl-C ends loadout itself (see trapInterrupts).
+     */
+    private fun stopIfInterrupted() {
+        if (takeInterrupt()) throw InterruptedByUser()
     }
 }

@@ -20,6 +20,16 @@ expect val blockingDispatcher: kotlinx.coroutines.CoroutineDispatcher
 /** Value of the environment variable [name], or null when unset. */
 expect fun envVar(name: String): String?
 
+/**
+ * [on]: Ctrl-C stops the running command's processes but not loadout, and
+ * is recorded for [takeInterrupt]. Off restores the default. Home-screen
+ * hand-offs only.
+ */
+expect fun trapInterrupts(on: Boolean)
+
+/** Whether Ctrl-C arrived since the last call; resets it. */
+expect fun takeInterrupt(): Boolean
+
 /** Terminal height in rows (TIOCGWINSZ on stdout), or null when unknown. */
 expect fun terminalRows(): Int?
 

@@ -64,6 +64,12 @@ actual val blockingDispatcher: CoroutineDispatcher = Dispatchers.IO
 actual fun envVar(name: String): String? = platform.posix.getenv(name)?.toKString()
 
 @OptIn(ExperimentalForeignApi::class)
+actual fun trapInterrupts(on: Boolean) = loadout.core.platform.signals.loadout_trap_interrupts(if (on) 1 else 0)
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun takeInterrupt(): Boolean = loadout.core.platform.signals.loadout_take_interrupt() != 0
+
+@OptIn(ExperimentalForeignApi::class)
 actual fun terminalRows(): Int? = memScoped {
     val ws = alloc<winsize>()
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ.toULong(), ws.ptr) != 0) return null

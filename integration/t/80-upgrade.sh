@@ -40,3 +40,38 @@ echo "$OUT" | grep -q "upgrades are whole-mechanism" || fail "naming a program p
 OUT=$("$BIN" --repo uprepo --machine m1 install --all --dry-run)
 echo "$OUT" | grep -qi "upgrad" && fail "install must not mention upgrading" || true
 ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
+
+# --item: one item of a custom [outdated.<source>] at a time — what the home
+# screen hands off when you tick a tmux plugin or a pinned tool. Alone, or
+# beside whole mechanisms in the same run.
+mkdir -p irepo/machines irepo/state
+cat > irepo/manifest.toml <<'TOML'
+[installers.pm]
+install = "echo installing {pkg}"
+upgrade = "echo swept > swept.txt"
+check = "echo {pkg} 1.0"
+regex = "([0-9.]+)"
+
+[programs.alpha]
+via = ["pm"]
+
+[outdated.plugins]
+command = "echo 'tpack aaa bbb'"
+upgrade = "echo pulled > pulled-{item}.txt"
+
+[outdated.readonly]
+command = "echo 'x 1 2'"
+TOML
+printf '[pm]\nalpha = "pm"\n' > irepo/machines/m1.toml
+"$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null
+[ -f irepo/pulled-tpack.txt ] && [ -f irepo/pulled-other.txt ] || fail "--item upgrades each named item of its source"
+[ -f irepo/swept.txt ] && fail "--item alone must not sweep any mechanism" || true
+"$BIN" --repo irepo --machine m1 upgrade pm --item plugins/tpack --yes >/dev/null
+[ -f irepo/swept.txt ] || fail "installers and items run together"
+OUT=$("$BIN" --repo irepo --machine m1 upgrade --item nosuch/x --yes 2>&1 || true)
+echo "$OUT" | grep -q "Unknown outdated source 'nosuch'" || fail "an unknown source is refused by name"
+OUT=$("$BIN" --repo irepo --machine m1 upgrade --item tpack --yes 2>&1 || true)
+echo "$OUT" | grep -q "<source>/<name>" || fail "--item without a source says the form"
+OUT=$("$BIN" --repo irepo --machine m1 upgrade --item readonly/x --yes 2>&1 || true)
+echo "$OUT" | grep -q "declares no upgrade command" || fail "a read-only source is refused"
+ok "upgrade --item moves single items of a custom source, alone or beside mechanisms"

@@ -11,6 +11,14 @@ kotlin {
     macosX64()
     macosArm64()
 
+    // Ctrl-C during a home-screen hand-off: a C signal handler, since a
+    // Kotlin one isn't async-signal-safe (see the .def).
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+        compilations.getByName("main").cinterops.create("signals") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/signals.def"))
+        }
+    }
+
     applyDefaultHierarchyTemplate()
 
     sourceSets {

@@ -78,8 +78,18 @@ class RunCommand : CliktCommand(name = "run") {
         }
 
         if (results.isNotEmpty()) {
-            spinning("updating state…") { app.refreshAndWriteState(manifest, system, results) }
+            val after = spinning("updating state…") { app.refreshAndWriteState(manifest, system, results) }
             echo(Style.dim("State updated."))
+            // The check decides, not the exit code: name scripts still
+            // pending, with the first line their check printed.
+            val stillNot = after.scripts.filter { (name, now) -> name in results && now.status != ScriptStatus.DONE }.keys.sorted()
+            if (stillNot.isNotEmpty()) {
+                echo(
+                    " " + Style.warn("!") + "  still not done: " + stillNot.joinToString { name ->
+                        app.lastScriptDetail[name]?.lineSequence()?.firstOrNull()?.let { "$name ($it)" } ?: name
+                    },
+                )
+            }
         }
         if (results.any { it.value.status == ScriptStatus.FAILED }) throw ProgramResult(1)
     }

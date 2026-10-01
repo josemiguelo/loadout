@@ -34,6 +34,8 @@ data class Palette(
     val error: Color,
     val selectionBg: Color,
     val selectionFg: Color,
+    val idleBg: Color,
+    val idleFg: Color,
 )
 
 // Palettes come from loadout.theme — the CLI styles from the same values.
@@ -50,6 +52,8 @@ private fun ThemePalette.toPalette() = Palette(
     error = error.toColor(),
     selectionBg = selectionBg.toColor(),
     selectionFg = selectionFg.toColor(),
+    idleBg = idleBg.toColor(),
+    idleFg = idleFg.toColor(),
 )
 
 private val DARK_PALETTE = DARK_THEME.toPalette()
@@ -79,15 +83,20 @@ internal fun fit(text: String, width: Int): String =
  * lifetime; the finally puts it back even on a throw. Frames are otherwise
  * drawn like Mosaic's: cursor back up to the first line, clear-and-write
  * each row, clear below when the frame shrank.
+ *
+ * Callable again in the same process. Mosaic allows one Tty binding at a
+ * time, and closing the Terminal only resets tty modes; Tty.close() frees
+ * the binding, so this closes the Tty too ("Tty already bound" otherwise).
  */
 internal fun runTui(content: @Composable () -> Unit) {
     print("\u001b[?25l")
     try {
         runBlocking {
-            coroutineScope {
-                val terminal = checkNotNull(Tty.tryBind()) { "Unable to run in non-interactive mode." }
-                    .asTerminalIn(this)
-                terminal.use { runFrames(it, content) }
+            val tty = checkNotNull(Tty.tryBind()) { "Unable to run in non-interactive mode." }
+            try {
+                coroutineScope { tty.asTerminalIn(this).use { runFrames(it, content) } }
+            } finally {
+                tty.close()
             }
         }
     } finally {

@@ -8,6 +8,7 @@ import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import loadout.core.engine.UpgradeEngine
 import loadout.core.model.ProgramStatus
@@ -22,12 +23,14 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         "Upgrade everything a package manager on this machine manages — the whole mechanism, never single packages (the binary itself is `self-upgrade`).",
         "<installers...>  which mechanisms to upgrade (dnf, brew, flatpak, ...)",
         "--all            every mechanism this machine's mapping uses",
+        "--item <source>/<name>  one item of an [outdated.<source>] (a tmux plugin, a pinned tool); repeatable",
         "--dry-run        print the commands, run nothing",
         "--yes            skip the confirmation",
     )
 
     private val names by argument(name = "installers", help = "Installers to upgrade").multiple()
     private val all by option("--all", help = "Every mechanism this machine uses").flag()
+    private val items by option("--item", help = "One item of a custom outdated source, as <source>/<name>").multiple()
     private val dryRun by option("--dry-run", help = "Show the commands without running them").flag()
     private val yes by option("-y", "--yes", help = "Don't ask for confirmation").flag()
 
@@ -35,20 +38,33 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
 
     override fun run() {
         if (all && names.isNotEmpty()) throw UsageError("Give installer names or --all, not both")
-        if (!all && names.isEmpty()) throw UsageError("Give at least one installer, or --all")
+        if (!all && names.isEmpty() && items.isEmpty()) {
+            throw UsageError("Give at least one installer, --all, or --item <source>/<name>")
+        }
+        // Items run one at a time, grouped by source, in the order given.
+        val bySource = items.map { given ->
+            val source = given.substringBefore('/', missingDelimiterValue = "")
+            val item = given.substringAfter('/', missingDelimiterValue = "")
+            if (source.isEmpty() || item.isEmpty()) throw UsageError("--item takes <source>/<name>, not '$given'")
+            source to item
+        }.groupBy({ it.first }, { it.second })
 
         val manifest = app.loadManifest()
         val system = app.detectSystem()
         val before = app.stateStore.read(system.machine)?.programs.orEmpty()
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
+        bySource.keys.firstOrNull { it !in manifest.outdated }?.let {
+            throw UsageError("Unknown outdated source '$it' (sources are the manifest's [outdated.*] tables)")
+        }
         val engine = UpgradeEngine
         val targets = if (all) engine.upgradableInstallers(manifest, system.machine).keys else names
-        if (targets.isEmpty()) {
+        if (targets.isEmpty() && bySource.isEmpty()) {
             echo(Style.dim("No mechanism on ${system.machine} declares an upgrade command."))
             return
         }
-        val plan = engine.plan(manifest, system.machine, targets)
+        val plan = engine.plan(manifest, system.machine, targets) +
+            bySource.flatMap { (source, names) -> engine.planSourceItems(manifest, source, names) }
 
         echo("")
         echo(Style.header("Upgrade on ") + Style.machine(system.machine) + Style.header(":"))

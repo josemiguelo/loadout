@@ -103,7 +103,8 @@ class UpgradeEngineTest {
     }
 
     @Test
-    fun aDeclaredSudoRidesOnTheUpgradeStep() {
+    fun anObsoleteSudoDeclarationStillLoadsAndPlansAsUsual() {
+        // `sudo = true` is obsolete: it must parse and change nothing.
         val manifest = ManifestLoader.parse(
             """
             [installers.omarchy-pkg]
@@ -129,10 +130,8 @@ class UpgradeEngineTest {
             upgrade = "bump {item}"
             """.trimIndent(),
         )
-        assertTrue(engine().plan(manifest, "m", listOf("omarchy-pkg")).single().sudo)
-        assertTrue(engine().planSourceItems(manifest, "pins", listOf("golang")).single().sudo)
-        assertEquals(false, engine().planSourceItems(manifest, "plain", listOf("x")).single().sudo)
-        assertEquals(false, engine().plan(MANIFEST, "m1", listOf("pm")).single().sudo, "undeclared = no")
+        assertEquals("omarchy update -y", engine().plan(manifest, "m", listOf("omarchy-pkg")).single().command)
+        assertEquals("repin golang", engine().planSourceItems(manifest, "pins", listOf("golang")).single().command)
     }
 
     @Test

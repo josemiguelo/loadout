@@ -1,0 +1,31 @@
+package = loadout.core.platform.signals
+---
+#include <signal.h>
+#include <string.h>
+
+/*
+ * SIGINT during a home-screen hand-off. The handler only records it (all a
+ * handler may safely do). The command's processes still stop: a caught
+ * signal resets to default in a child at exec; an ignored one would stay
+ * ignored.
+ */
+static volatile sig_atomic_t loadout_interrupted = 0;
+
+static void loadout_on_interrupt(int sig) {
+    (void) sig;
+    loadout_interrupted = 1;
+}
+
+static inline void loadout_trap_interrupts(int on) {
+    struct sigaction action;
+    memset(&action, 0, sizeof action);
+    action.sa_handler = on ? loadout_on_interrupt : SIG_DFL;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGINT, &action, 0);
+}
+
+static inline int loadout_take_interrupt(void) {
+    int was = loadout_interrupted;
+    loadout_interrupted = 0;
+    return was;
+}

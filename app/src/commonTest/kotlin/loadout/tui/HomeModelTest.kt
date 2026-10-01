@@ -372,63 +372,103 @@ class HomeKeysTest {
     fun writesFromManyThreadsAreNeverLost() {
         // Keys on the UI thread, answers on IO threads: every write lands on
         // the state as it is, so none puts back a copy read before another.
-        // Typed characters and theme flips touch different fields; a lost
-        // write shows up as a short password or a flipped theme.
+        // Scrolling the pane and theme flips touch different fields; a lost
+        // write shows up as a short scroll or a flipped theme.
         val m = model(emptyList())
-        m.setStateForTest(HomeState(dark = true, run = PaneRun(steps = emptyList(), password = "")))
+        m.setStateForTest(HomeState(dark = true, run = PaneRun(kind = PaneKind.LIST, lines = (1..5000).map { "line $it" })))
         runBlocking(Dispatchers.Default) {
-            repeat(4) { launch { repeat(500) { m.passwordKey("x") } } }
+            repeat(4) { launch { repeat(500) { m.handleKey(HomeKey.DOWN, viewport = 1) } } }
             launch { repeat(1000) { m.handleKey(HomeKey.THEME) } }
         }
-        assertEquals(2000, m.state.run!!.password!!.length)
+        assertEquals(2000, m.state.run!!.scrollBack)
         assertTrue(m.state.dark, "an even number of flips ends where it started")
     }
 
     @Test
-    fun thePaneAsksForTheSudoPasswordItself() {
-        val sections = listOf(HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING))
-        val m = model(sections)
-        m.setStateForTest(
-            HomeState(
-                sections = sections,
-                run = PaneRun(steps = listOf("kitty"), kind = PaneKind.INSTALL, needsSudo = true, confirming = true, password = ""),
-            ),
-        )
-        // Printable keys build the field; nothing else reacts to them.
-        assertTrue(m.passwordKey("s"))
-        assertTrue(m.passwordKey("3"))
-        assertTrue(m.passwordKey("!"))
-        assertEquals("s3!", m.state.run!!.password)
-        assertTrue(m.passwordKey("Backspace"))
-        assertEquals("s3", m.state.run!!.password)
-        assertEquals(false, m.passwordKey("ArrowUp"), "non-printables fall through to the reducer")
-        // j/q/h are letters now, not keys: the reducer never sees them.
-        m.handleKey(HomeKey.QUIT)
-        assertEquals(false, m.state.exit)
-        assertTrue(m.state.run!!.confirming)
-        // esc backs out to the question with nothing run and nothing kept.
-        m.handleKey(HomeKey.ESC)
-        assertNull(m.state.run!!.password)
-        assertTrue(m.state.run!!.confirming)
-    }
-
-    @Test
-    fun aDeclaredSudoMakesThePaneAskEvenWhenNoCommandSaysSudo() {
-        // setup-brew hung here: Homebrew's installer prompted for sudo from
-        // behind the pane, because nothing in `sh setup-brew.sh` says sudo.
+    fun theYesClosesTheScreenForTheCommandAndEscChangesNothing() {
+        // The pane asks; a yes exits the screen with a hand-off to `loadout
+        // run`, which runs on the terminal where scripts can prompt.
         val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
         val m = model(sections)
-        val rows = listOf(ScriptRow("brew", "sh setup-brew.sh", sudo = true), ScriptRow("pull", "sh pull"))
+        val rows = listOf(ScriptRow("brew", "sh setup-brew.sh"), ScriptRow("pull", "sh pull"))
         m.setStateForTest(HomeState(sections = sections, scripts = rows))
+        m.startScripts(setOf("brew", "pull"))
+        assertTrue(m.state.run!!.asking)
+        assertEquals(listOf("brew" to "", "pull" to ""), m.state.run!!.items)
+        // q on the question backs out like esc: it never leaves the screen.
+        m.handleKey(HomeKey.QUIT)
+        assertNull(m.state.run)
+        assertEquals(false, m.state.exit)
+        assertEquals(HomeAction.NONE, m.state.action)
+
         m.startScripts(setOf("brew"))
-        assertEquals(true, m.state.run!!.needsSudo, "declared")
-        m.setStateForTest(HomeState(sections = sections, scripts = rows))
-        m.startScripts(setOf("pull"))
-        assertEquals(false, m.state.run!!.needsSudo, "neither said nor declared")
+        m.handleKey(HomeKey.ENTER)
+        assertNull(m.state.run, "the pane is gone when the screen comes back")
+        assertTrue(m.state.exit)
+        assertEquals(HomeAction.HAND_OFF, m.state.action)
+        assertEquals(Handoff(PaneKind.SCRIPTS, listOf("brew")), m.state.handoff)
     }
 
     @Test
-    fun theScriptsRowCarriesASudoDeclarationFromTheManifest() {
+    fun theQuestionsButtonsWorkLikeGums() {
+        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
+        val m = model(sections)
+        val rows = listOf(ScriptRow("pull", "sh pull"))
+        m.setStateForTest(HomeState(sections = sections, scripts = rows))
+        m.startScripts(setOf("pull"))
+        assertEquals(false, m.state.run!!.cancelFocused, "Run is focused first: enter keeps meaning yes")
+        // ←/→ (h/l) and tab move the focus; enter presses what's focused.
+        m.handleKey(HomeKey.CLOSE)
+        assertTrue(m.state.run!!.cancelFocused)
+        m.handleKey(HomeKey.SWITCH)
+        assertEquals(false, m.state.run!!.cancelFocused)
+        m.handleKey(HomeKey.OPEN)
+        m.handleKey(HomeKey.ENTER)
+        assertNull(m.state.run, "enter on Cancel closes the question")
+        assertEquals(false, m.state.exit, "and runs nothing")
+        // n cancels and y runs, whatever is focused.
+        m.startScripts(setOf("pull"))
+        m.handleKey(HomeKey.NO)
+        assertNull(m.state.run)
+        assertEquals(false, m.state.exit)
+        m.startScripts(setOf("pull"))
+        m.handleKey(HomeKey.CLOSE)
+        m.handleKey(HomeKey.YES)
+        assertTrue(m.state.exit)
+        assertEquals(Handoff(PaneKind.SCRIPTS, listOf("pull")), m.state.handoff)
+    }
+
+    @Test
+    fun comingBackPutsTheCursorOnTheNearestRowStillThere() {
+        val sections = listOf(
+            HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
+            HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED),
+        )
+        val m = model(sections)
+        val three = listOf("a", "b", "c").map { ProgramRow(it, "dnf", "dnf install $it") }
+        m.setStateForTest(
+            HomeState(sections = sections, open = setOf(HomeAction.INSTALL_MISSING), missing = three, selection = setOf("tool:dnf")),
+        )
+        m.intoDetail()
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        m.handleKey(HomeKey.DOWN, viewport = 8)
+        assertEquals(2, m.detailRow)
+        val closed = m.state.copy(exit = true, action = HomeAction.HAND_OFF, handoff = Handoff(PaneKind.UPGRADE, listOf("dnf")))
+        // The command installed b and c: the table the screen comes back to
+        // has one row, so row 2 is gone.
+        m.setStateForTest(closed.copy(missing = three.take(1)))
+        m.resume(closed, ok = true)
+        assertEquals(false, m.state.exit)
+        assertEquals(HomeAction.NONE, m.state.action)
+        assertNull(m.state.handoff)
+        assertEquals(0, m.detailRow, "the last row left before it")
+        assertEquals(0, m.focusedSection, "in the same table")
+        assertEquals(setOf(HomeAction.INSTALL_MISSING), m.state.open, "still open")
+        assertTrue(m.state.selection.isEmpty(), "what was ticked for upgrading was just upgraded")
+    }
+
+    @Test
+    fun anObsoleteSudoOnAScriptStillLoads() {
         val manifest = ManifestLoader.parse(
             """
             [scripts.hid]
@@ -442,8 +482,64 @@ class HomeKeysTest {
             scripts = ["hid", "plain"]
             """.trimIndent(),
         )
-        val rows = scriptRowsOf(manifest, SYSTEM, null).associate { it.name to it.sudo }
-        assertEquals(mapOf("hid" to true, "plain" to false), rows)
+        assertEquals(listOf("hid", "plain"), scriptRowsOf(manifest, SYSTEM, null).map { it.name })
+    }
+
+    @Test
+    fun theUpgradeQuestionSaysWhatMovesNotWhichCommandRuns() {
+        // Rows say how much moves and how much is yours, not the command.
+        val answered = RemoteStatus.Answered(
+            updates = listOf(
+                update("brave", "1.82.1", "1.82.3", "omarchy-aur"),
+                update("kitty", "0.48.2", "0.48.3", "omarchy-pkg"),
+                update("chezmoi", "2.72.1", "2.72.2", "brew"),
+                update("ruby", "3.4.8", "3.4.10", "asdf-tools"),
+            ),
+            failedSources = 0,
+            tools = listOf(
+                loadout.cli.ToolUpdates("omarchy", listOf("omarchy-pkg", "omarchy-aur"), total = 168, declared = listOf("brave", "kitty"), others = emptyList(), command = "omarchy update -y"),
+                loadout.cli.ToolUpdates("brew", listOf("brew", "brew-cask"), total = 8, declared = listOf("chezmoi"), others = emptyList(), command = "brew upgrade"),
+            ),
+            mechanismOf = mapOf("brave" to "omarchy-aur", "kitty" to "omarchy-pkg", "chezmoi" to "brew"),
+            sources = mapOf("asdf-tools" to true),
+        )
+        fun step(vararg installers: String, tool: String) =
+            loadout.core.engine.UpgradeStep(installers.toList(), "a very long command", emptyList(), tool = tool)
+        assertEquals(
+            "omarchy" to "all 168 packages · 2 in your loadout",
+            upgradeItem(step("omarchy-aur", "omarchy-pkg", tool = "omarchy"), answered),
+        )
+        // brew's formulae and casks upgrade by two commands: the tool's total
+        // can't say how much each one moves.
+        assertEquals("brew" to "every package it manages · 1 in your loadout", upgradeItem(step("brew", tool = "brew"), answered))
+        val ruby = loadout.core.engine.UpgradeStep(listOf("asdf-tools"), "x", listOf("ruby"), sweep = false)
+        assertEquals("asdf-tools" to "ruby 3.4.8 → 3.4.10", upgradeItem(ruby, answered))
+    }
+
+    @Test
+    fun theQuestionLinesUpNamesAndWrapsUnderThem() {
+        val run = PaneRun(
+            kind = PaneKind.SCRIPTS,
+            items = listOf("pull" to "Pull the dotfiles repo", "keychron-access" to "Keychron Launcher can reach the keyboard"),
+        )
+        assertEquals(
+            listOf(
+                "These scripts will run, in order:",
+                "",
+                "pull             Pull the dotfiles repo",
+                "keychron-access  Keychron Launcher can reach the keyboard",
+            ),
+            paneLines(run),
+        )
+        // Narrower than a row: the text wraps under its own column.
+        assertEquals(
+            listOf("keychron-access  Keychron Launcher can", "                 reach the keyboard"),
+            paneLines(run, width = 38).takeLast(2),
+        )
+        assertEquals(listOf("one two", "three", "averyverylongword"), wrapWords("one two three averyverylongword", 9))
+        // A list is its own lines, and its note under them.
+        assertEquals(listOf("a", "b"), paneLines(PaneRun(kind = PaneKind.LIST, lines = listOf("a", "b"))))
+        assertEquals(listOf("a", "", "note"), paneLines(PaneRun(kind = PaneKind.LIST, lines = listOf("a"), summary = "note")))
     }
 
     @Test
@@ -748,11 +844,7 @@ class HomeKeysTest {
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                run = PaneRun(
-                    steps = listOf("pm"),
-                    confirming = true,
-                    commands = listOf("[pm]  pm upgrade -y"),
-                ),
+                run = PaneRun(kind = PaneKind.UPGRADE, items = listOf("pm" to "all 3 packages · 1 in your loadout")),
             ),
         )
         // esc on the question changes nothing at all.
@@ -762,46 +854,37 @@ class HomeKeysTest {
     }
 
     @Test
-    fun thePaneScrollsBackThroughItsOutput() {
+    fun thePaneScrollsFromTheTop() {
         val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
         val m = model(sections)
         m.setStateForTest(
             HomeState(
                 sections = sections,
-                run = PaneRun(steps = listOf("pm"), log = (1..30).map { "line $it" }),
+                run = PaneRun(kind = PaneKind.LIST, lines = (1..30).map { "line $it" }),
             ),
         )
-        m.handleKey(HomeKey.UP, viewport = 5)
-        assertEquals(1, m.state.run!!.scrollBack, "0 follows the tail; 1 pins one line back")
-        m.handleKey(HomeKey.PAGE_UP, viewport = 5)
+        m.handleKey(HomeKey.DOWN, viewport = 5)
+        assertEquals(1, m.state.run!!.scrollBack, "down moves the window one line")
+        m.handleKey(HomeKey.PAGE_DOWN, viewport = 5)
         assertEquals(6, m.state.run!!.scrollBack)
-        repeat(20) { m.handleKey(HomeKey.PAGE_UP, viewport = 5) }
-        assertEquals(25, m.state.run!!.scrollBack, "stops at the top")
         repeat(20) { m.handleKey(HomeKey.PAGE_DOWN, viewport = 5) }
-        assertEquals(0, m.state.run!!.scrollBack, "and back to following the tail")
+        assertEquals(25, m.state.run!!.scrollBack, "stops with the last line at the bottom")
+        repeat(20) { m.handleKey(HomeKey.PAGE_UP, viewport = 5) }
+        assertEquals(0, m.state.run!!.scrollBack, "and back to the top")
     }
 
     @Test
-    fun theFloatingPaneOwnsTheKeyboardWhileItRuns() {
+    fun theFloatingPaneOwnsTheKeyboardWhileItIsUp() {
         val sections = listOf(HomeSection("remote", "", "review", HomeAction.REVIEW_OUTDATED))
         val m = model(sections)
         m.setStateForTest(
-            HomeState(sections = sections, run = PaneRun(steps = listOf("pm"), label = "pm")),
+            HomeState(sections = sections, selection = setOf("pm"), run = PaneRun(kind = PaneKind.LIST, lines = listOf("x"))),
         )
-        // Mid-run: q cancels the run, it does not quit the screen.
+        // q closes the list; it does not quit the screen.
         m.handleKey(HomeKey.QUIT)
         assertEquals(false, m.state.exit)
-
-        m.setStateForTest(
-            HomeState(
-                sections = sections,
-                selection = setOf("pm"),
-                run = PaneRun(steps = listOf("pm"), label = "pm", done = true, summary = "done"),
-            ),
-        )
-        m.handleKey(HomeKey.ENTER)
-        assertEquals(null, m.state.run, "enter closes a finished pane")
-        assertTrue(m.state.selection.isEmpty(), "and clears what it just upgraded")
+        assertNull(m.state.run)
+        assertEquals(setOf("pm"), m.state.selection, "closing a list keeps the ticks")
     }
 
     /**
@@ -927,8 +1010,8 @@ class HomeKeysTest {
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 8))
         val list = m.state.run!!
         assertEquals(PaneKind.LIST, list.kind, "enter on it opens the list in the pane")
-        assertEquals(listOf("kernel", "glibc"), list.log)
-        assertTrue(list.done, "nothing runs: it only shows")
+        assertEquals(listOf("kernel", "glibc"), list.lines)
+        assertFalse(list.asking, "nothing runs: it only shows")
         m.handleKey(HomeKey.ENTER, viewport = 8)
         assertNull(m.state.run, "enter closes it")
         m.handleKey(HomeKey.DOWN, viewport = 8)
@@ -1129,13 +1212,13 @@ class HomeKeysTest {
         m.handleKey(HomeKey.SELECT_ALL, viewport = 5)
         assertEquals(setOf("pull", "apply"), m.state.picked)
 
-        // enter runs the picks HERE — the screen stays, the pane asks first.
+        // enter asks first, in the pane — the screen stays until the yes.
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
         assertEquals(false, m.state.exit)
         val run = m.state.run!!
-        assertTrue(run.confirming)
+        assertTrue(run.asking)
         assertEquals(PaneKind.SCRIPTS, run.kind)
-        assertEquals(listOf("[pull]  sh pull", "[apply]  sh apply"), run.commands, "in run order, not tick order")
+        assertEquals(listOf("pull", "apply"), run.items.map { it.first }, "in run order, not tick order")
 
         // esc on the question leaves the picks alone for another go.
         m.handleKey(HomeKey.ESC, viewport = 5)
@@ -1154,22 +1237,6 @@ class HomeKeysTest {
         assertEquals(false, m.handleKey(HomeKey.ENTER, viewport = 5))
         assertNull(m.state.run)
         assertTrue(m.state.message!!.contains("nothing ticked"))
-    }
-
-    @Test
-    fun closingAScriptRunKeepsTheRemoteSelection() {
-        val sections = listOf(HomeSection("scripts", "", "run", HomeAction.RUN_SCRIPTS))
-        val m = model(sections)
-        m.setStateForTest(
-            HomeState(
-                sections = sections,
-                selection = setOf("tool:dnf"),
-                run = PaneRun(steps = listOf("pull"), kind = PaneKind.SCRIPTS, done = true, summary = "done"),
-            ),
-        )
-        m.handleKey(HomeKey.ENTER)
-        assertNull(m.state.run)
-        assertEquals(setOf("tool:dnf"), m.state.selection, "only an upgrade's own picks are cleared")
     }
 
     @Test
@@ -1238,33 +1305,5 @@ class ThemeDetectionTest {
         // Ignoring it would look exactly like the bug it was set to fix.
         val e = assertFailsWith<ThemeException> { forcedDark("lite") }
         assertTrue("lite" in e.message!!, e.message!!)
-    }
-}
-
-class DisplayLinesTest {
-    @Test
-    fun carriageReturnProgressCollapsesToFinalState() {
-        assertEquals(listOf("progress 100%"), displayLines("progress 10%\rprogress 50%\rprogress 100%"))
-    }
-
-    @Test
-    fun ansiEscapesAreStrippedAndTabsExpanded() {
-        assertEquals(listOf("colored ok"), displayLines("\u001b[32mcolored ok\u001b[0m"))
-        assertEquals(listOf("a    b    c"), displayLines("a\tb\tc"))
-    }
-
-    @Test
-    fun embeddedNewlinesSplitAndBlanksDrop() {
-        assertEquals(listOf("one", "two"), displayLines("one\n\ntwo\n"))
-    }
-}
-
-class SudoGuardTest {
-    @Test
-    fun sudoIsMatchedAsAWordNotASubstring() {
-        assertTrue(commandNeedsSudo("sudo dnf install -y git"))
-        assertTrue(commandNeedsSudo("true && sudo systemctl enable x"))
-        assertFalse(commandNeedsSudo("sh 'scripts/pseudo-tty.sh'"))
-        assertFalse(commandNeedsSudo("echo sudoku"))
     }
 }

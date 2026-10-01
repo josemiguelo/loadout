@@ -38,35 +38,42 @@ scripts_repo srepo
 rm -f srepo/bootstrap-marker.txt
 "$BIN" --repo srepo --machine m1 status >/dev/null
 if has_pty; then
-    # j to the scripts row, l opens the picker, a ticks every script,
-    # enter asks, enter runs, wait for the refresh, enter closes, q quits
-    # (a q on a finished pane closes it — it never quits the screen).
+    # j to the scripts row, l opens the picker, a ticks every script, enter
+    # asks, enter runs them on the terminal; enter returns to the same
+    # screen (picker still open), q quits.
     { wait_settled tui-scripts.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-scripts.log 'space tick'
       printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-scripts.log 'These scripts will run'
-      printf '\r'; wait_pane_done tui-scripts.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+      printf '\r'; wait_back tui-scripts.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-scripts.log --repo srepo --machine m1
     grep -qa "space tick" tui-scripts.log || fail "the scripts row opens a picker"
     grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list modes=[setup] scripts" || true
     grep -qa "These scripts will run" tui-scripts.log || fail "the pane asks before running scripts"
-    grep -qa "Still not done: drifted" tui-scripts.log || fail "the pane re-checks and names what is still not done"
-    grep -qa "missing: nodejs 16" tui-scripts.log || fail "the pane says what the failing check printed"
-    grep -q '"drifted"' srepo/state/m1.json || fail "a pane run records the scripts in the state file"
+    grep -qa "ran drifted (exit 0)" tui-scripts.log || fail "the terminal runs the ticked scripts"
+    seen tui-scripts.log "━━ loadout run healthy drifted --force ━" || fail "a rule names the command before its output"
+    seen tui-scripts.log "━━ ✔ done ━" || fail "and one closes it with the verdict"
+    seen tui-scripts.log "Run .* Cancel" || fail "the question shows its two buttons"
+    grep -qa "still not done: drifted (missing: nodejs 16" tui-scripts.log \
+        || fail "run re-checks and names what is still not done, with what its check printed"
+    grep -q '"drifted"' srepo/state/m1.json || fail "the run records the scripts in the state file"
     grep -q '"status": "pending"' srepo/state/m1.json || fail "the recorded status comes from the rerun check"
     grep -q '"exitCode": 0' srepo/state/m1.json || fail "the recorded exit code is the script's own"
-    ok "the home screen runs ticked scripts in its pane and re-checks them"
+    seen_after_back tui-scripts.log 'space tick' || fail "the screen comes back with the picker still open"
+    grep -qai "Tty already bound" tui-scripts.log && fail "the screen must reopen in the same process" || true
+    ok "the home screen hands ticked scripts to the terminal and comes back as it was"
 
     # A state write that fails must be said out loud, not swallowed: the runs
     # happened, nothing recorded them. A read-only state FILE forces it — a
     # read-only directory would not: rewriting an existing file needs no
-    # directory permission.
+    # directory permission. q at the way-back prompt quits from there.
     chmod 400 srepo/state/m1.json
     { wait_settled tui-nowrite.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-nowrite.log 'space tick'
       printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-nowrite.log 'These scripts will run'
-      printf '\r'; wait_pane_done tui-nowrite.log; printf 'q'; sleep 0.5; printf 'q'; sleep 1; } \
+      printf '\r'; wait_back tui-nowrite.log; printf 'q\r'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-nowrite.log --repo srepo --machine m1
     chmod 600 srepo/state/m1.json
-    grep -qa "state not written" tui-nowrite.log || fail "a failed state write is surfaced in the pane"
-    ok "the pane says so when it cannot write the state file"
+    seen tui-nowrite.log "error: " || fail "a failed state write is said, not swallowed"
+    seen tui-nowrite.log "━━ ✘ exit 1 ━" || fail "and the closing rule says the command failed"
+    ok "the terminal says so when the state file can't be written"
 fi
 
 # --- one cursor for the whole screen --------------------------------------
@@ -175,13 +182,14 @@ printf '[pm]\ntpack = "quiet"\n' > crepo/machines/m1.toml
 if has_pty; then
     # jj to the remote row, l opens the table, then jjj walks the tool
     # line, the package under it and the source heading to reach the
-    # source's OWN tpack row: space ticks it, enter asks, enter runs,
-    # enter closes the finished pane, q quits.
+    # source's OWN tpack row: space ticks it, enter asks, enter hands it to
+    # `upgrade --item` in the terminal; q at the way back quits.
     { wait_settled tui-collide.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-collide.log '156 commit'
-      printf 'jjj'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; wait_screen tui-collide.log 'These commands will run'
-      printf '\r'; wait_pane_done tui-collide.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+      printf 'jjj'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; wait_screen tui-collide.log 'These will upgrade'
+      printf '\r'; wait_back tui-collide.log; printf 'q\r'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-collide.log --repo crepo --machine m1
-    grep -qa "These commands will run" tui-collide.log || fail "the pane asks before upgrading"
+    grep -qa "These will upgrade" tui-collide.log || fail "the pane asks before upgrading"
+    grep -qa "upgrading tmux-plugins: tpack" tui-collide.log || fail "the terminal upgrades the source's item"
     [ -f crepo/pulled-tpack.txt ] || fail "the ticked row upgraded through its own source"
     [ -f crepo/the-tool-swept.txt ] && fail "a source's item must never run the tool's sweep" || true
     ok "a source's row upgrades through its source, not through a same-named program's tool"
@@ -192,17 +200,17 @@ if has_pty; then
     # covers its item, ticking a tool line sweeps the tool.
     rm -f crepo/pulled-tpack.txt crepo/the-tool-swept.txt
     { wait_settled tui-jump.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-jump.log '156 commit'
-      printf ']'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; wait_screen tui-jump.log 'These commands will run'
-      printf '\r'; wait_pane_done tui-jump.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+      printf ']'; sleep 0.6; printf ' '; sleep 0.4; printf '\r'; wait_screen tui-jump.log 'These will upgrade'
+      printf '\r'; wait_back tui-jump.log; printf 'q\r'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-jump.log --repo crepo --machine m1
     [ -f crepo/pulled-tpack.txt ] || fail "] landed on the source heading, whose tick covers its item"
     [ -f crepo/the-tool-swept.txt ] && fail "] skips the rows under a heading, it doesn't tick the tool" || true
     ok "] jumps to the next group's heading, over the rows under it"
 fi
 
-# --- the programs row: tick missing programs, the pane asks for sudo ------
-# A fake sudo on PATH: the pane must ask for the password ITSELF (a child's
-# prompt behind it is invisible), refuse a wrong one, and run on the right.
+# --- the programs row: sudo prompts on the terminal ------------------------
+# A fake sudo on PATH that prompts like the real one: a wrong password is
+# refused, the right one runs both installs, nothing typed is echoed.
 mkdir -p irepo/state irepo/machines
 cat > irepo/manifest.toml <<'TOML'
 [installers.fake]
@@ -221,27 +229,28 @@ fake_sudo
 "$BIN" --repo irepo --machine m1 status >/dev/null
 if has_pty; then
     # l opens the picker (both missing, both ticked), enter asks, enter says
-    # yes -> the password field; a wrong password is refused, the right one
-    # runs both installs; enter closes the finished pane, q quits.
+    # yes -> the terminal installs, and sudo asks there; a wrong password,
+    # then the right one; enter comes back to a screen with nothing missing.
     { wait_settled tui-install.log; printf 'l'; wait_screen tui-install.log 'space tick'
       printf '\r'; wait_screen tui-install.log 'These programs will install'
-      printf '\r'; wait_screen tui-install.log 'sudo password:'; printf 'nope\r'; wait_screen tui-install.log 'sorry, try again'
-      printf 'secret\r'; wait_pane_done tui-install.log; printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+      printf '\r'; wait_screen tui-install.log '\[sudo\] password for tester'; printf 'nope\r'; wait_screen tui-install.log 'Sorry, try again'
+      printf 'secret\r'; wait_back tui-install.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
         | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-install.log --repo irepo --machine m1
     grep -qa "These programs will install" tui-install.log || fail "the pane asks before installing"
-    grep -qa "sudo password:" tui-install.log || fail "the pane asks for the sudo password itself"
-    grep -qa "sorry, try again" tui-install.log || fail "a wrong password is refused on the field"
+    grep -qa "\[sudo\] password for tester" tui-install.log || fail "sudo's own prompt reaches the terminal"
+    grep -qa "Sorry, try again" tui-install.log || fail "a wrong password is refused by sudo"
     grep -qa "nope" tui-install.log && fail "the password must never be echoed" || true
-    grep -qa "All 2 program(s) installed" tui-install.log || fail "the right password runs the installs"
+    grep -qa "2/2 programs installed" tui-install.log || fail "the right password runs the installs"
     [ -f irepo/fake-alpha.txt ] && [ -f irepo/fake-beta.txt ] || fail "both ticked programs were installed"
     grep -c '"status": "installed"' irepo/state/m1.json | grep -qx 2 || fail "the re-check recorded both as installed"
-    ok "the programs row installs ticked programs in the pane, asking for sudo's password itself"
+    seen_after_back tui-install.log 'nothing miss' || fail "the screen comes back with the programs row settled"
+    ok "the programs row installs in the terminal, where sudo asks for its own password"
 fi
 
-# --- sudo called from INSIDE a command: only a declaration can tell ------
-# `omarchy pkg add`, Homebrew's installer: the command never says sudo, so
-# without `sudo = true` the pane would start it and the prompt would hang
-# invisibly behind it (the fake sudo refuses without a stamp instead).
+# --- sudo called from inside a command prompts without a declaration -----
+# `omarchy pkg add`, Homebrew's installer: the command never says sudo; on
+# the terminal its prompt appears anyway. The obsolete `sudo = true` still
+# loads and changes nothing.
 mkdir -p hrepo/state hrepo/machines
 cat > hrepo/inner.sh <<'SH'
 sudo sh -c "echo installed-$1 > fake-$1.txt"
@@ -261,14 +270,60 @@ printf '[pm]\ngamma = "hidden"\n' > hrepo/machines/m1.toml
 fake_sudo
 "$BIN" --repo hrepo --machine m1 status >/dev/null
 OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
-echo "$OUT" | grep -qE "sudo.hidden +yes" || fail "explain shows the declared sudo"
+echo "$OUT" | grep -q "sudo" && fail "explain doesn't show the obsolete sudo declaration" || true
 if has_pty; then
     { wait_settled tui-hidden.log; printf 'l'; wait_screen tui-hidden.log 'space tick'
       printf '\r'; wait_screen tui-hidden.log 'These programs will install'
-      printf '\r'; wait_screen tui-hidden.log 'sudo password:'; printf 'secret\r'; wait_pane_done tui-hidden.log
-      printf '\r'; sleep 0.5; printf 'q'; sleep 1; } \
+      printf '\r'; wait_screen tui-hidden.log '\[sudo\] password for tester'; printf 'secret\r'; wait_back tui-hidden.log
+      printf 'q\r'; sleep 1; } \
         | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-hidden.log --repo hrepo --machine m1
-    grep -qa "sudo password:" tui-hidden.log || fail "a declared sudo makes the pane ask, though no command says sudo"
-    [ -f hrepo/fake-gamma.txt ] || fail "the install ran with the stamped sudo"
-    ok "an installer declaring sudo = true gets its password asked up front"
+    grep -qa "\[sudo\] password for tester" tui-hidden.log || fail "a sudo inside a script prompts in the terminal"
+    [ -f hrepo/fake-gamma.txt ] || fail "the install ran once the password was typed"
+    ok "a sudo called from inside a command prompts in the terminal, declared or not"
+fi
+
+# --- anything else that asks, like `omarchy update`'s "Reboot?" ----------
+# The upgrade's own question reaches the terminal and gets its answer. It
+# is printed through an escape (\167 = w) so waiting for it can't match
+# text drawn by the screen.
+mkdir -p arepo/state arepo/machines
+cat > arepo/manifest.toml <<'TOML'
+[installers.asks]
+probe = "sh"
+install = "true"
+check = "echo {pkg} 1.0"
+regex = "([0-9][0-9.]*)"
+outdated-all = "echo 'alpha 2.0'"
+upgrade = '''printf 'Ans\167er me: '; read answer; echo "answered-$answer" > asked.txt'''
+
+[programs.alpha]
+via = ["asks"]
+TOML
+printf '[pm]\nalpha = "asks"\n' > arepo/machines/m1.toml
+"$BIN" --repo arepo --machine m1 status >/dev/null
+if has_pty; then
+    # jj to the remote row, l opens it, a ticks it, enter asks, enter runs;
+    # the upgrade asks on the terminal and gets its answer, enter comes back.
+    { wait_settled tui-asks.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-asks.log '1 update'
+      printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-asks.log 'These will upgrade'
+      printf '\r'; wait_screen tui-asks.log 'Answer me:'; printf 'no\r'
+      wait_back tui-asks.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-asks.log --repo arepo --machine m1
+    grep -qx answered-no arepo/asked.txt || fail "the upgrade read its answer from the terminal"
+    seen_after_back tui-asks.log 'loadout' || fail "the screen comes back after the upgrade"
+    ok "an upgrade that asks something gets its answer in the terminal"
+
+    # Ctrl-C stops the command, not loadout; the closing rule says so and
+    # the ticks stay.
+    rm -f arepo/asked.txt
+    { wait_settled tui-intr.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-intr.log '1 update'
+      printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-intr.log 'These will upgrade'
+      printf '\r'; wait_screen tui-intr.log 'Answer me:'; printf '\003'
+      wait_back tui-intr.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-intr.log --repo arepo --machine m1
+    [ -f arepo/asked.txt ] && fail "Ctrl-C stops the command before it goes on" || true
+    seen tui-intr.log "━━ interrupted ━" || fail "the closing rule says it was interrupted"
+    seen_after_back tui-intr.log 'loadout' || fail "loadout survives Ctrl-C and shows the screen again"
+    seen_after_back tui-intr.log '\[x\] sh' || fail "an interrupted upgrade keeps its ticks for another go"
+    ok "Ctrl-C stops the running command and comes back to the screen"
 fi

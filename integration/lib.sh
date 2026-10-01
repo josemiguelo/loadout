@@ -71,10 +71,11 @@ TOML
     printf 'scripts = ["healthy", "drifted", "bootstrap-only"]\n\n[pm]\nmytool = "fake"\n' > "$1/machines/m1.toml"
 }
 
-# A stand-in sudo on PATH for pane tests: `-n` succeeds only once a stamp
-# file exists, `-S -v` reads the password from stdin and stamps on
-# "secret", anything else runs the command only when stamped. Sets
-# FAKE_SUDO_PATH to put in front of PATH.
+# A stand-in sudo on PATH that asks like the real one: `-n` succeeds only
+# once a stamp file exists; anything else, unstamped, prompts on the
+# terminal (/dev/tty, echo off), stamps on "secret" and runs the command,
+# says "Sorry, try again." otherwise — three tries. Sets FAKE_SUDO_PATH to
+# put in front of PATH.
 fake_sudo() {
     mkdir -p fakebin
     cat > fakebin/sudo <<'SUDO'
@@ -82,9 +83,20 @@ fake_sudo() {
 STAMP=$FAKE_SUDO_STAMP
 case "$1" in
   -n) shift; [ "${1:-}" = "-v" ] && shift; [ -f "$STAMP" ] || { echo "sudo: a password is required" >&2; exit 1; }; [ $# -gt 0 ] && exec "$@"; exit 0 ;;
-  -S) read -r pw; [ "$pw" = "secret" ] && { touch "$STAMP"; exit 0; } || { echo "Sorry, try again." >&2; exit 1; } ;;
-  *) [ -f "$STAMP" ] || { echo "sudo: a terminal is required" >&2; exit 1; }; exec "$@" ;;
 esac
+tries=0
+while [ ! -f "$STAMP" ]; do
+  [ "$tries" -ge 3 ] && { echo "sudo: 3 incorrect password attempts" >&2; exit 1; }
+  printf '[sudo] password for tester: ' >/dev/tty
+  stty -echo </dev/tty
+  read -r pw </dev/tty
+  stty echo </dev/tty
+  printf '\n' >/dev/tty
+  if [ "$pw" = "secret" ]; then touch "$STAMP"; else echo "Sorry, try again." >/dev/tty; fi
+  tries=$((tries + 1))
+done
+[ "${1:-}" = "-v" ] && exit 0
+exec "$@"
 SUDO
     chmod +x fakebin/sudo
     FAKE_SUDO_PATH=$PWD/fakebin
@@ -159,9 +171,23 @@ wait_settled() {
     wait_screen "$1" 'review th' '(nothing miss|install wh)' '(nothing pend|run wh)'
 }
 
-# The pane's run is over, however it went: its title names the outcome
-# (HomeApp's pane title) — a script whose check still fails ends "not all
-# done", not "run finished", and waiting on the happy title alone hung.
-wait_pane_done() {
-    wait_screen "$1" '(run finished|not all done|install finished|not all installed|upgrade finished|upgrade failed)'
+# A hand-off's command finished, whatever the outcome: the way-back prompt
+# is on screen.
+wait_back() {
+    wait_screen "$1" 'enter returns to loadout'
+}
+
+# The capture $1 as text: escape sequences (colours, cursor moves) removed.
+plain_screen() {
+    perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a\e]*(\a|\e\\)//g' "$1"
+}
+
+# [pattern] is on screen in the capture $1, colours or not.
+seen() {
+    plain_screen "$1" | grep -qaE -- "$2"
+}
+
+# [pattern] is drawn after the way-back prompt, i.e. by the reopened screen.
+seen_after_back() {
+    plain_screen "$1" | sed -n '/enter returns to loadout/,$p' | grep -qaE -- "$2"
 }

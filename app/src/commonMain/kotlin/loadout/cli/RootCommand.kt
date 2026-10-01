@@ -9,9 +9,16 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.versionOption
+import loadout.core.LoadoutException
+import loadout.core.exec.InterruptedByUser
 import loadout.core.platform.isStdoutTty
+import loadout.core.platform.takeInterrupt
+import loadout.core.platform.terminalColumns
+import loadout.core.platform.trapInterrupts
+import loadout.tui.Handoff
 import loadout.tui.HomeAction
-import loadout.tui.runHomeTui
+import loadout.tui.HomeScreen
+import loadout.tui.PaneKind
 import com.github.ajalt.clikt.core.terminal
 import com.github.ajalt.mordant.terminal.Terminal
 import loadout.core.TOOL_VERSION
@@ -66,24 +73,100 @@ class RootCommand : CliktCommand(name = "loadout") {
     }
 
     /**
-     * Render the home screen, then hand the terminal to whatever the user
-     * chose. One TUI per invocation: Mosaic binds the tty once per process
-     * ("Tty already bound"), so the screen cannot reopen afterwards. Rows
-     * never leave: installs, upgrades and script runs stream inside the
-     * floating pane (which asks for the sudo password itself), and the
-     * remote/fleet tables open in place. Only the machine-wide keys leave —
-     * sync, self-upgrade, setup — because those commands own the terminal.
+     * Show the home screen, run what the user chose on the real terminal,
+     * then show the same screen again (HomeScreen keeps one model). Nothing
+     * runs inside the screen: sudo, `gum confirm` and pagers need the
+     * keyboard. Ends on q, or after self-upgrade (the binary on disk is then
+     * a different version).
      */
     private fun home(app: AppContext) {
-        val code = when (runHomeTui(app)) {
-            HomeAction.NONE, HomeAction.INSTALL_MISSING, HomeAction.RUN_SCRIPTS,
-            HomeAction.REVIEW_OUTDATED, HomeAction.SHOW_DIFF -> return
-            HomeAction.SYNC -> dispatch(SyncCommand(), app)
-            HomeAction.UPGRADE -> dispatch(SelfUpgradeCommand(), app)
-            HomeAction.SETUP -> dispatch(SetupCommand(), app)
+        val screen = HomeScreen(app)
+        while (true) {
+            val closed = screen.show()
+            if (closed.action == HomeAction.UPGRADE) {
+                screen.pause()
+                val code = dispatch(SelfUpgradeCommand(), app)
+                echo("")
+                echo(Style.dim("`loadout` opens the new version's screen."))
+                if (code != 0) throw ProgramResult(code)
+                return
+            }
+            val (command, args) = when (closed.action) {
+                HomeAction.NONE, HomeAction.INSTALL_MISSING, HomeAction.RUN_SCRIPTS,
+                HomeAction.REVIEW_OUTDATED, HomeAction.SHOW_DIFF, HomeAction.UPGRADE -> return
+                HomeAction.SYNC -> SyncCommand() to emptyList()
+                HomeAction.SETUP -> SetupCommand() to emptyList()
+                HomeAction.HAND_OFF -> closed.handoff?.let { commandFor(it) to argsFor(it) } ?: return
+            }
+            if (screen.busy) echo(Style.dim("finishing the checks still running…"))
+            screen.pause()
+            // Rules frame the command's output; the top one names the exact
+            // command (also how to run it by hand).
+            echo("")
+            echo(rule("loadout " + (listOf(command.commandName) + args).joinToString(" "), Style::accent))
+            val code = handOff { dispatch(command, app, args) }
+            echo(
+                when (code) {
+                    0 -> rule("✔ done", Style::ok)
+                    INTERRUPTED -> rule("interrupted", Style::warn)
+                    else -> rule("✘ exit $code", Style::error)
+                },
+            )
+            echo(Style.dim("enter returns to loadout, q quits"))
+            val answer = readlnOrNull()?.trim()
+            if (answer == null || answer.equals("q", ignoreCase = true)) {
+                if (code != 0) throw ProgramResult(code)
+                return
+            }
+            screen.resume(closed, ok = code == 0)
         }
-        echo("")
-        echo(Style.dim("`loadout` opens this screen again."))
-        if (code != 0) throw ProgramResult(code)
     }
+
+    /**
+     * Run [command] on the real terminal and return its exit code. Ctrl-C
+     * and errors (LoadoutException, okio's IOException) end the command,
+     * not loadout.
+     */
+    private fun handOff(command: () -> Int): Int {
+        trapInterrupts(true)
+        return try {
+            command()
+        } catch (e: InterruptedByUser) {
+            INTERRUPTED
+        } catch (e: LoadoutException) {
+            echo(Style.error("error: ") + (e.message ?: ""))
+            1
+        } catch (e: okio.IOException) {
+            // e.g. an unwritable state file.
+            echo(Style.error("error: ") + (e.message ?: ""))
+            1
+        } finally {
+            trapInterrupts(false)
+            // Drop a Ctrl-C that arrived after the last child exited.
+            takeInterrupt()
+        }
+    }
+
+    private fun commandFor(handoff: Handoff): CliktCommand = when (handoff.kind) {
+        PaneKind.INSTALL -> InstallCommand()
+        PaneKind.SCRIPTS -> RunCommand()
+        PaneKind.UPGRADE, PaneKind.LIST -> UpgradeCommand()
+    }
+
+    /** The pane already asked: skip the command's own confirmation. */
+    private fun argsFor(handoff: Handoff): List<String> = when (handoff.kind) {
+        PaneKind.INSTALL, PaneKind.UPGRADE, PaneKind.LIST -> handoff.args + "--yes"
+        // `run` has no confirmation; --force runs a ticked script even when done.
+        PaneKind.SCRIPTS -> handoff.args + "--force"
+    }
+}
+
+/** The exit a shell reports for a command stopped by Ctrl-C. */
+private const val INTERRUPTED = 130
+
+/** A heavy rule across the terminal with [label] in it: `━━ label ━━━━…`. */
+private fun rule(label: String, color: (String) -> String): String {
+    val head = "━━ $label "
+    val width = terminalColumns() ?: 80
+    return color(head + "━".repeat((width - head.length).coerceAtLeast(3)))
 }

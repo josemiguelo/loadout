@@ -24,6 +24,9 @@ data class ThemePalette(
     val error: Rgb,
     val selectionBg: Rgb,
     val selectionFg: Rgb,
+    /** An unfocused button; a focused one is [accent]/[onAccent]. */
+    val idleBg: Rgb,
+    val idleFg: Rgb,
 )
 
 /** Tokyo Night. */
@@ -40,6 +43,8 @@ val DARK_THEME = ThemePalette(
     error = Rgb(0xf7, 0x76, 0x8e),
     selectionBg = Rgb(0x36, 0x4a, 0x82),
     selectionFg = Rgb(0xc0, 0xca, 0xf5),
+    idleBg = Rgb(0x3b, 0x42, 0x61),
+    idleFg = Rgb(0xa9, 0xb1, 0xd6),
 )
 
 /** Light: vivid-but-readable on white (GitHub-light-like saturation). */
@@ -56,6 +61,8 @@ val LIGHT_THEME = ThemePalette(
     error = Rgb(0xd1, 0x24, 0x2f),
     selectionBg = Rgb(0x2e, 0x33, 0x40),
     selectionFg = Rgb(0xe5, 0xe9, 0xf0),
+    idleBg = Rgb(0xd8, 0xde, 0xe4),
+    idleFg = Rgb(0x24, 0x29, 0x2f),
 )
 
 /**

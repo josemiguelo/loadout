@@ -13,7 +13,6 @@ import loadout.core.manifest.ManifestLoader
 import loadout.core.model.MachineState
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramStatus
-import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
 import loadout.core.engine.InstallEngine
@@ -21,63 +20,64 @@ import loadout.core.engine.PlanItem
 import loadout.core.engine.ScriptRunner
 import loadout.core.engine.ToolDown
 import loadout.core.engine.UpgradeEngine
+import loadout.core.engine.UpgradeStep
 import loadout.core.engine.VersionChecker
-import loadout.core.exec.RunningProcess
 import loadout.core.platform.blockingDispatcher
-import loadout.core.platform.nowIso
 import loadout.theme.terminalIsDark
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
-/** What a pane run is doing — the words and the ending differ, nothing else. LIST runs nothing: it shows. */
+/**
+ * What the floating pane is for. UPGRADE, SCRIPTS and INSTALL ask before
+ * handing off to their command; LIST only shows.
+ */
 enum class PaneKind { UPGRADE, SCRIPTS, INSTALL, LIST }
 
-/** A run in the floating pane — first as a question, then as it happens. */
+/**
+ * The floating pane: a question before a hand-off, or a list. Commands
+ * never run in it; they run in the terminal, where they can reach the
+ * keyboard.
+ */
 data class PaneRun(
-    val steps: List<String>,
     val kind: PaneKind = PaneKind.UPGRADE,
-    /** A LIST pane's own title; the run kinds derive theirs from what they do. */
+    /** A LIST pane's own title; a question's comes from its kind. */
     val title: String = "",
-    /** Some step invokes sudo: the yes may have to ask for a password first. */
-    val needsSudo: Boolean = false,
     /**
-     * The password being typed, while the pane asks for one (null = not
-     * asking). Held only until `sudo -S -v` has stamped sudo's cache.
+     * A question's rows, in run order: what acts (package manager, program,
+     * script) and what that means. Not the commands: the terminal prints them.
      */
-    val password: String? = null,
-    /** Why the last password was refused, shown next to the field. */
-    val passwordError: String? = null,
-    val current: Int = 0,
-    val label: String = "",
-    val log: List<String> = emptyList(),
-    val done: Boolean = false,
-    val failed: Boolean = false,
-    /** Steps that exited non-zero, by label — named in the summary. */
-    val failures: List<String> = emptyList(),
-    val cancelled: Boolean = false,
+    val items: List<Pair<String, String>> = emptyList(),
+    /** A LIST's lines. */
+    val lines: List<String> = emptyList(),
+    /** A LIST's note under its lines. */
     val summary: String = "",
-    /** Showing the plan and waiting for a yes — nothing has run yet. */
-    val confirming: Boolean = false,
-    /** The exact commands, shown while confirming. */
-    val commands: List<String> = emptyList(),
-    /** Package managers about to upgrade EVERYTHING they manage. */
-    val sweeps: List<String> = emptyList(),
-    /**
-     * Lines held back from the bottom. 0 follows the tail (the normal live
-     * view); scrolling back pins the window so output can be read.
-     */
+    /** Index of the first line shown. */
     val scrollBack: Int = 0,
-)
+    /** A question's focused button is Cancel, not Run. */
+    val cancelFocused: Boolean = false,
+) {
+    val asking: Boolean get() = kind != PaneKind.LIST
+}
+
+/**
+ * A command the home screen closes for: the subcommand for [kind]
+ * (`install`, `run`, `upgrade`) with [args]. RootCommand runs it on the
+ * real terminal, then reopens the screen.
+ */
+data class Handoff(val kind: PaneKind, val args: List<String>)
 
 enum class HomeKey {
     UP, DOWN, PAGE_UP, PAGE_DOWN, PREV_HEADING, NEXT_HEADING, ENTER, OPEN, CLOSE, ESC,
     SELECT, SELECT_ALL, SELECT_NONE, OPEN_LINK,
     REFRESH, SYNC, UPGRADE, CONVERGE, THEME, QUIT,
+    // Pane buttons, gum's keys: tab switches, y/n press one.
+    SWITCH, YES, NO,
 }
 
 /** One missing program, as the programs row lists it: what would install it. */
@@ -90,12 +90,10 @@ data class ProgramRow(
 /** One of this machine's maintenance scripts, as the scripts row lists it. */
 data class ScriptRow(
     val name: String,
-    /** The script itself, machine args applied — what the pane runs. */
+    /** The script itself, machine args applied. */
     val command: String,
-    /** Its check with args applied, when it has one (sudo guard only: the refresh re-asks it). */
-    val check: String? = null,
-    /** Declared `sudo = true`: it needs the password without saying `sudo`. */
-    val sudo: Boolean = false,
+    /** What it's for, from the manifest — what the question shows next to its name. */
+    val description: String = "",
     /** The last observed verdict; null = never observed here. */
     val status: ScriptStatus? = null,
 )
@@ -160,6 +158,9 @@ enum class HomeAction {
 
     // Whole-machine verbs, on their own keys — they belong to no single row.
     SYNC, UPGRADE, SETUP,
+
+    // Run [HomeState.handoff], confirmed in the pane.
+    HAND_OFF,
 }
 
 /** One subject line: its verdict, and the single verb that resolves it. */
@@ -218,12 +219,14 @@ data class HomeState(
     val scripts: List<ScriptRow> = emptyList(),
     /** Scripts ticked to run. Follows the verdicts: not done = ticked, after every re-check. */
     val picked: Set<String> = emptySet(),
-    /** The upgrade or script run in the floating pane, if any. */
+    /** The floating pane's question or list, if one is up. */
     val run: PaneRun? = null,
     val message: String? = null,
     val dark: Boolean = true,
     val exit: Boolean = false,
     val action: HomeAction = HomeAction.NONE,
+    /** With [HomeAction.HAND_OFF]: the command the screen closed for. */
+    val handoff: Handoff? = null,
 )
 
 /**
@@ -275,13 +278,13 @@ class HomeModel(private val app: AppContext) {
             writing.store(false)
         }
     }
-    private var running: RunningProcess? = null
-    private var cancelled = false
-    private var pending: List<PaneStep>? = null
+    /** What the pane's question hands off on a yes. */
+    private var pending: Handoff? = null
     private var manifest: Manifest? = null
     private var system: SystemInfo? = null
     private var stored: MachineState? = null
-    private var before: Map<String, String?> = emptyMap()
+    /** The body's height at the last key; [resume] scrolls with it. */
+    private var lastViewport = 8
 
     /** Stored verdicts, on screen immediately. Call before runMosaic; may throw. */
     fun load() {
@@ -291,7 +294,6 @@ class HomeModel(private val app: AppContext) {
         system = sys
         val stored = app.stateStore.read(sys.machine)
         this.stored = stored
-        before = stored?.programs?.mapValues { it.value.version }.orEmpty()
         val report = fleet()
         val scripts = scriptRowsOf(m, sys, stored)
         val missing = missingRowsOf(m, sys, stored)
@@ -316,19 +318,20 @@ class HomeModel(private val app: AppContext) {
      * remotes (~4s). The remote query starts IMMEDIATELY against the stored
      * state rather than queueing behind the refresh — waiting seconds to
      * start asking is the thing this screen exists to avoid. Each lands in
-     * the UI as it finishes.
+     * the UI as it finishes. [remotes] = false re-checks the machine only,
+     * keeping the answers already on screen.
      */
-    fun refresh() {
+    fun refresh(remotes: Boolean = true) {
         val m = manifest ?: return
         val sys = system ?: return
         if (state.loading) return
         // Recompute the rows too: "asking…" has to show the moment we start,
         // not when the first answer lands.
-        val sections = sectionsOf(m, sys, stored, fleet(), RemoteStatus.Asking, checking = true)
-        update { it.copy(loading = true, remote = RemoteStatus.Asking, sections = sections) }
+        val sections = sectionsOf(m, sys, stored, fleet(), if (remotes) RemoteStatus.Asking else state.remote, checking = true)
+        update { it.copy(loading = true, remote = if (remotes) RemoteStatus.Asking else it.remote, sections = sections) }
 
         val known = stored
-        if (known != null) scope.launch { askRemotes(m, sys, known) }
+        if (remotes && known != null) scope.launch { askRemotes(m, sys, known) }
 
         scope.launch {
             val fresh = runCatching { app.refreshAndWriteState(m, sys) }
@@ -355,8 +358,114 @@ class HomeModel(private val app: AppContext) {
                 )
             }
             // A machine with no state file yet couldn't be asked about above.
-            if (known == null && observed != null) askRemotes(m, sys, observed)
+            if (remotes && known == null && observed != null) askRemotes(m, sys, observed)
         }
+    }
+
+    /** Checks still running in the background (the machine's, the remotes'). */
+    val busy: Boolean get() = scope.coroutineContext[Job]?.children?.any { it.isActive } == true
+
+    /**
+     * Before a hand-off: cancel the background checks and wait for them,
+     * so none runs beside the command (`brew outdated` next to `brew
+     * upgrade`) or writes the state file after it. Cancelling doesn't stop
+     * a running child process; this waits for it to exit.
+     */
+    fun pause() = runBlocking {
+        scope.coroutineContext[Job]?.children?.toList()?.forEach { it.cancelAndJoin() }
+        update { it.copy(loading = false) }
+    }
+
+    /**
+     * After a hand-off ([closed]: the state the screen closed with; [ok]:
+     * the command succeeded). Cursor, open tables, folds and ticks stay. Rows
+     * re-read the state file the command wrote. Also re-asked: the remotes
+     * after an upgrade, everything after sync or set-up (the repo may have
+     * changed), the machine after a failure (the file may be stale).
+     */
+    fun resume(closed: HomeState, ok: Boolean) {
+        val place = placeOf(closed)
+        val upgraded = closed.handoff?.kind == PaneKind.UPGRADE
+        update {
+            it.copy(
+                exit = false,
+                action = HomeAction.NONE,
+                handoff = null,
+                message = null,
+                // Clear upgrade ticks on success; keep them after a failure or Ctrl-C.
+                selection = if (upgraded && ok) emptySet() else it.selection,
+            )
+        }
+        when {
+            closed.action == HomeAction.SYNC || closed.action == HomeAction.SETUP -> {
+                load()
+                refresh()
+            }
+            !ok -> {
+                reload()
+                refresh(remotes = upgraded)
+            }
+            else -> {
+                reload()
+                if (upgraded) askRemotesAgain()
+            }
+        }
+        place?.let { (section, row) -> update { withCursor(it, lineNear(it, section, row), lastViewport) } }
+    }
+
+    /** The remotes only: the machine's own rows are already current. */
+    private fun askRemotesAgain() {
+        val m = manifest ?: return
+        val sys = system ?: return
+        val known = stored ?: return
+        update { it.copy(remote = RemoteStatus.Asking, sections = sectionsOf(m, sys, known, it.fleet, RemoteStatus.Asking)) }
+        scope.launch { askRemotes(m, sys, known) }
+    }
+
+    /** The rows again from the state file a command just wrote; the remotes' answer stays. */
+    private fun reload() {
+        val m = manifest ?: return
+        val sys = system ?: return
+        val observed = app.stateStore.read(sys.machine) ?: stored
+        stored = observed
+        val report = fleet()
+        val scripts = scriptRowsOf(m, sys, observed)
+        val missing = missingRowsOf(m, sys, observed)
+        update {
+            it.copy(
+                sections = sectionsOf(m, sys, observed, report, it.remote),
+                fleet = report,
+                missing = missing,
+                chosen = missing.map { p -> p.name }.toSet(),
+                scripts = scripts,
+                picked = preselect(scripts),
+                stale = false,
+            )
+        }
+    }
+
+    /** The subject and detail row the cursor is on in [s] (-1 = the subject row). */
+    private fun placeOf(s: HomeState): Pair<Int, Int>? {
+        val lines = homeLines(s)
+        val at = snapCursor(lines, s.cursor)
+        if (at < 0) return null
+        val line = lines[at]
+        return line.section to ((line as? HomeLine.Detail)?.index ?: -1)
+    }
+
+    /**
+     * The line for [row] of [section] in [s]. The command may have removed
+     * rows (an installed program leaves the missing list): then the last row
+     * before it, else the subject row.
+     */
+    private fun lineNear(s: HomeState, section: Int, row: Int): Int {
+        val lines = homeLines(s)
+        val details = lines.withIndex().filter { (_, l) -> l is HomeLine.Detail && l.section == section && l.focusable }
+        val detail = details.lastOrNull { (_, l) -> (l as HomeLine.Detail).index <= row }
+            ?: details.firstOrNull().takeIf { row >= 0 }
+        return detail?.index
+            ?: lines.indexOfFirst { it is HomeLine.Subject && it.section == section }.takeIf { it >= 0 }
+            ?: 0
     }
 
     private suspend fun askRemotes(m: Manifest, sys: SystemInfo, observed: MachineState) {
@@ -413,43 +522,31 @@ class HomeModel(private val app: AppContext) {
      */
     fun handleKey(key: HomeKey, viewport: Int = 8): Boolean {
         val s = state
-        // The floating pane owns the keyboard while it's up.
+        // The pane owns the keyboard while it's up. Question: ←/→, h/l or
+        // tab move the focus, enter presses it, y runs, n/esc/q cancel.
+        // List: enter, esc or q close it.
         s.run?.let { run ->
-            // Typing a password: printable keys never reach here (see
-            // passwordKey); only enter/esc do, and esc backs out to the question.
-            if (run.password != null) {
-                when (key) {
-                    HomeKey.ENTER -> submitPassword()
-                    HomeKey.ESC -> updateRun { it.copy(password = null, passwordError = null) }
-                    else -> {}
-                }
-                return false
+            val cancel = {
+                pending = null
+                update { it.copy(run = null) }
             }
             when (key) {
-                HomeKey.ESC, HomeKey.QUIT -> when {
-                    run.confirming -> {
-                        pending = null
-                        update { it.copy(run = null) }
-                    }
-                    run.done -> update { closed(it, run) }
-                    else -> cancelRun()
+                HomeKey.ESC, HomeKey.QUIT, HomeKey.NO -> cancel()
+                HomeKey.YES -> if (run.asking) handOff() else cancel()
+                HomeKey.ENTER -> if (run.asking && !run.cancelFocused) handOff() else cancel()
+                HomeKey.OPEN, HomeKey.CLOSE, HomeKey.SWITCH -> if (run.asking) {
+                    update { it.copy(run = it.run?.copy(cancelFocused = !run.cancelFocused)) }
                 }
-                HomeKey.ENTER -> when {
-                    run.confirming -> confirmRun()
-                    run.done -> update { closed(it, run) }
-                    else -> {}
-                }
-                // Scrolling back pins the window; coming back to 0 follows
-                // the tail again, which is what a live run wants.
-                HomeKey.UP -> scrollRun(1, viewport)
-                HomeKey.DOWN -> scrollRun(-1, viewport)
-                HomeKey.PAGE_UP -> scrollRun(viewport, viewport)
-                HomeKey.PAGE_DOWN -> scrollRun(-viewport, viewport)
+                HomeKey.UP -> scrollRun(-1, viewport)
+                HomeKey.DOWN -> scrollRun(1, viewport)
+                HomeKey.PAGE_UP -> scrollRun(-viewport, viewport)
+                HomeKey.PAGE_DOWN -> scrollRun(viewport, viewport)
                 HomeKey.THEME -> update { it.copy(dark = !it.dark) }
                 else -> {}
             }
             return false
         }
+        lastViewport = viewport
         // Verbs that belong to the machine, not to a row: same key in either
         // mode. Each leaves the screen so the command owns the terminal.
         when (key) {
@@ -646,12 +743,10 @@ class HomeModel(private val app: AppContext) {
                         line is RemoteLine.Others -> update {
                             it.copy(
                                 run = PaneRun(
-                                    steps = emptyList(),
                                     kind = PaneKind.LIST,
                                     title = "${line.tool}: ${line.names.size} packages not in your loadout",
-                                    log = line.names,
-                                    done = true,
-                                    summary = "these upgrade too when you upgrade ${line.tool} — enter closes",
+                                    lines = line.names,
+                                    summary = "These upgrade too when you upgrade ${line.tool}.",
                                 ),
                             )
                         }
@@ -680,14 +775,16 @@ class HomeModel(private val app: AppContext) {
             // No else: the machine-wide verbs returned above, and a new key
             // should have to say what it does on a line.
             HomeKey.SYNC, HomeKey.UPGRADE, HomeKey.CONVERGE -> {}
+            // The pane's buttons: nothing to press without a pane.
+            HomeKey.SWITCH, HomeKey.YES, HomeKey.NO -> {}
         }
         return false
     }
 
     /**
-     * Upgrade the chosen mechanisms HERE, streaming into the floating pane.
-     * Only non-interactive commands can live in the pane — a password prompt
-     * behind it would be invisible — so sudo's cache must already be warm.
+     * Ask about upgrading the ticked tools and source items, then hand off
+     * to `loadout upgrade`. Planned with the same engine, so refusals show
+     * before the screen closes.
      */
     fun startUpgrade(answered: RemoteStatus.Answered, selection: Set<String>) {
         val m = manifest ?: return
@@ -700,21 +797,24 @@ class HomeModel(private val app: AppContext) {
         val items = selection.filter { it.startsWith("item:") }
             .map { it.removePrefix("item:") }
             .groupBy({ it.substringBefore('/') }, { it.substringAfter('/') })
+        val installers = tools.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted()
+        val sorted = items.mapValues { (_, rows) -> rows.sorted() }
         val plan = runCatching {
-            engine.plan(m, sys.machine, tools.flatMap { answered.mechanismsOfTool[it].orEmpty() }.sorted()) +
-                items.flatMap { (source, rows) -> engine.planSourceItems(m, source, rows.sorted()) }
+            engine.plan(m, sys.machine, installers) +
+                sorted.flatMap { (source, rows) -> engine.planSourceItems(m, source, rows) }
         }.getOrElse { e ->
             say(e.message?.lineSequence()?.firstOrNull())
             return
         }
         if (plan.isEmpty()) return
-        ask(plan.map { PaneStep(it.label, it.command, sweep = it.sweep, sudo = it.sudo) }, PaneKind.UPGRADE)
+        val args = installers + sorted.flatMap { (source, rows) -> rows.flatMap { listOf("--item", "$source/$it") } }
+        ask(Handoff(PaneKind.UPGRADE, args), plan.map { upgradeItem(it, answered) })
     }
 
     /**
-     * Install the ticked missing programs HERE, in the pane — `install
-     * <names>` without leaving. InstallEngine plans it exactly as the
-     * command would (dependencies first, refusals before anything runs).
+     * Ask about installing the ticked missing programs, then hand off to
+     * `loadout install <names>`. Planned with InstallEngine like the command
+     * (dependencies first, refusals before the screen closes).
      */
     fun startInstalls(chosen: Set<String>) {
         if (state.run != null) return
@@ -737,13 +837,17 @@ class HomeModel(private val app: AppContext) {
             say("already installed — r re-checks")
             return
         }
-        ask(installs.map { PaneStep(it.program, it.command, sudo = it.sudo) }, PaneKind.INSTALL)
+        // The installer, and which programs are unticked dependencies.
+        ask(
+            Handoff(PaneKind.INSTALL, names),
+            installs.map { it.program to "via ${it.installKey}" + if (it.program in names) "" else " · needed first" },
+        )
     }
 
     /**
-     * Run the ticked scripts HERE, in the pane — the scripts themselves,
-     * forced: ticking one means you want it run. Their checks are re-asked
-     * by the refresh afterwards, which is the one observer either way.
+     * Ask about running the ticked scripts, then hand off to `loadout run
+     * <names> --force` (a ticked script runs even when done). `run` records
+     * each one and re-asks its check.
      */
     fun startScripts(picked: Set<String>) {
         if (state.run != null) return
@@ -752,223 +856,29 @@ class HomeModel(private val app: AppContext) {
             say("nothing ticked — space ticks a script, a ticks them all")
             return
         }
-        ask(steps.map { PaneStep(it.name, it.command, check = it.check, sudo = it.sudo) }, PaneKind.SCRIPTS)
+        ask(Handoff(PaneKind.SCRIPTS, steps.map { it.name }), steps.map { it.name to it.description })
     }
 
     /**
      * Ask before touching anything: these commands change the machine, and
-     * the sweep ones change more than the rows you picked. A step that
-     * needs sudo is noted (the check counts too: the refresh runs it the
-     * same way; so does a declared `sudo = true`, for commands that call
-     * sudo from inside where no text match can see it) — the yes will ask for the password if sudo's cache is
-     * cold, because a child's own prompt behind the pane is invisible.
-     * The pane is an overlay: whatever was open stays open underneath, so
-     * closing it shows the screen exactly as it was left.
+     * sweeps change more than the picked rows. The pane is an overlay, so
+     * esc leaves the screen as it was.
      */
-    private fun ask(plan: List<PaneStep>, kind: PaneKind) {
-        pending = plan
-        val run = PaneRun(
-                steps = plan.map { it.label },
-                kind = kind,
-                needsSudo = plan.any { it.sudo || commandNeedsSudo(it.command) || it.check?.let(::commandNeedsSudo) == true },
-                label = plan.joinToString(", ") { it.label },
-                confirming = true,
-                commands = plan.map { "[${it.label}]  ${it.command}" },
-                sweeps = plan.filter { it.sweep }.map { it.label },
-            )
-        update { it.copy(run = run) }
+    private fun ask(handoff: Handoff, items: List<Pair<String, String>>) {
+        pending = handoff
+        update { it.copy(run = PaneRun(kind = handoff.kind, items = items)) }
     }
 
     /**
-     * The yes. Runs what [ask] showed, streaming into the pane — unless a
-     * step needs sudo and its cache is cold: then the pane asks for the
-     * password first, and [submitPassword] comes back here.
+     * The yes: close the screen so RootCommand runs the command on the real
+     * terminal, where it can prompt (sudo included).
      */
-    fun confirmRun() {
-        val run = state.run ?: return
-        if (run.needsSudo && run.password == null && !app.runner.capture("sudo -n true").success) {
-            updateRun { it.copy(password = "", passwordError = null) }
-            return
-        }
-        startRun()
-    }
-
-    /**
-     * A key while the pane asks for a password: printable characters build
-     * it, Backspace edits, enter/esc are the reducer's ([handleKey]). Nothing
-     * typed here is ever logged or echoed — the field renders as dots.
-     */
-    fun passwordKey(key: String): Boolean {
-        if (state.run?.password == null) return false
-        when {
-            key == "Backspace" -> updateRun { it.copy(password = it.password?.dropLast(1)) }
-            key.length == 1 && !key[0].isISOControl() -> updateRun { it.copy(password = it.password?.plus(key)) }
-            else -> return false
-        }
-        return true
-    }
-
-    /**
-     * Hand the typed password to `sudo -S -v` on stdin (never argv, never
-     * the environment) so sudo stamps its own credential cache; every
-     * `sudo` step then runs without prompting, exactly as after `sudo -v`
-     * in a shell. A wrong one stays on the field and says so.
-     */
-    private fun submitPassword() {
-        val typed = state.run?.password ?: return
-        val stamped = app.runner.capture("sudo -S -p '' -v", input = typed).success
-        if (stamped) {
-            updateRun { it.copy(password = null, passwordError = null) }
-            startRun()
-        } else {
-            updateRun { it.copy(password = "", passwordError = "sorry, try again") }
-        }
-    }
-
-    private fun startRun() {
-        val m = manifest ?: return
-        val sys = system ?: return
-        val plan = pending ?: return
+    private fun handOff() {
+        val handoff = pending ?: return
         pending = null
-        cancelled = false
-        val kind = state.run?.kind ?: PaneKind.UPGRADE
-        val scripts = kind == PaneKind.SCRIPTS
-        val needsSudo = state.run?.needsSudo == true
-        updateRun { it.copy(confirming = false, label = plan.first().label) }
-        // sudo's cache expires (5 min on Fedora); a plan whose third step
-        // needs sudo after a ten-minute brew step would otherwise fail with
-        // "a terminal is required". Keep the stamp fresh while we run.
-        val keepalive = if (needsSudo) scope.launch {
-            while (isActive) {
-                delay(60_000)
-                app.runner.capture("sudo -n -v")
-            }
-        } else null
-        scope.launch {
-          try {
-            // Script runs are history the state file keeps (lastRun, exit
-            // code); the refresh below decides each status from its check.
-            val results = mutableMapOf<String, ScriptState>()
-            for ((index, step) in plan.withIndex()) {
-                if (cancelled) break
-                // A rule before each step: five commands' output in one
-                // scroll is otherwise one undifferentiated stream.
-                val divider = "$RUN_DIVIDER${index + 1}/${plan.size}  ${step.label} "
-                updateRun {
-                    it.copy(
-                        current = index,
-                        label = step.label,
-                        log = it.log + listOfNotNull("".takeIf { index > 0 }, divider, "$ ${step.command}"),
-                    )
-                }
-                val exit = app.runner.stream(
-                    step.command,
-                    workDir = app.repoRoot.toString(),
-                    onStart = { running = it },
-                ) { line -> if (!cancelled) appendRun(displayLines(line)) }
-                running = null
-                if (cancelled) break
-                appendRun(listOf("exit $exit"))
-                if (scripts) {
-                    results[step.label] = ScriptState(
-                        status = if (exit == 0) ScriptStatus.DONE else ScriptStatus.FAILED,
-                        lastRun = nowIso(),
-                        exitCode = exit,
-                    )
-                }
-                if (exit != 0) updateRun { it.copy(failed = true, failures = it.failures + step.label) }
-            }
-            if (cancelled) {
-                updateRun { it.copy(done = true, cancelled = true, summary = "cancelled — state not refreshed") }
-                return@launch
-            }
-            // The transaction moved what it moved, the scripts did what they
-            // did: re-ask everything, the same observation `status` makes.
-            updateRun {
-                it.copy(
-                    label = "checking",
-                    log = it.log + "" + when (kind) {
-                        PaneKind.SCRIPTS -> "Re-checking every script…"
-                        PaneKind.INSTALL -> "Re-checking every program…"
-                        else -> "Checking which installed versions changed…"
-                    },
-                )
-            }
-            val fresh = runCatching { app.refreshAndWriteState(m, sys, results) }
-            stored = fresh.getOrNull() ?: stored
-            val changed = fresh.getOrNull()?.let { after ->
-                after.programs.count { (name, now) -> now.version != null && now.version != before[name] }
-            } ?: 0
-            before = stored?.programs?.mapValues { it.value.version }.orEmpty()
-            // A run's verdict counts only the scripts it ran: the check has
-            // the last word, so a script that exited 0 can still be pending.
-            val stillNot = fresh.getOrNull()?.scripts.orEmpty()
-                .filter { (name, now) -> name in results && now.status != ScriptStatus.DONE }.keys.sorted()
-            // With what its check said, so the log explains itself.
-            val stillNotWhy = stillNot.joinToString { name ->
-                app.lastScriptDetail[name]?.lineSequence()?.firstOrNull()?.let { "$name ($it)" } ?: name
-            }
-            // An install's verdict is its check too: exit 0 with the program
-            // still missing is not installed.
-            val stillMissing = if (kind == PaneKind.INSTALL) {
-                fresh.getOrNull()?.programs.orEmpty()
-                    .filter { (name, now) -> name in plan.map { it.label } && now.status == ProgramStatus.MISSING }
-                    .keys.sorted()
-            } else {
-                emptyList()
-            }
-            // Close the re-check in the log itself: a trailing "…" line reads
-            // as still running, and the footer alone is easy to miss.
-            val recheck = when {
-                fresh.isFailure ->
-                    "Could not re-check and write the state file: ${fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()}"
-                scripts && stillNot.isEmpty() -> "Done. All ${results.size} script(s) pass their checks; state file updated."
-                scripts -> "Done. Still not done: $stillNotWhy; state file updated."
-                kind == PaneKind.INSTALL && stillMissing.isEmpty() -> "Done. All ${plan.size} program(s) installed; state file updated."
-                kind == PaneKind.INSTALL -> "Done. Still missing: ${stillMissing.joinToString()}; state file updated."
-                changed == 0 -> "Done. No program in your loadout changed version; state file updated."
-                else -> "Done. $changed program(s) in your loadout now have a new version; state file updated."
-            }
-            val rows = scriptRowsOf(m, sys, stored)
-            val missing = missingRowsOf(m, sys, stored)
-            // Name what failed: "finished with failures" makes you scroll
-            // back through everything to find out which.
-            val failed = (state.run?.failures.orEmpty() + stillNot + stillMissing).distinct()
-            val observed = stored
-            val report = fleet()
-            val toolsDown = app.lastToolsDown
-            update {
-                it.copy(
-                    sections = sectionsOf(m, sys, observed, report, it.remote, toolsDown = toolsDown),
-                    scripts = rows,
-                    picked = preselect(rows),
-                    missing = missing,
-                    chosen = missing.map { it.name }.toSet(),
-                    // The table underneath still lists what was just upgraded;
-                    // ask again so it's true when the pane closes.
-                    remote = if (kind == PaneKind.UPGRADE) RemoteStatus.Asking else it.remote,
-                    run = it.run?.copy(
-                        log = it.run.log + recheck,
-                        done = true,
-                        failed = fresh.isFailure || failed.isNotEmpty(),
-                        summary = when {
-                            fresh.isFailure -> "state not written — the run above is not recorded"
-                            failed.isNotEmpty() -> "not done: ${failed.joinToString()} — scroll up for the output"
-                            scripts -> "all ${results.size} done — enter closes"
-                            kind == PaneKind.INSTALL -> "all ${plan.size} installed — enter closes"
-                            else -> "$changed program(s) changed version — enter closes"
-                        },
-                    ),
-                )
-            }
-            if (kind == PaneKind.UPGRADE) stored?.let { askRemotes(m, sys, it) }
-          } finally {
-            keepalive?.cancel()
-          }
-        }
+        update { it.copy(run = null, action = HomeAction.HAND_OFF, handoff = handoff, exit = true) }
     }
 
-    /** A finished pane closes on the screen as it was, minus what it just ran. */
     /**
      * Hand [url] to the desktop (xdg-open, else open) off the UI thread and
      * say how it went: the opener's own last line when it fails — a Qt
@@ -989,34 +899,16 @@ class HomeModel(private val app: AppContext) {
         }
     }
 
-    private fun closed(s: HomeState, run: PaneRun) =
-        s.copy(run = null, selection = if (run.kind == PaneKind.UPGRADE) emptySet() else s.selection)
-
     /** The line under the rows: what a key did, or why it did nothing. */
     private fun say(message: String?) = update { it.copy(message = message) }
 
-    private fun updateRun(transform: (PaneRun) -> PaneRun) {
-        update { it.copy(run = it.run?.let(transform)) }
-    }
-
-    private fun appendRun(lines: List<String>) {
-        if (lines.isEmpty()) return
-        updateRun { it.copy(log = (it.log + lines).takeLast(MAX_RUN_LINES)) }
-    }
-
+    /** Scroll the pane by [delta] lines (down is positive); it reads from the top. */
     private fun scrollRun(delta: Int, viewport: Int) {
-        val run = state.run ?: return
-        val lines = if (run.confirming) run.commands else run.log
-        val max = (lines.size - viewport).coerceAtLeast(0)
-        // A log is read from its tail (scrollBack counts up from the bottom);
-        // a list from its top, so the same keys move the other way.
-        val step = if (run.kind == PaneKind.LIST) -delta else delta
-        updateRun { it.copy(scrollBack = (it.scrollBack + step).coerceIn(0, max)) }
-    }
-
-    private fun cancelRun() {
-        cancelled = true
-        running?.kill()
+        update { s ->
+            val run = s.run ?: return@update s
+            val max = (paneLines(run).size - viewport).coerceAtLeast(0)
+            s.copy(run = run.copy(scrollBack = (run.scrollBack + delta).coerceIn(0, max)))
+        }
     }
 
     private fun leaveFor(action: HomeAction): Boolean {
@@ -1121,43 +1013,78 @@ class HomeModel(private val app: AppContext) {
     }
 }
 
-/** Log lines starting with this are step dividers; the pane rules them across. */
-internal const val RUN_DIVIDER = "── "
+/** Pure: [text] broken at spaces into lines of at most [width] (a longer word gets a line of its own). */
+internal fun wrapWords(text: String, width: Int): List<String> {
+    val lines = mutableListOf<String>()
+    var line = ""
+    for (word in text.split(' ')) {
+        line = when {
+            line.isEmpty() -> word
+            line.length + 1 + word.length <= width -> "$line $word"
+            else -> {
+                lines += line
+                word
+            }
+        }
+    }
+    if (line.isNotEmpty()) lines += line
+    return lines
+}
 
-/** Log lines the pane keeps; the viewer tails a long run. */
-private const val MAX_RUN_LINES = 5_000
-
-/** One command the pane runs, whatever planned it. */
-private data class PaneStep(
-    val label: String,
-    val command: String,
-    val check: String? = null,
-    /** A package manager about to upgrade everything it manages. */
-    val sweep: Boolean = false,
-    /** Declared `sudo = true`: the command calls sudo from inside. */
-    val sudo: Boolean = false,
-)
-
-private val SUDO = Regex("(^|[^-\\w])sudo\\b")
-
-/** Whether [command] actually invokes sudo (not "pseudo-tty", not "sudoku"). */
-internal fun commandNeedsSudo(command: String) = SUDO.containsMatchIn(command)
-
-private val ANSI_ESCAPES = Regex("\u001b\\[[0-9;?]*[ -/]*[@-~]|\u001b\\][^\u0007\u001b]*(\u0007|\u001b\\\\)?|\u001b.")
+/** A question's name column never grows past this; a longer name is clipped. */
+private const val NAME_COLUMN = 24
 
 /**
- * Display-safe lines from one raw chunk of process output. Real tools emit
- * carriage-return progress redraws (`10%\r50%\r100%`), ANSI colors, and tabs
- * — rendered verbatim they mash into one garbled line. Keep the final state
- * of a \r-run, strip escapes, expand tabs, split any embedded newlines.
+ * Pure: the pane's lines for [run] — a question's intro and rows (name
+ * column, then text), or a list's lines and note. With [width], long text
+ * wraps under its column; without, one line per row.
  */
-internal fun displayLines(raw: String): List<String> =
-    raw.split('\n')
-        .map { chunk ->
-            val settled = chunk.split('\r').lastOrNull { it.isNotBlank() } ?: ""
-            settled.replace(ANSI_ESCAPES, "").replace("\t", "    ")
-        }
-        .filter { it.isNotBlank() }
+internal fun paneLines(run: PaneRun, width: Int? = null): List<String> {
+    fun wrapped(text: String, indent: Int = 0): List<String> =
+        if (width == null || text.length + indent <= width) listOf(text)
+        else wrapWords(text, (width - indent).coerceAtLeast(10))
+    if (!run.asking) {
+        return run.lines + if (run.summary.isEmpty()) emptyList() else listOf("") + wrapped(run.summary)
+    }
+    val intro = when (run.kind) {
+        PaneKind.SCRIPTS -> "These scripts will run, in order:"
+        PaneKind.INSTALL -> "These programs will install, in order:"
+        else -> "These will upgrade, in order:"
+    }
+    val column = (run.items.maxOfOrNull { it.first.length } ?: 0).coerceAtMost(NAME_COLUMN) + 2
+    val rows = run.items.flatMap { (name, text) ->
+        val label = (if (name.length > NAME_COLUMN) name.take(NAME_COLUMN - 1) + "…" else name).padEnd(column)
+        wrapped(text, column).mapIndexed { i, line -> (if (i == 0) label else " ".repeat(column)) + line }
+            .map { it.trimEnd() }
+    }
+    return listOf(intro, "") + rows
+}
+
+/**
+ * Pure: the question's row for one upgrade step. A sweep says how much
+ * moves and how much of it is yours ("all 168 packages · 2 in your
+ * loadout"); a source item gives its version change.
+ */
+internal fun upgradeItem(step: UpgradeStep, answered: RemoteStatus.Answered): Pair<String, String> {
+    if (!step.sweep) {
+        val source = step.installers.single()
+        val item = step.covers.single()
+        val row = answered.updates.firstOrNull { it.source == source && it.name == item }
+        return source to (row?.let { "$item ${it.current} → ${it.candidate}" } ?: item)
+    }
+    // A custom source's row never counts toward a mechanism, even when named like a program.
+    val mine = answered.updates.count { it.source !in answered.sources && answered.mechanismOf[it.name] in step.installers }
+    val yours = if (mine == 0) "none in your loadout" else "$mine in your loadout"
+    // A total only when this step covers the whole tool: a tool split over
+    // two commands (formulae and casks) can't divide its total between them.
+    val tools = answered.tools.filter { tool -> tool.installers.any { it in step.installers } }
+    val whole = tools.isNotEmpty() && tools.all { tool -> tool.total != null && tool.installers.all { it in step.installers } }
+    val total = tools.sumOf { it.total ?: 0 }
+    return step.label to when {
+        whole -> "all $total package${if (total == 1) "" else "s"} · $yours"
+        else -> "every package it manages · $yours"
+    }
+}
 
 /**
  * Pure: the scripts row's picker — this machine's opted-in maintain-mode
@@ -1179,8 +1106,7 @@ internal fun scriptRowsOf(manifest: Manifest, system: SystemInfo, observed: Mach
             ScriptRow(
                 name = name,
                 command = ScriptRunner.commandFor(step, args),
-                check = step.check?.let { ScriptRunner.withArgs(it, args) },
-                sudo = step.sudo,
+                description = step.description,
                 status = verdicts[name]?.status,
             )
         }
