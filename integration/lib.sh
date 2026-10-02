@@ -40,6 +40,27 @@ TOML
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
 }
 
+# basic_repo, but laid out as a bare repo ($1) plus one linked worktree
+# ($2) checked out from it (`git worktree add`, not a plain clone) — the
+# bare-repo-plus-worktree shape `workmux` uses. Same manifest/machines as
+# basic_repo, so the same assertions apply once pointed at $2.
+worktree_repo() {
+    # Absolute: git -C changes into $seed before resolving its arguments, so
+    # a relative bare/worktree path would land inside $seed instead of here.
+    bare=$PWD/$1
+    wt=$PWD/$2
+    seed=$(new_work)
+    basic_repo "$seed"
+    git -C "$seed" add -A
+    git -C "$seed" commit -qm "initial manifest" >/dev/null
+    branch=$(git -C "$seed" symbolic-ref --short HEAD)
+    git init -q --bare "$bare"
+    git -C "$seed" push -q "$bare" "$branch"
+    git -C "$bare" worktree add -q "$wt" "$branch"
+    git -C "$wt" config user.email test@example.com
+    git -C "$wt" config user.name "Integration Test"
+}
+
 # A repo whose one program installs through a fake installer (no host
 # package manager involved) and whose scripts cover every verdict: one
 # passing, one whose check keeps failing, one setup-only.
