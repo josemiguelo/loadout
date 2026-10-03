@@ -6,6 +6,7 @@ import loadout.core.engine.ResolutionException
 import loadout.core.git.GitException
 import loadout.core.manifest.Glob
 import loadout.core.manifest.InstallerLibrary
+import loadout.core.manifest.MachineData
 import loadout.core.manifest.ManifestLoader
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -288,7 +289,7 @@ class ManifestRepoTest {
     }
 
     @Test
-    fun machineFilesInSubfoldersAndBaseInheritance() {
+    fun machineFilesAndBaseInheritance() {
         val fs = fs(
             mapOf(
                 "loadout.toml" to """
@@ -307,7 +308,7 @@ class ManifestRepoTest {
                     file = "scripts/setup-ssh.sh"
                 """.trimIndent(),
                 "scripts/setup-ssh.sh" to "#!/bin/sh\n",
-                "machines/base/fedora.toml" to """
+                "machines/fedora.toml" to """
                     base = true
                     scripts = ["dotfiles", "setup-ssh generic"]
 
@@ -315,7 +316,7 @@ class ManifestRepoTest {
                     git = "dnf"
                     kitty = "dnf"
                 """.trimIndent(),
-                "machines/linux/laptop.toml" to """
+                "machines/laptop.toml" to """
                     extends = "fedora"
                     scripts = ["setup-ssh laptopkey"]
 
@@ -346,7 +347,7 @@ class ManifestRepoTest {
                     file = "scripts/setup-ssh.sh"
                 """.trimIndent(),
                 "scripts/setup-ssh.sh" to "#!/bin/sh\n",
-                "machines/base/fedora.toml" to """
+                "machines/fedora.toml" to """
                     base = true
                     scripts = [
                       '''setup-ssh
@@ -426,16 +427,63 @@ class ManifestRepoTest {
         }
         assertTrue("cycle" in cycle.message.orEmpty())
 
-        val dup = assertFailsWith<ManifestException> {
+        val nested = assertFailsWith<ManifestException> {
             ManifestLoader.loadRepo(
                 repoWith(
                     "machines/x/laptop.toml" to "[pm]\ngit = \"dnf\"",
-                    "machines/y/laptop.toml" to "[pm]\ngit = \"dnf\"",
                 ),
                 repo,
             )
         }
-        assertTrue("duplicate machine 'laptop'" in dup.message.orEmpty())
+        assertTrue("machines/x/laptop.toml: machine files live directly in machines/" in nested.message.orEmpty(), nested.message)
+    }
+
+    @Test
+    fun dataDefaultsBaseAndMachineMergeAndUndeclaredKeysFail() {
+        val files = mapOf(
+            "loadout.toml" to """
+                [data]
+                omarchy = false
+                agent = "claude"
+                tags = ["a"]
+
+                [data.kitty]
+                opacity = 0.85
+                blur = 1
+            """.trimIndent(),
+            "machines/omarchy.toml" to "base = true\n\n[data]\nomarchy = true\ntags = [\"x\", \"y\"]\n\n[data.kitty]\nblur = 0",
+            "machines/t2.toml" to "extends = \"omarchy\"\n\n[data]\ntags = [\"z\"]\n\n[data.kitty]\nopacity = 0.99",
+            "machines/mac.toml" to "",
+        )
+        val manifest = ManifestLoader.loadRepo(fs(files), repo)
+        val t2 = MachineData.lines(manifest.machines.getValue("t2").data).toMap()
+        // Defaults under base under machine; tables merge key by key, lists replace.
+        assertEquals(
+            mapOf(
+                "agent" to "\"claude\"",
+                "kitty.blur" to "0",
+                "kitty.opacity" to "0.99",
+                "omarchy" to "true",
+                "tags" to "[\"z\"]",
+            ),
+            t2,
+        )
+        assertEquals("false", MachineData.lines(manifest.machines.getValue("mac").data).toMap()["omarchy"])
+
+        val typo = files + ("machines/mac.toml" to "[data.kitty]\nopacty = 0.5")
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(typo), repo) }
+        assertTrue(
+            "machines/mac.toml: [data] key 'kitty.opacty' is not declared in loadout.toml [data]" in e.message.orEmpty(),
+            e.message,
+        )
+
+        val wrongKind = files + ("machines/mac.toml" to "[data]\nomarchy = \"yes\"")
+        val k = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(wrongKind), repo) }
+        assertTrue("[data] key 'omarchy' is a string, but loadout.toml declares a boolean" in k.message.orEmpty(), k.message)
+
+        val inFragment = files + ("programs/x.toml" to "[data]\nomarchy = true")
+        val f = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(inFragment), repo) }
+        assertTrue("programs/x.toml: [data] is only allowed in loadout.toml and machine files" in f.message.orEmpty(), f.message)
     }
 
     @Test
@@ -443,7 +491,7 @@ class ManifestRepoTest {
         val fs = fs(
             mapOf(
                 "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
-                "machines/base/fedora.toml" to "base = true\n\n[pm]\nghost = \"dnf\"",
+                "machines/fedora.toml" to "base = true\n\n[pm]\nghost = \"dnf\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }

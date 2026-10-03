@@ -94,11 +94,7 @@ opacity = 0.85
 
 **Paths and cwd**: done (contracts 4, 5).
 
-**Machines**: flat `machines/<hostname>.toml` (chezmoi finds it by
-hostname). `extends`/`base = true`, `[pm]` and the `scripts` opt-in work as
-in contract 2/12. `[data]` merges per key (child over base over
-`loadout.toml` defaults; lists replace, as in chezmoi); a key not declared
-in `loadout.toml [data]`, or of another TOML type, is a load error. Chezmoi
+**Machines**: flat files and `[data]` are done (contract 2). Chezmoi
 templates read the same files through `configs/.chezmoitemplates/machine`
 (`include "../machines/<host>.toml"`, verified to reach outside
 `.chezmoiroot`) and branch on `$m.omarchy`, never on `.chezmoi.hostname`.
@@ -126,10 +122,6 @@ table order within a file; 7 extends to configs; 8 takes its dir from
 rendered); 12 scripts stay opt-in, configs don't; 14 the break ships as
 1.0.0. All others stand unchanged.
 
-**Open risk**: ktoml must decode `[data]` as free-form nested tables
-(today's schema avoids inline tables and dotted keys; see Toolchain facts).
-Step 5 proves it first; the fallback is tomlkt.
-
 **Steps** (each: three suites green on Linux, macOS checked by the user,
 README/AGENTS/wiki re-read):
 1. This section.
@@ -137,7 +129,7 @@ README/AGENTS/wiki re-read):
 3. `loadout.toml` + `[layout]` + glob discovery; machines/state dirs from
    it; 0.x root refused (done; contract 16).
 4. File-relative paths, per-file cwd, exported env (done; contracts 4, 5).
-5. Flat machines, declared `[data]`, `explain` shows it.
+5. Flat machines, declared `[data]`, `explain` shows it (done; contract 2).
 6. 1.0.0: state schema 2, release notes, wiki "Repo layout", `install.sh`
    next steps, tag.
 7. Migrate the user's repos PROGRESSIVELY, one slice at a time, never all
@@ -260,10 +252,17 @@ Explicit user decisions; don't "improve" them away.
    `[machines.*]` in loadout.toml or fragments is a validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't map is not in its loadout: converge skips it, status
-   doesn't observe it, diff shows "-". Machine files may sit in subfolders
-   (cosmetic; name = file name, unique repo-wide) and may `extends` a
-   `base = true` config (pm merged per key, child wins; scripts union, a
-   same-named child entry replaces). Bases are flattened at load,
+   doesn't observe it, diff shows "-". Machine files sit directly in the
+   `[layout] machines` directory (a subfolder is a load error: chezmoi
+   templates find a machine by hostname; name = file name) and may
+   `extends` a `base = true` config (pm merged per key, child wins; scripts
+   union, a same-named child entry replaces; `[data]` merged table by
+   table, child wins, lists replace, as chezmoi merges data). `[data]` is
+   free-form but declared: `loadout.toml [data]` lists every key with its
+   default, and a machine or base key that isn't declared, or is another
+   kind (string/boolean/number/list/table), is a load error; every machine
+   ends up with all declared keys (`MachineData`; bare `explain` shows
+   them). `[data]` in a fragment is a load error. Bases are flattened at load,
    validated, then dropped; they are never machines. Machines can't extend
    machines, and there's no subtraction: a base entry is a promise every
    child keeps. `setup-new-machine` throws ResolutionException before
@@ -685,6 +684,10 @@ Explicit user decisions; don't "improve" them away.
   rows in place. A script's verdict is always its check.
 - ktoml insurance: the manifest schema sticks to plain nested tables (no
   inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
+  Free-form tables (`[data]`) can't be decoded into the model; read them
+  from ktoml's tree (`toml.tomlParser.parseString`, TomlTable /
+  TomlKeyValuePrimitive / TomlKeyValueArray), which also normalizes inline
+  tables and dotted keys into tables (`MachineData.read`).
 - `.toml.sample` files in `machines/` and fragment folders never load:
   machine files and the usual fragments globs only match `.toml`.
 

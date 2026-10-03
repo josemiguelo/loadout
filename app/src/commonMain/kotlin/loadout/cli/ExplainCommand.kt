@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
+import loadout.core.manifest.MachineData
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 
@@ -25,6 +26,19 @@ class ExplainCommand : CliktCommand(name = "explain") {
         val system = app.detectSystem()
         val state = app.stateStore.read(system.machine)
         val mapping = manifest.machines[system.machine]?.pm.orEmpty()
+
+        // Everything explained starts with the machine: its merged [data],
+        // what its chezmoi templates see.
+        if (names.isEmpty()) {
+            val machine = manifest.machines[system.machine]
+            echo(Style.header("machine ") + Style.bold(system.machine) + Style.dim("  ${app.layout.machines}/${system.machine}.toml"))
+            if (machine == null) echo("  " + Style.warn("! no machine file — showing loadout.toml's [data] defaults"))
+            val data = MachineData.lines(machine?.data ?: manifest.data).map { (key, value) -> "data.$key" to value }
+            if (data.isEmpty()) echo("  " + Style.dim("no [data] declared in loadout.toml"))
+            val width = data.maxOfOrNull { it.first.length } ?: 0
+            for ((label, value) in data) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
+            echo("")
+        }
 
         val targets = names.ifEmpty { (manifest.programs.keys + manifest.scripts.keys).toList() }
         targets.forEachIndexed { index, name ->

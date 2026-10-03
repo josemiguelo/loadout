@@ -72,7 +72,11 @@ object ManifestLoader {
         // order: the globs' order, path-sorted within one.
         for (path in fragmentFiles(fs, repoRoot, layout, manifestName, machinePaths, errors)) {
             val label = Glob.relative(repoRoot, path)
-            val fragment = withOrigin(parseRaw(fs.read(path) { readUtf8() }, label), Glob.relative(repoRoot, path.parent!!))
+            val fragmentText = fs.read(path) { readUtf8() }
+            val fragment = withOrigin(parseRaw(fragmentText, label), Glob.relative(repoRoot, path.parent!!))
+            if (MachineData.read(toml, fragmentText) != null) {
+                errors += "$label: [data] is only allowed in $manifestName and machine files"
+            }
             if (fragment.meta != Meta()) {
                 errors += "$label: [meta] is only allowed in $manifestName"
             }
@@ -105,13 +109,20 @@ object ManifestLoader {
             }
         }
 
-        // Machine files may live in subfolders (purely cosmetic); the machine
-        // name is always the file name.
+        // Machine files sit directly in the machines directory, so chezmoi
+        // templates find one by hostname; the machine name is the file name.
         for (path in machinePaths) {
             val name = path.name.removeSuffix(".toml")
             val label = Glob.relative(repoRoot, path)
+            if (path.parent != repoRoot / machinesDir) {
+                errors += "$label: machine files live directly in $machinesDir/ (no subfolders)"
+                continue
+            }
+            val machineText = fs.read(path) { readUtf8() }
             val parsed = try {
-                toml.decodeFromString<MachineConfig>(fs.read(path) { readUtf8() })
+                val data = MachineData.read(toml, machineText) ?: MachineData.EMPTY
+                errors += MachineData.validate(root.data, data, label)
+                toml.decodeFromString<MachineConfig>(machineText).copy(data = data)
             } catch (e: Exception) {
                 val hint = if (e.message?.contains("Cannot decode the key [scripts]") == true) {
                     "\nhint: the top-level `scripts = [...]` array must appear ABOVE any table " +
@@ -121,11 +132,11 @@ object ManifestLoader {
                 }
                 throw ManifestException("Failed to parse $label: ${e.message}$hint")
             }
-            if (machines.put(name, parsed) != null) {
-                errors += "duplicate machine '$name' (redefined in $label — subfolders are cosmetic, names must be unique)"
-            }
+            machines[name] = parsed
         }
         errors += flattenMachines(machines)
+        // Every machine sees every declared key: defaults under its own.
+        for ((name, config) in machines.toList()) machines[name] = config.copy(data = MachineData.merge(root.data, config.data))
 
         if (errors.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
@@ -300,7 +311,7 @@ object ManifestLoader {
             emptyList()
         }
 
-    /** All machine files under [dir], any folder depth, path-sorted. */
+    /** All `.toml` files under [dir], path-sorted; loadRepo refuses any in a subfolder. */
     private fun machineFiles(fs: FileSystem, dir: Path): List<Path> {
         if (!fs.exists(dir)) return emptyList()
         return fs.listRecursively(dir)
@@ -311,8 +322,9 @@ object ManifestLoader {
 
     /**
      * Resolve `extends` chains in place: every config becomes its flattened
-     * self ([pm] merged per key, child wins; `scripts` union, a same-named
-     * child entry replaces the base's), then base configs are removed —
+     * self ([pm] merged per key, child wins; `[data]` merged table by table,
+     * child wins, lists replace; `scripts` union, a same-named child entry
+     * replaces the base's), then base configs are removed —
      * downstream nothing knows inheritance existed. Returns errors.
      */
     private fun flattenMachines(machines: MutableMap<String, MachineConfig>): List<String> {
@@ -345,6 +357,7 @@ object ManifestLoader {
             val childScripts = config.scriptArgs().keys
             val result = config.copy(
                 pm = parent.pm + config.pm,
+                data = MachineData.merge(parent.data, config.data),
                 scripts = parent.scripts.filterNot { scriptEntry(it).first in childScripts } + config.scripts,
             )
             flattened[name] = result
@@ -400,7 +413,8 @@ object ManifestLoader {
             }
             throw ManifestException("Manifest not found: $rootPath")
         }
-        val root = parseRaw(fs.read(rootPath) { readUtf8() }, manifestName)
+        val rootText = fs.read(rootPath) { readUtf8() }
+        val root = parseRaw(rootText, manifestName)
         // Fail before interpreting anything else: an older binary silently
         // ignores manifest keys it doesn't know, so the repo's declared floor
         // is the only guard against misreading a newer config.
@@ -412,7 +426,7 @@ object ManifestLoader {
                 )
             }
         }
-        return root
+        return root.copy(data = MachineData.read(toml, rootText) ?: MachineData.EMPTY)
     }
 
     /** The root's `[layout]`, every required key present and every path inside the repo. */

@@ -65,16 +65,15 @@ echo "$OUT" | grep -q "sections are not allowed" || fail "inline machines should
 mv repo/loadout.toml.bak repo/loadout.toml
 ok "inline [machines.*] sections in the manifest are rejected"
 
-# --- machine bases + subfolders -----------------------------------------
-mkdir -p repo/machines/base repo/machines/hosts
-cat > repo/machines/base/testbase.toml <<'TOML'
+# --- machine bases, flat machines ----------------------------------------
+cat > repo/machines/testbase.toml <<'TOML'
 base = true
 scripts = ["marker"]
 
 [pm]
 git = "manual"
 TOML
-cat > repo/machines/hosts/m9.toml <<'TOML'
+cat > repo/machines/m9.toml <<'TOML'
 extends = "testbase"
 TOML
 OUT=$("$BIN" --repo repo --machine m9 setup-new-machine --dry-run) || fail "inherited machine plans"
@@ -82,8 +81,30 @@ echo "$OUT" | grep -q "git" || fail "child inherits the base's pm mapping"
 echo "$OUT" | grep -qE "~ marker +script" || fail "child inherits the base's script opt-ins"
 "$BIN" --repo repo --machine m9 status --no-write >/dev/null || fail "status works for inherited machine"
 "$BIN" --repo repo diff 2>/dev/null | grep -q "testbase" && fail "bases must not appear as machines" || true
-rm -rf repo/machines/base repo/machines/hosts
-ok "machine files inherit from bases and live in subfolders"
+mkdir -p repo/machines/hosts
+mv repo/machines/m9.toml repo/machines/hosts/m9.toml
+OUT=$("$BIN" --repo repo --machine m9 status --no-write 2>&1) && fail "a machine file in a subfolder must be refused"
+echo "$OUT" | grep -q "machines/hosts/m9.toml: machine files live directly in machines/" || fail "the subfolder is named: $OUT"
+rm -rf repo/machines/testbase.toml repo/machines/hosts
+ok "machine files inherit from bases and sit directly in machines/"
+
+# --- [data]: declared in loadout.toml, overridden per base and machine ----
+cp repo/loadout.toml repo/loadout.toml.bak
+printf '\n[data]\nomarchy = false\n\n[data.kitty]\nopacity = 0.85\n' >> repo/loadout.toml
+printf 'base = true\n\n[data]\nomarchy = true\n' > repo/machines/omarchy.toml
+printf 'extends = "omarchy"\n\n[pm]\ngit = "manual"\n\n[data.kitty]\nopacity = 0.99\n' > repo/machines/m9.toml
+OUT=$("$BIN" --repo repo --machine m9 explain) || fail "explain shows a machine with data"
+echo "$OUT" | grep -qE "data.kitty.opacity +0.99" || fail "the machine's own value wins: $OUT"
+echo "$OUT" | grep -qE "data.omarchy +true" || fail "the base's value comes through: $OUT"
+OUT=$("$BIN" --repo repo --machine m2 explain)
+echo "$OUT" | grep -qE "data.omarchy +false" || fail "a machine without [data] gets the defaults: $OUT"
+printf '[pm]\ngit = "manual"\n\n[data.kitty]\nopacty = 0.5\n' > repo/machines/m9.toml
+OUT=$("$BIN" --repo repo --machine m9 status --no-write 2>&1) && fail "an undeclared [data] key must be refused"
+echo "$OUT" | grep -q "machines/m9.toml: \[data\] key 'kitty.opacty' is not declared in loadout.toml \[data\]" ||
+    fail "the undeclared key is named: $OUT"
+mv repo/loadout.toml.bak repo/loadout.toml
+rm -f repo/machines/omarchy.toml repo/machines/m9.toml
+ok "[data] defaults, base and machine values merge, and explain shows them; a typo is refused"
 
 # --- script file that doesn't exist -> caught at manifest load -----------
 cp repo/loadout.toml repo/loadout.toml.bak

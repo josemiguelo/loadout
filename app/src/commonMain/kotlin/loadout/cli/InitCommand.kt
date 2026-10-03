@@ -28,6 +28,12 @@ private val STARTER_MANIFEST = """
     machines = "machines"
     state = "state"
 
+    # Per-machine settings (dotfile templates read them too): every key a
+    # machine file may set, with its default. A machine setting a key not
+    # declared here is a load error.
+    #[data]
+    #work = false
+
     # Install mechanics (commands, version checks, probes) ship with loadout:
     # `loadout installers` lists them, `via` names the ones that apply, and
     # `loadout explain ripgrep` prints what it resolves to. Declare your own
@@ -63,6 +69,10 @@ private val STARTER_MACHINE = """
     # Map every program to one entry of its install table:
     #[pm]
     #ripgrep = "dnf"
+
+    # This machine's values for keys loadout.toml declares under [data]:
+    #[data]
+    #work = true
 """.trimIndent() + "\n"
 
 private val STARTER_FRAGMENT = """

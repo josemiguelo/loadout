@@ -3,6 +3,7 @@ package loadout.core.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class Manifest(
@@ -33,6 +34,8 @@ data class Manifest(
      * behavior. Not a manifest field: loadRepo fills it in.
      */
     @Transient val builtinInstallers: Set<String> = emptySet(),
+    /** loadout.toml's `[data]`: every per-machine key with its default. Filled by loadRepo. */
+    @Transient val data: JsonObject = JsonObject(emptyMap()),
 ) {
     /**
      * Everything the [key] variant of program [programName] resolves to.
@@ -270,6 +273,11 @@ data class MachineConfig(
      * that opt in.
      */
     val scripts: List<String> = emptyList(),
+    /**
+     * This file's `[data]` overrides, read from the TOML tree at load; after
+     * flattening, the machine's whole data (defaults, base, own). Not decoded.
+     */
+    @Transient val data: JsonObject = JsonObject(emptyMap()),
 ) {
     /** [scripts] parsed into script name -> argument string (see [scriptEntry]). */
     fun scriptArgs(): Map<String, String> = scripts.associate(::scriptEntry)
