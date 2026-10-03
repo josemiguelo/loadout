@@ -147,8 +147,13 @@ README/AGENTS/wiki re-read):
 5. Flat machines, declared `[data]`, `explain` shows it.
 6. 1.0.0: state schema 2, release notes, wiki "Repo layout", `install.sh`
    next steps, tag.
-7. User's repo: `.chezmoiroot`, machine template partial, hostname checks
-   replaced (prepared by the agent, run by the user).
+7. Migrate the user's repos PROGRESSIVELY, one slice at a time, never all
+   at once; each slice is approved before it runs. Slice 1 is the
+   backbone: the merged repo's skeleton (`loadout.toml`, `.chezmoiroot`,
+   `machines/`, `state/`, the machine template partial) plus pure zsh
+   dotfiles and nothing else; tool configs (kitty, nvim, tmux…) and their
+   fragments follow in later slices, one tool each. Every slice decides,
+   and says, whether it needs a new test.
 8. `ConfigEngine`, configs in status/state/diff, `apply`, `sync`;
    `t/55-configs.sh` with a stub chezmoi.
 9. Home-screen configs row.
