@@ -1,5 +1,6 @@
 package loadout.core
 
+import loadout.core.exec.CommandFrame
 import loadout.core.engine.ScriptOutcome
 import loadout.core.engine.ScriptRunner
 import loadout.core.model.OsFamily
@@ -14,7 +15,7 @@ import okio.Path.Companion.toPath
 class ScriptRunnerTest {
     private val repo = "/repo".toPath()
 
-    private fun runner(fake: FakeProcessRunner) = ScriptRunner(fake, repo)
+    private fun runner(fake: FakeProcessRunner) = ScriptRunner(fake, CommandFrame(repo.toString()))
 
     @Test
     fun skipsWhenOsDoesNotMatch() {
@@ -83,6 +84,40 @@ class ScriptRunnerTest {
         fake.onCommand("set -- fedora; test -f \$HOME/.ssh/\$1", exitCode = 0)
         val step = ScriptStep(file = "scripts/setup-ssh.sh", check = "test -f \$HOME/.ssh/\$1")
         assertIs<ScriptOutcome.AlreadyDone>(runner(fake).run(step, OsFamily.LINUX, args = "fedora"))
+    }
+
+    @Test
+    fun aScriptAndItsCheckRunInTheDeclaringDirectoryWithTheLoadoutEnv() {
+        val fake = FakeProcessRunner()
+        fake.onCommand("sh 'plugins.sh' check", exitCode = 1)
+        fake.onCommand("sh 'plugins.sh'")
+        val system = loadout.core.model.SystemInfo("m1", OsFamily.MACOS, null, "arm64")
+        val frame = CommandFrame.of("/repo", system, configs = "configs")
+        val step = ScriptStep(file = "plugins.sh", check = "file:plugins.sh check", origin = "configs/tmux")
+
+        assertIs<ScriptOutcome.Ran>(ScriptRunner(fake, frame).run(step, OsFamily.MACOS))
+        assertEquals(2, fake.received.size)
+        for (command in fake.received) {
+            assertEquals("/repo/configs/tmux", command.cwd)
+            assertEquals(
+                mapOf(
+                    "LOADOUT_REPO" to "/repo",
+                    "LOADOUT_MACHINE" to "m1",
+                    "LOADOUT_OS" to "macos",
+                    "LOADOUT_CONFIGS" to "/repo/configs",
+                    "LOADOUT_FRAGMENT_DIR" to "/repo/configs/tmux",
+                ),
+                command.env,
+            )
+        }
+    }
+
+    @Test
+    fun aRootDeclaredScriptRunsInTheRepoRoot() {
+        val fake = FakeProcessRunner()
+        fake.onCommand("true")
+        runner(fake).run(ScriptStep(run = "true"), OsFamily.LINUX)
+        assertEquals("/repo", fake.received.single().cwd)
     }
 
     @Test

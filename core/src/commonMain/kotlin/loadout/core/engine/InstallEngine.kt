@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.CommandFrame
 import loadout.core.exec.ShellCommand
 import loadout.core.LoadoutException
 import loadout.core.exec.ProcessRunner
@@ -21,6 +22,8 @@ sealed interface PlanItem {
         override val program: String,
         val installKey: String,
         val command: String,
+        /** Where [command] runs: its declaring file's repo-relative directory. */
+        val origin: String = "",
     ) : PlanItem
 
     /** Already installed at [version]; nothing to do. */
@@ -38,7 +41,7 @@ data class InstallOutcome(
 class InstallEngine(
     private val runner: ProcessRunner,
     private val checker: VersionChecker,
-    private val repoRoot: Path,
+    private val frame: CommandFrame = CommandFrame(),
 ) {
     /**
      * Resolve what would happen for [requested] programs (empty = every program
@@ -91,7 +94,7 @@ class InstallEngine(
                 // Key existence and command resolvability are validated at
                 // manifest load, as is the existence of any file: script.
                 val resolved = manifest.resolveInstall(name, installKey)
-                items += PlanItem.Install(name, installKey, expandFilePrefix(resolved.command!!))
+                items += PlanItem.Install(name, installKey, expandFilePrefix(resolved.command!!), resolved.commandOrigin)
             }
         }
 
@@ -128,9 +131,9 @@ class InstallEngine(
     ): List<InstallOutcome> =
         plan.filterIsInstance<PlanItem.Install>().map { item ->
             onStart(item)
-            // Repo root as cwd, so file: scripts and relative paths behave the
-            // same regardless of where the tool was invoked from.
-            val exitCode = runner.inherit(ShellCommand(item.command, repoRoot.toString()))
+            // The declaring file's directory as cwd, so file: scripts and
+            // relative paths behave the same wherever the tool was invoked.
+            val exitCode = runner.inherit(frame.command(item.command, item.origin))
             val after = checker.check(manifest.checkFor(item.program, item.installKey))
             InstallOutcome(item.program, exitCode, after)
         }

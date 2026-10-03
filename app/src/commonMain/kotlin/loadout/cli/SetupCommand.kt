@@ -32,7 +32,7 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
 
         val plan = planPrograms(app, manifest, system)
 
-        val scriptRunner = ScriptRunner(app.runner, app.repoRoot)
+        val scriptRunner = ScriptRunner(app.runner, app.frame(system))
         val enabledScripts = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         val scriptNames = if (!skipScripts) {
             ManifestLoader.scriptOrder(manifest, enabledScripts.keys)

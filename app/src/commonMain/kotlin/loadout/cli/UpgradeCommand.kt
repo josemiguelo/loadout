@@ -1,6 +1,5 @@
 package loadout.cli
 
-import loadout.core.exec.ShellCommand
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
@@ -84,9 +83,10 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
 
         // Inherited stdio: sudo may prompt, dnf shows progress. A failing
         // mechanism doesn't stop the rest — they're independent.
+        val frame = app.frame(system)
         val failed = plan.filter { step ->
             echo("\n" + Style.accent("==> upgrading ${step.label}"))
-            app.runner.inherit(ShellCommand(step.command, app.repoRoot.toString())) != 0
+            app.runner.inherit(frame.command(step.command, step.origin)) != 0
         }
 
         echo("")

@@ -76,13 +76,13 @@ internal suspend fun outdatedReport(
     val resolved = installed.mapValues { (name, key) -> manifest.resolveInstall(name, key) }
     val oracles = resolved.mapNotNull { (name, r) -> r.outdated?.let { name to it } }.toMap()
     val batched = resolved.mapNotNull { (name, r) -> r.outdatedAll?.let { name to it } }.toMap()
-    val batchCommands = batched.values.associate { it.installer to it.command }
+    val batchOracles = batched.values.associateBy { it.installer }
     val unchecked = installed.keys - oracles.keys - batched.keys
 
-    val checker = UpdateChecker(app.runner, app.repoRoot.toString())
-    val sources = manifest.outdated.mapValues { (_, s) -> s.command!! }
+    val checker = UpdateChecker(app.runner, app.frame(system))
+    val sources = manifest.outdated
     val (perProgram, batchResults, sourceResults) = coroutineScope {
-        val batch = async { checker.batchAll(batchCommands) }
+        val batch = async { checker.batchAll(batchOracles) }
         val per = async { checker.candidates(oracles) }
         val custom = async { checker.sourcesAll(sources) }
         Triple(per.await(), batch.await(), custom.await())
@@ -119,7 +119,7 @@ internal suspend fun outdatedReport(
     // throwing them away. Mechanisms sharing a probe are one tool.
     val installerOrderAll = manifest.installers.keys.withIndex().associate { (i, k) -> k to i }
     val pkgOf = batched.mapValues { (_, oracle) -> oracle.pkg }
-    val tools = batchCommands.keys
+    val tools = batchOracles.keys
         .groupBy { installer -> manifest.installers[installer]?.probe ?: installer }
         .map { (tool, installers) ->
             val reported = installers.flatMap { batchResults[it].orEmpty().keys }.toSet()

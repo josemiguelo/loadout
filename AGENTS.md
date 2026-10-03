@@ -92,14 +92,7 @@ opacity = 0.85
 - Fragments hold `[installers.*]`, `[programs.*]`, `[scripts.*]`,
   `[outdated.*]` only.
 
-**Paths and cwd**: every path (`file`, every `file:` token, installer
-patterns) is relative to the directory of the file that declares it, must
-stay inside the repo, and is resolved to an absolute path and validated at
-load; runners never see a relative path. Every manifest command runs with
-cwd = the declaring file's directory and gets `LOADOUT_REPO`,
-`LOADOUT_CONFIGS` (if set), `LOADOUT_FRAGMENT_DIR`, `LOADOUT_MACHINE`,
-`LOADOUT_OS` (`linux`/`macos`). The `ShellCommand` value (line, cwd, env) carries
-this through `ProcessRunner`.
+**Paths and cwd**: done (contracts 4, 5).
 
 **Machines**: flat `machines/<hostname>.toml` (chezmoi finds it by
 hostname). `extends`/`base = true`, `[pm]` and the `scripts` opt-in work as
@@ -143,7 +136,7 @@ README/AGENTS/wiki re-read):
 2. `ShellCommand(line, cwd, env)` through `exec/` and the engines (done).
 3. `loadout.toml` + `[layout]` + glob discovery; machines/state dirs from
    it; 0.x root refused (done; contract 16).
-4. File-relative paths, per-file cwd, exported env.
+4. File-relative paths, per-file cwd, exported env (done; contracts 4, 5).
 5. Flat machines, declared `[data]`, `explain` shows it.
 6. 1.0.0: state schema 2, release notes, wiki "Repo layout", `install.sh`
    next steps, tag.
@@ -222,7 +215,8 @@ core/  loadout.core
                process use goes through the interface (tests use
                FakeProcessRunner). capture (blocking), inherit (sudo/progress),
                each taking a ShellCommand (line, cwd, env); manifest commands
-               always build one, plain strings are for git/probes/self-version.
+               build one through CommandFrame (contract 5); plain strings are for
+               git/probes/self-version.
                A child killed by a signal reports -1 (kommand's wait() throws
                for it); Ctrl-C during a home-screen hand-off throws
                InterruptedByUser once the child exits
@@ -283,17 +277,26 @@ Explicit user decisions; don't "improve" them away.
    never writes authored files, except `init` scaffolding and `installers
    --eject` (writes exactly `programs/installers/builtin.toml`, refuses when
    no fragments glob loads it, and refuses to clobber it without `--force`).
-4. **Scripts: exactly one of `file` (repo path) or `run` (inline).** `file`
-   existence is validated at load (loadRepo, not parse). Variant `command`
-   values and all check commands (variant `check`, program `[version]`,
-   script `check`) may use the `file:` prefix, also validated; expansion is
-   centralized in model.expandFilePrefix, applied at the execution sites
-   (InstallEngine plan, VersionChecker.check, ScriptRunner.withArgs).
-   Tokens after the first space are arguments (`file:path args…` →
-   `sh 'path' args…`), so file: paths can't contain spaces.
-5. **Every manifest command runs via `sh -c` with the repo root as cwd**
-   (installs, scripts, version checks, `check`s), whatever the invocation
-   directory.
+4. **Scripts: exactly one of `file` (path) or `run` (inline).** Variant
+   `command`s, installer patterns, oracles, `[outdated.*]` commands and all
+   check commands may use the `file:` prefix. Every path is relative to the
+   directory of the file that declared it (its `origin`, stamped at load
+   by `withOrigin`; "" = the repo root, also for built-in installers), is
+   kept as written, and is validated at load (loadRepo, not parse) to
+   exist without leaving the repo (`..` inside it is fine: a shared
+   helper). Expansion is centralized in model.expandFilePrefix, applied at
+   the execution sites. Tokens after the first space are arguments
+   (`file:path args…` → `sh 'path' args…`), so file: paths can't contain
+   spaces.
+5. **Every manifest command runs via `sh -c` in its declaring file's
+   directory** (installs, scripts, version checks, `check`s, oracles,
+   upgrades), whatever the invocation directory, with `LOADOUT_REPO`,
+   `LOADOUT_FRAGMENT_DIR` (= that directory), `LOADOUT_MACHINE`,
+   `LOADOUT_OS` (`linux`/`macos`) and, with `[layout] configs`,
+   `LOADOUT_CONFIGS`, all absolute (`CommandFrame.of`, via
+   `AppContext.frame`). A command takes the origin of the file that WROTE
+   it: an installer pattern runs in the installer's directory, a variant's
+   own `command`/`check`/`outdated` in the program's (`resolveInstall`).
 6. **Execution order**: all programs before all scripts; programs
    topologically by `depends-on` (declaration order breaks ties:
    loadout.toml, then fragments in `[layout] fragments` glob order,

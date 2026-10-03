@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.CommandFrame
 import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.OsFamily
@@ -22,7 +23,7 @@ sealed interface ScriptOutcome {
 
 class ScriptRunner(
     private val runner: ProcessRunner,
-    private val repoRoot: Path,
+    private val frame: CommandFrame = CommandFrame(),
 ) {
     companion object {
         /**
@@ -54,14 +55,14 @@ class ScriptRunner(
         if (!step.appliesTo(os)) return ScriptOutcome.NotApplicable
 
         if (!force && step.check != null) {
-            if (runner.capture(ShellCommand(withArgs(step.check!!, args), repoRoot.toString())).success) {
+            if (runner.capture(frame.command(withArgs(step.check!!, args), step.origin)).success) {
                 return ScriptOutcome.AlreadyDone
             }
         }
 
         // Validation guarantees exactly one of file/run is set, and that args
         // are only used with file scripts.
-        val exitCode = runner.inherit(ShellCommand(commandFor(step, args), repoRoot.toString()))
+        val exitCode = runner.inherit(frame.command(commandFor(step, args), step.origin))
         return ScriptOutcome.Ran(
             ScriptState(
                 status = if (exitCode == 0) ScriptStatus.DONE else ScriptStatus.FAILED,

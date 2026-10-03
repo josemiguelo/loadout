@@ -463,6 +463,77 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun pathsAreRelativeToTheDeclaringFileAndStayInTheRepo() {
+        val tool = """
+            [scripts.tmux-plugins]
+            file = ".loadout/plugins.sh"
+            check = "file:.loadout/plugins.sh check"
+        """.trimIndent()
+        val files = mapOf(
+            "loadout.toml" to """
+                [layout]
+                fragments = ["configs/**/.loadout.toml"]
+                machines = "machines"
+                state = "state"
+            """.trimIndent(),
+            "configs/tmux/.loadout.toml" to tool,
+            // At the repo root, where a root-relative reading would look.
+            ".loadout/plugins.sh" to "#!/bin/sh\n",
+        )
+        val missing = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(files), repo) }
+        assertTrue(
+            "scripts.tmux-plugins: file '.loadout/plugins.sh' not found (relative to configs/tmux/)" in missing.message.orEmpty(),
+            missing.message,
+        )
+
+        val loaded = ManifestLoader.loadRepo(fs(files + ("configs/tmux/.loadout/plugins.sh" to "#!/bin/sh\n")), repo)
+        assertEquals("configs/tmux", loaded.scripts.getValue("tmux-plugins").origin)
+
+        val escaping = files + ("configs/tmux/.loadout.toml" to "[scripts.x]\nfile = \"../../../outside.sh\"")
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(escaping), repo) }
+        assertTrue("file '../../../outside.sh' leaves the repo" in e.message.orEmpty(), e.message)
+
+        // `..` that stays inside the repo reaches a shared helper.
+        val shared = files + mapOf(
+            "configs/tmux/.loadout.toml" to "[scripts.x]\nfile = \"../lib/helper.sh\"",
+            "configs/lib/helper.sh" to "#!/bin/sh\n",
+        )
+        assertEquals("../lib/helper.sh", ManifestLoader.loadRepo(fs(shared), repo).scripts.getValue("x").file)
+    }
+
+    @Test
+    fun anInstallRunsWhereItsCommandWasWritten() {
+        val fs = fs(
+            mapOf(
+                "loadout.toml" to "[meta]\nname = \"x\"",
+                "programs/installers/brew.toml" to """
+                    [installers.brew]
+                    install = "file:brew.sh install {pkg}"
+                    check = "file:brew.sh list --versions {pkg}"
+                    regex = "([0-9.]+)"
+                """.trimIndent(),
+                "programs/installers/brew.sh" to "#!/bin/sh\n",
+                "programs/cli/tools.toml" to """
+                    [programs.jq]
+                    via = ["brew"]
+
+                    [programs.odd]
+                    [programs.odd.install.brew]
+                    command = "file:odd.sh"
+                """.trimIndent(),
+                "programs/cli/odd.sh" to "#!/bin/sh\n",
+            ),
+        )
+        val manifest = ManifestLoader.loadRepo(fs, repo)
+        val jq = manifest.resolveInstall("jq", "brew")
+        assertEquals("programs/installers", jq.commandOrigin)
+        assertEquals("programs/installers", jq.check?.origin)
+        val odd = manifest.resolveInstall("odd", "brew")
+        assertEquals("programs/cli", odd.commandOrigin)
+        assertEquals("programs/installers", odd.check?.origin)
+    }
+
+    @Test
     fun scriptFileMustExistInRepo() {
         val fs = fs(
             mapOf(
@@ -473,7 +544,7 @@ class ManifestRepoTest {
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
-        assertTrue("file 'scripts/dotfiles.sh' not found in the repo" in e.message.orEmpty())
+        assertTrue("file 'scripts/dotfiles.sh' not found (relative to the repo root)" in e.message.orEmpty())
 
         fs.createDirectories(repo / "scripts")
         fs.write(repo / "scripts" / "dotfiles.sh") { writeUtf8("#!/bin/sh\n") }
@@ -493,7 +564,7 @@ class ManifestRepoTest {
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
         assertTrue(
-            "programs.tool.install.script: file 'scripts/install-tool.sh' not found in the repo" in e.message.orEmpty(),
+            "programs.tool.install.script: file 'scripts/install-tool.sh' not found (relative to the repo root)" in e.message.orEmpty(),
         )
 
         fs.createDirectories(repo / "scripts")

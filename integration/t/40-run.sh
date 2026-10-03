@@ -64,3 +64,24 @@ printf "scripts = ['''argcount\n  a\n  b''']\n\n[pm]\ngit = \"manual\"\n" > repo
 "$BIN" --repo repo --machine m4 run argcount >/dev/null || fail "a name alone on the first line is still the name"
 grep -qx "2:a b" repo/argcount.txt || fail "the lines after a lone name are its arguments"
 ok "a multi-line script entry passes its lines as arguments"
+
+# A fragment's paths are relative to its own folder, and its commands run
+# there: the script reads a sibling file with no $(dirname "$0").
+mkdir -p repo/maintenance/greet
+printf 'hello from greet\n' > repo/maintenance/greet/message.txt
+printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$LOADOUT_REPO" "$LOADOUT_FRAGMENT_DIR" "$LOADOUT_MACHINE" "$LOADOUT_OS" > env.txt\n' > repo/maintenance/greet/greet.sh
+cat > repo/maintenance/greet/greet.toml <<'TOML'
+[scripts.greet]
+file = "greet.sh"
+check = "test -f greeted.txt"
+TOML
+printf 'scripts = ["greet"]\n\n[pm]\ngit = "manual"\n' > repo/machines/m5.toml
+"$BIN" --repo repo --machine m5 run greet >/dev/null || fail "a fragment's script runs"
+grep -qx "hello from greet" repo/maintenance/greet/greeted.txt || fail "the script ran in its fragment's folder"
+[ -e repo/greeted.txt ] && fail "nothing lands in the repo root" || true
+REPO_ABS=$(cd repo && pwd -P)
+grep -qx "$REPO_ABS|$REPO_ABS/maintenance/greet|m5|$(uname -s | sed 's/Darwin/macos/; s/Linux/linux/')" repo/maintenance/greet/env.txt ||
+    fail "the script gets LOADOUT_REPO, LOADOUT_FRAGMENT_DIR, LOADOUT_MACHINE, LOADOUT_OS: $(cat repo/maintenance/greet/env.txt)"
+OUT=$("$BIN" --repo repo --machine m5 run greet)
+echo "$OUT" | grep -q "already done" || fail "the check runs in the fragment's folder too"
+ok "a fragment's script and check run in its folder, with the LOADOUT_* variables"

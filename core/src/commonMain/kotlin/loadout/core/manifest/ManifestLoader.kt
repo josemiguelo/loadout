@@ -17,6 +17,7 @@ import loadout.core.model.scriptEntry
 import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
+import okio.Path.Companion.toPath
 
 class ManifestException(message: String) : LoadoutException(message)
 
@@ -71,7 +72,7 @@ object ManifestLoader {
         // order: the globs' order, path-sorted within one.
         for (path in fragmentFiles(fs, repoRoot, layout, manifestName, machinePaths, errors)) {
             val label = Glob.relative(repoRoot, path)
-            val fragment = parseRaw(fs.read(path) { readUtf8() }, label)
+            val fragment = withOrigin(parseRaw(fs.read(path) { readUtf8() }, label), Glob.relative(repoRoot, path.parent!!))
             if (fragment.meta != Meta()) {
                 errors += "$label: [meta] is only allowed in $manifestName"
             }
@@ -143,34 +144,45 @@ object ManifestLoader {
         )
         validate(merged, machinesDir)
 
-        // Referenced files can only be checked against the actual repo, not in parse().
+        // Referenced files can only be checked against the actual repo, not in
+        // parse(). Each path is relative to its declaring file's directory
+        // (origin) and must stay inside the repo.
         val missingFiles = mutableListOf<String>()
-        fun requireFile(command: String?, label: String) {
+        fun requirePath(file: String, origin: String, label: String) {
+            val where = if (origin.isEmpty()) "the repo root" else "$origin/"
+            val relative = (if (origin.isEmpty()) file else "$origin/$file").toPath().normalized()
+            when {
+                relative.isAbsolute || relative.segments.firstOrNull() == ".." ->
+                    missingFiles += "  - $label: file '$file' leaves the repo (paths are relative to $where)"
+                !fs.exists(repoRoot / relative) ->
+                    missingFiles += "  - $label: file '$file' not found (relative to $where)"
+            }
+        }
+        fun requireFile(command: String?, origin: String, label: String) {
             if (command == null || !command.startsWith(INSTALL_FILE_PREFIX)) return
             // Anything after the first space is arguments, not path.
-            val file = command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
-            if (!fs.exists(repoRoot / file)) {
-                missingFiles += "  - $label: file '$file' not found in the repo"
-            }
+            requirePath(command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' '), origin, label)
         }
         for ((name, script) in merged.scripts) {
-            if (script.file != null && !fs.exists(repoRoot / script.file!!)) {
-                missingFiles += "  - scripts.$name: file '${script.file}' not found in the repo"
-            }
-            requireFile(script.check, "scripts.$name.check")
+            script.file?.let { requirePath(it, script.origin, "scripts.$name") }
+            requireFile(script.check, script.origin, "scripts.$name.check")
         }
         for ((name, source) in merged.outdated) {
-            requireFile(source.command, "outdated.$name")
+            requireFile(source.command, source.origin, "outdated.$name")
+            requireFile(source.upgrade, source.origin, "outdated.$name.upgrade")
         }
         for ((name, program) in merged.programs) {
-            requireFile(program.version?.command, "programs.$name.version")
+            program.version?.let { requireFile(it.command, it.origin, "programs.$name.version") }
             for (key in program.install.keys) {
                 val resolved = merged.resolveInstall(name, key)
-                requireFile(resolved.command, "programs.$name.install.$key")
+                requireFile(resolved.command, resolved.commandOrigin, "programs.$name.install.$key")
                 // The version fallback is already validated once above.
                 if (resolved.check != program.version) {
-                    requireFile(resolved.check?.command, "programs.$name.install.$key check")
+                    resolved.check?.let { requireFile(it.command, it.origin, "programs.$name.install.$key check") }
                 }
+                resolved.outdated?.let { requireFile(it.command, it.origin, "programs.$name.install.$key outdated") }
+                resolved.outdatedAll?.let { requireFile(it.command, it.origin, "programs.$name.install.$key outdated-all") }
+                resolved.upgradeWith?.let { requireFile(it.command, it.origin, "programs.$name.install.$key upgrade") }
             }
         }
         if (missingFiles.isNotEmpty()) {
@@ -252,6 +264,16 @@ object ManifestLoader {
         }
         return parseDocument(text, label)
     }
+
+    /** Stamp every declared item with its file's repo-relative directory (contracts 4, 5). */
+    private fun withOrigin(manifest: Manifest, origin: String): Manifest = manifest.copy(
+        installers = manifest.installers.mapValues { it.value.copy(origin = origin) },
+        programs = manifest.programs.mapValues { (_, p) ->
+            p.copy(origin = origin, version = p.version?.copy(origin = origin))
+        },
+        scripts = manifest.scripts.mapValues { it.value.copy(origin = origin) },
+        outdated = manifest.outdated.mapValues { it.value.copy(origin = origin) },
+    )
 
     private fun parseDocument(text: String, label: String): Manifest = try {
         toml.decodeFromString<Manifest>(text)

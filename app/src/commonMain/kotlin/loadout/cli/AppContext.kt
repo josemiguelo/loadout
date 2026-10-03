@@ -1,6 +1,7 @@
 package loadout.cli
 
 import loadout.core.detect.Detection
+import loadout.core.exec.CommandFrame
 import loadout.core.exec.KommandProcessRunner
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
@@ -34,6 +35,10 @@ class AppContext(
 
     fun detectSystem(): SystemInfo = detection.detectSystem(machineOverride)
 
+    /** How manifest commands run on [system]: declaring file's directory, LOADOUT_* env. */
+    fun frame(system: SystemInfo): CommandFrame =
+        CommandFrame.of(fs.canonicalize(repoRoot).toString(), system, layout.configs)
+
     /** What each failing script check printed during the last refresh. */
     var lastScriptDetail: Map<String, String> = emptyMap()
         private set
@@ -52,7 +57,8 @@ class AppContext(
         scriptResults: Map<String, ScriptState> = emptyMap(),
     ): MachineState {
         val previous = stateStore.read(system.machine)
-        val engine = StatusEngine(VersionChecker(runner, repoRoot.toString()), runner, repoRoot)
+        val frame = frame(system)
+        val engine = StatusEngine(VersionChecker(runner, frame), runner, frame)
         val state = engine.refresh(manifest, system, previous, scriptResults)
         lastScriptDetail = engine.lastScriptDetail
         lastToolsDown = engine.lastToolsDown

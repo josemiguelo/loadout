@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.CommandFrame
 import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.ProgramState
@@ -16,8 +17,8 @@ import kotlinx.coroutines.withContext
 
 class VersionChecker(
     private val runner: ProcessRunner,
-    /** When set, checks run with this directory as cwd (the config repo root). */
-    private val workDir: String? = null,
+    /** Where manifest commands run and what they get (contract 5). */
+    private val frame: CommandFrame = CommandFrame(),
 ) {
     /**
      * - no version check declared -> UNKNOWN
@@ -34,7 +35,7 @@ class VersionChecker(
      */
     fun check(versionCheck: VersionCheck?): ProgramState {
         if (versionCheck == null) return ProgramState(ProgramStatus.UNKNOWN)
-        val result = runner.capture(ShellCommand(expandFilePrefix(versionCheck.command), workDir))
+        val result = runner.capture(frame.command(expandFilePrefix(versionCheck.command), versionCheck.origin))
         val said = result.stderr.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
         if (versionCheck.probe != null && (result.exitCode == 127 || result.exitCode == 126)) {
             // The shell already names what wasn't there ("sh: brew: command

@@ -62,7 +62,7 @@ class RunCommand : CliktCommand(name = "run") {
             return
         }
 
-        val runner = ScriptRunner(app.runner, app.repoRoot)
+        val runner = ScriptRunner(app.runner, app.frame(system))
         val results = mutableMapOf<String, ScriptState>()
         for (name in ManifestLoader.scriptOrder(manifest, targets)) {
             if (name !in targets) continue

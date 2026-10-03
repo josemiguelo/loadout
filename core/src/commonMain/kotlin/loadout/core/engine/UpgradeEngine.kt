@@ -17,6 +17,8 @@ data class UpgradeStep(
     val sweep: Boolean = true,
     /** The tool the sweep's mechanisms all drive (their shared probe), when they do. */
     val tool: String? = null,
+    /** Where [command] runs: its declaring file's repo-relative directory. */
+    val origin: String = "",
 ) {
     /**
      * What to call this step on screen: a sweep is the TOOL it drives when
@@ -87,6 +89,7 @@ object UpgradeEngine {
                 command = expandFilePrefix(pattern).replace("{item}", item),
                 covers = listOf(item),
                 sweep = false,
+                origin = declared.origin,
             )
         }
     }
@@ -114,21 +117,23 @@ object UpgradeEngine {
                     }
                     null
                 }
-                else -> name to expandFilePrefix(command)
+                else -> name to (expandFilePrefix(command) to manifest.installers.getValue(name).origin)
             }
         }
         if (errors.isNotEmpty()) {
             throw UpgradeException("cannot upgrade:\n" + errors.joinToString("\n") { "  - $it" })
         }
-        // Same command = same transaction: run it once, name every mechanism
-        // it covers.
-        return steps.groupBy({ it.second }, { it.first }).map { (command, mechanisms) ->
+        // Same command (from the same directory) = same transaction: run it
+        // once, name every mechanism it covers.
+        return steps.groupBy({ it.second }, { it.first }).map { (located, mechanisms) ->
+            val (command, origin) = located
             val probes = mechanisms.map { manifest.installers[it]?.probe }.distinct()
             UpgradeStep(
                 installers = mechanisms,
                 command = command,
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
                 tool = probes.singleOrNull()?.takeIf { it != null },
+                origin = origin,
             )
         }
     }
