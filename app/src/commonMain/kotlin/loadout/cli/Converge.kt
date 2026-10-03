@@ -34,8 +34,9 @@ fun CliktCommand.planPrograms(
     system: SystemInfo,
     requested: List<String> = emptyList(),
 ): ProgramPlan {
-    val checker = VersionChecker(app.runner, app.repoRoot.toString())
-    val engine = InstallEngine(app.runner, checker, app.repoRoot)
+    val frame = app.frame(system)
+    val checker = VersionChecker(app.runner, frame)
+    val engine = InstallEngine(app.runner, checker, frame)
     val mapped = manifest.machines[system.machine]?.pm.orEmpty()
     val current = spinning("checking current state…") {
         checker.checkAll(

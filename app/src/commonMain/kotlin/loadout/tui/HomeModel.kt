@@ -825,7 +825,8 @@ class HomeModel(private val app: AppContext) {
         }
         val m = manifest ?: return
         val sys = system ?: return
-        val engine = InstallEngine(app.runner, VersionChecker(app.runner, app.repoRoot.toString()), app.repoRoot)
+        val frame = app.frame(sys)
+        val engine = InstallEngine(app.runner, VersionChecker(app.runner, frame), frame)
         val plan = runCatching {
             engine.plan(m, sys.machine, names, stored?.programs.orEmpty()) { app.detection.isBinaryAvailable(it) }
         }.getOrElse { e ->

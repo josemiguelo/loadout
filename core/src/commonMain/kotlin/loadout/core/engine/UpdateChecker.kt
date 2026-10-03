@@ -1,6 +1,10 @@
 package loadout.core.engine
 
+import loadout.core.exec.CommandFrame
+import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
+import loadout.core.model.BatchOracle
+import loadout.core.model.OutdatedSource
 import loadout.core.model.VersionCheck
 import loadout.core.model.expandFilePrefix
 import loadout.core.platform.blockingDispatcher
@@ -19,12 +23,12 @@ import kotlinx.coroutines.withContext
  */
 class UpdateChecker(
     private val runner: ProcessRunner,
-    /** Commands run with this directory as cwd (the config repo root). */
-    private val workDir: String? = null,
+    /** Where manifest commands run and what they get (contract 5). */
+    private val frame: CommandFrame = CommandFrame(),
 ) {
     /** The candidate version the remote offers, or null for up to date / no answer. */
     fun candidate(outdated: VersionCheck): String? {
-        val result = runner.capture(expandFilePrefix(outdated.command), workDir)
+        val result = runner.capture(frame.command(expandFilePrefix(outdated.command), outdated.origin))
         val output = result.stdout.ifBlank { result.stderr }
         return Regex(outdated.regex).find(output)?.groupValues?.getOrNull(1)
     }
@@ -50,8 +54,8 @@ class UpdateChecker(
      * package id, the rest is the text the per-program regex extracts the
      * version from. Exit code ignored, like [candidate].
      */
-    fun batchCandidates(command: String): Map<String, String> {
-        val result = runner.capture(expandFilePrefix(command), workDir)
+    fun batchCandidates(command: String, origin: String = ""): Map<String, String> {
+        val result = runner.capture(frame.command(expandFilePrefix(command), origin))
         // stdout ONLY: an empty stdout is "nothing outdated", and a tool's
         // stderr is warnings — `brew outdated --cask` once turned a
         // deprecation notice into packages named "Warning:" and "Please".
@@ -64,12 +68,12 @@ class UpdateChecker(
             .toMap()
     }
 
-    /** Run all batch oracles (installer name -> command) concurrently. */
-    suspend fun batchAll(commands: Map<String, String>): Map<String, Map<String, String>> =
+    /** Run all batch oracles (installer name -> its oracle) concurrently. */
+    suspend fun batchAll(oracles: Map<String, BatchOracle>): Map<String, Map<String, String>> =
         withContext(blockingDispatcher) {
             coroutineScope {
-                commands.map { (installer, command) ->
-                    async { installer to batchCandidates(command) }
+                oracles.map { (installer, oracle) ->
+                    async { installer to batchCandidates(oracle.command, oracle.origin) }
                 }.awaitAll().toMap()
             }
         }
@@ -87,8 +91,8 @@ class UpdateChecker(
      * non-zero exit is reported as [SourceResult.error] (no rows trusted),
      * which the CLI surfaces as a loud line instead of empty output.
      */
-    fun sourceRows(command: String): SourceResult {
-        val result = runner.capture(expandFilePrefix(command), workDir)
+    fun sourceRows(command: String, origin: String = ""): SourceResult {
+        val result = runner.capture(frame.command(expandFilePrefix(command), origin))
         if (!result.success) {
             val detail = result.stderr.ifBlank { result.stdout }
                 .lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
@@ -115,12 +119,12 @@ class UpdateChecker(
         return SourceResult(rows)
     }
 
-    /** Run all custom sources (name -> command) concurrently. */
-    suspend fun sourcesAll(commands: Map<String, String>): Map<String, SourceResult> =
+    /** Run all custom sources (name -> source) concurrently. */
+    suspend fun sourcesAll(sources: Map<String, OutdatedSource>): Map<String, SourceResult> =
         withContext(blockingDispatcher) {
             coroutineScope {
-                commands.map { (name, command) ->
-                    async { name to sourceRows(command) }
+                sources.map { (name, source) ->
+                    async { name to sourceRows(source.command!!, source.origin) }
                 }.awaitAll().toMap()
             }
         }

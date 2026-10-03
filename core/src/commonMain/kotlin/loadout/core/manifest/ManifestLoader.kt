@@ -11,49 +11,45 @@ import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
 import loadout.core.model.Meta
 import loadout.core.model.Program
+import loadout.core.model.RepoLayout
 import loadout.core.model.VersionCheck
 import loadout.core.model.scriptEntry
 import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
+import okio.Path.Companion.toPath
 
 class ManifestException(message: String) : LoadoutException(message)
 
 object ManifestLoader {
-    /** Directory of extra manifest fragments merged into the root manifest. */
-    const val FRAGMENTS_DIR: String = "manifest.d"
+    /** The repo's root file: [meta], [layout], and optionally programs/scripts of its own. */
+    const val ROOT_FILE: String = "loadout.toml"
 
-    /** Directory of per-machine config files; `<name>.toml` configures machine `<name>`. */
-    const val MACHINES_DIR: String = "machines"
+    /** The 0.x root file; a repo that has it instead of [ROOT_FILE] is refused. */
+    private const val LEGACY_ROOT_FILE: String = "manifest.toml"
 
     private val toml = Toml(
         inputConfig = TomlInputConfig(ignoreUnknownNames = true),
     )
 
     /**
-     * Load the repo's full manifest: the root file, plus `.toml` fragments in
-     * `manifest.d` (programs/scripts, no `[meta]`), plus per-machine
-     * `machines/<name>.toml` configs — the only place machine configs may live.
-     * Everything is merged, then validated as one manifest.
+     * The repo's validated `[layout]`, read from the root file alone, so the
+     * state store can find its directory without loading the whole repo.
      */
-    fun loadRepo(fs: FileSystem, repoRoot: Path, manifestName: String = "manifest.toml"): Manifest {
-        val rootPath = repoRoot / manifestName
-        if (!fs.exists(rootPath)) {
-            throw ManifestException("Manifest not found: $rootPath")
-        }
-        val root = parseRaw(fs.read(rootPath) { readUtf8() }, manifestName)
+    fun readLayout(fs: FileSystem, repoRoot: Path, manifestName: String = ROOT_FILE): RepoLayout =
+        layoutOf(readRoot(fs, repoRoot, manifestName), manifestName)
 
-        // Fail before interpreting anything else: an older binary silently
-        // ignores manifest keys it doesn't know, so the repo's declared floor
-        // is the only guard against misreading a newer config.
-        root.meta.minToolVersion?.let { required ->
-            if (!versionAtLeast(TOOL_VERSION, required)) {
-                throw ManifestException(
-                    "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
-                        "run: loadout self-upgrade",
-                )
-            }
-        }
+    /**
+     * Load the repo's full manifest: the root file, plus the fragment files
+     * its `[layout] fragments` globs match (programs/scripts/installers/
+     * outdated sources), plus per-machine `<machines>/<name>.toml` configs —
+     * the only place machine configs may live. Everything is merged, then
+     * validated as one manifest.
+     */
+    fun loadRepo(fs: FileSystem, repoRoot: Path, manifestName: String = ROOT_FILE): Manifest {
+        val root = readRoot(fs, repoRoot, manifestName)
+        val layout = layoutOf(root, manifestName)
+        val machinesDir = layout.machines
 
         val errors = mutableListOf<String>()
         // Repo installers are collected on their own so duplicate detection
@@ -66,22 +62,31 @@ object ManifestLoader {
 
         if (root.machines.isNotEmpty()) {
             errors += "$manifestName: [machines.*] sections are not allowed; " +
-                "machine configs live in $MACHINES_DIR/<name>.toml"
+                "machine configs live in $machinesDir/<name>.toml"
         }
 
         val outdatedSources = root.outdated.toMutableMap()
+        val machinePaths = machineFiles(fs, repoRoot / machinesDir)
+        val profilePaths = layout.profiles?.let { machineFiles(fs, repoRoot / it) }.orEmpty()
 
-        // Fragments may be organized into arbitrary subfolders; the folder
-        // structure is purely cosmetic. Deterministic order: sorted by path.
-        for (path in fragmentFiles(fs, repoRoot)) {
-            val label = path.toString().removePrefix(repoRoot.toString()).trimStart('/')
-            val fragment = parseRaw(fs.read(path) { readUtf8() }, label)
+        // Folder structure inside a glob's matches is cosmetic. Deterministic
+        // order: the globs' order, path-sorted within one.
+        for (path in fragmentFiles(fs, repoRoot, layout, manifestName, machinePaths, profilePaths, errors)) {
+            val label = Glob.relative(repoRoot, path)
+            val fragmentText = fs.read(path) { readUtf8() }
+            val fragment = withOrigin(parseRaw(fragmentText, label), Glob.relative(repoRoot, path.parent!!))
+            if (MachineData.read(toml, fragmentText) != null) {
+                errors += "$label: [data] is only allowed in $manifestName and machine files"
+            }
             if (fragment.meta != Meta()) {
                 errors += "$label: [meta] is only allowed in $manifestName"
             }
+            if (fragment.layout != null) {
+                errors += "$label: [layout] is only allowed in $manifestName"
+            }
             if (fragment.machines.isNotEmpty()) {
                 errors += "$label: [machines.*] sections are not allowed; " +
-                    "machine configs live in $MACHINES_DIR/<name>.toml"
+                    "machine configs live in $machinesDir/<name>.toml"
             }
             for ((name, installer) in fragment.installers) {
                 if (installers.put(name, installer) != null) {
@@ -105,27 +110,24 @@ object ManifestLoader {
             }
         }
 
-        // Machine files may live in subfolders (purely cosmetic, like
-        // manifest.d); the machine name is always the file name.
-        for (path in machineFiles(fs, repoRoot)) {
-            val name = path.name.removeSuffix(".toml")
-            val label = path.toString().removePrefix(repoRoot.toString()).trimStart('/')
-            val parsed = try {
-                toml.decodeFromString<MachineConfig>(fs.read(path) { readUtf8() })
-            } catch (e: Exception) {
-                val hint = if (e.message?.contains("Cannot decode the key [scripts]") == true) {
-                    "\nhint: the top-level `scripts = [...]` array must appear ABOVE any table " +
-                        "header like [pm] — TOML assigns later top-level keys to the preceding table"
-                } else {
-                    ""
+        // Machine files sit directly in their directory, so chezmoi templates
+        // find one by hostname (the machine name is the file name); profile
+        // files likewise in theirs.
+        fun readConfigs(dir: String, paths: List<Path>, kind: String, profile: Boolean): Map<String, MachineConfig> =
+            paths.mapNotNull { path ->
+                val label = Glob.relative(repoRoot, path)
+                if (path.parent != repoRoot / dir) {
+                    errors += "$label: $kind files live directly in $dir/ (no subfolders)"
+                    return@mapNotNull null
                 }
-                throw ManifestException("Failed to parse $label: ${e.message}$hint")
-            }
-            if (machines.put(name, parsed) != null) {
-                errors += "duplicate machine '$name' (redefined in $label — subfolders are cosmetic, names must be unique)"
-            }
-        }
-        errors += flattenMachines(machines)
+                val config = MachineFile.read(toml, fs.read(path) { readUtf8() }, label, errors).copy(base = profile)
+                errors += MachineData.validate(root.data, config.data, label)
+                path.name.removeSuffix(".toml") to config
+            }.toMap()
+        val profileConfigs = layout.profiles?.let { readConfigs(it, profilePaths, "profile", profile = true) }.orEmpty()
+        errors += flattenMachines(readConfigs(machinesDir, machinePaths, "machine", profile = false), profileConfigs, layout.profiles, machines)
+        // Every machine sees every declared key: defaults under its own.
+        for ((name, config) in machines.toList()) machines[name] = config.copy(data = MachineData.merge(root.data, config.data))
 
         if (errors.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
@@ -142,44 +144,76 @@ object ManifestLoader {
                 ),
             ),
         )
-        validate(merged)
+        validate(merged, machinesDir)
 
-        // Referenced files can only be checked against the actual repo, not in parse().
+        // Referenced files can only be checked against the actual repo, not in
+        // parse(). Each path is relative to its declaring file's directory
+        // (origin) and must stay inside the repo.
         val missingFiles = mutableListOf<String>()
-        fun requireFile(command: String?, label: String) {
+        fun requirePath(file: String, origin: String, label: String) {
+            val where = if (origin.isEmpty()) "the repo root" else "$origin/"
+            val relative = (if (origin.isEmpty()) file else "$origin/$file").toPath().normalized()
+            when {
+                relative.isAbsolute || relative.segments.firstOrNull() == ".." ->
+                    missingFiles += "  - $label: file '$file' leaves the repo (paths are relative to $where)"
+                !fs.exists(repoRoot / relative) ->
+                    missingFiles += "  - $label: file '$file' not found (relative to $where)"
+            }
+        }
+        fun requireFile(command: String?, origin: String, label: String) {
             if (command == null || !command.startsWith(INSTALL_FILE_PREFIX)) return
             // Anything after the first space is arguments, not path.
-            val file = command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' ')
-            if (!fs.exists(repoRoot / file)) {
-                missingFiles += "  - $label: file '$file' not found in the repo"
-            }
+            requirePath(command.removePrefix(INSTALL_FILE_PREFIX).substringBefore(' '), origin, label)
         }
         for ((name, script) in merged.scripts) {
-            if (script.file != null && !fs.exists(repoRoot / script.file!!)) {
-                missingFiles += "  - scripts.$name: file '${script.file}' not found in the repo"
-            }
-            requireFile(script.check, "scripts.$name.check")
+            script.file?.let { requirePath(it, script.origin, "scripts.$name") }
+            requireFile(script.check, script.origin, "scripts.$name.check")
         }
         for ((name, source) in merged.outdated) {
-            requireFile(source.command, "outdated.$name")
+            requireFile(source.command, source.origin, "outdated.$name")
+            requireFile(source.upgrade, source.origin, "outdated.$name.upgrade")
         }
         for ((name, program) in merged.programs) {
-            requireFile(program.version?.command, "programs.$name.version")
+            program.version?.let { requireFile(it.command, it.origin, "programs.$name.version") }
             for (key in program.install.keys) {
                 val resolved = merged.resolveInstall(name, key)
-                requireFile(resolved.command, "programs.$name.install.$key")
+                requireFile(resolved.command, resolved.commandOrigin, "programs.$name.install.$key")
                 // The version fallback is already validated once above.
                 if (resolved.check != program.version) {
-                    requireFile(resolved.check?.command, "programs.$name.install.$key check")
+                    resolved.check?.let { requireFile(it.command, it.origin, "programs.$name.install.$key check") }
                 }
+                resolved.outdated?.let { requireFile(it.command, it.origin, "programs.$name.install.$key outdated") }
+                resolved.outdatedAll?.let { requireFile(it.command, it.origin, "programs.$name.install.$key outdated-all") }
+                resolved.upgradeWith?.let { requireFile(it.command, it.origin, "programs.$name.install.$key upgrade") }
             }
         }
+        // A `with` value marked `file:` is a path relative to the program's
+        // file, like every other path; it's substituted into an installer
+        // pattern that runs elsewhere, so it becomes "$LOADOUT_REPO/<path>".
+        val withResolved = merged.copy(
+            programs = merged.programs.mapValues { (name, program) ->
+                program.copy(
+                    install = program.install.mapValues { (key, variant) ->
+                        variant.copy(
+                            with = variant.with.mapValues { (param, value) ->
+                                if (!value.startsWith(INSTALL_FILE_PREFIX)) return@mapValues value
+                                val file = value.removePrefix(INSTALL_FILE_PREFIX)
+                                requirePath(file, program.origin, "programs.$name.install.$key.with.$param")
+                                val relative = (if (program.origin.isEmpty()) file else "${program.origin}/$file")
+                                    .toPath().normalized()
+                                "\$LOADOUT_REPO/$relative"
+                            },
+                        )
+                    },
+                )
+            },
+        )
         if (missingFiles.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + missingFiles.joinToString("\n"))
         }
-        // Bases are config inheritance, not machines: validated above, but
+        // Profiles are config inheritance, not machines: validated above, but
         // never observed, diffed, or converged.
-        return merged.copy(machines = merged.machines.filterValues { !it.base })
+        return withResolved.copy(machines = withResolved.machines.filterValues { !it.base })
     }
 
     /**
@@ -254,6 +288,16 @@ object ManifestLoader {
         return parseDocument(text, label)
     }
 
+    /** Stamp every declared item with its file's repo-relative directory (contracts 4, 5). */
+    private fun withOrigin(manifest: Manifest, origin: String): Manifest = manifest.copy(
+        installers = manifest.installers.mapValues { it.value.copy(origin = origin) },
+        programs = manifest.programs.mapValues { (_, p) ->
+            p.copy(origin = origin, version = p.version?.copy(origin = origin))
+        },
+        scripts = manifest.scripts.mapValues { it.value.copy(origin = origin) },
+        outdated = manifest.outdated.mapValues { it.value.copy(origin = origin) },
+    )
+
     private fun parseDocument(text: String, label: String): Manifest = try {
         toml.decodeFromString<Manifest>(text)
     } catch (e: Exception) {
@@ -279,9 +323,8 @@ object ManifestLoader {
             emptyList()
         }
 
-    /** All machine files under machines/, any folder depth, path-sorted. */
-    private fun machineFiles(fs: FileSystem, repoRoot: Path): List<Path> {
-        val dir = repoRoot / MACHINES_DIR
+    /** All `.toml` files under [dir], path-sorted; loadRepo refuses any in a subfolder. */
+    private fun machineFiles(fs: FileSystem, dir: Path): List<Path> {
         if (!fs.exists(dir)) return emptyList()
         return fs.listRecursively(dir)
             .filter { it.name.endsWith(".toml") && fs.metadataOrNull(it)?.isRegularFile == true }
@@ -290,68 +333,186 @@ object ManifestLoader {
     }
 
     /**
-     * Resolve `extends` chains in place: every config becomes its flattened
-     * self ([pm] merged per key, child wins; `scripts` union, a same-named
-     * child entry replaces the base's), then base configs are removed —
-     * downstream nothing knows inheritance existed. Returns errors.
+     * Resolve `extends` lists into [out]: every machine becomes its flattened
+     * self, downstream nothing knows profiles existed. A file's profiles are
+     * combined first — two of them setting a program's variant, a script's
+     * arguments or a data key differently is an error, so their order never
+     * changes the result — then the file itself overrides them ([pm] per
+     * key, `scripts` by name, `[data]` table by table, lists replace).
+     * Profiles land in [out] too, flattened and marked `base`, so validation
+     * covers them; loadRepo drops them after validating. Returns errors.
      */
-    private fun flattenMachines(machines: MutableMap<String, MachineConfig>): List<String> {
+    private fun flattenMachines(
+        machineConfigs: Map<String, MachineConfig>,
+        profiles: Map<String, MachineConfig>,
+        profilesDir: String?,
+        out: MutableMap<String, MachineConfig>,
+    ): List<String> {
         val errors = mutableListOf<String>()
-        for ((name, config) in machines) {
-            val parent = config.extends ?: continue
-            val target = machines[parent]
-            when {
-                target == null ->
-                    errors += "machine '$name' extends unknown base '$parent'"
-                !target.base ->
-                    errors += "machine '$name' extends '$parent', which is not a base " +
-                        "(shared config must live in a `base = true` file)"
-            }
-        }
-        if (errors.isNotEmpty()) return errors
+        val flatProfiles = mutableMapOf<String, MachineConfig>()
 
-        val flattened = mutableMapOf<String, MachineConfig>()
-        fun flatten(name: String, seen: List<String>): MachineConfig {
-            flattened[name]?.let { return it }
-            if (name in seen) {
-                errors += "machine base cycle: ${(seen + name).joinToString(" -> ")}"
-                return machines.getValue(name)
+        fun flatten(config: MachineConfig, seen: List<String>): MachineConfig {
+            val parents = config.extends.mapNotNull { name ->
+                val profile = profiles[name]
+                when {
+                    profilesDir == null -> {
+                        errors += "${config.label}: extends '$name', but loadout.toml's [layout] has no profiles directory"
+                        null
+                    }
+                    profile == null -> {
+                        errors += "${config.label}: extends unknown profile '$name' (no $profilesDir/$name.toml)"
+                        null
+                    }
+                    name in seen -> {
+                        errors += "profile cycle: ${(seen + name).joinToString(" -> ")}"
+                        null
+                    }
+                    else -> name to (flatProfiles[name] ?: flatten(profile, seen + name).also { flatProfiles[name] = it })
+                }
             }
-            val config = machines.getValue(name)
-            val parent = config.extends?.let { flatten(it, seen + name) } ?: run {
-                flattened[name] = config
-                return config
+            val pm = linkedMapOf<String, Pair<String, String>>() // program -> (variant, profile)
+            val scripts = linkedMapOf<String, Pair<String, String>>() // script -> (entry, profile)
+            var data = MachineData.EMPTY
+            parents.forEachIndexed { index, (name, parent) ->
+                for ((program, variant) in parent.pm) {
+                    val previous = pm[program]
+                    when {
+                        previous == null -> pm[program] = variant to name
+                        previous.first != variant -> errors += "${config.label}: profiles '${previous.second}' and " +
+                            "'$name' map '$program' differently ('${previous.first}' vs '$variant')"
+                    }
+                }
+                for (entry in parent.scripts) {
+                    val (script, args) = scriptEntry(entry)
+                    val previous = scripts[script]
+                    when {
+                        previous == null -> scripts[script] = entry to name
+                        scriptEntry(previous.first).second != args -> errors += "${config.label}: profiles " +
+                            "'${previous.second}' and '$name' opt into '$script' with different arguments"
+                    }
+                }
+                for ((earlier, earlierConfig) in parents.take(index)) {
+                    MachineData.conflicts(earlierConfig.data, parent.data).forEach {
+                        errors += "${config.label}: profiles '$earlier' and '$name' set data key '$it' differently"
+                    }
+                }
+                data = MachineData.merge(data, parent.data)
             }
-            val childScripts = config.scriptArgs().keys
-            val result = config.copy(
-                pm = parent.pm + config.pm,
-                scripts = parent.scripts.filterNot { scriptEntry(it).first in childScripts } + config.scripts,
+            val own = config.scriptArgs().keys
+            return config.copy(
+                pm = pm.mapValues { it.value.first } + config.pm,
+                scripts = scripts.values.map { it.first }.filterNot { scriptEntry(it).first in own } + config.scripts,
+                data = MachineData.merge(data, config.data),
             )
-            flattened[name] = result
-            return result
         }
-        for (name in machines.keys.toList()) {
-            flatten(name, emptyList())
+
+        for ((name, profile) in profiles) {
+            if (name !in flatProfiles) flatProfiles[name] = flatten(profile, listOf(name))
         }
-        if (errors.isNotEmpty()) return errors
-        machines.clear()
-        // Bases stay (flattened) so validation covers them too; loadRepo
-        // drops them from the returned manifest after validating.
-        machines += flattened
+        for ((name, machine) in machineConfigs) out[name] = flatten(machine, emptyList())
+        // Profile names may repeat machine names; the prefix keeps them apart
+        // until loadRepo drops them.
+        for ((name, profile) in flatProfiles) out["profile:$name"] = profile
         return errors
     }
 
-    /** All fragment files under manifest.d, any folder depth, path-sorted. */
-    private fun fragmentFiles(fs: FileSystem, repoRoot: Path): List<Path> {
-        val dir = repoRoot / FRAGMENTS_DIR
-        if (!fs.exists(dir)) return emptyList()
-        return fs.listRecursively(dir)
-            .filter { it.name.endsWith(".toml") && fs.metadataOrNull(it)?.isRegularFile == true }
-            .sortedBy { it.toString() }
-            .toList()
+    /**
+     * The files the layout's fragment globs match: glob order, path-sorted
+     * within one glob, each file once. A glob reaching the root file or a
+     * machine file is an error (it would be read twice, as something else).
+     */
+    private fun fragmentFiles(
+        fs: FileSystem,
+        repoRoot: Path,
+        layout: RepoLayout,
+        manifestName: String,
+        machinePaths: List<Path>,
+        profilePaths: List<Path>,
+        errors: MutableList<String>,
+    ): List<Path> {
+        val rootPath = repoRoot / manifestName
+        val files = LinkedHashSet<Path>()
+        for (pattern in layout.fragments) {
+            for (path in Glob.expand(fs, repoRoot, pattern)) {
+                when (path) {
+                    rootPath -> errors += "[layout] fragments '$pattern' matches $manifestName itself"
+                    in machinePaths ->
+                        errors += "[layout] fragments '$pattern' matches machine file ${Glob.relative(repoRoot, path)}"
+                    in profilePaths ->
+                        errors += "[layout] fragments '$pattern' matches profile file ${Glob.relative(repoRoot, path)}"
+                    else -> files += path
+                }
+            }
+        }
+        return files.toList()
     }
 
-    private fun validate(manifest: Manifest) {
+    private fun readRoot(fs: FileSystem, repoRoot: Path, manifestName: String): Manifest {
+        val rootPath = repoRoot / manifestName
+        if (!fs.exists(rootPath)) {
+            if (manifestName == ROOT_FILE && fs.exists(repoRoot / LEGACY_ROOT_FILE)) {
+                throw ManifestException(
+                    "$repoRoot is a loadout 0.x repo ($LEGACY_ROOT_FILE); this loadout reads " +
+                        "$ROOT_FILE with a [layout] table — see the wiki's Repo layout page",
+                )
+            }
+            throw ManifestException("Manifest not found: $rootPath")
+        }
+        val rootText = fs.read(rootPath) { readUtf8() }
+        val root = parseRaw(rootText, manifestName)
+        // Fail before interpreting anything else: an older binary silently
+        // ignores manifest keys it doesn't know, so the repo's declared floor
+        // is the only guard against misreading a newer config.
+        root.meta.minToolVersion?.let { required ->
+            if (!versionAtLeast(TOOL_VERSION, required)) {
+                throw ManifestException(
+                    "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
+                        "run: loadout self-upgrade",
+                )
+            }
+        }
+        return root.copy(data = MachineData.read(toml, rootText) ?: MachineData.EMPTY)
+    }
+
+    /** The root's `[layout]`, every required key present and every path inside the repo. */
+    private fun layoutOf(root: Manifest, manifestName: String): RepoLayout {
+        val layout = root.layout
+            ?: throw ManifestException(
+                "$manifestName has no [layout] table (fragments, machines and state are required)",
+            )
+        val errors = mutableListOf<String>()
+        val fragments = layout.fragments
+        when {
+            fragments == null -> errors += "[layout] fragments is missing (a list of globs)"
+            fragments.isEmpty() -> errors += "[layout] fragments is empty"
+            else -> fragments.forEach { pattern ->
+                Glob.problem(pattern)?.let { errors += "[layout] fragments '$pattern' $it" }
+            }
+        }
+        fun dir(key: String, value: String?, required: Boolean) {
+            when {
+                value == null -> if (required) errors += "[layout] $key is missing (a directory)"
+                Glob.hasWildcard(value) -> errors += "[layout] $key '$value' is a directory, not a glob"
+                else -> Glob.problem(value)?.let { errors += "[layout] $key '$value' $it" }
+            }
+        }
+        dir("machines", layout.machines, required = true)
+        dir("state", layout.state, required = true)
+        dir("profiles", layout.profiles, required = false)
+        dir("configs", layout.configs, required = false)
+        if (errors.isNotEmpty()) {
+            throw ManifestException("Invalid $manifestName:\n" + errors.joinToString("\n") { "  - $it" })
+        }
+        return RepoLayout(
+            fragments = fragments!!,
+            machines = layout.machines!!,
+            profiles = layout.profiles,
+            state = layout.state!!,
+            configs = layout.configs,
+        )
+    }
+
+    private fun validate(manifest: Manifest, machinesDir: String = "machines") {
         val errors = mutableListOf<String>()
 
         manifest.meta.minToolVersion?.let {
@@ -451,25 +612,26 @@ object ManifestLoader {
         }
 
         for ((machine, config) in manifest.machines) {
+            val file = config.label.ifEmpty { "$machinesDir/$machine.toml" }
             val scriptNames = config.scripts.map { scriptEntry(it).first }
             scriptNames.groupBy { it }.filterValues { it.size > 1 }.keys.forEach { dup ->
-                errors += "$MACHINES_DIR/$machine.toml lists script '$dup' more than once"
+                errors += "$file lists script '$dup' more than once"
             }
             for ((scriptName, args) in config.scriptArgs()) {
                 val script = manifest.scripts[scriptName]
                 if (script == null) {
-                    errors += "$MACHINES_DIR/$machine.toml scripts references unknown script '$scriptName'"
+                    errors += "$file scripts references unknown script '$scriptName'"
                 } else if (args.isNotEmpty() && script.file == null) {
-                    errors += "$MACHINES_DIR/$machine.toml passes arguments to script '$scriptName', " +
+                    errors += "$file passes arguments to script '$scriptName', " +
                         "which is an inline `run` script — arguments require a `file` script"
                 }
             }
             for ((programName, installKey) in config.pm) {
                 val program = manifest.programs[programName]
                 if (program == null) {
-                    errors += "$MACHINES_DIR/$machine.toml references unknown program '$programName'"
+                    errors += "$file references unknown program '$programName'"
                 } else if (installKey !in program.install) {
-                    errors += "$MACHINES_DIR/$machine.toml maps '$programName' to '$installKey', but " +
+                    errors += "$file maps '$programName' to '$installKey', but " +
                         "programs.$programName.install has no '$installKey' entry " +
                         "(has: ${program.install.keys.sorted().joinToString()})"
                 }

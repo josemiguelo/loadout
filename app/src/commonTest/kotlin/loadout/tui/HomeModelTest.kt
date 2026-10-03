@@ -212,7 +212,7 @@ class RemoteSummaryTest {
 class HomeKeysTest {
     private fun model(sections: List<HomeSection>, cursor: Int = 0): HomeModel {
         // No AppContext work: the reducer is pure over state.
-        val m = HomeModel(loadout.cli.AppContext("/repo".let { okio.Path.Companion.run { it.toPath() } }, "manifest.toml", null, false))
+        val m = HomeModel(loadout.cli.AppContext("/repo".let { okio.Path.Companion.run { it.toPath() } }, "loadout.toml", null, false))
         m.setStateForTest(HomeState(sections = sections, cursor = cursor))
         return m
     }

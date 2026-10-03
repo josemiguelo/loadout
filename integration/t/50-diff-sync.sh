@@ -7,7 +7,7 @@ basic_repo repo
 "$BIN" --repo repo diff >/dev/null || fail "diff exits 0 when in sync"
 ok "diff exits 0 when machines agree"
 
-cat >> repo/manifest.toml <<'TOML'
+cat >> repo/loadout.toml <<'TOML'
 
 [programs.definitely-not-installed-xyz]
 [programs.definitely-not-installed-xyz.version]

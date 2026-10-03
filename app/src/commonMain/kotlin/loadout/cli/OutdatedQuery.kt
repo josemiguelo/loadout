@@ -6,6 +6,7 @@ import loadout.core.model.MachineState
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramStatus
 import loadout.core.model.SystemInfo
+import loadout.core.model.expandFilePrefix
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -76,13 +77,13 @@ internal suspend fun outdatedReport(
     val resolved = installed.mapValues { (name, key) -> manifest.resolveInstall(name, key) }
     val oracles = resolved.mapNotNull { (name, r) -> r.outdated?.let { name to it } }.toMap()
     val batched = resolved.mapNotNull { (name, r) -> r.outdatedAll?.let { name to it } }.toMap()
-    val batchCommands = batched.values.associate { it.installer to it.command }
+    val batchOracles = batched.values.associateBy { it.installer }
     val unchecked = installed.keys - oracles.keys - batched.keys
 
-    val checker = UpdateChecker(app.runner, app.repoRoot.toString())
-    val sources = manifest.outdated.mapValues { (_, s) -> s.command!! }
+    val checker = UpdateChecker(app.runner, app.frame(system))
+    val sources = manifest.outdated
     val (perProgram, batchResults, sourceResults) = coroutineScope {
-        val batch = async { checker.batchAll(batchCommands) }
+        val batch = async { checker.batchAll(batchOracles) }
         val per = async { checker.candidates(oracles) }
         val custom = async { checker.sourcesAll(sources) }
         Triple(per.await(), batch.await(), custom.await())
@@ -119,7 +120,7 @@ internal suspend fun outdatedReport(
     // throwing them away. Mechanisms sharing a probe are one tool.
     val installerOrderAll = manifest.installers.keys.withIndex().associate { (i, k) -> k to i }
     val pkgOf = batched.mapValues { (_, oracle) -> oracle.pkg }
-    val tools = batchCommands.keys
+    val tools = batchOracles.keys
         .groupBy { installer -> manifest.installers[installer]?.probe ?: installer }
         .map { (tool, installers) ->
             val reported = installers.flatMap { batchResults[it].orEmpty().keys }.toSet()
@@ -135,7 +136,8 @@ internal suspend fun outdatedReport(
                 total = reported.size,
                 declared = declaredHere,
                 others = (reported - declaredPkgs).sorted(),
-                command = installers.firstNotNullOfOrNull { manifest.installers[it]?.upgrade },
+                // What runs, not the manifest's file: shorthand.
+                command = installers.firstNotNullOfOrNull { manifest.installers[it]?.upgrade }?.let(::expandFilePrefix),
             )
         }
         .sortedBy { t -> t.installers.minOf { installerOrderAll[it] ?: Int.MAX_VALUE } }

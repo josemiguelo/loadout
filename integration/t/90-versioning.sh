@@ -1,7 +1,7 @@
 # Version floors, newer state files, and install.sh (the release bootstrap).
 
 mkdir -p verrepo/state
-cat > verrepo/manifest.toml <<'TOML'
+cat > verrepo/loadout.toml <<'TOML'
 [meta]
 min-tool-version = "999.0.0"
 
@@ -9,13 +9,14 @@ min-tool-version = "999.0.0"
 [programs.git.install.manual]
 command = "false"
 TOML
+add_layout "verrepo"
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
 echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "refusal should point at loadout self-upgrade"
 "$BIN" --help | grep -q "self-upgrade" || fail "self-upgrade command should be registered"
 ok "manifest min-tool-version blocks an outdated binary with recovery hint"
 
-cat > verrepo/manifest.toml <<'TOML'
+cat > verrepo/loadout.toml <<'TOML'
 [programs.git]
 [programs.git.version]
 command = "git --version"
@@ -23,6 +24,7 @@ regex = "git version ([0-9.]+)"
 [programs.git.install.manual]
 command = "false"
 TOML
+add_layout "verrepo"
 cat > verrepo/state/future.json <<'TOML'
 {"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
  "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}

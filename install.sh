@@ -76,8 +76,9 @@ esac
 if [ -z "$previous" ]; then
   echo ""
   echo "Next steps:"
-  echo "  1. git clone <your config repo> ~/.config/loadouts"
-  echo "  2. Write machines/\$(hostname).toml — or just: extends = \"<your-os-base>\""
-  echo "  3. loadout --repo ~/.config/loadouts setup-new-machine"
-  echo "  4. loadout --repo ~/.config/loadouts sync"
+  echo "  1. git clone <your config repo> <dir>, then export LOADOUT_REPO=<dir>"
+  echo "     (no repo yet? loadout init <dir>)"
+  echo "  2. Write machines/\$(hostname).toml — or just: extends = [\"<your-profile>\"]"
+  echo "  3. loadout setup-new-machine"
+  echo "  4. loadout sync"
 fi

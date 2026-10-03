@@ -1,5 +1,6 @@
 package loadout.core
 
+import loadout.core.exec.CommandFrame
 import loadout.core.engine.InstallEngine
 import loadout.core.engine.PlanItem
 import loadout.core.engine.ResolutionException
@@ -17,7 +18,7 @@ class InstallEngineTest {
     private val manifest = ManifestLoader.parse(EXAMPLE_MANIFEST)
 
     private fun engine(runner: FakeProcessRunner = FakeProcessRunner()) =
-        InstallEngine(runner, VersionChecker(runner), "/repo".toPath())
+        InstallEngine(runner, VersionChecker(runner), CommandFrame("/repo"))
 
     @Test
     fun planUsesMachineMappingSkipsInstalledAndExpandsDeps() {

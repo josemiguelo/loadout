@@ -38,8 +38,8 @@ class StatusCommand : CliktCommand(name = "status") {
 
         val (state, detail, toolsDown) = spinning("checking programs and scripts…") {
             if (noWrite) {
-                val engine =
-                    StatusEngine(VersionChecker(app.runner, app.repoRoot.toString()), app.runner, app.repoRoot)
+                val frame = app.frame(system)
+                val engine = StatusEngine(VersionChecker(app.runner, frame), app.runner, frame)
                 val s = engine.refresh(manifest, system, app.stateStore.read(system.machine))
                 Triple(s, engine.lastScriptDetail, engine.lastToolsDown)
             } else {

@@ -3,10 +3,13 @@ package loadout.core.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class Manifest(
     val meta: Meta = Meta(),
+    /** Where the repo's parts live; required in the root file, refused in fragments. */
+    val layout: Layout? = null,
     /**
      * Install mechanisms (`dnf`, `brew-cask`, ...) defined once per repo.
      * Probe, install/check patterns, and regex are properties of the
@@ -31,6 +34,8 @@ data class Manifest(
      * behavior. Not a manifest field: loadRepo fills it in.
      */
     @Transient val builtinInstallers: Set<String> = emptySet(),
+    /** loadout.toml's `[data]`: every per-machine key with its default. Filled by loadRepo. */
+    @Transient val data: JsonObject = JsonObject(emptyMap()),
 ) {
     /**
      * Everything the [key] variant of program [programName] resolves to.
@@ -58,27 +63,34 @@ data class Manifest(
         val outdatedCommand = explicitOutdated ?: if (batch == null) installer?.outdated else null
         val installerName = variant.installer ?: key.takeIf { installers.containsKey(it) }
         val probe = variant.probe ?: installer?.probe
+        // Each command runs where the file that wrote it lives: a variant's
+        // own override in the program's directory, a pattern in its installer's.
+        val installerOrigin = installer?.origin.orEmpty()
+        fun originOf(override: String?) = if (override != null) program.origin else installerOrigin
         return ResolvedInstall(
             command = (variant.command ?: installer?.install)?.let(::sub),
+            commandOrigin = originOf(variant.command),
             // A check through the mechanism carries its probe; the program's
             // own `[version]` fallback is the program itself and carries none.
             check = if (checkCommand != null && regex != null) {
-                VersionCheck(sub(checkCommand), regex, probe = probe)
+                VersionCheck(sub(checkCommand), regex, probe = probe, origin = originOf(variant.check))
             } else {
                 program.version
             },
             probe = probe,
             outdated = if (outdatedCommand != null && regex != null) {
-                VersionCheck(sub(outdatedCommand), regex)
+                VersionCheck(sub(outdatedCommand), regex, origin = originOf(explicitOutdated))
             } else {
                 null
             },
             outdatedAll = if (batch != null && regex != null && installerName != null) {
-                BatchOracle(installerName, batch, pkg, regex)
+                BatchOracle(installerName, batch, pkg, regex, installerOrigin)
             } else {
                 null
             },
-            upgradeWith = installer?.upgrade?.let { UpgradeMechanism(installerName ?: return@let null, it) },
+            upgradeWith = installer?.upgrade?.let {
+                UpgradeMechanism(installerName ?: return@let null, it, installerOrigin)
+            },
         )
     }
 
@@ -103,6 +115,8 @@ data class Manifest(
 data class ResolvedInstall(
     /** Shell command to install (null only in invalid manifests — validation rejects it). */
     val command: String?,
+    /** Where [command] runs: the declaring file's repo-relative directory. */
+    val commandOrigin: String = "",
     /** Version check for this variant, falling back to the program's `[version]`. */
     val check: VersionCheck?,
     /** Binary that must exist before installing, or null for no probe. */
@@ -123,6 +137,8 @@ data class ResolvedInstall(
 data class UpgradeMechanism(
     val installer: String,
     val command: String,
+    /** The installer file's repo-relative directory, where [command] runs. */
+    val origin: String = "",
 )
 
 /**
@@ -136,6 +152,8 @@ data class BatchOracle(
     val command: String,
     val pkg: String,
     val regex: String,
+    /** The installer file's repo-relative directory, where [command] runs. */
+    val origin: String = "",
 )
 
 @Serializable
@@ -184,6 +202,8 @@ data class Installer(
      * `sudo` on install variants, scripts and `[outdated.*]` sources.
      */
     val sudo: Boolean = false,
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
+    @Transient val origin: String = "",
 )
 
 /**
@@ -224,24 +244,31 @@ data class InstallVariant(
     val dependsOn: List<String> = emptyList(),
 )
 
+/**
+ * A machine (or profile) as the engines see it: the groups of its file
+ * folded into one program mapping and one script list. Machine and profile
+ * files are read by `MachineFile` from the TOML tree; the serializable form
+ * (`[machines.<name>]` with `pm`/`scripts`) exists only for the test-only
+ * `ManifestLoader.parse`.
+ */
 @Serializable
 data class MachineConfig(
     /**
-     * Marks a parent config ("fedora", "macos", ...) that real machines
-     * `extends`-reference. Bases are flattened into their children at load
-     * and are NOT machines: never observed, never diffed, never converged.
+     * A profile (a `[layout] profiles` file), not a machine: flattened into
+     * the machines extending it, then dropped — never observed, diffed or
+     * converged. Set by the loader from the file's folder.
      */
-    val base: Boolean = false,
+    @Transient val base: Boolean = false,
     /**
-     * Name of the base config this machine inherits (a `base = true` file).
-     * `[pm]` merges per key (this file wins); `scripts` is a union where a
-     * same-named entry here replaces the base's (args included). Bases may
-     * extend bases; real machines may only extend bases.
+     * Profiles this file builds on, in order. Their settings come first and
+     * this file's override them; two of them setting the same thing
+     * differently is a load error. Profiles may extend profiles.
      */
-    val extends: String? = null,
+    val extends: List<String> = emptyList(),
     /**
      * Which entry of each program's `install` table this machine uses,
-     * keyed by program name. Every program a machine installs must be mapped.
+     * keyed by program name, from the groups' `install`. Every program a
+     * machine installs must be mapped.
      */
     val pm: Map<String, String> = emptyMap(),
     /**
@@ -253,10 +280,28 @@ data class MachineConfig(
      * that opt in.
      */
     val scripts: List<String> = emptyList(),
+    /**
+     * This file's `[data]` overrides (each group's `[<group>.data]` under
+     * the group's name), read from the TOML tree at load; after flattening,
+     * the machine's whole data (defaults, profiles, own). Not decoded.
+     */
+    @Transient val data: JsonObject = JsonObject(emptyMap()),
+    /** This file's own groups, as written, for `explain`. */
+    @Transient val groups: Map<String, MachineGroup> = emptyMap(),
+    /** The file it was read from, repo-relative, for messages. */
+    @Transient val label: String = "",
 ) {
     /** [scripts] parsed into script name -> argument string (see [scriptEntry]). */
     fun scriptArgs(): Map<String, String> = scripts.associate(::scriptEntry)
 }
+
+/** One `[<group>]` table of a machine or profile file: a tool or concern. */
+data class MachineGroup(
+    /** program -> install key: `install = "x"` maps the program named like the group. */
+    val install: Map<String, String> = emptyMap(),
+    /** Script opt-ins, `"name"` or `"name args…"`. */
+    val scripts: List<String> = emptyList(),
+)
 
 private val WHITESPACE = Regex("\\s+")
 
@@ -278,10 +323,38 @@ data class Meta(
 )
 
 /**
- * Commands starting with this prefix (install variant `command`s and any
- * check command) name a script file relative to the repo root — validated to
- * exist at manifest load — instead of an inline command. Tokens after the
- * first space are arguments, so the path itself can't contain spaces.
+ * The root file's `[layout]`, as written: every key but [configs] is
+ * required, so the fields stay nullable for the loader to name what's
+ * missing. Paths are relative to the repo root.
+ */
+@Serializable
+data class Layout(
+    /** Globs of fragment files, loaded in this order (path-sorted within one). */
+    val fragments: List<String>? = null,
+    val machines: String? = null,
+    /** Profiles: what machines of a kind share, `extends`-referenced, never machines. */
+    val profiles: String? = null,
+    val state: String? = null,
+    /** The chezmoi source root, when the repo holds dotfiles. */
+    val configs: String? = null,
+)
+
+/** A validated [Layout]: what the rest of the tool reads. */
+data class RepoLayout(
+    val fragments: List<String>,
+    val machines: String,
+    val profiles: String? = null,
+    val state: String,
+    val configs: String? = null,
+)
+
+/**
+ * Commands starting with this prefix (install variant `command`s, installer
+ * patterns, oracles and any check command) name a script file relative to
+ * the declaring file's directory — where the command also runs — validated
+ * at manifest load to exist inside the repo, instead of an inline command.
+ * Tokens after the first space are arguments, so the path itself can't
+ * contain spaces.
  */
 const val INSTALL_FILE_PREFIX: String = "file:"
 
@@ -313,6 +386,8 @@ data class Program(
      * `machines/<name>.toml` picks which key to use.
      */
     val install: Map<String, InstallVariant> = emptyMap(),
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
+    @Transient val origin: String = "",
 )
 
 @Serializable
@@ -326,12 +401,14 @@ data class VersionCheck(
      * ask" instead of "not installed".
      */
     @Transient val probe: String? = null,
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
+    @Transient val origin: String = "",
 )
 
 @Serializable
 data class ScriptStep(
     val description: String = "",
-    /** Script file to execute, relative to the config repo root. Exactly one of [file]/[run]. */
+    /** Script file to execute, relative to the declaring file's directory. Exactly one of [file]/[run]. */
     val file: String? = null,
     /** Inline shell command to execute. Exactly one of [file]/[run]. */
     val run: String? = null,
@@ -350,6 +427,8 @@ data class ScriptStep(
     val modes: List<String> = listOf("setup", "maintain"),
     /** Obsolete and ignored; see [Installer.sudo]. */
     val sudo: Boolean = false,
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
+    @Transient val origin: String = "",
 ) {
     fun appliesTo(osFamily: OsFamily): Boolean = os.isEmpty() || os.contains(osFamily.id)
 
@@ -371,4 +450,6 @@ data class OutdatedSource(
     val upgrade: String? = null,
     /** Obsolete and ignored; see [Installer.sudo]. */
     val sudo: Boolean = false,
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
+    @Transient val origin: String = "",
 )

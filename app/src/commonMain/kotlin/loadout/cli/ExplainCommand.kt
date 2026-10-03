@@ -6,6 +6,8 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
+import loadout.core.manifest.MachineData
+import loadout.core.model.scriptEntry
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 
@@ -25,6 +27,29 @@ class ExplainCommand : CliktCommand(name = "explain") {
         val system = app.detectSystem()
         val state = app.stateStore.read(system.machine)
         val mapping = manifest.machines[system.machine]?.pm.orEmpty()
+
+        // Everything explained starts with the machine: the profiles it
+        // extends, its own groups, and its merged [data] (what its chezmoi
+        // templates see).
+        if (names.isEmpty()) {
+            val machine = manifest.machines[system.machine]
+            echo(Style.header("machine ") + Style.bold(system.machine) + Style.dim("  ${app.layout.machines}/${system.machine}.toml"))
+            if (machine == null) echo("  " + Style.warn("! no machine file — showing loadout.toml's [data] defaults"))
+            val rows = mutableListOf<Pair<String, String>>()
+            if (machine != null && machine.extends.isNotEmpty()) rows += "extends" to machine.extends.joinToString()
+            for ((group, contents) in machine?.groups.orEmpty()) {
+                val parts = listOfNotNull(
+                    contents.install.entries.joinToString { (program, key) -> "$program = $key" }.ifEmpty { null },
+                    contents.scripts.joinToString { scriptEntry(it).first }.ifEmpty { null }?.let { "scripts $it" },
+                )
+                rows += "[$group]" to parts.joinToString(" · ").ifEmpty { "data only" }
+            }
+            rows += MachineData.lines(machine?.data ?: manifest.data).map { (key, value) -> "data.$key" to value }
+            if (rows.none { it.first.startsWith("data.") }) echo("  " + Style.dim("no [data] declared in loadout.toml"))
+            val width = rows.maxOfOrNull { it.first.length } ?: 0
+            for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
+            echo("")
+        }
 
         val targets = names.ifEmpty { (manifest.programs.keys + manifest.scripts.keys).toList() }
         targets.forEachIndexed { index, name ->
@@ -61,7 +86,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
-                        notes += "! not mapped for ${system.machine} (add it to machines/${system.machine}.toml)"
+                        notes += "! not mapped for ${system.machine} (add it to ${app.layout.machines}/${system.machine}.toml)"
                     }
                     state?.programs?.get(name)?.let {
                         val status = when (it.status) {
@@ -70,7 +95,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             ProgramStatus.UNKNOWN -> "unknown"
                         }
                         rows += "observed" to
-                            "$status${it.version?.let { v -> " $v" }.orEmpty()}  (state/${system.machine}.json)"
+                            "$status${it.version?.let { v -> " $v" }.orEmpty()}  (${app.layout.state}/${system.machine}.json)"
                     }
                 }
                 script != null -> {
@@ -83,7 +108,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
-                        enabled == null -> "no — add it to the scripts list in machines/${system.machine}.toml"
+                        enabled == null -> "no — add it to a group's scripts in ${app.layout.machines}/${system.machine}.toml"
                         enabled.isEmpty() -> "yes (${system.machine})"
                         else -> "yes (${system.machine}, args: $enabled)"
                     }
@@ -93,7 +118,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             ScriptStatus.FAILED -> "failed"
                             ScriptStatus.PENDING -> "pending"
                         }
-                        rows += "observed" to "$status  (state/${system.machine}.json)"
+                        rows += "observed" to "$status  (${app.layout.state}/${system.machine}.json)"
                     }
                 }
                 else -> {

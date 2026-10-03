@@ -83,9 +83,10 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
 
         // Inherited stdio: sudo may prompt, dnf shows progress. A failing
         // mechanism doesn't stop the rest — they're independent.
+        val frame = app.frame(system)
         val failed = plan.filter { step ->
             echo("\n" + Style.accent("==> upgrading ${step.label}"))
-            app.runner.inherit(step.command, workDir = app.repoRoot.toString()) != 0
+            app.runner.inherit(frame.command(step.command, step.origin)) != 0
         }
 
         echo("")

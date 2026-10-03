@@ -1,10 +1,12 @@
 package loadout.cli
 
 import loadout.core.detect.Detection
+import loadout.core.exec.CommandFrame
 import loadout.core.exec.KommandProcessRunner
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
 import loadout.core.model.Manifest
+import loadout.core.model.RepoLayout
 import loadout.core.model.SystemInfo
 import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
@@ -24,12 +26,18 @@ class AppContext(
 ) {
     val fs: FileSystem = FileSystem.SYSTEM
     val runner: ProcessRunner = KommandProcessRunner()
-    val stateStore: StateStore by lazy { StateStore(fs, repoRoot) }
+    /** The root file's validated [layout], read alone, without loading the repo. */
+    val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot, manifestName) }
+    val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
     val detection: Detection by lazy { Detection(runner, fs) }
 
     fun loadManifest(): Manifest = ManifestLoader.loadRepo(fs, repoRoot, manifestName)
 
     fun detectSystem(): SystemInfo = detection.detectSystem(machineOverride)
+
+    /** How manifest commands run on [system]: declaring file's directory, LOADOUT_* env. */
+    fun frame(system: SystemInfo): CommandFrame =
+        CommandFrame.of(fs.canonicalize(repoRoot).toString(), system, layout.configs)
 
     /** What each failing script check printed during the last refresh. */
     var lastScriptDetail: Map<String, String> = emptyMap()
@@ -49,7 +57,8 @@ class AppContext(
         scriptResults: Map<String, ScriptState> = emptyMap(),
     ): MachineState {
         val previous = stateStore.read(system.machine)
-        val engine = StatusEngine(VersionChecker(runner, repoRoot.toString()), runner, repoRoot)
+        val frame = frame(system)
+        val engine = StatusEngine(VersionChecker(runner, frame), runner, frame)
         val state = engine.refresh(manifest, system, previous, scriptResults)
         lastScriptDetail = engine.lastScriptDetail
         lastToolsDown = engine.lastToolsDown

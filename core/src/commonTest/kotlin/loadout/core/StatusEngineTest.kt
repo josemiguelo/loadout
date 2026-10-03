@@ -1,5 +1,6 @@
 package loadout.core
 
+import loadout.core.exec.CommandFrame
 import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.manifest.ManifestLoader
@@ -51,7 +52,7 @@ class StatusEngineTest {
     private val system = SystemInfo("laptop", OsFamily.LINUX, "fedora", "x86_64")
 
     private fun engine(runner: FakeProcessRunner) =
-        StatusEngine(VersionChecker(runner), runner, "/repo".toPath())
+        StatusEngine(VersionChecker(runner), runner, CommandFrame("/repo"))
 
     @Test
     fun checkedScriptObservedAsDoneEvenIfNeverRunByTool() = runTest {

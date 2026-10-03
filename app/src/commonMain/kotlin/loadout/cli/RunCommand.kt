@@ -46,7 +46,7 @@ class RunCommand : CliktCommand(name = "run") {
             if (disabled.isNotEmpty()) {
                 for (name in disabled) {
                     echo("error: script '$name' is not enabled for machine '${system.machine}' " +
-                        "(add it to the scripts list in machines/${system.machine}.toml)")
+                        "(add it to a group's scripts in ${app.layout.machines}/${system.machine}.toml)")
                 }
                 throw ProgramResult(1)
             }
@@ -62,7 +62,7 @@ class RunCommand : CliktCommand(name = "run") {
             return
         }
 
-        val runner = ScriptRunner(app.runner, app.repoRoot)
+        val runner = ScriptRunner(app.runner, app.frame(system))
         val results = mutableMapOf<String, ScriptState>()
         for (name in ManifestLoader.scriptOrder(manifest, targets)) {
             if (name !in targets) continue

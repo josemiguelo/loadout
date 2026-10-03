@@ -9,6 +9,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.versionOption
+import loadout.core.manifest.ManifestLoader
 import loadout.core.LoadoutException
 import loadout.core.exec.InterruptedByUser
 import loadout.core.platform.envVar
@@ -53,8 +54,8 @@ class RootCommand : CliktCommand(name = "loadout") {
     ).default(".")
     private val manifest by option(
         "--manifest",
-        help = "Manifest file, relative to the repo root",
-    ).default("manifest.toml")
+        help = "Root file, relative to the repo root",
+    ).default(ManifestLoader.ROOT_FILE)
     private val machine by option(
         "--machine",
         envvar = "LOADOUT_MACHINE",

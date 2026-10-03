@@ -33,6 +33,39 @@ something a home-screen row already does, is not wanted.
 Formerly `post-installer`: the working directory and some external
 references may still use that name. Never reintroduce it in code.
 
+## Next: configs (1.1, agreed, not built)
+
+The rest of this file describes the code as it is; this section is the
+agreed next step. The user approves every step before it runs.
+
+The user's config repo also holds their dotfiles, as chezmoi's source
+(`[layout] configs`, chezmoi reading only that folder through
+`.chezmoiroot`); a tool's fragment sits beside its config as `.loadout.toml`
++ `.loadout/`, which chezmoi never deploys. loadout learns about configs
+additively (no state schema change: older readers ignore the new field):
+- `[layout] configs` set => chezmoi is required; unset => no configs concept;
+- unit = top-level config directory, from one `chezmoi managed
+  --path-style source-relative` per refresh; units are not opted in
+  (`.chezmoiignore` is chezmoi's membership);
+- drift is observation (contract 7): `chezmoi verify <unit targets>`,
+  detail from `chezmoi status`; a missing chezmoi is `unknown`;
+- `loadout apply [unit…]` hands off `chezmoi apply --no-tty <targets>`;
+- `sync` = pull → `chezmoi apply --no-tty` → refresh programs, scripts,
+  configs → commit the state file → push;
+- state gains `configs`; `diff` shows config drift per machine;
+- home screen: a fifth subject row, "configs", same picker/hand-off rules;
+- bootstrap (both OSes): install git + chezmoi → `chezmoi init --apply
+  <repo>` → `install.sh` → `loadout setup-new-machine`.
+
+Steps (each: three suites green on Linux, macOS checked by the user,
+README/AGENTS/wiki re-read):
+1. `ConfigEngine`, configs in status/state/diff, `apply`, `sync`;
+   `t/55-configs.sh` with a stub chezmoi.
+2. Home-screen configs row.
+3. The user's repo retires its `dotfiles-*` scripts (their bootstrap's
+   ownership repair and moving a pre-seeded Omarchy nvim config aside need
+   a new home); README quickstart = the four bootstrap commands.
+
 ## Build, run, test
 
 ```sh
@@ -66,8 +99,8 @@ A run that doesn't exit usually means an effect or coroutine kept the
 composition alive (see Toolchain facts). Rendering changes still need a
 human check: ask the user to run it.
 
-Manual testing target: the user's live config repo at `~/.config/loadouts`
-(machine name = hostname; the user's machines run Omarchy/Arch and macOS).
+Manual testing target: the user's live config repo (`$LOADOUT_REPO`: chezmoi's
+source, `~/.local/share/chezmoi`; machine name = hostname; the user's machines run Omarchy/Arch and macOS).
 `status`/`diff`/`--dry-run` against it are fine; installing/removing
 packages or pushing git needs the user's OK. Opening the home screen
 writes the machine's state file there.
@@ -83,15 +116,22 @@ core/  loadout.core
   LoadoutException — supertype of every refusal (contract 9)
   model/       Manifest, MachineState, System (@Serializable schemas; Manifest
                owns resolveInstall/checkFor — variant × installer resolution)
-  manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d
-               (recursive, subfolders cosmetic) + machines/*.toml +
+  manifest/    ManifestLoader — loadRepo() merges loadout.toml + the files its
+               [layout] fragments globs match + <machines>/ and <profiles>/ files +
                InstallerLibrary under the repo's own installers, validates
-               everything; parse() is single-doc, TEST-ONLY
+               everything; readLayout() reads [layout] alone (AppContext.layout);
+               parse() is single-doc, TEST-ONLY
+               Glob — the layout's glob matching and file expansion
+               MachineFile — machine/profile files: groups, extends, [data]
+               MachineData — [data] read, merged, validated, compared
                InstallerLibrary — the built-in installers, as TOML text
-  state/       StateStore — state/<machine>.json via Okio; pretty JSON, stable order
+  state/       StateStore — <state>/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL
                process use goes through the interface (tests use
-               FakeProcessRunner). capture (blocking), inherit (sudo/progress).
+               FakeProcessRunner). capture (blocking), inherit (sudo/progress),
+               each taking a ShellCommand (line, cwd, env); manifest commands
+               build one through CommandFrame (contract 5); plain strings are for
+               git/probes/self-version.
                A child killed by a signal reports -1 (kommand's wait() throws
                for it); Ctrl-C during a home-screen hand-off throws
                InterruptedByUser once the child exits
@@ -130,42 +170,81 @@ app/   loadout
 Explicit user decisions; don't "improve" them away.
 
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
-   The only source of variant choice is `machines/<name>.toml` (`[pm]`
-   maps EVERY program to a key of its install table). Inline
-   `[machines.*]` in manifest.toml or fragments is a validation error.
+   The only source of variant choice is the machine file and the profiles
+   it extends (each group's `install` maps a program to a key of its
+   install table). Inline `[machines.*]` in loadout.toml or fragments is a
+   validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't map is not in its loadout: converge skips it, status
-   doesn't observe it, diff shows "-". Machine files may sit in subfolders
-   (cosmetic; name = file name, unique repo-wide) and may `extends` a
-   `base = true` config (pm merged per key, child wins; scripts union, a
-   same-named child entry replaces). Bases are flattened at load,
-   validated, then dropped; they are never machines. Machines can't extend
-   machines, and there's no subtraction: a base entry is a promise every
-   child keeps. `setup-new-machine` throws ResolutionException before
+   doesn't observe it, diff shows "-".
+   - **Files** (`MachineFile`, read from the TOML tree): machine files sit
+     directly in the `[layout] machines` directory, profiles directly in
+     `[layout] profiles` (a subfolder is a load error: chezmoi templates
+     find a machine by hostname; name = file name). The folder decides the
+     kind; `base = true` is a load error pointing at profiles.
+   - **Shape**: `extends = [...]` (a list), `[data]`, and any other table is
+     a group, a tool or concern (a label for reading, `explain` lists a
+     machine's own): `install = "<key>"` maps the program named like the
+     group, `[<group>.install]` maps several, `scripts = ["name args…"]` opts
+     in, `[<group>.data]` is `[data.<group>]` (setting a key in both is an
+     error). Groups fold into one mapping and one script list; nothing
+     downstream sees them. A program mapped twice or a script opted into
+     twice in one file, or an unknown key, is a load error.
+   - **Profiles**: `extends` names profiles only (a machine is never
+     extended); profiles may extend profiles (cycles are errors). A file's
+     profiles are combined first: two of one `extends` list setting a
+     program's key, a script's arguments or a data key differently is an
+     error (equal values are fine), so their order never changes the
+     result. Then the file overrides them (mapping per program, scripts by
+     name, `[data]` table by table, lists replace, as chezmoi merges data).
+     Profiles are flattened, validated (errors name the file), then
+     dropped: never observed, diffed or converged. No subtraction: a
+     profile's entry is a promise every machine extending it keeps.
+   - **`[data]`** is free-form but declared: `loadout.toml [data]` lists
+     every key with its default, and a machine or profile key that isn't
+     declared, or is another kind (string/boolean/number/list/table), is a
+     load error; every machine ends up with all declared keys
+     (`MachineData`; bare `explain` shows them). `[data]` in a fragment is
+     a load error.
+
+   `setup-new-machine` throws ResolutionException before
    executing anything if the machine file is missing, an EXPLICITLY
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
    `script` fallback.
-3. **Intent and observation never mix.** `manifest.toml` + `manifest.d/` +
-   `machines/` are authored; `state/` is generated and disposable. Nothing
-   hand-edited goes in `state/`; the tool never writes authored files,
-   except `init` scaffolding and `installers --eject` (writes exactly
-   `manifest.d/00_installers.toml`, refuses to clobber it without
-   `--force`).
-4. **Scripts: exactly one of `file` (repo path) or `run` (inline).** `file`
-   existence is validated at load (loadRepo, not parse). Variant `command`
-   values and all check commands (variant `check`, program `[version]`,
-   script `check`) may use the `file:` prefix, also validated; expansion is
-   centralized in model.expandFilePrefix, applied at the execution sites
-   (InstallEngine plan, VersionChecker.check, ScriptRunner.withArgs).
-   Tokens after the first space are arguments (`file:path args…` →
-   `sh 'path' args…`), so file: paths can't contain spaces.
-5. **Every manifest command runs via `sh -c` with the repo root as cwd**
-   (installs, scripts, version checks, `check`s), whatever the invocation
-   directory.
+3. **Intent and observation never mix.** `loadout.toml`, the fragments and
+   the machine files are authored; the `[layout] state` directory is
+   generated and disposable. Nothing hand-edited goes in state; the tool
+   never writes authored files, except `init` scaffolding and `installers
+   --eject` (writes exactly `programs/installers/builtin.toml`, refuses when
+   no fragments glob loads it, and refuses to clobber it without `--force`).
+4. **Scripts: exactly one of `file` (path) or `run` (inline).** Variant
+   `command`s, installer patterns, oracles, `[outdated.*]` commands and all
+   check commands may use the `file:` prefix. Every path is relative to the
+   directory of the file that declared it (its `origin`, stamped at load
+   by `withOrigin`; "" = the repo root, also for built-in installers), is
+   kept as written, and is validated at load (loadRepo, not parse) to
+   exist without leaving the repo (`..` inside it is fine: a shared
+   helper). Expansion is centralized in model.expandFilePrefix, applied at
+   the execution sites. Tokens after the first space are arguments
+   (`file:path args…` → `sh 'path' args…`), so file: paths can't contain
+   spaces. A variant's `with` value marked `file:` is a path too, relative
+   to the program's file and validated the same way; it is substituted as
+   `$LOADOUT_REPO/<repo path>` because the installer pattern it lands in
+   runs in the installer's directory. Unmarked values (a URL) pass through.
+5. **Every manifest command runs via `sh -c` in its declaring file's
+   directory** (installs, scripts, version checks, `check`s, oracles,
+   upgrades), whatever the invocation directory, with `LOADOUT_REPO`,
+   `LOADOUT_FRAGMENT_DIR` (= that directory), `LOADOUT_MACHINE`,
+   `LOADOUT_OS` (`linux`/`macos`) and, with `[layout] configs`,
+   `LOADOUT_CONFIGS`, all absolute (`CommandFrame.of`, via
+   `AppContext.frame`). A command takes the origin of the file that WROTE
+   it: an installer pattern runs in the installer's directory, a variant's
+   own `command`/`check`/`outdated` in the program's (`resolveInstall`).
 6. **Execution order**: all programs before all scripts; programs
-   topologically by `depends-on` (declaration order breaks ties: root
-   manifest, then fragments by filename); scripts by `after` edges.
+   topologically by `depends-on` (declaration order breaks ties:
+   loadout.toml, then fragments in `[layout] fragments` glob order,
+   path-sorted within one glob); scripts by `after` edges.
    Sequential, never parallel (only read-only checks run concurrently).
    `after` orders but never pulls anything in; `depends-on` pulls in
    transitively. A variant may carry its own `depends-on`, added to the
@@ -206,8 +285,8 @@ Explicit user decisions; don't "improve" them away.
     `[templates.*]` are unknown keys now, and ktoml ignores unknown keys,
     so an old manifest silently loses those programs (contract 14 is what
     makes repos bump their floor). Don't reintroduce it.
-12. **Scripts are opt-in per machine**: a machine's top-level `scripts`
-    list (in machines/<name>.toml, ABOVE any table header) has entries
+12. **Scripts are opt-in per machine**: a group's `scripts` (in the
+    machine file or a profile it extends) has entries
     "name" or "name args...", parsed by `scriptEntry` (the one parser; any
     whitespace separates words, newlines included, so a long entry can be a
     TOML multi-line string; args are re-joined with single spaces because
@@ -226,7 +305,7 @@ Explicit user decisions; don't "improve" them away.
     (probe / install / check / outdated / regex, `{pkg}` substituted)
     defines a mechanism once, repo-unique, fragment-definable. Core ships a
     library (`core/manifest/InstallerLibrary.kt`: dnf, brew, brew-cask,
-    flatpak, pacman with oracles; apt install/check only) as TOML text,
+    flatpak, pacman, omarchy, omarchy-aur with oracles; apt install/check only) as TOML text,
     merged UNDER the repo's own in `loadRepo`: a repo definition of the same
     name replaces the built-in outright, and `Manifest.builtinInstallers`
     records which survived so `explain`/`installers` label `(built-in)` vs
@@ -280,7 +359,8 @@ Explicit user decisions; don't "improve" them away.
     version already there. Moving versions is its own verb, `loadout upgrade
     <installers…>|--all` (`UpgradeEngine`), never single packages: naming a
     program is an error pointing at its mechanism. Mechanisms sharing a
-    command (dnf, dnf-repo, dnf-copr all run `dnf upgrade -y`) are ONE step,
+    command (dnf, dnf-repo, dnf-copr all run `dnf upgrade -y`; omarchy and
+    omarchy-aur both `omarchy update -y`) are ONE step,
     deduped by command; the UI groups by the TOOL they drive (their probe),
     so ticking a brew row ticks casks too. `plan` refuses an installer this
     machine doesn't map, so a repo mapping nothing to brew can't sweep it.
@@ -292,6 +372,17 @@ Explicit user decisions; don't "improve" them away.
     packages loadout doesn't declare. The binary's own update is
     `self-upgrade`, which needs no repo, so it survives a version-floor
     refusal.
+16. **The repo's shape is declared, never assumed.** The root file is
+    `loadout.toml` (`--manifest` names another); a repo with only a 0.x
+    `manifest.toml` is refused as one. Its `[layout]` is required, with no
+    defaults: `fragments` (globs), `machines` and `state` (directories),
+    `configs` optional. Only files the globs match load (`Glob`: `*` one
+    segment, `?` one char, `**` any depth; wildcards never match a leading
+    dot, so `.loadout.toml` loads only when a glob spells the dot; `.git` is
+    never entered). A glob matching nothing is fine (a fresh repo); an
+    absolute or `..` path, a wildcard in a directory key, or a glob reaching
+    loadout.toml or a machine file is a load error, as is `[layout]` in a
+    fragment. The min-tool-version check runs before `[layout]` is read.
 
 ## Toolchain facts — don't rediscover
 
@@ -302,7 +393,7 @@ Explicit user decisions; don't "improve" them away.
   binaries (`target.binaries.all`) in app/build.gradle.kts, test binaries
   included. The `kotlin.native.cacheKind` properties don't work.
 - **Kotlin nested block comments**: `/*` inside a KDoc (e.g. a glob like
-  `manifest.d/*.toml`) opens a *nested* comment and eats the file. Word
+  `programs/*.toml`) opens a *nested* comment and eats the file. Word
   globs differently in comments.
 - **Dispatchers.IO on native** needs `import kotlinx.coroutines.IO`
   (extension); fully-qualified use resolves an internal symbol. Use the
@@ -539,8 +630,12 @@ Explicit user decisions; don't "improve" them away.
   rows in place. A script's verdict is always its check.
 - ktoml insurance: the manifest schema sticks to plain nested tables (no
   inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
-- `.toml.sample` files in `machines/` and `manifest.d/` are ignored by the
-  loader (only `.toml` matches).
+  Free-form tables (`[data]`) can't be decoded into the model; read them
+  from ktoml's tree (`toml.tomlParser.parseString`, TomlTable /
+  TomlKeyValuePrimitive / TomlKeyValueArray), which also normalizes inline
+  tables and dotted keys into tables (`MachineData.read`).
+- `.toml.sample` files in `machines/` and fragment folders never load:
+  machine files and the usual fragments globs only match `.toml`.
 
 ## Testing conventions
 
@@ -629,7 +724,8 @@ top-down, first fit wins:
    `check` (two-mode script or `--whatprovides`), keep the rest derived.
 7. No pm at all → `script` key + program-level `[version]` fallback.
 8. Must precede everything (pm config, e.g. dnf.conf) → a program in a
-   first-sorting fragment (`manifest.d/00_…`): programs precede scripts,
+   fragment the first `[layout] fragments` glob loads first (e.g.
+   `programs/00-…`): programs precede scripts,
    and dependency-free programs install in declaration order.
 9. Nothing to "have" (dotfiles, services) → `[scripts.*]` + check, opted in
    per machine.
@@ -638,7 +734,7 @@ Cross-cutting: no `||` chains or trailing pipes in checks; versions are the
 mapped pm's truth (rpm's version, not the binary's self-report: expected,
 not a bug); `file:` for every repo script (load-time existence check);
 prefer repetition over abstraction (no templates, contract 11). Verify
-loop: `explain` → map in machines/<name>.toml → `setup-new-machine
+loop: `explain` → map in a group of machines/<name>.toml (or a profile) → `setup-new-machine
 --dry-run` → `status`.
 
 Where the check lives: loadout never trusts "it ran once"; everything

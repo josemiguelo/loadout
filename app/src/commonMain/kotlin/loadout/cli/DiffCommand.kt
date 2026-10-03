@@ -36,7 +36,7 @@ class DiffCommand : CliktCommand(name = "diff") {
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         if (states.isEmpty()) {
-            echo("No machine state files found in ${app.repoRoot / "state"}. Run `status` or `sync` on your machines first.")
+            echo("No machine state files found in ${app.repoRoot / app.layout.state}. Run `status` or `sync` on your machines first.")
             throw ProgramResult(1)
         }
 

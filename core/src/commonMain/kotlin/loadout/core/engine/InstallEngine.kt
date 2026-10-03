@@ -1,5 +1,7 @@
 package loadout.core.engine
 
+import loadout.core.exec.CommandFrame
+import loadout.core.exec.ShellCommand
 import loadout.core.LoadoutException
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
@@ -20,6 +22,8 @@ sealed interface PlanItem {
         override val program: String,
         val installKey: String,
         val command: String,
+        /** Where [command] runs: its declaring file's repo-relative directory. */
+        val origin: String = "",
     ) : PlanItem
 
     /** Already installed at [version]; nothing to do. */
@@ -37,7 +41,7 @@ data class InstallOutcome(
 class InstallEngine(
     private val runner: ProcessRunner,
     private val checker: VersionChecker,
-    private val repoRoot: Path,
+    private val frame: CommandFrame = CommandFrame(),
 ) {
     /**
      * Resolve what would happen for [requested] programs (empty = every program
@@ -46,7 +50,7 @@ class InstallEngine(
      * simply not part of this machine's loadout — converge skips it.
      *
      * Strict resolution — throws [ResolutionException] (before anything runs) when:
-     * - the manifest has no `machines/<machine>.toml` config,
+     * - the manifest has no `<machines>/<machine>.toml` config,
      * - an explicitly [requested] program has no mapping for this machine,
      * - a mapped program's dependency has no mapping for this machine,
      * - a program that needs installing resolves to a probe binary (the
@@ -60,9 +64,10 @@ class InstallEngine(
         currentStates: Map<String, ProgramState>,
         binaryAvailable: (String) -> Boolean,
     ): List<PlanItem> {
+        val machineFile = "${manifest.layout?.machines ?: "machines"}/$machine.toml"
         val mapping = manifest.machines[machine]?.pm
             ?: throw ResolutionException(
-                "machine '$machine' has no config file (machines/$machine.toml) in the repo",
+                "machine '$machine' has no config file ($machineFile) in the repo",
             )
 
         // Membership: converge covers only mapped programs (declaration order).
@@ -75,10 +80,10 @@ class InstallEngine(
             val installKey = mapping[name]
             if (installKey == null) {
                 errors += if (name in requested) {
-                    "program '$name' has no pm defined for machine '$machine' (add it to machines/$machine.toml)"
+                    "program '$name' has no pm defined for machine '$machine' (add it to $machineFile)"
                 } else {
                     "program '$name' is required as a dependency but has no pm defined for " +
-                        "machine '$machine' (add it to machines/$machine.toml)"
+                        "machine '$machine' (add it to $machineFile)"
                 }
                 continue
             }
@@ -89,7 +94,7 @@ class InstallEngine(
                 // Key existence and command resolvability are validated at
                 // manifest load, as is the existence of any file: script.
                 val resolved = manifest.resolveInstall(name, installKey)
-                items += PlanItem.Install(name, installKey, expandFilePrefix(resolved.command!!))
+                items += PlanItem.Install(name, installKey, expandFilePrefix(resolved.command!!), resolved.commandOrigin)
             }
         }
 
@@ -126,9 +131,9 @@ class InstallEngine(
     ): List<InstallOutcome> =
         plan.filterIsInstance<PlanItem.Install>().map { item ->
             onStart(item)
-            // Repo root as cwd, so file: scripts and relative paths behave the
-            // same regardless of where the tool was invoked from.
-            val exitCode = runner.inherit(item.command, workDir = repoRoot.toString())
+            // The declaring file's directory as cwd, so file: scripts and
+            // relative paths behave the same wherever the tool was invoked.
+            val exitCode = runner.inherit(frame.command(item.command, item.origin))
             val after = checker.check(manifest.checkFor(item.program, item.installKey))
             InstallOutcome(item.program, exitCode, after)
         }

@@ -47,7 +47,7 @@ ok "setup-new-machine runs eligible scripts"
 
 # --- membership: a program no machine maps ------------------------------
 # Skipped by converge, an error when explicitly requested, not observed.
-cat >> repo/manifest.toml <<'TOML'
+cat >> repo/loadout.toml <<'TOML'
 
 [programs.never-mapped]
 [programs.never-mapped.install.manual]
@@ -69,7 +69,7 @@ ok "setup-new-machine fails for a machine with no config file"
 
 # --- mapped pm binary not present on this machine ------------------------
 mkdir -p pmrepo/state pmrepo/machines
-cat > pmrepo/manifest.toml <<'TOML'
+cat > pmrepo/loadout.toml <<'TOML'
 [installers.pacman]
 probe = "pacman"
 install = "sudo pacman -S --noconfirm {pkg}"
@@ -79,7 +79,8 @@ regex = "([0-9.]+)"
 [programs.tool]
 via = ["pacman"]
 TOML
-printf '[pm]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
+add_layout "pmrepo"
+printf '[packages.install]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
 if ! command -v pacman >/dev/null 2>&1; then
     OUT=$("$BIN" --repo pmrepo --machine m1 setup-new-machine --dry-run 2>&1 || true)
     echo "$OUT" | grep -q "required binary 'pacman'" || fail "pm-not-installed error message"
@@ -105,7 +106,7 @@ ok "explain prints expanded programs and scripts (all of them with no names)"
 # "command not found" is a question that couldn't be asked; a check that IS
 # the program (`rg --version`, no probe) means what it says.
 mkdir -p probed/state probed/machines
-cat > probed/manifest.toml <<'TOML'
+cat > probed/loadout.toml <<'TOML'
 [installers.ghostpm]
 probe = "ghostpm-definitely-not-here"
 install = "ghostpm-definitely-not-here install {pkg}"
@@ -122,7 +123,8 @@ regex = "([0-9.]+)"
 [programs.byitself.install.manual]
 command = "false"
 TOML
-printf '[pm]\nviapm = "ghostpm"\nbyitself = "manual"\n' > probed/machines/m1.toml
+add_layout "probed"
+printf '[packages.install]\nviapm = "ghostpm"\nbyitself = "manual"\n' > probed/machines/m1.toml
 OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
 echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
 echo "$OUT" | grep -q "ghostpm-definitely-not-here: command not found" || fail "status says what wasn't there"
@@ -133,7 +135,7 @@ ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'
 
 # --- a variant's own depends-on comes only with that variant --------------
 mkdir -p vdeps/state vdeps/machines
-cat > vdeps/manifest.toml <<'TOML'
+cat > vdeps/loadout.toml <<'TOML'
 [programs.prereq.install.manual]
 command = "true"
 
@@ -144,8 +146,9 @@ depends-on = ["prereq"]
 [programs.tool.install.plain]
 command = "true"
 TOML
-printf '[pm]\ntool = "withprereq"\nprereq = "manual"\n' > vdeps/machines/m1.toml
-printf '[pm]\ntool = "plain"\n' > vdeps/machines/m2.toml
+add_layout "vdeps"
+printf '[packages.install]\ntool = "withprereq"\nprereq = "manual"\n' > vdeps/machines/m1.toml
+printf '[packages.install]\ntool = "plain"\n' > vdeps/machines/m2.toml
 OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
 echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
 OUT=$("$BIN" --repo vdeps --machine m2 install tool --dry-run) || fail "the other variant needs no mapping for it"

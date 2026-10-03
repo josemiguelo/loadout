@@ -17,8 +17,13 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 - **You declare intent** in TOML: programs with their install mechanics,
   scripts with idempotency checks, and an explicit per-machine mapping of
-  who carries what. Machines of the same OS share a *base loadout*; a
-  standard machine is a one-line file (`extends = "macos"`).
+  who carries what, grouped by tool. Machines share small *profiles*
+  (`profiles/macos.toml`, `profiles/work.toml`); a standard machine is a
+  one-line file (`extends = ["macos", "work"]`).
+- **One repo, laid out the way you choose.** `loadout.toml`'s `[layout]`
+  names where fragments, machines, profiles and state live. A tool's
+  fragment can sit beside its dotfiles (`configs/.config/tmux/.loadout.toml`
+  next to `tmux.conf`), and every path in it is relative to that file.
 - **Checks are the truth.** Every piece of a loadout has a re-askable check
   (`rpm -q kitty`, `chezmoi verify`, your own script). Converging means
   making the checks pass; observing means asking them again.
@@ -29,8 +34,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   fallbacks, no heuristics. Errors beat guesses, and the error carries the
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
-  pacman, brew, brew-cask and flatpak are built in, so `via = ["dnf"]`
-  works in an empty repo. `loadout installers` shows them, your own
+  pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
+  so `via = ["dnf"]` works in an empty repo. `loadout installers` shows them, your own
   `[installers.<name>]` replaces one, and `--eject` copies them all into
   your repo.
 
@@ -56,7 +61,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ```console
 $ loadout init ~/loadouts && cd ~/loadouts
-$ $EDITOR manifest.toml manifest.d/          # declare programs and scripts
+$ $EDITOR loadout.toml programs/             # declare programs and scripts
 $ $EDITOR machines/$(hostname).toml          # map what this machine carries
 $ loadout status                             # observe
 $ loadout setup-new-machine                  # converge

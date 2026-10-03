@@ -1,5 +1,7 @@
 package loadout.core.engine
 
+import loadout.core.exec.CommandFrame
+import loadout.core.exec.ShellCommand
 import loadout.core.TOOL_VERSION
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.MachineState
@@ -27,7 +29,7 @@ import okio.Path
 class StatusEngine(
     private val checker: VersionChecker,
     private val runner: ProcessRunner,
-    private val repoRoot: Path,
+    private val frame: CommandFrame = CommandFrame(),
 ) {
     /**
      * What each failing script check printed during the last [refresh] —
@@ -82,7 +84,7 @@ class StatusEngine(
                         val check = ScriptRunner.withArgs(step.check!!, args)
                         name to async {
                             semaphore.withPermit {
-                                val result = runner.capture(check, workDir = repoRoot.toString())
+                                val result = runner.capture(frame.command(check, step.origin))
                                 val state = ScriptState(
                                     status = if (result.success) ScriptStatus.DONE else ScriptStatus.PENDING,
                                     lastRun = history?.lastRun,
