@@ -16,7 +16,7 @@ regex = "([0-9.]+)"
 flavor = "vanilla"
 PARAM
 add_layout "paramrepo"
-printf '[pm]\ntool = "faux"\n' > paramrepo/machines/m1.toml
+printf '[packages.install]\ntool = "faux"\n' > paramrepo/machines/m1.toml
 OUT=$("$BIN" --repo paramrepo --machine m1 explain tool)
 echo "$OUT" | grep -q "echo installing tool from vanilla" || fail "installer params substitute"
 printf '[installers.faux]\nparams = ["flavor"]\ninstall = "echo {flavor}"\n\n[programs.tool]\n[programs.tool.install.faux]\n' > paramrepo/loadout.toml
@@ -44,9 +44,11 @@ regex = "git version ([0-9.]+)"
 command = "false"
 TOML
 cat > repo/machines/m3.toml <<'TOML'
-[pm]
-git = "manual"
-splitprog = "manual"
+[git]
+install = "manual"
+
+[splitprog]
+install = "manual"
 TOML
 "$BIN" --repo repo --machine m3 status >/dev/null || fail "status with split layout"
 grep -q '"splitprog"' repo/state/m3.json || fail "fragment program checked"
@@ -65,46 +67,48 @@ echo "$OUT" | grep -q "sections are not allowed" || fail "inline machines should
 mv repo/loadout.toml.bak repo/loadout.toml
 ok "inline [machines.*] sections in the manifest are rejected"
 
-# --- machine bases, flat machines ----------------------------------------
-cat > repo/machines/testbase.toml <<'TOML'
-base = true
+# --- profiles, flat machines ----------------------------------------------
+mkdir -p repo/profiles
+cat > repo/profiles/testbase.toml <<'TOML'
+[git]
+install = "manual"
 scripts = ["marker"]
-
-[pm]
-git = "manual"
 TOML
 cat > repo/machines/m9.toml <<'TOML'
-extends = "testbase"
+extends = ["testbase"]
 TOML
 OUT=$("$BIN" --repo repo --machine m9 setup-new-machine --dry-run) || fail "inherited machine plans"
-echo "$OUT" | grep -q "git" || fail "child inherits the base's pm mapping"
-echo "$OUT" | grep -qE "~ marker +script" || fail "child inherits the base's script opt-ins"
+echo "$OUT" | grep -q "git" || fail "the machine inherits the profile's mapping"
+echo "$OUT" | grep -qE "~ marker +script" || fail "the machine inherits the profile's script opt-ins"
 "$BIN" --repo repo --machine m9 status --no-write >/dev/null || fail "status works for inherited machine"
-"$BIN" --repo repo diff 2>/dev/null | grep -q "testbase" && fail "bases must not appear as machines" || true
+"$BIN" --repo repo diff 2>/dev/null | grep -q "testbase" && fail "profiles must not appear as machines" || true
+OUT=$("$BIN" --repo repo --machine m9 explain)
+echo "$OUT" | grep -qE "extends +testbase" || fail "explain names the machine's profiles: $OUT"
 mkdir -p repo/machines/hosts
 mv repo/machines/m9.toml repo/machines/hosts/m9.toml
 OUT=$("$BIN" --repo repo --machine m9 status --no-write 2>&1) && fail "a machine file in a subfolder must be refused"
 echo "$OUT" | grep -q "machines/hosts/m9.toml: machine files live directly in machines/" || fail "the subfolder is named: $OUT"
-rm -rf repo/machines/testbase.toml repo/machines/hosts
-ok "machine files inherit from bases and sit directly in machines/"
+rm -rf repo/profiles/testbase.toml repo/machines/hosts
+ok "machines extend profiles from profiles/ and sit directly in machines/"
 
-# --- [data]: declared in loadout.toml, overridden per base and machine ----
+# --- [data]: declared in loadout.toml, overridden per profile and machine -
 cp repo/loadout.toml repo/loadout.toml.bak
 printf '\n[data]\nomarchy = false\n\n[data.kitty]\nopacity = 0.85\n' >> repo/loadout.toml
-printf 'base = true\n\n[data]\nomarchy = true\n' > repo/machines/omarchy.toml
-printf 'extends = "omarchy"\n\n[pm]\ngit = "manual"\n\n[data.kitty]\nopacity = 0.99\n' > repo/machines/m9.toml
+printf '[data]\nomarchy = true\n' > repo/profiles/omarchy.toml
+printf 'extends = ["omarchy"]\n\n[git]\ninstall = "manual"\n\n[kitty.data]\nopacity = 0.99\n' > repo/machines/m9.toml
 OUT=$("$BIN" --repo repo --machine m9 explain) || fail "explain shows a machine with data"
 echo "$OUT" | grep -qE "data.kitty.opacity +0.99" || fail "the machine's own value wins: $OUT"
-echo "$OUT" | grep -qE "data.omarchy +true" || fail "the base's value comes through: $OUT"
+echo "$OUT" | grep -qE "data.omarchy +true" || fail "the profile's value comes through: $OUT"
+echo "$OUT" | grep -qE "\[git\] +git = manual" || fail "explain shows the machine's own groups: $OUT"
 OUT=$("$BIN" --repo repo --machine m2 explain)
 echo "$OUT" | grep -qE "data.omarchy +false" || fail "a machine without [data] gets the defaults: $OUT"
-printf '[pm]\ngit = "manual"\n\n[data.kitty]\nopacty = 0.5\n' > repo/machines/m9.toml
+printf '[packages.install]\ngit = "manual"\n\n[data.kitty]\nopacty = 0.5\n' > repo/machines/m9.toml
 OUT=$("$BIN" --repo repo --machine m9 status --no-write 2>&1) && fail "an undeclared [data] key must be refused"
 echo "$OUT" | grep -q "machines/m9.toml: \[data\] key 'kitty.opacty' is not declared in loadout.toml \[data\]" ||
     fail "the undeclared key is named: $OUT"
 mv repo/loadout.toml.bak repo/loadout.toml
-rm -f repo/machines/omarchy.toml repo/machines/m9.toml
-ok "[data] defaults, base and machine values merge, and explain shows them; a typo is refused"
+rm -f repo/profiles/omarchy.toml repo/machines/m9.toml
+ok "[data] defaults, profile and machine values merge, and explain shows them; a typo is refused"
 
 # --- script file that doesn't exist -> caught at manifest load -----------
 cp repo/loadout.toml repo/loadout.toml.bak
@@ -126,7 +130,7 @@ cat > badmap/loadout.toml <<'TOML'
 command = "sudo dnf install -y tool"
 TOML
 add_layout "badmap"
-printf '[pm]\ntool = "brew"\n' > badmap/machines/m1.toml
+printf '[packages.install]\ntool = "brew"\n' > badmap/machines/m1.toml
 OUT=$("$BIN" --repo badmap status 2>&1 || true)
 echo "$OUT" | grep -q "no 'brew' entry" || fail "bad-mapping validation message"
 ok "manifest rejects mappings to nonexistent install keys"
@@ -145,7 +149,7 @@ add_layout "filerepo"
 # Requires the "install" argument and writes relative to cwd — proves both
 # argument passing and repo-root cwd.
 printf '#!/bin/sh\n[ "${1:-}" = "install" ] || exit 9\necho done > installed-marker.txt\n' > filerepo/scripts/install-filetool.sh
-printf '[pm]\nfiletool = "script"\n' > filerepo/machines/m1.toml
+printf '[packages.install]\nfiletool = "script"\n' > filerepo/machines/m1.toml
 
 OUT=$("$BIN" --repo filerepo --machine m1 setup-new-machine --dry-run)
 echo "$OUT" | grep -q "sh 'scripts/install-filetool.sh' install" || fail "file: value with args translated in plan"
@@ -196,7 +200,7 @@ ok "[layout] is required"
 mkdir -p custom/hosts custom/tools
 printf '[layout]\nfragments = ["tools/*.toml"]\nmachines = "hosts"\nstate = "observed"\n' > custom/loadout.toml
 printf '[programs.git]\n[programs.git.version]\ncommand = "git --version"\nregex = "git version ([0-9.]+)"\n[programs.git.install.manual]\ncommand = "false"\n' > custom/tools/git.toml
-printf '[pm]\ngit = "manual"\n' > custom/hosts/m1.toml
+printf '[git]\ninstall = "manual"\n' > custom/hosts/m1.toml
 "$BIN" --repo custom --machine m1 status >/dev/null || fail "a custom layout loads"
 [ -f custom/observed/m1.json ] || fail "state lands in [layout] state"
 [ -d custom/state ] && fail "nothing is written to a default state dir" || true

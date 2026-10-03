@@ -40,7 +40,7 @@ cat >> repo/loadout.toml <<'TOML'
 file = "scripts/argscript.sh"
 check = "test -f arg-marker.txt && grep -qx $1 arg-marker.txt"
 TOML
-printf 'scripts = ["argscript fedora"]\n\n[pm]\ngit = "manual"\n' > repo/machines/m2.toml
+printf '[setup]\nscripts = ["argscript fedora"]\n\n[packages.install]\ngit = "manual"\n' > repo/machines/m2.toml
 "$BIN" --repo repo --machine m2 run argscript >/dev/null || fail "run with args exits 0"
 grep -qx "fedora" repo/arg-marker.txt || fail "argument reached the script"
 OUT=$("$BIN" --repo repo --machine m2 run argscript)
@@ -55,12 +55,12 @@ cat >> repo/loadout.toml <<'TOML'
 [scripts.argcount]
 file = "scripts/argcount.sh"
 TOML
-printf "scripts = ['''argcount one\n  touch pwned.txt''']\n\n[pm]\ngit = \"manual\"\n" > repo/machines/m3.toml
+printf "[setup]\nscripts = ['''argcount one\n  touch pwned.txt''']\n\n[packages.install]\ngit = \"manual\"\n" > repo/machines/m3.toml
 "$BIN" --repo repo --machine m3 run argcount >/dev/null || fail "run with a multi-line entry exits 0"
 grep -qx "3:one touch pwned.txt" repo/argcount.txt || fail "a multi-line entry's lines arrive as arguments"
 [ -e repo/pwned.txt ] && fail "a multi-line entry's line must never run as a command" || true
 # The name alone on the first line works too.
-printf "scripts = ['''argcount\n  a\n  b''']\n\n[pm]\ngit = \"manual\"\n" > repo/machines/m4.toml
+printf "[setup]\nscripts = ['''argcount\n  a\n  b''']\n\n[packages.install]\ngit = \"manual\"\n" > repo/machines/m4.toml
 "$BIN" --repo repo --machine m4 run argcount >/dev/null || fail "a name alone on the first line is still the name"
 grep -qx "2:a b" repo/argcount.txt || fail "the lines after a lone name are its arguments"
 ok "a multi-line script entry passes its lines as arguments"
@@ -75,7 +75,7 @@ cat > repo/maintenance/greet/greet.toml <<'TOML'
 file = "greet.sh"
 check = "test -f greeted.txt"
 TOML
-printf 'scripts = ["greet"]\n\n[pm]\ngit = "manual"\n' > repo/machines/m5.toml
+printf '[setup]\nscripts = ["greet"]\n\n[packages.install]\ngit = "manual"\n' > repo/machines/m5.toml
 "$BIN" --repo repo --machine m5 run greet >/dev/null || fail "a fragment's script runs"
 grep -qx "hello from greet" repo/maintenance/greet/greeted.txt || fail "the script ran in its fragment's folder"
 [ -e repo/greeted.txt ] && fail "nothing lands in the repo root" || true

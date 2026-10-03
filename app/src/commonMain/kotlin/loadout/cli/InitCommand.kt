@@ -26,6 +26,7 @@ private val STARTER_MANIFEST = """
     [layout]
     fragments = ["programs/**/*.toml", "maintenance/**/*.toml"]
     machines = "machines"
+    profiles = "profiles"
     state = "state"
 
     # Per-machine settings (dotfile templates read them too): every key a
@@ -51,28 +52,40 @@ private val STARTER_MANIFEST = """
     #file = "maintenance/dotfiles/dotfiles.sh"
     #check = "test -d ${'$'}HOME/.dotfiles"
 
-    # Every machine must map each program to one of its install keys in its
-    # own machines/<name>.toml file — installing fails for unmapped programs.
-    # Programs and scripts usually live in fragment files under programs/
-    # and maintenance/ rather than here.
+    # A machine installs only the programs its machines/<name>.toml (or a
+    # profile it extends) maps to one of their install keys. Programs and
+    # scripts usually live in fragment files under programs/ and
+    # maintenance/ rather than here.
 """.trimIndent() + "\n"
 
 private val STARTER_MACHINE = """
-    # Per-machine config for the machine named like this file (machines/<name>.toml).
+    # The machine named like this file (machines/<hostname>.toml).
 
-    # Scripts run only on machines that opt in. Entries are "name" or
-    # "name args..." (args become positional params for file scripts and their
-    # checks). NOTE: keep this line ABOVE [pm] — top-level keys placed after a
-    # table header would belong to that table.
-    #scripts = ["dotfiles", "setup-ssh fedora"]
+    # Profiles this machine builds on (profiles/<name>.toml), in order; what
+    # this file says overrides them.
+    #extends = ["linux"]
 
-    # Map every program to one entry of its install table:
-    #[pm]
-    #ripgrep = "dnf"
+    # One table per tool or concern: `install` names the install key of the
+    # program named like the table (or a table of program = key for
+    # several), `scripts` opts into setup scripts ("name" or "name args...",
+    # args become positional params for file scripts and their checks).
+    #[ripgrep]
+    #install = "dnf"
+    #
+    #[dotfiles]
+    #scripts = ["dotfiles"]
 
-    # This machine's values for keys loadout.toml declares under [data]:
+    # This machine's values for keys loadout.toml declares under [data]
+    # (or [<table>.data], which is [data.<table>]):
     #[data]
     #work = true
+""".trimIndent() + "\n"
+
+private val STARTER_PROFILE = """
+    # A profile: what every machine extending it shares (extends = ["<name>"]).
+    # Same tables as a machine file; never a machine itself.
+    #[ripgrep]
+    #install = "dnf"
 """.trimIndent() + "\n"
 
 private val STARTER_FRAGMENT = """
@@ -94,7 +107,7 @@ private val STARTER_FRAGMENT = """
 
 class InitCommand : CliktCommand(name = "init") {
     override fun help(context: Context) = commandHelp(
-        "Scaffold a new config repo (loadout.toml, programs/, maintenance/, machines/, state/) and git init it.",
+        "Scaffold a new config repo (loadout.toml, programs/, maintenance/, machines/, profiles/, state/) and git init it.",
         "[path]  where to scaffold (default: current directory)",
     )
 
@@ -110,18 +123,20 @@ class InitCommand : CliktCommand(name = "init") {
             throw ProgramResult(1)
         }
 
-        for (dir in listOf("programs", "maintenance", "machines", "state")) {
+        for (dir in listOf("programs", "maintenance", "machines", "profiles", "state")) {
             app.fs.createDirectories(root / dir)
         }
         app.fs.write(manifestPath) { writeUtf8(STARTER_MANIFEST) }
         app.fs.write(root / "state" / ".gitkeep") { }
         app.fs.write(root / "maintenance" / ".gitkeep") { }
         app.fs.write(root / "machines" / "example.toml.sample") { writeUtf8(STARTER_MACHINE) }
+        app.fs.write(root / "profiles" / "example.toml.sample") { writeUtf8(STARTER_PROFILE) }
         app.fs.write(root / "programs" / "example.toml.sample") { writeUtf8(STARTER_FRAGMENT) }
         echo("Created $manifestPath")
         echo("Created ${root / "programs"}/ (fragments: programs and installers; see example.toml.sample)")
         echo("Created ${root / "maintenance"}/ (fragments: scripts, one folder per concern)")
         echo("Created ${root / "machines"}/ (rename example.toml.sample to <your-machine>.toml)")
+        echo("Created ${root / "profiles"}/ (what machines of a kind share; see example.toml.sample)")
         echo("Created ${root / "state"}/")
 
         val git = GitClient(app.runner, root)

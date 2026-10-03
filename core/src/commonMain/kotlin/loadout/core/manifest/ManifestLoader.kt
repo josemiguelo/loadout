@@ -67,10 +67,11 @@ object ManifestLoader {
 
         val outdatedSources = root.outdated.toMutableMap()
         val machinePaths = machineFiles(fs, repoRoot / machinesDir)
+        val profilePaths = layout.profiles?.let { machineFiles(fs, repoRoot / it) }.orEmpty()
 
         // Folder structure inside a glob's matches is cosmetic. Deterministic
         // order: the globs' order, path-sorted within one.
-        for (path in fragmentFiles(fs, repoRoot, layout, manifestName, machinePaths, errors)) {
+        for (path in fragmentFiles(fs, repoRoot, layout, manifestName, machinePaths, profilePaths, errors)) {
             val label = Glob.relative(repoRoot, path)
             val fragmentText = fs.read(path) { readUtf8() }
             val fragment = withOrigin(parseRaw(fragmentText, label), Glob.relative(repoRoot, path.parent!!))
@@ -109,32 +110,22 @@ object ManifestLoader {
             }
         }
 
-        // Machine files sit directly in the machines directory, so chezmoi
-        // templates find one by hostname; the machine name is the file name.
-        for (path in machinePaths) {
-            val name = path.name.removeSuffix(".toml")
-            val label = Glob.relative(repoRoot, path)
-            if (path.parent != repoRoot / machinesDir) {
-                errors += "$label: machine files live directly in $machinesDir/ (no subfolders)"
-                continue
-            }
-            val machineText = fs.read(path) { readUtf8() }
-            val parsed = try {
-                val data = MachineData.read(toml, machineText) ?: MachineData.EMPTY
-                errors += MachineData.validate(root.data, data, label)
-                toml.decodeFromString<MachineConfig>(machineText).copy(data = data)
-            } catch (e: Exception) {
-                val hint = if (e.message?.contains("Cannot decode the key [scripts]") == true) {
-                    "\nhint: the top-level `scripts = [...]` array must appear ABOVE any table " +
-                        "header like [pm] — TOML assigns later top-level keys to the preceding table"
-                } else {
-                    ""
+        // Machine files sit directly in their directory, so chezmoi templates
+        // find one by hostname (the machine name is the file name); profile
+        // files likewise in theirs.
+        fun readConfigs(dir: String, paths: List<Path>, kind: String, profile: Boolean): Map<String, MachineConfig> =
+            paths.mapNotNull { path ->
+                val label = Glob.relative(repoRoot, path)
+                if (path.parent != repoRoot / dir) {
+                    errors += "$label: $kind files live directly in $dir/ (no subfolders)"
+                    return@mapNotNull null
                 }
-                throw ManifestException("Failed to parse $label: ${e.message}$hint")
-            }
-            machines[name] = parsed
-        }
-        errors += flattenMachines(machines)
+                val config = MachineFile.read(toml, fs.read(path) { readUtf8() }, label, errors).copy(base = profile)
+                errors += MachineData.validate(root.data, config.data, label)
+                path.name.removeSuffix(".toml") to config
+            }.toMap()
+        val profileConfigs = layout.profiles?.let { readConfigs(it, profilePaths, "profile", profile = true) }.orEmpty()
+        errors += flattenMachines(readConfigs(machinesDir, machinePaths, "machine", profile = false), profileConfigs, layout.profiles, machines)
         // Every machine sees every declared key: defaults under its own.
         for ((name, config) in machines.toList()) machines[name] = config.copy(data = MachineData.merge(root.data, config.data))
 
@@ -321,56 +312,86 @@ object ManifestLoader {
     }
 
     /**
-     * Resolve `extends` chains in place: every config becomes its flattened
-     * self ([pm] merged per key, child wins; `[data]` merged table by table,
-     * child wins, lists replace; `scripts` union, a same-named child entry
-     * replaces the base's), then base configs are removed —
-     * downstream nothing knows inheritance existed. Returns errors.
+     * Resolve `extends` lists into [out]: every machine becomes its flattened
+     * self, downstream nothing knows profiles existed. A file's profiles are
+     * combined first — two of them setting a program's variant, a script's
+     * arguments or a data key differently is an error, so their order never
+     * changes the result — then the file itself overrides them ([pm] per
+     * key, `scripts` by name, `[data]` table by table, lists replace).
+     * Profiles land in [out] too, flattened and marked `base`, so validation
+     * covers them; loadRepo drops them after validating. Returns errors.
      */
-    private fun flattenMachines(machines: MutableMap<String, MachineConfig>): List<String> {
+    private fun flattenMachines(
+        machineConfigs: Map<String, MachineConfig>,
+        profiles: Map<String, MachineConfig>,
+        profilesDir: String?,
+        out: MutableMap<String, MachineConfig>,
+    ): List<String> {
         val errors = mutableListOf<String>()
-        for ((name, config) in machines) {
-            val parent = config.extends ?: continue
-            val target = machines[parent]
-            when {
-                target == null ->
-                    errors += "machine '$name' extends unknown base '$parent'"
-                !target.base ->
-                    errors += "machine '$name' extends '$parent', which is not a base " +
-                        "(shared config must live in a `base = true` file)"
-            }
-        }
-        if (errors.isNotEmpty()) return errors
+        val flatProfiles = mutableMapOf<String, MachineConfig>()
 
-        val flattened = mutableMapOf<String, MachineConfig>()
-        fun flatten(name: String, seen: List<String>): MachineConfig {
-            flattened[name]?.let { return it }
-            if (name in seen) {
-                errors += "machine base cycle: ${(seen + name).joinToString(" -> ")}"
-                return machines.getValue(name)
+        fun flatten(config: MachineConfig, seen: List<String>): MachineConfig {
+            val parents = config.extends.mapNotNull { name ->
+                val profile = profiles[name]
+                when {
+                    profilesDir == null -> {
+                        errors += "${config.label}: extends '$name', but loadout.toml's [layout] has no profiles directory"
+                        null
+                    }
+                    profile == null -> {
+                        errors += "${config.label}: extends unknown profile '$name' (no $profilesDir/$name.toml)"
+                        null
+                    }
+                    name in seen -> {
+                        errors += "profile cycle: ${(seen + name).joinToString(" -> ")}"
+                        null
+                    }
+                    else -> name to (flatProfiles[name] ?: flatten(profile, seen + name).also { flatProfiles[name] = it })
+                }
             }
-            val config = machines.getValue(name)
-            val parent = config.extends?.let { flatten(it, seen + name) } ?: run {
-                flattened[name] = config
-                return config
+            val pm = linkedMapOf<String, Pair<String, String>>() // program -> (variant, profile)
+            val scripts = linkedMapOf<String, Pair<String, String>>() // script -> (entry, profile)
+            var data = MachineData.EMPTY
+            parents.forEachIndexed { index, (name, parent) ->
+                for ((program, variant) in parent.pm) {
+                    val previous = pm[program]
+                    when {
+                        previous == null -> pm[program] = variant to name
+                        previous.first != variant -> errors += "${config.label}: profiles '${previous.second}' and " +
+                            "'$name' map '$program' differently ('${previous.first}' vs '$variant')"
+                    }
+                }
+                for (entry in parent.scripts) {
+                    val (script, args) = scriptEntry(entry)
+                    val previous = scripts[script]
+                    when {
+                        previous == null -> scripts[script] = entry to name
+                        scriptEntry(previous.first).second != args -> errors += "${config.label}: profiles " +
+                            "'${previous.second}' and '$name' opt into '$script' with different arguments"
+                    }
+                }
+                for ((earlier, earlierConfig) in parents.take(index)) {
+                    MachineData.conflicts(earlierConfig.data, parent.data).forEach {
+                        errors += "${config.label}: profiles '$earlier' and '$name' set data key '$it' differently"
+                    }
+                }
+                data = MachineData.merge(data, parent.data)
             }
-            val childScripts = config.scriptArgs().keys
-            val result = config.copy(
-                pm = parent.pm + config.pm,
-                data = MachineData.merge(parent.data, config.data),
-                scripts = parent.scripts.filterNot { scriptEntry(it).first in childScripts } + config.scripts,
+            val own = config.scriptArgs().keys
+            return config.copy(
+                pm = pm.mapValues { it.value.first } + config.pm,
+                scripts = scripts.values.map { it.first }.filterNot { scriptEntry(it).first in own } + config.scripts,
+                data = MachineData.merge(data, config.data),
             )
-            flattened[name] = result
-            return result
         }
-        for (name in machines.keys.toList()) {
-            flatten(name, emptyList())
+
+        for ((name, profile) in profiles) {
+            if (name !in flatProfiles) flatProfiles[name] = flatten(profile, listOf(name))
         }
-        if (errors.isNotEmpty()) return errors
-        machines.clear()
-        // Bases stay (flattened) so validation covers them too; loadRepo
-        // drops them from the returned manifest after validating.
-        machines += flattened
+        for ((name, machine) in machineConfigs) out[name] = flatten(machine, emptyList())
+        // Profile names may repeat machine names; the prefix keeps them apart
+        // until loadRepo drops them.
+        for ((name, profile) in flatProfiles) out["profile:$name"] = profile
         return errors
     }
 
@@ -385,6 +406,7 @@ object ManifestLoader {
         layout: RepoLayout,
         manifestName: String,
         machinePaths: List<Path>,
+        profilePaths: List<Path>,
         errors: MutableList<String>,
     ): List<Path> {
         val rootPath = repoRoot / manifestName
@@ -395,6 +417,8 @@ object ManifestLoader {
                     rootPath -> errors += "[layout] fragments '$pattern' matches $manifestName itself"
                     in machinePaths ->
                         errors += "[layout] fragments '$pattern' matches machine file ${Glob.relative(repoRoot, path)}"
+                    in profilePaths ->
+                        errors += "[layout] fragments '$pattern' matches profile file ${Glob.relative(repoRoot, path)}"
                     else -> files += path
                 }
             }
@@ -453,11 +477,18 @@ object ManifestLoader {
         }
         dir("machines", layout.machines, required = true)
         dir("state", layout.state, required = true)
+        dir("profiles", layout.profiles, required = false)
         dir("configs", layout.configs, required = false)
         if (errors.isNotEmpty()) {
             throw ManifestException("Invalid $manifestName:\n" + errors.joinToString("\n") { "  - $it" })
         }
-        return RepoLayout(fragments!!, layout.machines!!, layout.state!!, layout.configs)
+        return RepoLayout(
+            fragments = fragments!!,
+            machines = layout.machines!!,
+            profiles = layout.profiles,
+            state = layout.state!!,
+            configs = layout.configs,
+        )
     }
 
     private fun validate(manifest: Manifest, machinesDir: String = "machines") {
@@ -560,25 +591,26 @@ object ManifestLoader {
         }
 
         for ((machine, config) in manifest.machines) {
+            val file = config.label.ifEmpty { "$machinesDir/$machine.toml" }
             val scriptNames = config.scripts.map { scriptEntry(it).first }
             scriptNames.groupBy { it }.filterValues { it.size > 1 }.keys.forEach { dup ->
-                errors += "$machinesDir/$machine.toml lists script '$dup' more than once"
+                errors += "$file lists script '$dup' more than once"
             }
             for ((scriptName, args) in config.scriptArgs()) {
                 val script = manifest.scripts[scriptName]
                 if (script == null) {
-                    errors += "$machinesDir/$machine.toml scripts references unknown script '$scriptName'"
+                    errors += "$file scripts references unknown script '$scriptName'"
                 } else if (args.isNotEmpty() && script.file == null) {
-                    errors += "$machinesDir/$machine.toml passes arguments to script '$scriptName', " +
+                    errors += "$file passes arguments to script '$scriptName', " +
                         "which is an inline `run` script — arguments require a `file` script"
                 }
             }
             for ((programName, installKey) in config.pm) {
                 val program = manifest.programs[programName]
                 if (program == null) {
-                    errors += "$machinesDir/$machine.toml references unknown program '$programName'"
+                    errors += "$file references unknown program '$programName'"
                 } else if (installKey !in program.install) {
-                    errors += "$machinesDir/$machine.toml maps '$programName' to '$installKey', but " +
+                    errors += "$file maps '$programName' to '$installKey', but " +
                         "programs.$programName.install has no '$installKey' entry " +
                         "(has: ${program.install.keys.sorted().joinToString()})"
                 }

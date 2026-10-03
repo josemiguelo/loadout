@@ -14,7 +14,7 @@ regex = "mytool ([0-9.]+)"
 via = ["fake"]
 TOML
 add_layout "instrepo"
-printf '[pm]\nmytool = "fake"\n' > instrepo/machines/m1.toml
+printf '[packages.install]\nmytool = "fake"\n' > instrepo/machines/m1.toml
 OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
 echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
 "$BIN" --repo instrepo --machine m1 setup-new-machine --yes >/dev/null || fail "installer-backed install exits 0"
@@ -58,7 +58,7 @@ via = ["fake3"]
 via = ["fake3"]
 TOML
 add_layout "instrepo"
-printf '[pm]\nmytool = "fake"\nothertool = "fake2"\nbatchtool = "fake3"\nuptodate = "fake3"\n' > instrepo/machines/m1.toml
+printf '[packages.install]\nmytool = "fake"\nothertool = "fake2"\nbatchtool = "fake3"\nuptodate = "fake3"\n' > instrepo/machines/m1.toml
 "$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated exits 0"
 echo "$OUT" | grep -qE "mytool +1.0 +-> 2.0" || fail "outdated reports the newer candidate"
@@ -94,7 +94,7 @@ via = ["pacman"]
 via = ["pacman"]
 TOML
 add_layout "pacrepo"
-printf '[pm]\nfooapp = "pacman"\nbarapp = "pacman"\n' > pacrepo/machines/m1.toml
+printf '[packages.install]\nfooapp = "pacman"\nbarapp = "pacman"\n' > pacrepo/machines/m1.toml
 PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
 grep -q '"version": "1.2.0"' pacrepo/state/m1.json || fail "pacman -Q's version is observed past the epoch"
 OUT=$(PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 outdated) || fail "outdated through the built-in pacman"

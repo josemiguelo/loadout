@@ -11,7 +11,7 @@ new_work() { mktemp -d -p "$WORK"; }
 # Append the [layout] every fixture shares to <dir>/loadout.toml. A table of
 # its own, so it can follow the fixture's tables and precede appended ones.
 add_layout() {
-    printf '\n[layout]\nfragments = ["programs/**/*.toml", "maintenance/**/*.toml"]\nmachines = "machines"\nstate = "state"\n' >> "$1/loadout.toml"
+    printf '\n[layout]\nfragments = ["programs/**/*.toml", "maintenance/**/*.toml"]\nmachines = "machines"\nprofiles = "profiles"\nstate = "state"\n' >> "$1/loadout.toml"
 }
 
 # `loadout init` scaffold with a git identity so sync/commit tests can run.
@@ -42,8 +42,8 @@ file = "scripts/marker.sh"
 check = "test -f marker.txt"
 TOML
     add_layout "$1"
-    printf 'scripts = ["marker"]\n\n[pm]\ngit = "manual"\n' > "$1/machines/m1.toml"
-    printf '[pm]\ngit = "manual"\n' > "$1/machines/m2.toml"
+    printf '[setup]\nscripts = ["marker"]\n\n[packages.install]\ngit = "manual"\n' > "$1/machines/m1.toml"
+    printf '[packages.install]\ngit = "manual"\n' > "$1/machines/m2.toml"
     mkdir -p "$1/scripts"
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
 }
@@ -77,7 +77,7 @@ check = "test -f bootstrap-marker.txt"
 modes = ["setup"]
 TOML
     add_layout "$1"
-    printf 'scripts = ["healthy", "drifted", "bootstrap-only"]\n\n[pm]\nmytool = "fake"\n' > "$1/machines/m1.toml"
+    printf '[setup]\nscripts = ["healthy", "drifted", "bootstrap-only"]\n\n[packages.install]\nmytool = "fake"\n' > "$1/machines/m1.toml"
 }
 
 # A stand-in sudo on PATH that asks like the real one: `-n` succeeds only

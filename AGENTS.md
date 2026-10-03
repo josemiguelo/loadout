@@ -100,26 +100,9 @@ templates read the same files through `configs/.chezmoitemplates/machine`
 `.chezmoiroot`) and branch on `$m.omarchy`, never on `.chezmoi.hostname`.
 Nothing is generated for chezmoi.
 
-Agreed next shape (step 6b): machine files group by tool or concern, the
-way the repo does, and building blocks move out of `machines/`.
-- `profiles/<name>.toml` (`[layout] profiles`) hold what machines of a
-  kind share, one subject each (`omarchy`, `omarchy-desktop`,
-  `t2-hardware`, `macos`, `work`); `machines/<hostname>.toml` are real
-  hosts. The folder decides the kind; `base = true` is gone. A profile is
-  never observed, diffed or converged; `extends` names profiles only.
-- `extends = [...]` is a list; profiles may extend profiles (cycles are
-  errors). The extending file overrides its profiles; two profiles of one
-  `extends` list setting the same program, script arguments or data key
-  differently is an error (equal values are fine), so order never changes
-  the result. No subtraction.
-- Any table other than `[data]` is a group (a label for reading): `install
-  = "<variant>"` maps the program named like the group, `[<group>.install]`
-  maps several (`tmux = "omarchy"`, `tpack = "brew-cask"`), `scripts =
-  ["name args…"]` opts in, `[<group>.data]` is `[data.<group>]`. `[pm]` and
-  the top-level `scripts` list are gone. A program mapped twice or a script
-  opted into twice in one file is an error.
-- The chezmoi `machine` partial walks the profile list and folds each
-  group's data in.
+Groups and profiles are done (step 6b, contract 2). Still to do on the
+chezmoi side: the `machine` partial walks the profile list (`../profiles/`)
+and folds each `[<group>.data]` in.
 
 **Configs** (chezmoi integration; required iff `[layout] configs` is set):
 - unit = top-level config directory, from one `chezmoi managed
@@ -152,7 +135,7 @@ README/AGENTS/wiki re-read):
 4. File-relative paths, per-file cwd, exported env (done; contracts 4, 5).
 5. Flat machines, declared `[data]`, `explain` shows it (done; contract 2).
 6a. Built-in `omarchy` / `omarchy-aur` installers (done; contract 13).
-6b. Machine files by group, profiles in `profiles/` (see Machines above).
+6b. Machine files by group, profiles in `profiles/` (done; contract 2).
 6. 1.0.0: state schema 2, release notes, wiki "Repo layout" and the
    built-in installer table (Home, Writing-Your-Manifest: omarchy,
    omarchy-aur), `install.sh` next steps, tag.
@@ -220,11 +203,13 @@ core/  loadout.core
   model/       Manifest, MachineState, System (@Serializable schemas; Manifest
                owns resolveInstall/checkFor — variant × installer resolution)
   manifest/    ManifestLoader — loadRepo() merges loadout.toml + the files its
-               [layout] fragments globs match + <machines>/*.toml +
+               [layout] fragments globs match + <machines>/ and <profiles>/ files +
                InstallerLibrary under the repo's own installers, validates
                everything; readLayout() reads [layout] alone (AppContext.layout);
                parse() is single-doc, TEST-ONLY
                Glob — the layout's glob matching and file expansion
+               MachineFile — machine/profile files: groups, extends, [data]
+               MachineData — [data] read, merged, validated, compared
                InstallerLibrary — the built-in installers, as TOML text
   state/       StateStore — <state>/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL
@@ -271,25 +256,44 @@ app/   loadout
 Explicit user decisions; don't "improve" them away.
 
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
-   The only source of variant choice is `machines/<name>.toml` (`[pm]`
-   maps EVERY program to a key of its install table). Inline
-   `[machines.*]` in loadout.toml or fragments is a validation error.
+   The only source of variant choice is the machine file and the profiles
+   it extends (each group's `install` maps a program to a key of its
+   install table). Inline `[machines.*]` in loadout.toml or fragments is a
+   validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't map is not in its loadout: converge skips it, status
-   doesn't observe it, diff shows "-". Machine files sit directly in the
-   `[layout] machines` directory (a subfolder is a load error: chezmoi
-   templates find a machine by hostname; name = file name) and may
-   `extends` a `base = true` config (pm merged per key, child wins; scripts
-   union, a same-named child entry replaces; `[data]` merged table by
-   table, child wins, lists replace, as chezmoi merges data). `[data]` is
-   free-form but declared: `loadout.toml [data]` lists every key with its
-   default, and a machine or base key that isn't declared, or is another
-   kind (string/boolean/number/list/table), is a load error; every machine
-   ends up with all declared keys (`MachineData`; bare `explain` shows
-   them). `[data]` in a fragment is a load error. Bases are flattened at load,
-   validated, then dropped; they are never machines. Machines can't extend
-   machines, and there's no subtraction: a base entry is a promise every
-   child keeps. `setup-new-machine` throws ResolutionException before
+   doesn't observe it, diff shows "-".
+   - **Files** (`MachineFile`, read from the TOML tree): machine files sit
+     directly in the `[layout] machines` directory, profiles directly in
+     `[layout] profiles` (a subfolder is a load error: chezmoi templates
+     find a machine by hostname; name = file name). The folder decides the
+     kind; `base = true` is a load error pointing at profiles.
+   - **Shape**: `extends = [...]` (a list), `[data]`, and any other table is
+     a group, a tool or concern (a label for reading, `explain` lists a
+     machine's own): `install = "<key>"` maps the program named like the
+     group, `[<group>.install]` maps several, `scripts = ["name args…"]` opts
+     in, `[<group>.data]` is `[data.<group>]` (setting a key in both is an
+     error). Groups fold into one mapping and one script list; nothing
+     downstream sees them. A program mapped twice or a script opted into
+     twice in one file, or an unknown key, is a load error.
+   - **Profiles**: `extends` names profiles only (a machine is never
+     extended); profiles may extend profiles (cycles are errors). A file's
+     profiles are combined first: two of one `extends` list setting a
+     program's key, a script's arguments or a data key differently is an
+     error (equal values are fine), so their order never changes the
+     result. Then the file overrides them (mapping per program, scripts by
+     name, `[data]` table by table, lists replace, as chezmoi merges data).
+     Profiles are flattened, validated (errors name the file), then
+     dropped: never observed, diffed or converged. No subtraction: a
+     profile's entry is a promise every machine extending it keeps.
+   - **`[data]`** is free-form but declared: `loadout.toml [data]` lists
+     every key with its default, and a machine or profile key that isn't
+     declared, or is another kind (string/boolean/number/list/table), is a
+     load error; every machine ends up with all declared keys
+     (`MachineData`; bare `explain` shows them). `[data]` in a fragment is
+     a load error.
+
+   `setup-new-machine` throws ResolutionException before
    executing anything if the machine file is missing, an EXPLICITLY
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
@@ -364,8 +368,8 @@ Explicit user decisions; don't "improve" them away.
     `[templates.*]` are unknown keys now, and ktoml ignores unknown keys,
     so an old manifest silently loses those programs (contract 14 is what
     makes repos bump their floor). Don't reintroduce it.
-12. **Scripts are opt-in per machine**: a machine's top-level `scripts`
-    list (in machines/<name>.toml, ABOVE any table header) has entries
+12. **Scripts are opt-in per machine**: a group's `scripts` (in the
+    machine file or a profile it extends) has entries
     "name" or "name args...", parsed by `scriptEntry` (the one parser; any
     whitespace separates words, newlines included, so a long entry can be a
     TOML multi-line string; args are re-joined with single spaces because
@@ -813,7 +817,7 @@ Cross-cutting: no `||` chains or trailing pipes in checks; versions are the
 mapped pm's truth (rpm's version, not the binary's self-report: expected,
 not a bug); `file:` for every repo script (load-time existence check);
 prefer repetition over abstraction (no templates, contract 11). Verify
-loop: `explain` → map in machines/<name>.toml → `setup-new-machine
+loop: `explain` → map in a group of machines/<name>.toml (or a profile) → `setup-new-machine
 --dry-run` → `status`.
 
 Where the check lives: loadout never trusts "it ran once"; everything

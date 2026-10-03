@@ -17,8 +17,9 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 - **You declare intent** in TOML: programs with their install mechanics,
   scripts with idempotency checks, and an explicit per-machine mapping of
-  who carries what. Machines of the same OS share a *base loadout*; a
-  standard machine is a one-line file (`extends = "macos"`).
+  who carries what, grouped by tool. Machines share small *profiles*
+  (`profiles/macos.toml`, `profiles/work.toml`); a standard machine is a
+  one-line file (`extends = ["macos", "work"]`).
 - **Checks are the truth.** Every piece of a loadout has a re-askable check
   (`rpm -q kitty`, `chezmoi verify`, your own script). Converging means
   making the checks pass; observing means asking them again.

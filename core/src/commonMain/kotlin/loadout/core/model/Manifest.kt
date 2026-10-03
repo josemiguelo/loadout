@@ -244,24 +244,31 @@ data class InstallVariant(
     val dependsOn: List<String> = emptyList(),
 )
 
+/**
+ * A machine (or profile) as the engines see it: the groups of its file
+ * folded into one program mapping and one script list. Machine and profile
+ * files are read by `MachineFile` from the TOML tree; the serializable form
+ * (`[machines.<name>]` with `pm`/`scripts`) exists only for the test-only
+ * `ManifestLoader.parse`.
+ */
 @Serializable
 data class MachineConfig(
     /**
-     * Marks a parent config ("fedora", "macos", ...) that real machines
-     * `extends`-reference. Bases are flattened into their children at load
-     * and are NOT machines: never observed, never diffed, never converged.
+     * A profile (a `[layout] profiles` file), not a machine: flattened into
+     * the machines extending it, then dropped — never observed, diffed or
+     * converged. Set by the loader from the file's folder.
      */
-    val base: Boolean = false,
+    @Transient val base: Boolean = false,
     /**
-     * Name of the base config this machine inherits (a `base = true` file).
-     * `[pm]` merges per key (this file wins); `scripts` is a union where a
-     * same-named entry here replaces the base's (args included). Bases may
-     * extend bases; real machines may only extend bases.
+     * Profiles this file builds on, in order. Their settings come first and
+     * this file's override them; two of them setting the same thing
+     * differently is a load error. Profiles may extend profiles.
      */
-    val extends: String? = null,
+    val extends: List<String> = emptyList(),
     /**
      * Which entry of each program's `install` table this machine uses,
-     * keyed by program name. Every program a machine installs must be mapped.
+     * keyed by program name, from the groups' `install`. Every program a
+     * machine installs must be mapped.
      */
     val pm: Map<String, String> = emptyMap(),
     /**
@@ -274,14 +281,27 @@ data class MachineConfig(
      */
     val scripts: List<String> = emptyList(),
     /**
-     * This file's `[data]` overrides, read from the TOML tree at load; after
-     * flattening, the machine's whole data (defaults, base, own). Not decoded.
+     * This file's `[data]` overrides (each group's `[<group>.data]` under
+     * the group's name), read from the TOML tree at load; after flattening,
+     * the machine's whole data (defaults, profiles, own). Not decoded.
      */
     @Transient val data: JsonObject = JsonObject(emptyMap()),
+    /** This file's own groups, as written, for `explain`. */
+    @Transient val groups: Map<String, MachineGroup> = emptyMap(),
+    /** The file it was read from, repo-relative, for messages. */
+    @Transient val label: String = "",
 ) {
     /** [scripts] parsed into script name -> argument string (see [scriptEntry]). */
     fun scriptArgs(): Map<String, String> = scripts.associate(::scriptEntry)
 }
+
+/** One `[<group>]` table of a machine or profile file: a tool or concern. */
+data class MachineGroup(
+    /** program -> install key: `install = "x"` maps the program named like the group. */
+    val install: Map<String, String> = emptyMap(),
+    /** Script opt-ins, `"name"` or `"name args…"`. */
+    val scripts: List<String> = emptyList(),
+)
 
 private val WHITESPACE = Regex("\\s+")
 
@@ -312,6 +332,8 @@ data class Layout(
     /** Globs of fragment files, loaded in this order (path-sorted within one). */
     val fragments: List<String>? = null,
     val machines: String? = null,
+    /** Profiles: what machines of a kind share, `extends`-referenced, never machines. */
+    val profiles: String? = null,
     val state: String? = null,
     /** The chezmoi source root, when the repo holds dotfiles. */
     val configs: String? = null,
@@ -321,6 +343,7 @@ data class Layout(
 data class RepoLayout(
     val fragments: List<String>,
     val machines: String,
+    val profiles: String? = null,
     val state: String,
     val configs: String? = null,
 )

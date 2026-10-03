@@ -2,7 +2,7 @@
 
 "$BIN" init repo >/dev/null || fail "init exits 0"
 [ -f repo/loadout.toml ] || fail "init creates loadout.toml"
-[ -d repo/programs ] && [ -d repo/maintenance ] && [ -d repo/state ] && [ -d repo/machines ] || fail "init creates dirs"
+[ -d repo/programs ] && [ -d repo/maintenance ] && [ -d repo/state ] && [ -d repo/machines ] && [ -d repo/profiles ] || fail "init creates dirs"
 grep -q "^\[layout\]" repo/loadout.toml || fail "init declares a [layout]"
 [ -f repo/machines/example.toml.sample ] || fail "init creates machine example"
 [ -f repo/programs/example.toml.sample ] || fail "init creates fragment example"

@@ -76,7 +76,7 @@ if has_pty; then
     printf '#!/bin/sh\necho FIRST-OUTPUT-LINE\nseq 1 80\necho LAST-OUTPUT-LINE\n' > vrepo/scripts/longrun.sh
     printf '[scripts.longrun]\nfile = "scripts/longrun.sh"\ncheck = "false"\n' > vrepo/loadout.toml
     add_layout "vrepo"
-    printf 'scripts = ["longrun"]\n' > vrepo/machines/m1.toml
+    printf '[setup]\nscripts = ["longrun"]\n' > vrepo/machines/m1.toml
     { wait_settled tui-view.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-view.log 'space tick'
       printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-view.log 'These scripts will run'
       printf '\r'; wait_back tui-view.log; printf 'v'; sleep 1.5
@@ -159,7 +159,7 @@ upgrade = "echo swept"
 via = ["quiet"]
 TOML
 add_layout "frepo"
-printf '[pm]\nalpha = "quiet"\n' > orepo/machines/m1.toml
+printf '[packages.install]\nalpha = "quiet"\n' > orepo/machines/m1.toml
 cp orepo/machines/m1.toml frepo/machines/m1.toml
 "$BIN" --repo orepo --machine m1 status >/dev/null
 "$BIN" --repo frepo --machine m1 status >/dev/null
@@ -210,7 +210,7 @@ command = "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'"
 upgrade = "echo pulled > pulled-{item}.txt"
 TOML
 add_layout "crepo"
-printf '[pm]\ntpack = "quiet"\n' > crepo/machines/m1.toml
+printf '[packages.install]\ntpack = "quiet"\n' > crepo/machines/m1.toml
 "$BIN" --repo crepo --machine m1 status >/dev/null
 if has_pty; then
     # jj to the remote row, l opens the table, then jjj walks the tool
@@ -258,7 +258,7 @@ via = ["fake"]
 via = ["fake"]
 TOML
 add_layout "irepo"
-printf '[pm]\nalpha = "fake"\nbeta = "fake"\n' > irepo/machines/m1.toml
+printf '[packages.install]\nalpha = "fake"\nbeta = "fake"\n' > irepo/machines/m1.toml
 fake_sudo
 "$BIN" --repo irepo --machine m1 status >/dev/null
 if has_pty; then
@@ -301,7 +301,7 @@ sudo = true
 via = ["hidden"]
 TOML
 add_layout "hrepo"
-printf '[pm]\ngamma = "hidden"\n' > hrepo/machines/m1.toml
+printf '[packages.install]\ngamma = "hidden"\n' > hrepo/machines/m1.toml
 fake_sudo
 "$BIN" --repo hrepo --machine m1 status >/dev/null
 OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
@@ -335,7 +335,7 @@ upgrade = '''printf 'Ans\167er me: '; read answer; echo "answered-$answer" > ask
 via = ["asks"]
 TOML
 add_layout "arepo"
-printf '[pm]\nalpha = "asks"\n' > arepo/machines/m1.toml
+printf '[packages.install]\nalpha = "asks"\n' > arepo/machines/m1.toml
 "$BIN" --repo arepo --machine m1 status >/dev/null
 if has_pty; then
     # jj to the remote row, l opens it, a ticks it, enter asks, enter runs;

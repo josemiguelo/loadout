@@ -53,6 +53,22 @@ object MachineData {
             }
         }
 
+    /**
+     * Dotted keys [a] and [b] both set to different values — where two
+     * profiles of one `extends` list disagree. Tables are compared key by
+     * key; anything else (lists too) must be equal.
+     */
+    fun conflicts(a: JsonObject, b: JsonObject, prefix: String = ""): List<String> =
+        a.keys.intersect(b.keys).sorted().flatMap { key ->
+            val left = a.getValue(key)
+            val right = b.getValue(key)
+            when {
+                left is JsonObject && right is JsonObject -> conflicts(left, right, "$prefix$key.")
+                left != right -> listOf("$prefix$key")
+                else -> emptyList()
+            }
+        }
+
     /** [data] as dotted `key = value` lines, sorted, for `explain`. */
     fun lines(data: JsonObject, prefix: String = ""): List<Pair<String, String>> =
         data.entries.sortedBy { it.key }.flatMap { (key, value) ->
@@ -69,7 +85,8 @@ object MachineData {
         }
     }
 
-    private fun table(node: TomlNode): JsonObject = JsonObject(
+    /** A TOML table node as JSON (nested tables become objects). */
+    fun table(node: TomlNode): JsonObject = JsonObject(
         node.children.mapNotNull { child ->
             when (child) {
                 is TomlTable -> child.name to table(child)
@@ -80,7 +97,7 @@ object MachineData {
         }.toMap(),
     )
 
-    private fun element(content: Any?): JsonElement = when (content) {
+    fun element(content: Any?): JsonElement = when (content) {
         is TomlValue -> element(content.content)
         is List<*> -> JsonArray(content.map(::element))
         is String -> JsonPrimitive(content)

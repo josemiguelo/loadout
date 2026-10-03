@@ -27,7 +27,7 @@ via = ["pm-extra"]
 via = ["byhand"]
 TOML
 add_layout "uprepo"
-printf '[pm]\nalpha = "pm"\nbravo = "pm-extra"\ncharlie = "byhand"\n' > uprepo/machines/m1.toml
+printf '[packages.install]\nalpha = "pm"\nbravo = "pm-extra"\ncharlie = "byhand"\n' > uprepo/machines/m1.toml
 OUT=$("$BIN" --repo uprepo --machine m1 upgrade --all --dry-run)
 # Mechanisms sharing a command are ONE transaction, not one per installer.
 [ "$(echo "$OUT" | grep -c "echo upgrading all pm")" = "1" ] || fail "mechanisms sharing a command run once"
@@ -64,7 +64,7 @@ upgrade = "echo pulled > pulled-{item}.txt"
 command = "echo 'x 1 2'"
 TOML
 add_layout "irepo"
-printf '[pm]\nalpha = "pm"\n' > irepo/machines/m1.toml
+printf '[packages.install]\nalpha = "pm"\n' > irepo/machines/m1.toml
 "$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null
 [ -f irepo/pulled-tpack.txt ] && [ -f irepo/pulled-other.txt ] || fail "--item upgrades each named item of its source"
 [ -f irepo/swept.txt ] && fail "--item alone must not sweep any mechanism" || true

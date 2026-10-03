@@ -25,6 +25,7 @@ class ManifestRepoTest {
         [layout]
         fragments = ["programs/**/*.toml"]
         machines = "machines"
+        profiles = "profiles"
         state = "state"
     """.trimIndent()
 
@@ -113,7 +114,7 @@ class ManifestRepoTest {
             "matches machine file machines/m.toml" in
                 layoutError(
                     "[layout]\nfragments = [\"**/*.toml\"]\nmachines = \"machines\"\nstate = \"state\"",
-                    "machines/m.toml" to "[pm]",
+                    "machines/m.toml" to "[x]",
                 ),
         )
     }
@@ -152,8 +153,8 @@ class ManifestRepoTest {
                     machines = "hosts"
                     state = "observed"
                 """.trimIndent(),
-                "hosts/laptop.toml" to "[pm]\ngit = \"dnf\"",
-                "machines/ignored.toml" to "[pm]\ngit = \"dnf\"",
+                "hosts/laptop.toml" to "[git]\ninstall = \"dnf\"",
+                "machines/ignored.toml" to "[git]\ninstall = \"dnf\"",
             ),
         )
         assertEquals(setOf("laptop"), ManifestLoader.loadRepo(fs, repo).machines.keys)
@@ -182,9 +183,11 @@ class ManifestRepoTest {
                     run = "true"
                 """.trimIndent(),
                 "machines/laptop.toml" to """
-                    [pm]
-                    git = "dnf"
-                    ripgrep = "dnf"
+                    [git]
+                    install = "dnf"
+
+                    [ripgrep]
+                    install = "dnf"
                 """.trimIndent(),
             ),
         )
@@ -308,31 +311,38 @@ class ManifestRepoTest {
                     file = "scripts/setup-ssh.sh"
                 """.trimIndent(),
                 "scripts/setup-ssh.sh" to "#!/bin/sh\n",
-                "machines/fedora.toml" to """
-                    base = true
-                    scripts = ["dotfiles", "setup-ssh generic"]
+                "profiles/fedora.toml" to """
+                    [dotfiles]
+                    scripts = ["dotfiles"]
 
-                    [pm]
-                    git = "dnf"
-                    kitty = "dnf"
+                    [ssh]
+                    scripts = ["setup-ssh generic"]
+
+                    [git]
+                    install = "dnf"
+
+                    [kitty]
+                    install = "dnf"
                 """.trimIndent(),
                 "machines/laptop.toml" to """
-                    extends = "fedora"
+                    extends = ["fedora"]
+
+                    [ssh]
                     scripts = ["setup-ssh laptopkey"]
 
-                    [pm]
-                    git = "brew"
+                    [git]
+                    install = "brew"
                 """.trimIndent(),
             ),
         )
         val manifest = ManifestLoader.loadRepo(fs, repo)
-        // Bases are not machines.
+        // Profiles are not machines.
         assertEquals(setOf("laptop"), manifest.machines.keys)
         val laptop = manifest.machines.getValue("laptop")
-        // pm merged per key, child wins.
+        // Mappings merge per program, the machine wins.
         assertEquals("brew", laptop.pm["git"])
         assertEquals("dnf", laptop.pm["kitty"])
-        // scripts union; same-named child entry replaces the base's (args too).
+        // Opt-ins union; a same-named machine entry replaces the profile's (args too).
         assertEquals(mapOf("dotfiles" to "", "setup-ssh" to "laptopkey"), laptop.scriptArgs())
     }
 
@@ -347,8 +357,8 @@ class ManifestRepoTest {
                     file = "scripts/setup-ssh.sh"
                 """.trimIndent(),
                 "scripts/setup-ssh.sh" to "#!/bin/sh\n",
-                "machines/fedora.toml" to """
-                    base = true
+                "profiles/fedora.toml" to """
+                    [setup]
                     scripts = [
                       '''setup-ssh
                          https://example.com/one.git
@@ -356,8 +366,8 @@ class ManifestRepoTest {
                       "dotfiles",
                     ]
                 """.trimIndent(),
-                "machines/laptop.toml" to "extends = \"fedora\"",
-                "machines/desktop.toml" to "extends = \"fedora\"\nscripts = ['''setup-ssh\n  only''']",
+                "machines/laptop.toml" to "extends = [\"fedora\"]",
+                "machines/desktop.toml" to "extends = [\"fedora\"]\n\n[ssh]\nscripts = ['''setup-ssh\n  only''']",
             ),
         )
         val manifest = ManifestLoader.loadRepo(fs, repo)
@@ -373,7 +383,7 @@ class ManifestRepoTest {
     }
 
     @Test
-    fun baseChainsFlattenThroughIntermediateBases() {
+    fun profileChainsFlattenThroughIntermediateProfiles() {
         val fs = fs(
             mapOf(
                 "loadout.toml" to """
@@ -383,9 +393,9 @@ class ManifestRepoTest {
                     [programs.git.install.rpm-ostree]
                     command = "y"
                 """.trimIndent(),
-                "machines/fedora.toml" to "base = true\n\n[pm]\ngit = \"dnf\"",
-                "machines/fedora-atomic.toml" to "base = true\nextends = \"fedora\"\n\n[pm]\ngit = \"rpm-ostree\"",
-                "machines/deck.toml" to "extends = \"fedora-atomic\"",
+                "profiles/fedora.toml" to "[git]\ninstall = \"dnf\"",
+                "profiles/fedora-atomic.toml" to "extends = [\"fedora\"]\n\n[git]\ninstall = \"rpm-ostree\"",
+                "machines/deck.toml" to "extends = [\"fedora-atomic\"]",
             ),
         )
         val manifest = ManifestLoader.loadRepo(fs, repo)
@@ -401,26 +411,37 @@ class ManifestRepoTest {
         )
 
         val unknown = assertFailsWith<ManifestException> {
-            ManifestLoader.loadRepo(repoWith("machines/laptop.toml" to "extends = \"ghost\""), repo)
+            ManifestLoader.loadRepo(repoWith("machines/laptop.toml" to "extends = [\"ghost\"]"), repo)
         }
-        assertTrue("extends unknown base 'ghost'" in unknown.message.orEmpty())
+        assertTrue("machines/laptop.toml: extends unknown profile 'ghost' (no profiles/ghost.toml)" in unknown.message.orEmpty(), unknown.message)
 
-        val notABase = assertFailsWith<ManifestException> {
+        // A machine is never a profile: extends looks in profiles/ only.
+        val aMachine = assertFailsWith<ManifestException> {
             ManifestLoader.loadRepo(
                 repoWith(
-                    "machines/laptop.toml" to "[pm]\ngit = \"dnf\"",
-                    "machines/desktop.toml" to "extends = \"laptop\"",
+                    "machines/laptop.toml" to "[git]\ninstall = \"dnf\"",
+                    "machines/desktop.toml" to "extends = [\"laptop\"]",
                 ),
                 repo,
             )
         }
-        assertTrue("is not a base" in notABase.message.orEmpty())
+        assertTrue("extends unknown profile 'laptop'" in aMachine.message.orEmpty(), aMachine.message)
+
+        val notAList = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(repoWith("profiles/p.toml" to "", "machines/laptop.toml" to "extends = \"p\""), repo)
+        }
+        assertTrue("extends is a list of profiles (extends = [\"p\"])" in notAList.message.orEmpty(), notAList.message)
+
+        val oldBase = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(repoWith("profiles/p.toml" to "base = true"), repo)
+        }
+        assertTrue("base = true is gone" in oldBase.message.orEmpty(), oldBase.message)
 
         val cycle = assertFailsWith<ManifestException> {
             ManifestLoader.loadRepo(
                 repoWith(
-                    "machines/a.toml" to "base = true\nextends = \"b\"",
-                    "machines/b.toml" to "base = true\nextends = \"a\"",
+                    "profiles/a.toml" to "extends = [\"b\"]",
+                    "profiles/b.toml" to "extends = [\"a\"]",
                 ),
                 repo,
             )
@@ -430,7 +451,7 @@ class ManifestRepoTest {
         val nested = assertFailsWith<ManifestException> {
             ManifestLoader.loadRepo(
                 repoWith(
-                    "machines/x/laptop.toml" to "[pm]\ngit = \"dnf\"",
+                    "machines/x/laptop.toml" to "[git]\ninstall = \"dnf\"",
                 ),
                 repo,
             )
@@ -439,7 +460,7 @@ class ManifestRepoTest {
     }
 
     @Test
-    fun dataDefaultsBaseAndMachineMergeAndUndeclaredKeysFail() {
+    fun dataDefaultsProfilesAndMachineMergeAndUndeclaredKeysFail() {
         val files = mapOf(
             "loadout.toml" to """
                 [data]
@@ -451,13 +472,14 @@ class ManifestRepoTest {
                 opacity = 0.85
                 blur = 1
             """.trimIndent(),
-            "machines/omarchy.toml" to "base = true\n\n[data]\nomarchy = true\ntags = [\"x\", \"y\"]\n\n[data.kitty]\nblur = 0",
-            "machines/t2.toml" to "extends = \"omarchy\"\n\n[data]\ntags = [\"z\"]\n\n[data.kitty]\nopacity = 0.99",
+            "profiles/omarchy.toml" to "[data]\nomarchy = true\ntags = [\"x\", \"y\"]\n\n[data.kitty]\nblur = 0",
+            // [kitty.data] is [data.kitty].
+            "machines/t2.toml" to "extends = [\"omarchy\"]\n\n[data]\ntags = [\"z\"]\n\n[kitty.data]\nopacity = 0.99",
             "machines/mac.toml" to "",
         )
         val manifest = ManifestLoader.loadRepo(fs(files), repo)
         val t2 = MachineData.lines(manifest.machines.getValue("t2").data).toMap()
-        // Defaults under base under machine; tables merge key by key, lists replace.
+        // Defaults under profile under machine; tables merge key by key, lists replace.
         assertEquals(
             mapOf(
                 "agent" to "\"claude\"",
@@ -487,15 +509,15 @@ class ManifestRepoTest {
     }
 
     @Test
-    fun baseMappingsAreValidatedEvenWithoutChildren() {
+    fun profileMappingsAreValidatedEvenWithoutMachines() {
         val fs = fs(
             mapOf(
                 "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
-                "machines/fedora.toml" to "base = true\n\n[pm]\nghost = \"dnf\"",
+                "profiles/fedora.toml" to "[ghost]\ninstall = \"dnf\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
-        assertTrue("unknown program 'ghost'" in e.message.orEmpty())
+        assertTrue("profiles/fedora.toml references unknown program 'ghost'" in e.message.orEmpty(), e.message)
     }
 
     @Test
@@ -503,7 +525,7 @@ class ManifestRepoTest {
         val fs = fs(
             mapOf(
                 "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
-                "machines/laptop.toml" to "[pm]\nghost = \"dnf\"",
+                "machines/laptop.toml" to "[ghost]\ninstall = \"dnf\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
@@ -700,18 +722,68 @@ class ManifestRepoTest {
     }
 
     @Test
-    fun scriptsArrayAfterPmTableGetsPlacementHint() {
-        val fs = fs(
-            mapOf(
-                "loadout.toml" to "[scripts.s]\nrun = \"echo hi\"",
-                "machines/m.toml" to """
-                    [pm]
-                    scripts = ["s"]
-                """.trimIndent(),
-            ),
+    fun groupsMapProgramsAndOptInScriptsAndRefuseWhatTheyDontKnow() {
+        val files = mapOf(
+            "loadout.toml" to """
+                [scripts.s]
+                run = "echo hi"
+                [programs.tmux]
+                [programs.tmux.install.omarchy]
+                [programs.tpack]
+                [programs.tpack.install.brew-cask]
+            """.trimIndent(),
+            "machines/m.toml" to """
+                [tmux]
+                scripts = ["s"]
+                [tmux.install]
+                tmux = "omarchy"
+                tpack = "brew-cask"
+            """.trimIndent(),
         )
-        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
-        assertTrue("hint: the top-level `scripts = [...]` array must appear ABOVE" in e.message.orEmpty())
+        val m = ManifestLoader.loadRepo(fs(files), repo).machines.getValue("m")
+        assertEquals(mapOf("tmux" to "omarchy", "tpack" to "brew-cask"), m.pm)
+        assertEquals(listOf("s"), m.scripts)
+        assertEquals(setOf("tmux"), m.groups.keys)
+
+        fun error(machine: String) = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(fs(files + ("machines/m.toml" to machine)), repo)
+        }.message.orEmpty()
+        assertTrue("machines/m.toml: program 'tmux' is mapped twice ([tmux] and [other])" in
+            error("[tmux]\ninstall = \"omarchy\"\n\n[other.install]\ntmux = \"omarchy\""))
+        assertTrue("machines/m.toml: script 's' is opted into twice ([a] and [b])" in
+            error("[a]\nscripts = [\"s\"]\n\n[b]\nscripts = [\"s\"]"))
+        assertTrue("machines/m.toml: [tmux] has unknown key 'pkg' (install, scripts, data)" in error("[tmux]\npkg = \"x\""))
+        assertTrue("machines/m.toml: unknown key 'scripts'" in error("scripts = [\"s\"]"))
+    }
+
+    @Test
+    fun siblingProfilesMustAgreeAndTheMachineOverridesThem() {
+        val files = mapOf(
+            "loadout.toml" to """
+                [data]
+                omarchy = false
+
+                [scripts.ssh]
+                file = "ssh.sh"
+                [programs.git]
+                [programs.git.install.dnf]
+                [programs.git.install.brew]
+            """.trimIndent(),
+            "ssh.sh" to "#!/bin/sh\n",
+            "profiles/a.toml" to "[git]\ninstall = \"dnf\"\nscripts = [\"ssh one\"]\n\n[data]\nomarchy = true",
+            "profiles/b.toml" to "[git]\ninstall = \"dnf\"\nscripts = [\"ssh one\"]\n\n[data]\nomarchy = true",
+            "machines/m.toml" to "extends = [\"a\", \"b\"]\n\n[git]\ninstall = \"brew\"",
+        )
+        // Equal values from two profiles are fine; the machine overrides both.
+        val m = ManifestLoader.loadRepo(fs(files), repo).machines.getValue("m")
+        assertEquals("brew", m.pm["git"])
+        assertEquals(mapOf("ssh" to "one"), m.scriptArgs())
+
+        val disagree = files + ("profiles/b.toml" to "[git]\ninstall = \"brew\"\nscripts = [\"ssh two\"]\n\n[data]\nomarchy = false")
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(disagree), repo) }.message.orEmpty()
+        assertTrue("machines/m.toml: profiles 'a' and 'b' map 'git' differently ('dnf' vs 'brew')" in e, e)
+        assertTrue("machines/m.toml: profiles 'a' and 'b' opt into 'ssh' with different arguments" in e, e)
+        assertTrue("machines/m.toml: profiles 'a' and 'b' set data key 'omarchy' differently" in e, e)
     }
 
     @Test
@@ -723,6 +795,7 @@ class ManifestRepoTest {
                     run = "echo hi"
                 """.trimIndent(),
                 "machines/m.toml" to """
+                    [setup]
                     scripts = ["ghost", "inline some-arg"]
                 """.trimIndent(),
             ),
@@ -808,8 +881,8 @@ class ManifestRepoTest {
                     via = ["dnf"]
                 """.trimIndent(),
                 "machines/laptop.toml" to """
-                    [pm]
-                    ripgrep = "dnf"
+                    [ripgrep]
+                    install = "dnf"
                 """.trimIndent(),
             ),
         )
@@ -837,8 +910,8 @@ class ManifestRepoTest {
                     via = ["dnf"]
                 """.trimIndent(),
                 "machines/laptop.toml" to """
-                    [pm]
-                    ripgrep = "dnf"
+                    [ripgrep]
+                    install = "dnf"
                 """.trimIndent(),
             ),
         )
@@ -910,7 +983,7 @@ class ManifestRepoTest {
             fs(
                 mapOf(
                     "loadout.toml" to "[programs.zsh]\nvia = [\"omarchy\"]\n\n[programs.yay-only]\nvia = [\"omarchy-aur\"]",
-                    "machines/t2.toml" to "[pm]\nzsh = \"omarchy\"\nyay-only = \"omarchy-aur\"",
+                    "machines/t2.toml" to "[zsh]\ninstall = \"omarchy\"\n\n[yay-only]\ninstall = \"omarchy-aur\"",
                 ),
             ),
             repo,

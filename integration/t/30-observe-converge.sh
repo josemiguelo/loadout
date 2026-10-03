@@ -80,7 +80,7 @@ regex = "([0-9.]+)"
 via = ["pacman"]
 TOML
 add_layout "pmrepo"
-printf '[pm]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
+printf '[packages.install]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
 if ! command -v pacman >/dev/null 2>&1; then
     OUT=$("$BIN" --repo pmrepo --machine m1 setup-new-machine --dry-run 2>&1 || true)
     echo "$OUT" | grep -q "required binary 'pacman'" || fail "pm-not-installed error message"
@@ -124,7 +124,7 @@ regex = "([0-9.]+)"
 command = "false"
 TOML
 add_layout "probed"
-printf '[pm]\nviapm = "ghostpm"\nbyitself = "manual"\n' > probed/machines/m1.toml
+printf '[packages.install]\nviapm = "ghostpm"\nbyitself = "manual"\n' > probed/machines/m1.toml
 OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
 echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
 echo "$OUT" | grep -q "ghostpm-definitely-not-here: command not found" || fail "status says what wasn't there"
@@ -147,8 +147,8 @@ depends-on = ["prereq"]
 command = "true"
 TOML
 add_layout "vdeps"
-printf '[pm]\ntool = "withprereq"\nprereq = "manual"\n' > vdeps/machines/m1.toml
-printf '[pm]\ntool = "plain"\n' > vdeps/machines/m2.toml
+printf '[packages.install]\ntool = "withprereq"\nprereq = "manual"\n' > vdeps/machines/m1.toml
+printf '[packages.install]\ntool = "plain"\n' > vdeps/machines/m2.toml
 OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
 echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
 OUT=$("$BIN" --repo vdeps --machine m2 install tool --dry-run) || fail "the other variant needs no mapping for it"
