@@ -119,3 +119,35 @@ sed -nE 's/^--source [^ ]+ --no-pager ([a-z-]+).*/\1/p' "$CZ/log" | tr '\n' ' ' 
 git -C repo log --oneline | grep -q "m1: synced" || fail "sync commits the state"
 grep -q '"drifted"' repo/state/m1.json && fail "the committed state is after the apply"
 ok "sync applies configs before refreshing and committing state"
+
+# --- the home screen's configs row ----------------------------------------
+# The stub goes on PATH in a subshell: an assignment in front of a shell
+# function may outlive the call, and the next test file must not see it.
+if has_pty; then
+    fake_release_cache
+    printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
+    cz_loadout --repo repo --machine m1 status >/dev/null
+    # jj to the configs row (programs, scripts, configs), l opens it with
+    # the drifted one ticked, enter asks, enter applies on the terminal.
+    { wait_settled tui-configs.log; wait_screen tui-configs.log 'apply wh'
+      printf 'jj'; sleep 0.4; printf 'l'; wait_screen tui-configs.log 'enter apply'
+      printf '\r'; wait_screen tui-configs.log 'These configs will be written'
+      printf '\r'; wait_back tui-configs.log; printf '\r'; wait_screen tui-configs.log 'nothing drifted'; printf 'q'; sleep 1; } |
+        (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; pty_run tui-configs.log --repo repo --machine m1)
+    seen tui-configs.log "configs .*1 drifted" || fail "the configs row counts what drifted"
+    seen tui-configs.log "\[x\] ! zsh +drifted +.config/zsh/.zshrc" || fail "the picker ticks the drifted config, naming its file"
+    seen tui-configs.log "━━ loadout apply zsh ━" || fail "enter hands the ticked configs to apply"
+    seen_after_back tui-configs.log "nothing drifted" || fail "the screen comes back with the row settled"
+    ok "the home screen's configs row hands drifted configs to apply"
+
+    printf 'MM .config/zsh/.zshrc\n' > "$CZ/status"
+    cz_loadout --repo repo --machine m1 status >/dev/null
+    : > "$CZ/log"
+    { wait_settled tui-edited.log; wait_screen tui-edited.log 'apply wh'
+      printf 'jj'; sleep 0.4; printf 'l'; wait_screen tui-edited.log 'enter apply'
+      printf '\r'; wait_screen tui-edited.log 'edited on this machine'; printf 'q'; sleep 1; } |
+        (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; pty_run tui-edited.log --repo repo --machine m1)
+    seen tui-edited.log "edited on this machine: .config/zsh/.zshrc" || fail "the screen names the edited file"
+    grep -q " apply" "$CZ/log" && fail "nothing is applied from the screen over an edit"
+    ok "the configs row refuses a file edited on this machine before leaving the screen"
+fi

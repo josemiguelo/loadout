@@ -33,22 +33,18 @@ something a home-screen row already does, is not wanted.
 Formerly `post-installer`: the working directory and some external
 references may still use that name. Never reintroduce it in code.
 
-## Next: configs on the home screen (1.1, agreed, not built)
+## Next: the config repo retires its dotfiles scripts (1.1, agreed)
 
 The rest of this file describes the code as it is; this section is the
-agreed next step. The user approves every step before it runs. Configs in
-status/state/diff/explain, `apply` and `sync` are built (contract 17).
+agreed next step, in the user's config repo, not here. The user approves
+every step before it runs. Configs everywhere in loadout, home screen
+included, are built (contract 17).
 
-Steps (each: three suites green on Linux, macOS checked by the user,
-README/AGENTS/wiki re-read):
-2. Home screen: a fifth subject row, "configs", same picker/hand-off rules
-   (enter hands the ticked units to `apply`); the fleet row counts config
-   drift (`DiffReport.hasConfigDrift`).
-3. The user's repo retires its `dotfiles-*` scripts (their bootstrap's
-   ownership repair and moving a pre-seeded Omarchy nvim config aside need
-   a new home); bootstrap on both OSes = install git + chezmoi →
-   `chezmoi init --apply <repo>` → `install.sh` → `loadout
-   setup-new-machine`, and the config repo's README says so.
+The `dotfiles-*` scripts go (`sync` and the configs row do their work);
+their bootstrap's ownership repair and moving a pre-seeded Omarchy nvim
+config aside need a new home. Bootstrap on both OSes = install git +
+chezmoi → `chezmoi init --apply <repo>` → `install.sh` → `loadout
+setup-new-machine`, and the config repo's README says so.
 
 ## Build, run, test
 
@@ -519,8 +515,9 @@ Explicit user decisions; don't "improve" them away.
   a shorter line printed next keeps the spinner line's tail.
 - **Home screen** (bare `loadout` on a TTY; a pipe gets help):
   `tui/HomeModel.kt` (all state + logic, unit-tested) + `HomeApp.kt`
-  (composables). Four subject rows (programs, scripts, remote, fleet), each
-  with its verdict and the ONE verb that resolves it. ↑↓/jk move, l/h (or
+  (composables). Subject rows (programs, scripts, configs — only with
+  `[layout] configs` —, remote, fleet), each with its verdict and the ONE
+  verb that resolves it; tests find a row by subject, never by position. ↑↓/jk move, l/h (or
   →/←) open/close a detail, pgup/pgdn page, enter ACTS (never opens or
   closes; never fires on a busy row). Machine-wide verbs are their own
   keys: r re-check, S sync, U self-upgrade, C setup-new-machine, t theme,
@@ -558,6 +555,14 @@ Explicit user decisions; don't "improve" them away.
   work). `K` opens a row's link when its source printed one. Batch oracles
   read STDOUT ONLY: stderr can carry warnings mistaken for package names.
   `l` only opens, never dispatches, so vim keys can't start an install.
+- **Configs row**: every unit the last observation saw, with its verdict
+  and drifted files; drifted ones pre-ticked (`preselectConfigs`). Enter
+  first asks chezmoi which ticked files were edited on this machine
+  (`ConfigEngine.edited`): any, and the message line names them and the
+  screen stays (the choice between `chezmoi re-add` and `apply --force`
+  is made in a terminal, never from the screen); none, and it asks, then
+  hands off `apply <names>`. The fleet row and its table count config
+  drift too (`FleetLine`: a program or a config).
 - **Scripts row**: maintain-mode scripts in run order with their last
   verdict; anything not done pre-ticked (`preselect`, re-applied after
   every refresh so picks follow verdicts). Enter hands the ticks to `run

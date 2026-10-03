@@ -10,6 +10,7 @@ import loadout.cli.outdatedReport
 import loadout.core.TOOL_VERSION
 import loadout.core.diff.DiffEngine
 import loadout.core.manifest.ManifestLoader
+import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramStatus
@@ -34,10 +35,10 @@ import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
- * What the floating pane is for. UPGRADE, SCRIPTS and INSTALL ask before
- * handing off to their command; LIST only shows.
+ * What the floating pane is for. UPGRADE, SCRIPTS, INSTALL and CONFIGS ask
+ * before handing off to their command; LIST only shows.
  */
-enum class PaneKind { UPGRADE, SCRIPTS, INSTALL, LIST }
+enum class PaneKind { UPGRADE, SCRIPTS, INSTALL, CONFIGS, LIST }
 
 /**
  * The floating pane: a question before a hand-off, or a list. Commands
@@ -67,7 +68,7 @@ data class PaneRun(
 
 /**
  * A command the home screen closes for: the subcommand for [kind]
- * (`install`, `run`, `upgrade`) with [args]. RootCommand runs it on the
+ * (`install`, `run`, `apply`, `upgrade`) with [args]. RootCommand runs it on the
  * real terminal, then reopens the screen.
  */
 data class Handoff(val kind: PaneKind, val args: List<String>)
@@ -96,6 +97,15 @@ data class ScriptRow(
     val description: String = "",
     /** The last observed verdict; null = never observed here. */
     val status: ScriptStatus? = null,
+)
+
+/** One config unit, as the configs row lists it. */
+data class ConfigItem(
+    val name: String,
+    /** The last observed verdict; null = never observed here. */
+    val status: ConfigStatus? = null,
+    /** The files apply would change (DRIFTED). */
+    val files: List<String> = emptyList(),
 )
 
 /** What the remotes have said so far — they're asked on open, not on demand. */
@@ -154,7 +164,7 @@ enum class HomeAction {
 
     // Row verbs: what the focused subject needs. Each opens its table in
     // place; acting on its ticks is a HAND_OFF.
-    RUN_SCRIPTS, INSTALL_MISSING, REVIEW_OUTDATED, SHOW_DIFF,
+    RUN_SCRIPTS, INSTALL_MISSING, APPLY_CONFIGS, REVIEW_OUTDATED, SHOW_DIFF,
 
     // Whole-machine verbs, on their own keys — they belong to no single row.
     SYNC, UPGRADE, SETUP,
@@ -219,6 +229,10 @@ data class HomeState(
     val scripts: List<ScriptRow> = emptyList(),
     /** Scripts ticked to run. Follows the verdicts: not done = ticked, after every re-check. */
     val picked: Set<String> = emptySet(),
+    /** This machine's config units with their last verdicts; empty without `[layout] configs`. */
+    val configs: List<ConfigItem> = emptyList(),
+    /** Configs ticked to apply. Follows the verdicts: drifted = ticked, after every re-check. */
+    val applying: Set<String> = emptySet(),
     /** The floating pane's question or list, if one is up. */
     val run: PaneRun? = null,
     val message: String? = null,
@@ -285,6 +299,8 @@ class HomeModel(private val app: AppContext) {
     private var stored: MachineState? = null
     /** The body's height at the last key; [resume] scrolls with it. */
     private var lastViewport = 8
+    /** The repo has `[layout] configs`: the configs row is on screen. */
+    private val withConfigs: Boolean get() = runCatching { app.configs != null }.getOrDefault(false)
 
     /** Stored verdicts, on screen immediately. Call before runMosaic; may throw. */
     fun load() {
@@ -297,16 +313,19 @@ class HomeModel(private val app: AppContext) {
         val report = fleet()
         val scripts = scriptRowsOf(m, sys, stored)
         val missing = missingRowsOf(m, sys, stored)
+        val configs = configItemsOf(stored)
         update {
             it.copy(
                 machine = sys.machine,
                 system = "${sys.os.id}${sys.distro?.let { "/$it" }.orEmpty()} · ${sys.arch}",
-                sections = sectionsOf(m, sys, stored, report, null),
+                sections = sectionsOf(m, sys, stored, report, null, withConfigs = withConfigs),
                 fleet = report,
                 missing = missing,
                 chosen = missing.map { it.name }.toSet(),
                 scripts = scripts,
                 picked = preselect(scripts),
+                configs = configs,
+                applying = preselectConfigs(configs),
                 stale = stored != null,
                 message = app.stateStore.lastWarnings.firstOrNull(),
             )
@@ -327,7 +346,10 @@ class HomeModel(private val app: AppContext) {
         if (state.loading) return
         // Recompute the rows too: "asking…" has to show the moment we start,
         // not when the first answer lands.
-        val sections = sectionsOf(m, sys, stored, fleet(), if (remotes) RemoteStatus.Asking else state.remote, checking = true)
+        val sections = sectionsOf(
+            m, sys, stored, fleet(), if (remotes) RemoteStatus.Asking else state.remote,
+            checking = true, withConfigs = withConfigs,
+        )
         update { it.copy(loading = true, remote = if (remotes) RemoteStatus.Asking else it.remote, sections = sections) }
 
         val known = stored
@@ -340,21 +362,26 @@ class HomeModel(private val app: AppContext) {
             val report = fleet()
             val scripts = scriptRowsOf(m, sys, observed)
             val missing = missingRowsOf(m, sys, observed)
+            val configs = configItemsOf(observed)
             val toolsDown = app.lastToolsDown
+            val configsDown = app.lastConfigsDown
             update {
                 it.copy(
                     loading = false,
                     stale = fresh.isFailure,
                     fleet = report,
-                    sections = sectionsOf(m, sys, observed, report, it.remote, toolsDown = toolsDown),
+                    sections = sectionsOf(m, sys, observed, report, it.remote, toolsDown = toolsDown, withConfigs = withConfigs),
                     missing = missing,
                     chosen = missing.map { it.name }.toSet(),
                     scripts = scripts,
                     picked = preselect(scripts),
+                    configs = configs,
+                    applying = preselectConfigs(configs),
                     // A tool the checks go through wasn't there: one sentence,
                     // here, where a person reads — not only a count in a row.
                     message = fresh.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()
-                        ?: toolsDown.firstOrNull()?.let { down -> "${down.message} · r re-checks once it is fixed" },
+                        ?: toolsDown.firstOrNull()?.let { down -> "${down.message} · r re-checks once it is fixed" }
+                        ?: configsDown?.let { "configs not checked: $it" },
                 )
             }
             // A machine with no state file yet couldn't be asked about above.
@@ -418,7 +445,7 @@ class HomeModel(private val app: AppContext) {
         val m = manifest ?: return
         val sys = system ?: return
         val known = stored ?: return
-        update { it.copy(remote = RemoteStatus.Asking, sections = sectionsOf(m, sys, known, it.fleet, RemoteStatus.Asking)) }
+        update { it.copy(remote = RemoteStatus.Asking, sections = sectionsOf(m, sys, known, it.fleet, RemoteStatus.Asking, withConfigs = withConfigs)) }
         scope.launch { askRemotes(m, sys, known) }
     }
 
@@ -431,14 +458,17 @@ class HomeModel(private val app: AppContext) {
         val report = fleet()
         val scripts = scriptRowsOf(m, sys, observed)
         val missing = missingRowsOf(m, sys, observed)
+        val configs = configItemsOf(observed)
         update {
             it.copy(
-                sections = sectionsOf(m, sys, observed, report, it.remote),
+                sections = sectionsOf(m, sys, observed, report, it.remote, withConfigs = withConfigs),
                 fleet = report,
                 missing = missing,
                 chosen = missing.map { p -> p.name }.toSet(),
                 scripts = scripts,
                 picked = preselect(scripts),
+                configs = configs,
+                applying = preselectConfigs(configs),
                 stale = false,
             )
         }
@@ -506,7 +536,7 @@ class HomeModel(private val app: AppContext) {
         update {
             it.copy(
                 remote = remote,
-                sections = sectionsOf(m, sys, known, report, remote, checking = it.loading, toolsDown = toolsDown),
+                sections = sectionsOf(m, sys, known, report, remote, checking = it.loading, toolsDown = toolsDown, withConfigs = withConfigs),
             )
         }
     }
@@ -575,6 +605,7 @@ class HomeModel(private val app: AppContext) {
         val onRemote = section.action == HomeAction.REVIEW_OUTDATED
         val onScripts = section.action == HomeAction.RUN_SCRIPTS
         val onPrograms = section.action == HomeAction.INSTALL_MISSING
+        val onConfigs = section.action == HomeAction.APPLY_CONFIGS
         when (key) {
             HomeKey.UP -> moveCursor(-1, viewport)
             HomeKey.DOWN -> moveCursor(1, viewport)
@@ -673,6 +704,11 @@ class HomeModel(private val app: AppContext) {
                 onScripts -> s.scripts.getOrNull(row)?.let { script ->
                     update { it.copy(picked = if (script.name in it.picked) it.picked - script.name else it.picked + script.name) }
                 }
+                // Ticking an applied config writes it again: harmless, and how
+                // you put back a file you deleted.
+                onConfigs -> s.configs.getOrNull(row)?.let { config ->
+                    update { it.copy(applying = if (config.name in it.applying) it.applying - config.name else it.applying + config.name) }
+                }
                 onRemote && answered != null -> {
                     // A tool line, or a program under it, ticks the TOOL:
                     // loadout only does whole upgrades, and the tool line
@@ -719,6 +755,7 @@ class HomeModel(private val app: AppContext) {
                     !open -> say(if (detailLines(s, section) > 0) "press l to open it" else "nothing to tick there")
                     onPrograms -> update { it.copy(chosen = if (all) it.missing.map { p -> p.name }.toSet() else emptySet()) }
                     onScripts -> update { it.copy(picked = if (all) it.scripts.map { r -> r.name }.toSet() else emptySet()) }
+                    onConfigs -> update { it.copy(applying = if (all) it.configs.map { c -> c.name }.toSet() else emptySet()) }
                     onRemote && answered != null -> {
                         val every = remoteLines(answered, s.collapsed).mapNotNull { it.key }.toSet()
                         update { it.copy(selection = if (all) every else emptySet()) }
@@ -735,6 +772,7 @@ class HomeModel(private val app: AppContext) {
                 section.busy -> say("still asking — the rows fill in as answers land")
                 open && onPrograms -> startInstalls(s.chosen)
                 open && onScripts -> startScripts(s.picked)
+                open && onConfigs -> startConfigs(s.applying)
                 open && onRemote && answered != null -> {
                     val line = if (inDetail) remoteLines(answered, s.collapsed).getOrNull(row) else null
                     when {
@@ -858,6 +896,44 @@ class HomeModel(private val app: AppContext) {
             return
         }
         ask(Handoff(PaneKind.SCRIPTS, steps.map { it.name }), steps.map { it.name to it.description })
+    }
+
+    /**
+     * Ask about writing the ticked configs, then hand off to `loadout apply
+     * <names>`. A file edited on this machine would stop `apply`, so it
+     * stops here, before the screen closes, naming the file: which version
+     * wins is the user's call, made in a terminal (`chezmoi re-add`, or
+     * `loadout apply --force`).
+     */
+    fun startConfigs(picked: Set<String>) {
+        if (state.run != null) return
+        val chosen = state.configs.filter { it.name in picked }
+        if (chosen.isEmpty()) {
+            say("nothing ticked — space ticks a config, a ticks them all")
+            return
+        }
+        val edited = runCatching {
+            val configs = app.configs ?: return
+            val targets = configs.units().filter { unit -> chosen.any { it.name == unit.name } }.flatMap { it.targets }
+            configs.edited(targets)
+        }.getOrElse { e ->
+            say(e.message?.lineSequence()?.firstOrNull())
+            return
+        }
+        if (edited.isNotEmpty()) {
+            say("edited on this machine: ${edited.joinToString()} — keep with chezmoi re-add, or run loadout apply --force")
+            return
+        }
+        ask(
+            Handoff(PaneKind.CONFIGS, chosen.map { it.name }),
+            chosen.map { config ->
+                config.name to when (config.status) {
+                    ConfigStatus.DRIFTED -> config.files.joinToString()
+                    ConfigStatus.APPLIED -> "already applied · written again"
+                    ConfigStatus.UNKNOWN, null -> "not checked"
+                }
+            },
+        )
     }
 
     /**
@@ -1050,6 +1126,7 @@ internal fun paneLines(run: PaneRun, width: Int? = null): List<String> {
     val intro = when (run.kind) {
         PaneKind.SCRIPTS -> "These scripts will run, in order:"
         PaneKind.INSTALL -> "These programs will install, in order:"
+        PaneKind.CONFIGS -> "These configs will be written from the repo:"
         else -> "These will upgrade, in order:"
     }
     val column = (run.items.maxOfOrNull { it.first.length } ?: 0).coerceAtMost(NAME_COLUMN) + 2
@@ -1133,6 +1210,15 @@ internal fun missingRowsOf(manifest: Manifest, system: SystemInfo, observed: Mac
 /** Anything not known-done starts ticked: that IS the work. */
 internal fun preselect(rows: List<ScriptRow>): Set<String> =
     rows.filter { it.status != ScriptStatus.DONE }.map { it.name }.toSet()
+
+/** Pure: the configs row's picker — every unit the last observation saw, by name. */
+internal fun configItemsOf(observed: MachineState?): List<ConfigItem> =
+    observed?.configs.orEmpty().toList().sortedBy { it.first }
+        .map { (name, config) -> ConfigItem(name, config.status, config.files) }
+
+/** Drifted configs start ticked; an unchecked one can't promise anything to write. */
+internal fun preselectConfigs(rows: List<ConfigItem>): Set<String> =
+    rows.filter { it.status == ConfigStatus.DRIFTED }.map { it.name }.toSet()
 
 /**
  * One line of the remote table. The table is grouped by what will ACT: a
@@ -1327,6 +1413,7 @@ internal fun homeLines(state: HomeState): List<HomeLine> {
             }
             HomeAction.RUN_SCRIPTS -> state.scripts.indices.forEach { lines += HomeLine.Detail(index, it) }
             HomeAction.INSTALL_MISSING -> state.missing.indices.forEach { lines += HomeLine.Detail(index, it) }
+            HomeAction.APPLY_CONFIGS -> state.configs.indices.forEach { lines += HomeLine.Detail(index, it) }
             HomeAction.SHOW_DIFF -> driftedRows(state).indices.let { rows ->
                 if (rows.isEmpty()) return@let
                 lines += HomeLine.Header(index)
@@ -1353,14 +1440,31 @@ internal fun snapCursor(lines: List<HomeLine>, cursor: Int): Int {
     return -1
 }
 
-/** The drifting half of the fleet comparison — the only part the table shows. */
-internal fun driftedRows(state: HomeState) =
-    state.fleet?.rows?.filter { it.drift || it.incomplete }.orEmpty()
+/** One row of the fleet table: a drifting program, or a config drifted somewhere. */
+sealed interface FleetLine {
+    val name: String
+
+    data class Program(val row: loadout.core.diff.ProgramRow) : FleetLine {
+        override val name get() = row.program
+    }
+
+    data class Config(val row: loadout.core.diff.ConfigRow) : FleetLine {
+        override val name get() = row.unit
+    }
+}
+
+/** The drifting half of the fleet comparison — the only part the table shows. Programs, then configs. */
+internal fun driftedRows(state: HomeState): List<FleetLine> =
+    state.fleet?.let { report ->
+        report.rows.filter { it.drift || it.incomplete }.map { FleetLine.Program(it) } +
+            report.configs.filter { it.drifted }.map { FleetLine.Config(it) }
+    }.orEmpty()
 
 /** How many detail lines this section can open in place (0 = none). */
 internal fun detailLines(state: HomeState, section: HomeSection?): Int = when (section?.action) {
     HomeAction.INSTALL_MISSING -> state.missing.size
     HomeAction.RUN_SCRIPTS -> state.scripts.size
+    HomeAction.APPLY_CONFIGS -> state.configs.size
     HomeAction.REVIEW_OUTDATED -> (state.remote as? RemoteStatus.Answered)?.let { remoteLines(it, state.collapsed).size } ?: 0
     HomeAction.SHOW_DIFF -> driftedRows(state).size
     else -> 0
@@ -1431,7 +1535,11 @@ internal fun remoteSummary(remote: RemoteStatus.Answered): String {
 /** Where a row came from, as the reader knows it — not as the code keys it. */
 private fun groupLabel(row: UpdateRow) = if (row.source == "release") "loadout" else row.source
 
-/** Pure: the four subject lines for a machine's observed state. */
+/**
+ * Pure: the subject lines for a machine's observed state — programs,
+ * scripts, configs ([withConfigs]: the repo has `[layout] configs`),
+ * remote, fleet.
+ */
 internal fun sectionsOf(
     manifest: Manifest,
     system: SystemInfo,
@@ -1440,6 +1548,7 @@ internal fun sectionsOf(
     remote: RemoteStatus?,
     checking: Boolean = false,
     toolsDown: List<ToolDown> = emptyList(),
+    withConfigs: Boolean = false,
 ): List<HomeSection> {
     val programs = observed?.programs.orEmpty()
     val missing = programs.filterValues { it.status == ProgramStatus.MISSING }.keys.sorted()
@@ -1455,8 +1564,31 @@ internal fun sectionsOf(
     val pickable = scriptRowsOf(manifest, system, observed).isNotEmpty()
     val mapped = manifest.machines[system.machine]?.pm?.size ?: 0
     val drifted = fleet?.rows?.count { it.drift || it.incomplete } ?: 0
+    val configsDrifted = fleet?.configs?.count { it.drifted } ?: 0
+    val configs = observed?.configs.orEmpty()
+    val configsOff = configs.filterValues { it.status == ConfigStatus.DRIFTED }.size
+    val configsUnchecked = configs.filterValues { it.status == ConfigStatus.UNKNOWN }.size
+    val configsSection = HomeSection(
+        subject = "configs",
+        summary = when {
+            checking -> ""
+            configs.isEmpty() -> "not observed yet"
+            configsUnchecked > 0 -> "${configs.size - configsOff - configsUnchecked} applied · $configsOff drifted · $configsUnchecked not checked"
+            else -> "${configs.size - configsOff} applied · $configsOff drifted"
+        },
+        verb = when {
+            checking -> ""
+            configsOff > 0 -> "apply what's drifted"
+            configsUnchecked > 0 -> configs.values.first { it.status == ConfigStatus.UNKNOWN }.reason ?: "not checked"
+            else -> "nothing drifted"
+        },
+        action = if (configs.isEmpty()) HomeAction.NONE else HomeAction.APPLY_CONFIGS,
+        severity = if (configsOff > 0 || configsUnchecked > 0) false else null,
+        neutral = checking,
+        busy = checking,
+    )
 
-    return listOf(
+    return listOfNotNull(
         HomeSection(
             subject = "programs",
             // While the checks run the row is only the spinner, like the
@@ -1501,6 +1633,7 @@ internal fun sectionsOf(
             neutral = checking,
             busy = checking,
         ),
+        configsSection.takeIf { withConfigs },
         HomeSection(
             subject = "remote",
             summary = when (remote) {
@@ -1524,12 +1657,14 @@ internal fun sectionsOf(
             subject = "fleet",
             summary = when {
                 fleet == null -> "no state files yet"
-                drifted == 0 -> "${fleet.machines.size} machine(s) in sync"
-                else -> "$drifted program(s) drifted across ${fleet.machines.size} machines"
+                drifted == 0 && configsDrifted == 0 -> "${fleet.machines.size} machine(s) in sync"
+                configsDrifted == 0 -> "$drifted program(s) drifted across ${fleet.machines.size} machines"
+                drifted == 0 -> "$configsDrifted config(s) drifted across ${fleet.machines.size} machines"
+                else -> "$drifted program(s) · $configsDrifted config(s) drifted"
             },
             verb = if (fleet == null) "nothing to compare" else "compare the fleet",
             action = if (fleet == null) HomeAction.NONE else HomeAction.SHOW_DIFF,
-            severity = if (drifted == 0) null else false,
+            severity = if (drifted == 0 && configsDrifted == 0) null else false,
         ),
     )
 }

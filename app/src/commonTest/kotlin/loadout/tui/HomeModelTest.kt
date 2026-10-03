@@ -1,7 +1,12 @@
 package loadout.tui
 
+import loadout.core.diff.ConfigCell
+import loadout.core.diff.DiffReport
 import loadout.core.manifest.ManifestLoader
+import loadout.core.model.ConfigState
+import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
+import loadout.core.diff.ConfigRow as DiffConfigRow
 import loadout.core.model.OsFamily
 import loadout.core.model.ProgramState
 import loadout.core.model.ProgramStatus
@@ -88,6 +93,56 @@ class HomeSectionsTest {
         // No state files to compare: the fleet row can't act either.
         val fleet = sections.first { it.subject == "fleet" }
         assertEquals(HomeAction.NONE, fleet.action)
+    }
+
+    @Test
+    fun theConfigsRowIsThereOnlyForARepoWithConfigs() {
+        val observed = state().copy(
+            configs = mapOf(
+                "tmux" to ConfigState(ConfigStatus.APPLIED),
+                "zsh" to ConfigState(ConfigStatus.DRIFTED, listOf(".config/zsh/.zshrc")),
+            ),
+        )
+        assertFalse(sectionsOf(MANIFEST, SYSTEM, observed, null, null).any { it.subject == "configs" })
+
+        val sections = sectionsOf(MANIFEST, SYSTEM, observed, null, null, withConfigs = true)
+        assertEquals(listOf("programs", "scripts", "configs", "remote", "fleet"), sections.map { it.subject })
+        val configs = sections.first { it.subject == "configs" }
+        assertEquals("1 applied · 1 drifted", configs.summary)
+        assertEquals("apply what's drifted", configs.verb)
+        assertEquals(HomeAction.APPLY_CONFIGS, configs.action)
+        assertEquals(false, configs.severity)
+
+        // chezmoi couldn't answer: its reason is the verb, never "nothing drifted".
+        val down = state().copy(configs = mapOf("zsh" to ConfigState(ConfigStatus.UNKNOWN, reason = "chezmoi is not on PATH")))
+        val unchecked = sectionsOf(MANIFEST, SYSTEM, down, null, null, withConfigs = true).first { it.subject == "configs" }
+        assertEquals("chezmoi is not on PATH", unchecked.verb)
+        assertEquals(false, unchecked.severity)
+    }
+
+    @Test
+    fun driftedConfigsStartTickedAndTheFleetCountsThem() {
+        val items = configItemsOf(
+            state().copy(
+                configs = mapOf(
+                    "zsh" to ConfigState(ConfigStatus.DRIFTED, listOf(".zshrc")),
+                    "kitty" to ConfigState(ConfigStatus.APPLIED),
+                    "nvim" to ConfigState(ConfigStatus.UNKNOWN, reason = "x"),
+                ),
+            ),
+        )
+        assertEquals(listOf("kitty", "nvim", "zsh"), items.map { it.name })
+        assertEquals(setOf("zsh"), preselectConfigs(items))
+
+        val fleet = DiffReport(
+            machines = listOf("a", "b"),
+            rows = emptyList(),
+            configs = listOf(DiffConfigRow("zsh", mapOf("a" to ConfigCell.Drifted(1), "b" to ConfigCell.Applied))),
+        )
+        val row = sectionsOf(MANIFEST, SYSTEM, state(), fleet, null).first { it.subject == "fleet" }
+        assertEquals("1 config(s) drifted across 2 machines", row.summary)
+        assertEquals(false, row.severity)
+        assertEquals(listOf("zsh"), driftedRows(HomeState(fleet = fleet)).map { it.name })
     }
 
     @Test
@@ -247,6 +302,34 @@ class HomeKeysTest {
         HomeSection("programs", "", "", HomeAction.NONE),
         HomeSection("programs", "", "install", HomeAction.INSTALL_MISSING),
     )
+
+    @Test
+    fun theConfigsPickerTicksOneConfigOrAllAndNeverHandsOffNothing() {
+        val m = model(listOf(HomeSection("configs", "", "apply what's drifted", HomeAction.APPLY_CONFIGS)))
+        m.setStateForTest(
+            m.state.copy(
+                configs = listOf(ConfigItem("kitty", ConfigStatus.APPLIED), ConfigItem("zsh", ConfigStatus.DRIFTED, listOf(".zshrc"))),
+                applying = setOf("zsh"),
+                open = setOf(HomeAction.APPLY_CONFIGS),
+            ),
+        )
+        m.intoDetail()
+        m.handleKey(HomeKey.SELECT)
+        assertEquals(setOf("zsh", "kitty"), m.state.applying)
+        m.handleKey(HomeKey.SELECT_NONE)
+        assertTrue(m.state.applying.isEmpty())
+
+        m.handleKey(HomeKey.ENTER)
+        assertTrue(m.state.message!!.startsWith("nothing ticked"), m.state.message)
+        assertNull(m.state.run)
+
+        // A repo whose configs can't be read says so and stays: no pane, no hand-off.
+        m.handleKey(HomeKey.SELECT_ALL)
+        m.handleKey(HomeKey.ENTER)
+        assertNull(m.state.run)
+        assertEquals(HomeAction.NONE, m.state.action)
+        assertTrue(m.state.message != null)
+    }
 
     @Test
     fun navigationStaysInsideTheList() {

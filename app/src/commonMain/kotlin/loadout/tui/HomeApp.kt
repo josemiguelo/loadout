@@ -21,7 +21,9 @@ import com.jakewharton.mosaic.ui.Text
 import com.jakewharton.mosaic.ui.TextStyle
 import loadout.cli.AppContext
 import loadout.cli.UpdateRow
+import loadout.core.diff.ConfigCell
 import loadout.core.diff.InstallState
+import loadout.core.model.ConfigStatus
 import loadout.core.model.ScriptStatus
 import loadout.core.TOOL_VERSION
 import loadout.core.platform.terminalColumns
@@ -370,6 +372,9 @@ private class DetailWidths(s: HomeState, val width: Int) {
 
     val scriptName = (s.scripts.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(30) + 2
 
+    val configName = (s.configs.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(30) + 2
+    val configRoom = (width - DETAIL_INDENT.length - 6 - configName - 10).coerceAtLeast(8)
+
     private val updates = (s.remote as? RemoteStatus.Answered)?.updates.orEmpty()
     // Columns are capped, not just padded: one long name would otherwise
     // wrap every row and shred the table.
@@ -383,7 +388,7 @@ private class DetailWidths(s: HomeState, val width: Int) {
         (width - (DETAIL_INDENT.length + 8 + remoteName + current + 3 + candidate)).coerceAtLeast(8)
 
     private val drifted = driftedRows(s)
-    val fleetName = (drifted.maxOfOrNull { it.program.length } ?: 8).coerceAtMost(26) + 2
+    val fleetName = (drifted.maxOfOrNull { it.name.length } ?: 8).coerceAtMost(26) + 2
     // Every machine gets a column: share what's left of the terminal.
     val fleetColumn = s.fleet?.let { report ->
         ((width - 8 - fleetName) / report.machines.size.coerceAtLeast(1))
@@ -405,6 +410,7 @@ private fun DetailRow(
     when (section.action) {
         HomeAction.INSTALL_MISSING -> s.missing.getOrNull(row)?.let { MissingRow(s, it, focused, width, widths) }
         HomeAction.RUN_SCRIPTS -> s.scripts.getOrNull(row)?.let { ScriptLine(s, it, focused, width, widths) }
+        HomeAction.APPLY_CONFIGS -> s.configs.getOrNull(row)?.let { ConfigLine(s, it, focused, width, widths) }
         HomeAction.REVIEW_OUTDATED -> (s.remote as? RemoteStatus.Answered)?.let { answered ->
             remoteLines(answered, s.collapsed).getOrNull(row)?.let { RemoteRow(s, it, focused, width, widths) }
         }
@@ -427,12 +433,11 @@ private fun FleetHeaderRow(s: HomeState, w: DetailWidths) {
     }
 }
 
-/** One drifting program of `diff`, rendered under the fleet row. */
+/** One drifting program or config of `diff`, rendered under the fleet row. */
 @Composable
 private fun FleetRow(
     s: HomeState,
-    // Not the TUI's ProgramRow: the fleet's, one program across machines.
-    row: loadout.core.diff.ProgramRow,
+    line: FleetLine,
     focused: Boolean,
     width: Int,
     w: DetailWidths,
@@ -440,20 +445,25 @@ private fun FleetRow(
     val p = LocalPalette.current
     val machines = s.fleet?.machines.orEmpty()
     val cells = machines.joinToString("") { machine ->
-        val cell = when (val state = row.perMachine.getValue(machine)) {
-            is InstallState.Installed -> state.version ?: "ok"
-            InstallState.Missing -> "missing"
-            InstallState.Unknown -> "-"
+        val cell = when (line) {
+            is FleetLine.Program -> when (val state = line.row.perMachine.getValue(machine)) {
+                is InstallState.Installed -> state.version ?: "ok"
+                InstallState.Missing -> "missing"
+                InstallState.Unknown -> "-"
+            }
+            is FleetLine.Config -> when (val state = line.row.perMachine.getValue(machine)) {
+                ConfigCell.Applied -> "applied"
+                is ConfigCell.Drifted -> "drifted (${state.files})"
+                ConfigCell.Unknown -> "-"
+            }
         }
         clip(cell, w.fleetColumn - 1).padEnd(w.fleetColumn)
     }
+    // A missing install is severe; version drift and a drifted config are not.
+    val severe = line is FleetLine.Program && line.row.incomplete
     if (focused) {
         Text(
-            fit(
-                DETAIL_FOCUS + (if (row.incomplete) "✘ " else "! ") +
-                    clip(row.program, w.fleetName - 1).padEnd(w.fleetName) + cells,
-                width,
-            ),
+            fit(DETAIL_FOCUS + (if (severe) "✘ " else "! ") + clip(line.name, w.fleetName - 1).padEnd(w.fleetName) + cells, width),
             color = p.selectionFg,
             background = p.selectionBg,
             textStyle = TextStyle.Bold,
@@ -461,9 +471,9 @@ private fun FleetRow(
     } else {
         Row {
             Text(DETAIL_INDENT)
-            Text(if (row.incomplete) "✘ " else "! ", color = if (row.incomplete) p.error else p.warn)
-            Text(clip(row.program, w.fleetName - 1).padEnd(w.fleetName))
-            Text(cells, color = if (row.drift) p.warn else p.dim)
+            Text(if (severe) "✘ " else "! ", color = if (severe) p.error else p.warn)
+            Text(clip(line.name, w.fleetName - 1).padEnd(w.fleetName))
+            Text(cells, color = if (severe) p.dim else p.warn)
         }
     }
 }
@@ -649,6 +659,42 @@ private fun ScriptLine(s: HomeState, row: ScriptRow, focused: Boolean, width: In
     }
 }
 
+/**
+ * One row of the configs picker, under the configs row: a config unit, its
+ * last verdict, the files apply would change, and a tick box.
+ */
+@Composable
+private fun ConfigLine(s: HomeState, row: ConfigItem, focused: Boolean, width: Int, w: DetailWidths) {
+    val p = LocalPalette.current
+    val ticked = row.name in s.applying
+    val box = if (ticked) "[x] " else "[ ] "
+    val (mark, markColor, verdict) = when (row.status) {
+        ConfigStatus.APPLIED -> Triple("✔ ", p.ok, "applied")
+        ConfigStatus.DRIFTED -> Triple("! ", p.warn, "drifted")
+        ConfigStatus.UNKNOWN -> Triple("? ", p.warn, "not checked")
+        null -> Triple("· ", p.dim, "not observed")
+    }
+    val name = clip(row.name, w.configName - 1).padEnd(w.configName)
+    val files = if (row.files.isEmpty()) "" else "  " + clip(row.files.joinToString(), w.configRoom)
+    if (focused) {
+        Text(
+            fit(DETAIL_FOCUS + box + mark + name + verdict + files, width),
+            color = p.selectionFg,
+            background = p.selectionBg,
+            textStyle = TextStyle.Bold,
+        )
+    } else {
+        Row {
+            Text(DETAIL_INDENT)
+            Text(box, color = if (ticked) p.accent else p.dim)
+            Text(mark, color = markColor)
+            Text(name)
+            Text(verdict, color = if (row.status == ConfigStatus.APPLIED) p.dim else markColor)
+            if (files.isNotEmpty()) Text(files, color = p.dim)
+        }
+    }
+}
+
 @Composable
 private fun HomeFooter(s: HomeState, width: Int, total: Int, scroll: Int, shown: Int) {
     val p = LocalPalette.current
@@ -673,6 +719,10 @@ private fun HomeFooter(s: HomeState, width: Int, total: Int, scroll: Int, shown:
             if (tight) "↑↓ move · space tick · a all · u none · enter run · h close"
             else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter run" +
                 (if (s.picked.isEmpty()) "" else " ${s.picked.size} ticked") + "  ·  h/esc close"
+        open && section.action == HomeAction.APPLY_CONFIGS ->
+            if (tight) "↑↓ move · space tick · a all · u none · enter apply · h close"
+            else "↑↓ move  ·  space tick  ·  a all  ·  u none  ·  enter apply" +
+                (if (s.applying.isEmpty()) "" else " ${s.applying.size} ticked") + "  ·  h/esc close"
         open && section.action == HomeAction.REVIEW_OUTDATED ->
             if (tight) "↑↓ move · space · a all · u none · h fold/close · l unfold · K diff · enter upgrade"
             else "↑↓ move  ·  space select  ·  a all  ·  u none  ·  h fold, l unfold  ·  K diff ↗  ·  enter upgrade" +
