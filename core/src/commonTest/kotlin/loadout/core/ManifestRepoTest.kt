@@ -2,6 +2,7 @@ package loadout.core
 
 import loadout.core.manifest.ManifestException
 import loadout.core.LoadoutException
+import loadout.core.engine.ConfigException
 import loadout.core.engine.ResolutionException
 import loadout.core.git.GitException
 import loadout.core.manifest.Glob
@@ -1062,6 +1063,7 @@ class ManifestRepoTest {
             ManifestException("x"),
             ResolutionException("x"),
             GitException("x"),
+            ConfigException("x"),
         )
         for (e in ours) assertTrue(e is LoadoutException, "${e::class.simpleName} is not a LoadoutException")
     }

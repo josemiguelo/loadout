@@ -24,6 +24,10 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   names where fragments, machines, profiles and state live. A tool's
   fragment can sit beside its dotfiles (`configs/.config/tmux/.loadout.toml`
   next to `tmux.conf`), and every path in it is relative to that file.
+- **Your dotfiles are part of the loadout.** With `[layout] configs`, the
+  repo holds chezmoi's source: `status` shows each config as applied or
+  drifted, `diff` compares them across machines, `apply` writes them, and
+  `sync` applies them before publishing this machine's state.
 - **Checks are the truth.** Every piece of a loadout has a re-askable check
   (`rpm -q kitty`, `chezmoi verify`, your own script). Converging means
   making the checks pass; observing means asking them again.
@@ -45,7 +49,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 |---|---|---|
 | **start here** | `loadout` | The home screen: what needs work. `l` opens a row; enter runs what you ticked (missing programs, pending scripts, outdated mechanisms) full-window, then the screen comes back (`v` shows a command's whole output); quitting leaves your terminal as it was. r/S/U/C re-check, sync, self-upgrade, set up. A pipe gets help instead |
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
-| | `explain [names]` | Programs/scripts exactly as the engine resolves them (default: all) |
+| | `explain [names]` | Programs, scripts or configs exactly as the engine resolves them (default: every program and script) |
 | | `installers [name]` | The install mechanisms available here, built-in and your own (`--eject` copies the built-ins into your repo) |
 | | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `[outdated.*]` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
@@ -53,7 +57,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `[outdated.*]` source |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
-| **fleet** | `sync` | Pull, refresh state, commit *only this machine's state file*, push |
+| | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
+| **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
 | | `init` | Scaffold a new config repo |
 
@@ -71,12 +76,15 @@ $ loadout sync                               # publish (after adding a git remot
 ## Learn more
 
 - **[Writing your manifest](../../wiki/Writing-Your-Manifest)**: from a
-  three-line loadout to installers, variants, scripts and per-OS bases.
+  three-line loadout to installers, variants, scripts and profiles.
+- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.toml`, fragments
+  beside their dotfiles, machines, profiles and configs.
 - **[A day with loadout](../../wiki/A-Day-With-Loadout)**: the whole loop in
   practice: observing drift, maintaining, adding gear, new-machine day.
 - **[Concepts](../../wiki/Home)**: the three truths and the design stance.
-- **[josemiguelo/loadouts](https://github.com/josemiguelo/loadouts)**: the
-  author's live config repo; every documented pattern links into it.
+- **[josemiguelo/.dotfiles](https://github.com/josemiguelo/.dotfiles)**: the
+  author's live config repo, dotfiles included; every documented pattern
+  links into it.
 
 ## Building from source
 

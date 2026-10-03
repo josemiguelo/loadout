@@ -8,6 +8,7 @@ import loadout.core.manifest.ManifestLoader
 import loadout.core.model.Manifest
 import loadout.core.model.RepoLayout
 import loadout.core.model.SystemInfo
+import loadout.core.engine.ConfigEngine
 import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.model.MachineState
@@ -39,6 +40,21 @@ class AppContext(
     fun frame(system: SystemInfo): CommandFrame =
         CommandFrame.of(fs.canonicalize(repoRoot).toString(), system, layout.configs)
 
+    /** chezmoi over the `[layout] configs` directory; null when the repo has none. */
+    val configs: ConfigEngine? by lazy {
+        layout.configs?.let { ConfigEngine(runner, "${fs.canonicalize(repoRoot)}/$it") }
+    }
+
+    /** The observer every refresh uses: programs, scripts and configs. */
+    fun statusEngine(system: SystemInfo): StatusEngine {
+        val frame = frame(system)
+        return StatusEngine(VersionChecker(runner, frame), runner, frame, configs)
+    }
+
+    /** Why configs went unchecked during the last refresh, or null. */
+    var lastConfigsDown: String? = null
+        private set
+
     /** What each failing script check printed during the last refresh. */
     var lastScriptDetail: Map<String, String> = emptyMap()
         private set
@@ -57,11 +73,11 @@ class AppContext(
         scriptResults: Map<String, ScriptState> = emptyMap(),
     ): MachineState {
         val previous = stateStore.read(system.machine)
-        val frame = frame(system)
-        val engine = StatusEngine(VersionChecker(runner, frame), runner, frame)
+        val engine = statusEngine(system)
         val state = engine.refresh(manifest, system, previous, scriptResults)
         lastScriptDetail = engine.lastScriptDetail
         lastToolsDown = engine.lastToolsDown
+        lastConfigsDown = engine.lastConfigsDown
         // Keep updatedAt (and git history) stable when nothing real changed.
         if (previous != null && state.copy(updatedAt = previous.updatedAt) == previous) {
             return previous

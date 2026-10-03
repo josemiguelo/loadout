@@ -6,8 +6,8 @@ import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import loadout.core.TOOL_VERSION
-import loadout.core.engine.StatusEngine
-import loadout.core.engine.VersionChecker
+import loadout.core.engine.ToolDown
+import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
@@ -36,16 +36,18 @@ class StatusCommand : CliktCommand(name = "status") {
         val manifest = app.loadManifest()
         val system = app.detectSystem()
 
-        val (state, detail, toolsDown) = spinning("checking programs and scripts…") {
+        val subjects = if (app.configs != null) "programs, scripts and configs" else "programs and scripts"
+        val observed = spinning("checking $subjects…") {
             if (noWrite) {
-                val frame = app.frame(system)
-                val engine = StatusEngine(VersionChecker(app.runner, frame), app.runner, frame)
+                val engine = app.statusEngine(system)
                 val s = engine.refresh(manifest, system, app.stateStore.read(system.machine))
-                Triple(s, engine.lastScriptDetail, engine.lastToolsDown)
+                Observed(s, engine.lastScriptDetail, engine.lastToolsDown, engine.lastConfigsDown)
             } else {
-                Triple(app.refreshAndWriteState(manifest, system), app.lastScriptDetail, app.lastToolsDown)
+                val s = app.refreshAndWriteState(manifest, system)
+                Observed(s, app.lastScriptDetail, app.lastToolsDown, app.lastConfigsDown)
             }
         }
+        val (state, detail, toolsDown, configsDown) = observed
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         if (json) {
@@ -57,6 +59,10 @@ class StatusCommand : CliktCommand(name = "status") {
             for (down in toolsDown) {
                 echo("")
                 echo(" " + Style.warn("⚠") + "  " + Style.warn(down.message) + Style.dim("  (${down.programs.joinToString()})"))
+            }
+            configsDown?.let {
+                echo("")
+                echo(" " + Style.warn("⚠") + "  " + Style.warn("configs not checked: $it"))
             }
             // The one self-knowledge carve-out: is this binary itself behind?
             SelfVersion.behind(app.runner, app.fs)?.let { latest ->
@@ -72,7 +78,7 @@ class StatusCommand : CliktCommand(name = "status") {
     private fun printTable(state: MachineState, detail: Map<String, String>) {
         echo(Style.dim("machine ") + Style.machine(state.machine) + Style.dim(" │ ${state.os}${state.distro?.let { "/$it" } ?: ""} │ ${state.arch}"))
         echo("")
-        val nameWidth = ((state.programs.keys + state.scripts.keys).map { it.length } + 7).max()
+        val nameWidth = ((state.programs.keys + state.scripts.keys + state.configs.keys).map { it.length } + 7).max()
         echo(Style.header("  " + "PROGRAM".padEnd(nameWidth + 4) + "STATUS".padEnd(13) + "VERSION"))
         // Rows that aren't settled get boxed by echoRows, same as diff's
         // drift rows: a missing install is severe, a pending script is not.
@@ -99,6 +105,11 @@ class StatusCommand : CliktCommand(name = "status") {
                 )
             },
         )
+        printScripts(state, detail, nameWidth)
+        printConfigs(state, nameWidth)
+    }
+
+    private fun printScripts(state: MachineState, detail: Map<String, String>, nameWidth: Int) {
         if (state.scripts.isEmpty()) return
         echo("")
         echo(Style.header("  " + "SCRIPT".padEnd(nameWidth + 4) + "STATUS"))
@@ -119,4 +130,30 @@ class StatusCommand : CliktCommand(name = "status") {
             },
         )
     }
+
+    // A drifted unit lists the files apply would change, inside its box.
+    private fun printConfigs(state: MachineState, nameWidth: Int) {
+        if (state.configs.isEmpty()) return
+        echo("")
+        echo(Style.header("  " + "CONFIG".padEnd(nameWidth + 4) + "STATUS"))
+        echoRows(
+            state.configs.toList().sortedBy { it.first }.map { (name, config) ->
+                val (mark, status, severity) = when (config.status) {
+                    ConfigStatus.APPLIED -> Triple(Style.ok("✔"), Style.ok("applied"), null)
+                    ConfigStatus.DRIFTED -> Triple(Style.warn("✘"), Style.warn("drifted"), false)
+                    ConfigStatus.UNKNOWN -> Triple(Style.warn("?"), Style.warn("not checked"), false)
+                }
+                val lines = (config.files + listOfNotNull(config.reason))
+                    .map { Style.dim("".padEnd(nameWidth + 5) + it) }
+                TableRow(listOf("$mark  " + name.padEnd(nameWidth + 1) + status) + lines, severity)
+            },
+        )
+    }
 }
+
+private data class Observed(
+    val state: MachineState,
+    val detail: Map<String, String>,
+    val toolsDown: List<ToolDown>,
+    val configsDown: String?,
+)

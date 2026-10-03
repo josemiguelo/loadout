@@ -7,17 +7,18 @@ import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import loadout.core.manifest.MachineData
+import loadout.core.model.ConfigStatus
 import loadout.core.model.scriptEntry
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 
 class ExplainCommand : CliktCommand(name = "explain") {
     override fun help(context: Context) = commandHelp(
-        "Explain programs or scripts: the fully expanded definition exactly as the engine sees it.",
-        "[names...]  programs or scripts (default: all)",
+        "Explain programs, scripts or configs: the fully expanded definition exactly as the engine sees it.",
+        "[names...]  programs, scripts or configs (default: every program and script)",
     )
 
-    private val names by argument(name = "names", help = "Program or script names (default: everything)")
+    private val names by argument(name = "names", help = "Program, script or config names (default: every program and script)")
         .multiple()
 
     private val app by requireObject<AppContext>()
@@ -52,10 +53,20 @@ class ExplainCommand : CliktCommand(name = "explain") {
         }
 
         val targets = names.ifEmpty { (manifest.programs.keys + manifest.scripts.keys).toList() }
+        // Configs are asked about only for names given: the default list is
+        // programs and scripts, and needs no chezmoi.
+        val asked = if (names.isEmpty()) Result.success(emptyList()) else runCatching { app.configs?.units().orEmpty() }
+        val units = asked.getOrDefault(emptyList())
         targets.forEachIndexed { index, name ->
             if (index > 0) echo("")
             val program = manifest.programs[name]
             val script = manifest.scripts[name]
+            if (program == null && script == null && units.none { it.name == name }) {
+                val kinds = if (app.configs != null) "program, script or config" else "program or script"
+                val why = asked.exceptionOrNull()?.let { " (configs not checked: ${it.message})" }.orEmpty()
+                echo("error: no $kinds named '$name'$why")
+                throw ProgramResult(1)
+            }
             val rows = mutableListOf<Pair<String, String>>()
             val notes = mutableListOf<String>()
             when {
@@ -121,14 +132,29 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         rows += "observed" to "$status  (${app.layout.state}/${system.machine}.json)"
                     }
                 }
-                else -> {
-                    echo("error: no program or script named '$name'")
-                    throw ProgramResult(1)
-                }
             }
-            val width = rows.maxOf { it.first.length }
-            for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
-            for (note in notes) echo("  " + Style.warn(note))
+            if (rows.isNotEmpty()) {
+                val width = rows.maxOf { it.first.length }
+                for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
+                for (note in notes) echo("  " + Style.warn(note))
+            }
+            // A config often shares its tool's name (tmux the program, tmux
+            // the config): both are shown.
+            units.firstOrNull { it.name == name }?.let { unit ->
+                if (rows.isNotEmpty()) echo("")
+                echo(Style.header("config ") + Style.bold(name) + Style.dim("  ${app.layout.configs}/"))
+                val configRows = unit.targets.mapIndexed { i, target -> (if (i == 0) "targets" else "") to target }.toMutableList()
+                state?.configs?.get(name)?.let {
+                    val status = when (it.status) {
+                        ConfigStatus.APPLIED -> "applied"
+                        ConfigStatus.DRIFTED -> "drifted: ${it.files.joinToString()}"
+                        ConfigStatus.UNKNOWN -> "unknown"
+                    }
+                    configRows += "observed" to "$status  (${app.layout.state}/${system.machine}.json)"
+                }
+                val width = configRows.maxOf { it.first.length }
+                for ((label, value) in configRows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
+            }
         }
     }
 }
