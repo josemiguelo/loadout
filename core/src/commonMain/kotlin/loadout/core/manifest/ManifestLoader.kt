@@ -187,12 +187,33 @@ object ManifestLoader {
                 resolved.upgradeWith?.let { requireFile(it.command, it.origin, "programs.$name.install.$key upgrade") }
             }
         }
+        // A `with` value marked `file:` is a path relative to the program's
+        // file, like every other path; it's substituted into an installer
+        // pattern that runs elsewhere, so it becomes "$LOADOUT_REPO/<path>".
+        val withResolved = merged.copy(
+            programs = merged.programs.mapValues { (name, program) ->
+                program.copy(
+                    install = program.install.mapValues { (key, variant) ->
+                        variant.copy(
+                            with = variant.with.mapValues { (param, value) ->
+                                if (!value.startsWith(INSTALL_FILE_PREFIX)) return@mapValues value
+                                val file = value.removePrefix(INSTALL_FILE_PREFIX)
+                                requirePath(file, program.origin, "programs.$name.install.$key.with.$param")
+                                val relative = (if (program.origin.isEmpty()) file else "${program.origin}/$file")
+                                    .toPath().normalized()
+                                "\$LOADOUT_REPO/$relative"
+                            },
+                        )
+                    },
+                )
+            },
+        )
         if (missingFiles.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + missingFiles.joinToString("\n"))
         }
-        // Bases are config inheritance, not machines: validated above, but
+        // Profiles are config inheritance, not machines: validated above, but
         // never observed, diffed, or converged.
-        return merged.copy(machines = merged.machines.filterValues { !it.base })
+        return withResolved.copy(machines = withResolved.machines.filterValues { !it.base })
     }
 
     /**

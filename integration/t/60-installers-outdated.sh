@@ -43,6 +43,7 @@ probe = "sh"
 install = "true"
 check = "echo batchtool 1.0"
 outdated-all = "printf 'batchtool 3.0\\nuptodate 1.0\\n'"
+upgrade = "file:upgrade-fake3.sh --all"
 regex = "([0-9][0-9.]*)"
 
 [programs.mytool]
@@ -58,6 +59,7 @@ via = ["fake3"]
 via = ["fake3"]
 TOML
 add_layout "instrepo"
+printf '#!/bin/sh\necho upgraded\n' > instrepo/upgrade-fake3.sh
 printf '[packages.install]\nmytool = "fake"\nothertool = "fake2"\nbatchtool = "fake3"\nuptodate = "fake3"\n' > instrepo/machines/m1.toml
 "$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated exits 0"
@@ -68,6 +70,8 @@ echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must 
 # The doctor's line per tool: everything the batch oracle reported, and how
 # much of it is in the loadout — the whole picture an upgrade would touch.
 echo "$OUT" | grep -qE "sh +2 updates · 1 in your loadout" || fail "outdated leads with the tool's whole count (fake3's probe is sh)"
+# The hint shows the command that runs, not the manifest's file: shorthand.
+echo "$OUT" | grep -qF "loadout upgrade fake3  →  sh 'upgrade-fake3.sh' --all" || fail "the upgrade hint is the expanded command: $OUT"
 ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
 # --- the shipped pacman mechanism: pacman -Q + checkupdates ---------------

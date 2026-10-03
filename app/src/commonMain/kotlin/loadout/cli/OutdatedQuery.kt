@@ -6,6 +6,7 @@ import loadout.core.model.MachineState
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramStatus
 import loadout.core.model.SystemInfo
+import loadout.core.model.expandFilePrefix
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -135,7 +136,8 @@ internal suspend fun outdatedReport(
                 total = reported.size,
                 declared = declaredHere,
                 others = (reported - declaredPkgs).sorted(),
-                command = installers.firstNotNullOfOrNull { manifest.installers[it]?.upgrade },
+                // What runs, not the manifest's file: shorthand.
+                command = installers.firstNotNullOfOrNull { manifest.installers[it]?.upgrade }?.let(::expandFilePrefix),
             )
         }
         .sortedBy { t -> t.installers.minOf { installerOrderAll[it] ?: Int.MAX_VALUE } }

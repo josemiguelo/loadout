@@ -25,6 +25,21 @@ OUT=$("$BIN" --repo paramrepo --machine m1 explain tool 2>&1 || true)
 echo "$OUT" | grep -q "needs a value for 'flavor'" || fail "a missing param must fail the load"
 ok "installers take declared params, and a missing one is a load error"
 
+# A file: param is a path next to the program's own file, wherever the
+# installer's command runs (here: the repo root, where loadout.toml is).
+mkdir -p fparam/machines fparam/programs/tool
+printf '[installers.copyin]\nparams = ["src"]\ninstall = "cp {src} installed-{pkg}.txt"\ncheck = "cat installed-{pkg}.txt"\nregex = "([0-9.]+)"\n' > fparam/loadout.toml
+add_layout "fparam"
+printf '[programs.tool]\n[programs.tool.install.copyin.with]\nsrc = "file:payload.txt"\n' > fparam/programs/tool/tool.toml
+printf 'tool 4.2\n' > fparam/programs/tool/payload.txt
+printf '[tool]\ninstall = "copyin"\n' > fparam/machines/m1.toml
+"$BIN" --repo fparam --machine m1 install tool --yes >/dev/null 2>&1 || fail "an install with a file: param runs"
+grep -qx "tool 4.2" fparam/installed-tool.txt || fail "the file: param reached the file next to tool.toml"
+rm fparam/programs/tool/payload.txt
+OUT=$("$BIN" --repo fparam --machine m1 explain tool 2>&1) && fail "a missing file: param must fail the load"
+echo "$OUT" | grep -q "with.src: file 'payload.txt' not found (relative to programs/tool/)" || fail "the missing param file is named: $OUT"
+ok "a file: param resolves next to its program and is checked at load"
+
 # --- templates were removed: a repo using them must not load empty --------
 mkdir -p tmplrepo
 printf '[templates.rpm]\npackages = ["vlc"]\n[templates.rpm.install.dnf]\ncommand = "sudo dnf install -y {name}"\n' > tmplrepo/loadout.toml
@@ -33,7 +48,7 @@ OUT=$("$BIN" --repo tmplrepo explain 2>&1 || true)
 echo "$OUT" | grep -q "removed in loadout 0.9.0" || fail "a templated manifest must fail loudly"
 ok "templates are gone, and a manifest still using them says so"
 
-# --- split layout: manifest.d fragment + machines/<name>.toml -------------
+# --- split layout: a fragment + machines/<name>.toml ------------------------
 basic_repo repo
 cat > repo/programs/extra.toml <<'TOML'
 [programs.splitprog]
@@ -54,7 +69,7 @@ TOML
 grep -q '"splitprog"' repo/state/m3.json || fail "fragment program checked"
 "$BIN" --repo repo --machine m3 setup-new-machine --dry-run >/dev/null || fail "machine file mapping used for plan"
 rm repo/programs/extra.toml repo/machines/m3.toml repo/state/m3.json
-ok "manifest.d fragments and machines/*.toml files are merged"
+ok "fragments and machine files are merged"
 
 cp repo/loadout.toml repo/loadout.toml.bak
 cat >> repo/loadout.toml <<'TOML'

@@ -693,6 +693,39 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun aFileMarkedWithValueIsAPathNextToItsProgram() {
+        val files = mapOf(
+            "loadout.toml" to "[meta]\nname = \"x\"",
+            "programs/apps/editors.toml" to """
+                [programs.code]
+                [programs.code.install.dnf-repo.with]
+                repofile = "file:repos/vscode.repo"
+
+                [programs.teams]
+                [programs.teams.install.dnf-repo.with]
+                repofile = "https://example.com/teams.repo"
+            """.trimIndent(),
+            "programs/apps/repos/vscode.repo" to "[code]\n",
+        )
+        val manifest = ManifestLoader.loadRepo(fs(files), repo)
+        // Resolved next to editors.toml, substituted where the built-in pattern
+        // (run from the repo root, or anywhere) still finds it.
+        assertEquals(
+            "sudo dnf config-manager addrepo --overwrite --from-repofile=\$LOADOUT_REPO/programs/apps/repos/vscode.repo && sudo dnf install -y code",
+            manifest.resolveInstall("code", "dnf-repo").command,
+        )
+        // Unmarked values (a URL) pass through as written.
+        assertTrue("--from-repofile=https://example.com/teams.repo" in manifest.resolveInstall("teams", "dnf-repo").command.orEmpty())
+
+        val missing = files - "programs/apps/repos/vscode.repo"
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs(missing), repo) }
+        assertTrue(
+            "programs.code.install.dnf-repo.with.repofile: file 'repos/vscode.repo' not found (relative to programs/apps/)" in e.message.orEmpty(),
+            e.message,
+        )
+    }
+
+    @Test
     fun installersMergeFromFragmentsAndDuplicatesFail() {
         val fs = fs(
             mapOf(

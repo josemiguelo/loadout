@@ -33,78 +33,17 @@ something a home-screen row already does, is not wanted.
 Formerly `post-installer`: the working directory and some external
 references may still use that name. Never reintroduce it in code.
 
-## Target design: 1.0 (in progress on branch `layout`)
+## Next: configs (1.1, agreed, not built)
 
-The rest of this file describes the code as it is. This section is the
-agreed target; each implementation step moves its part into the sections
-below and deletes it here. The user approves every step before it runs.
-Compatibility with 0.x config repos is not a goal: 1.0 is the second
-deliberate break (contract 14).
+The rest of this file describes the code as it is; this section is the
+agreed next step. The user approves every step before it runs.
 
-**Goal**: one repo per user holds programs, maintenance scripts, machines,
-state AND dotfiles, so a change to a tool lands in one place. Dotfiles stay
-chezmoi's; a tool's loadout fragment sits beside its chezmoi config.
-
-**Repo layout** (chezmoi clones it to its source dir, `~/.local/share/chezmoi`
-on Linux and macOS; `LOADOUT_REPO` points there):
-
-```
-<repo>/
-  .chezmoiroot      "configs": chezmoi reads only configs/
-  loadout.toml      root marker: [meta], [layout], [data]; a root manifest.toml is refused as a 0.x repo
-  programs/         installers (+ helper scripts beside them) and config-less programs
-  maintenance/      config-less scripts and oracles, one folder per concern; lib/ for shared helpers
-  machines/         flat: <hostname>.toml and base files
-  state/            generated, <hostname>.json
-  configs/          chezmoi source root; a tool's .loadout.toml + .loadout/ sit beside its config
-```
-
-Dot-prefixed `.loadout.toml`/`.loadout/` are invisible to chezmoi (it skips
-dot entries that aren't its own special files), so no `.chezmoiignore`
-rule is needed. A tool whose files land in several places keeps its fragment
-in its main config folder (zsh owns `dot_zshenv.tmpl`, mise owns
-`dot_default-gems`).
-
-**`loadout.toml`**:
-
-```toml
-[meta]
-name = "jm's machines"
-min-tool-version = "1.0.0"
-
-[layout]
-configs   = "configs"        # optional; set => chezmoi is required
-machines  = "machines"
-state     = "state"
-fragments = ["programs/**/*.toml", "maintenance/**/*.toml", "configs/**/.loadout.toml"]
-
-[data]                       # every per-machine key, with its default
-omarchy = false
-
-[data.kitty]
-opacity = 0.85
-```
-
-- Discovery is explicit: only `[layout] fragments` globs load (`*` one
-  segment, `**` any depth, `?`; `*` never matches a leading dot; `.git` is
-  never entered). A glob matching nothing, an absolute or `..` path, or a
-  glob matching `loadout.toml` or a machine file is a load error.
-- Fragments hold `[installers.*]`, `[programs.*]`, `[scripts.*]`,
-  `[outdated.*]` only.
-
-**Paths and cwd**: done (contracts 4, 5).
-
-**Machines**: flat files and `[data]` are done (contract 2). Chezmoi
-templates read the same files through `configs/.chezmoitemplates/machine`
-(`include "../machines/<host>.toml"`, verified to reach outside
-`.chezmoiroot`) and branch on `$m.omarchy`, never on `.chezmoi.hostname`.
-Nothing is generated for chezmoi.
-
-Groups and profiles are done (step 6b, contract 2). Still to do on the
-chezmoi side: the `machine` partial walks the profile list (`../profiles/`)
-and folds each `[<group>.data]` in.
-
-**Configs** (chezmoi integration; required iff `[layout] configs` is set):
+The user's config repo also holds their dotfiles, as chezmoi's source
+(`[layout] configs`, chezmoi reading only that folder through
+`.chezmoiroot`); a tool's fragment sits beside its config as `.loadout.toml`
++ `.loadout/`, which chezmoi never deploys. loadout learns about configs
+additively (no state schema change: older readers ignore the new field):
+- `[layout] configs` set => chezmoi is required; unset => no configs concept;
 - unit = top-level config directory, from one `chezmoi managed
   --path-style source-relative` per refresh; units are not opted in
   (`.chezmoiignore` is chezmoi's membership);
@@ -112,45 +51,20 @@ and folds each `[<group>.data]` in.
   detail from `chezmoi status`; a missing chezmoi is `unknown`;
 - `loadout apply [unit…]` hands off `chezmoi apply --no-tty <targets>`;
 - `sync` = pull → `chezmoi apply --no-tty` → refresh programs, scripts,
-  configs → commit `state/<machine>.json` → push;
-- state schema 2 adds `configs`; `diff` shows config drift per machine;
+  configs → commit the state file → push;
+- state gains `configs`; `diff` shows config drift per machine;
 - home screen: a fifth subject row, "configs", same picker/hand-off rules;
 - bootstrap (both OSes): install git + chezmoi → `chezmoi init --apply
   <repo>` → `install.sh` → `loadout setup-new-machine`.
 
-**Contract changes**: 4 keeps its rule, paths now file-relative; 5 becomes
-cwd = declaring file's directory plus the exported env; 6 declaration
-order = order of `[layout] fragments` entries, path-sorted within one,
-table order within a file; 7 extends to configs; 8 takes its dir from
-`[layout] state`; 11 still holds for loadout files (`.loadout.toml` is never
-rendered); 12 scripts stay opt-in, configs don't; 14 the break ships as
-1.0.0. All others stand unchanged.
-
-**Steps** (each: three suites green on Linux, macOS checked by the user,
+Steps (each: three suites green on Linux, macOS checked by the user,
 README/AGENTS/wiki re-read):
-1. This section.
-2. `ShellCommand(line, cwd, env)` through `exec/` and the engines (done).
-3. `loadout.toml` + `[layout]` + glob discovery; machines/state dirs from
-   it; 0.x root refused (done; contract 16).
-4. File-relative paths, per-file cwd, exported env (done; contracts 4, 5).
-5. Flat machines, declared `[data]`, `explain` shows it (done; contract 2).
-6a. Built-in `omarchy` / `omarchy-aur` installers (done; contract 13).
-6b. Machine files by group, profiles in `profiles/` (done; contract 2).
-6. 1.0.0: state schema 2, release notes, wiki "Repo layout" and the
-   built-in installer table (Home, Writing-Your-Manifest: omarchy,
-   omarchy-aur), `install.sh` next steps, tag.
-7. Migrate the user's repos PROGRESSIVELY, one slice at a time, never all
-   at once; each slice is approved before it runs. Slice 1 is the
-   backbone: the merged repo's skeleton (`loadout.toml`, `.chezmoiroot`,
-   `machines/`, `state/`, the machine template partial) plus pure zsh
-   dotfiles and nothing else; tool configs (kitty, nvim, tmux…) and their
-   fragments follow in later slices, one tool each. Every slice decides,
-   and says, whether it needs a new test.
-8. `ConfigEngine`, configs in status/state/diff, `apply`, `sync`;
+1. `ConfigEngine`, configs in status/state/diff, `apply`, `sync`;
    `t/55-configs.sh` with a stub chezmoi.
-9. Home-screen configs row.
-10. Retire the config repo's `dotfiles-*` scripts; README quickstart = the
-    four bootstrap commands.
+2. Home-screen configs row.
+3. The user's repo retires its `dotfiles-*` scripts (their bootstrap's
+   ownership repair and moving a pre-seeded Omarchy nvim config aside need
+   a new home); README quickstart = the four bootstrap commands.
 
 ## Build, run, test
 
@@ -185,8 +99,8 @@ A run that doesn't exit usually means an effect or coroutine kept the
 composition alive (see Toolchain facts). Rendering changes still need a
 human check: ask the user to run it.
 
-Manual testing target: the user's live config repo at `~/.config/loadouts`
-(machine name = hostname; the user's machines run Omarchy/Arch and macOS).
+Manual testing target: the user's live config repo (`$LOADOUT_REPO`: chezmoi's
+source, `~/.local/share/chezmoi`; machine name = hostname; the user's machines run Omarchy/Arch and macOS).
 `status`/`diff`/`--dry-run` against it are fine; installing/removing
 packages or pushing git needs the user's OK. Opening the home screen
 writes the machine's state file there.
@@ -314,7 +228,10 @@ Explicit user decisions; don't "improve" them away.
    helper). Expansion is centralized in model.expandFilePrefix, applied at
    the execution sites. Tokens after the first space are arguments
    (`file:path args…` → `sh 'path' args…`), so file: paths can't contain
-   spaces.
+   spaces. A variant's `with` value marked `file:` is a path too, relative
+   to the program's file and validated the same way; it is substituted as
+   `$LOADOUT_REPO/<repo path>` because the installer pattern it lands in
+   runs in the installer's directory. Unmarked values (a URL) pass through.
 5. **Every manifest command runs via `sh -c` in its declaring file's
    directory** (installs, scripts, version checks, `check`s, oracles,
    upgrades), whatever the invocation directory, with `LOADOUT_REPO`,
@@ -808,7 +725,7 @@ top-down, first fit wins:
 7. No pm at all → `script` key + program-level `[version]` fallback.
 8. Must precede everything (pm config, e.g. dnf.conf) → a program in a
    fragment the first `[layout] fragments` glob loads first (e.g.
-   `programs/00_…`): programs precede scripts,
+   `programs/00-…`): programs precede scripts,
    and dependency-free programs install in declaration order.
 9. Nothing to "have" (dotfiles, services) → `[scripts.*]` + check, opted in
    per machine.
