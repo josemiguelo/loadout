@@ -894,9 +894,36 @@ class ManifestRepoTest {
     }
 
     @Test
+    fun theShippedOmarchyMechanismsShareOneUpdate() {
+        // Omarchy's update upgrades repo and AUR packages alike: one step,
+        // and never a bare pacman -Syu (Omarchy's hook refuses it).
+        val omarchy = listOf("omarchy", "omarchy-aur").map { InstallerLibrary.installers.getValue(it) }
+        assertEquals(listOf("omarchy update -y"), omarchy.map { it.upgrade }.distinct())
+        assertEquals(listOf("omarchy"), omarchy.map { it.probe }.distinct())
+        assertEquals("omarchy pkg add {pkg}", omarchy[0].install)
+        assertEquals("omarchy pkg aur add {pkg}", omarchy[1].install)
+    }
+
+    @Test
+    fun anOmarchyProgramResolvesThroughTheBuiltIn() {
+        val manifest = ManifestLoader.loadRepo(
+            fs(
+                mapOf(
+                    "loadout.toml" to "[programs.zsh]\nvia = [\"omarchy\"]\n\n[programs.yay-only]\nvia = [\"omarchy-aur\"]",
+                    "machines/t2.toml" to "[pm]\nzsh = \"omarchy\"\nyay-only = \"omarchy-aur\"",
+                ),
+            ),
+            repo,
+        )
+        assertEquals("omarchy pkg add zsh", manifest.resolveInstall("zsh", "omarchy").command)
+        assertEquals("pacman -Q yay-only", manifest.resolveInstall("yay-only", "omarchy-aur").check?.command)
+        assertTrue("omarchy" in manifest.builtinInstallers && "omarchy-aur" in manifest.builtinInstallers)
+    }
+
+    @Test
     fun theShippedLibraryParsesAndIsUsable() {
         val installers = InstallerLibrary.installers
-        assertTrue(installers.keys.containsAll(setOf("dnf", "apt", "pacman", "brew", "brew-cask", "flatpak")))
+        assertTrue(installers.keys.containsAll(setOf("dnf", "apt", "pacman", "omarchy", "omarchy-aur", "brew", "brew-cask", "flatpak")))
         for ((name, installer) in installers) {
             assertTrue(installer.probe != null, "$name has no probe")
             assertTrue(installer.install?.contains("{pkg}") == true, "$name install ignores {pkg}")

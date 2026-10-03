@@ -29,8 +29,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   fallbacks, no heuristics. Errors beat guesses, and the error carries the
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
-  pacman, brew, brew-cask and flatpak are built in, so `via = ["dnf"]`
-  works in an empty repo. `loadout installers` shows them, your own
+  pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
+  so `via = ["dnf"]` works in an empty repo. `loadout installers` shows them, your own
   `[installers.<name>]` replaces one, and `--eject` copies them all into
   your repo.
 

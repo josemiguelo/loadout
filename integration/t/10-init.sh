@@ -30,6 +30,8 @@ ok "an unreadable state file warns and is skipped, never a stack trace"
 OUT=$("$BIN" --repo repo installers) || fail "installers exits 0"
 echo "$OUT" | grep -q "dnf" || fail "installers lists the built-in dnf"
 echo "$OUT" | grep -q "dnf-repo" || fail "installers lists the parameterized dnf-repo"
+echo "$OUT" | grep -qE "omarchy +built-in +omarchy pkg add" || fail "installers lists the built-in omarchy: $OUT"
+echo "$OUT" | grep -qE "omarchy-aur +built-in +omarchy pkg aur add" || fail "installers lists the built-in omarchy-aur: $OUT"
 echo "$OUT" | grep -q "built-in" || fail "installers marks built-ins"
 OUT=$("$BIN" --repo repo installers dnf)
 echo "$OUT" | grep -q "rpm -q {pkg}" || fail "installers <name> shows the definition"

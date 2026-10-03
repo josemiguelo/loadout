@@ -110,6 +110,35 @@ check = "pacman -Q {pkg}"
 outdated-all = "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'"
 regex = "([0-9]+\\.[0-9][0-9.]*)"
 
+# Arch packages the Omarchy way: `omarchy pkg add` (pacman -S --needed, then
+# its own pacman -Q verification) instead of a bare pacman install. The
+# upgrade is `omarchy update -y`, not pacman -Syu: Omarchy's alpm hook
+# refuses direct system upgrades, and the update also runs Omarchy's
+# migrations (-y skips the opening confirmation; sudo and its other
+# questions still ask, on the terminal). The oracle is pacman's: the
+# databases checkupdates syncs track Omarchy's pinned mirror snapshot,
+# exactly what `omarchy update` brings.
+[installers.omarchy]
+probe = "omarchy"
+install = "omarchy pkg add {pkg}"
+upgrade = "omarchy update -y"
+check = "pacman -Q {pkg}"
+outdated-all = "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
+# AUR packages the Omarchy way: `omarchy pkg aur add` (yay, then pacman -Q).
+# The AUR is community build recipes, not Omarchy's repo: map a program here
+# only after deciding to trust it. The upgrade is the same `omarchy update
+# -y` (it upgrades AUR packages too), so `loadout upgrade` runs it once for
+# both. The oracle is yay's AUR check, "<pkg> <installed> -> <candidate>".
+[installers.omarchy-aur]
+probe = "omarchy"
+install = "omarchy pkg aur add {pkg}"
+upgrade = "omarchy update -y"
+check = "pacman -Q {pkg}"
+outdated-all = "yay -Qua 2>/dev/null | awk '$3 == \"->\" {print $1, $4}'"
+regex = "([0-9]+\\.[0-9][0-9.]*)"
+
 # --- best effort: install/check only, no update oracle -------------------
 # Not exercised by the maintainer; `loadout outdated` reports "no oracle"
 # for programs mapped here. Override in your repo to add one.

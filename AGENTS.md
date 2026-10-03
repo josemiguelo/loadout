@@ -100,6 +100,27 @@ templates read the same files through `configs/.chezmoitemplates/machine`
 `.chezmoiroot`) and branch on `$m.omarchy`, never on `.chezmoi.hostname`.
 Nothing is generated for chezmoi.
 
+Agreed next shape (step 6b): machine files group by tool or concern, the
+way the repo does, and building blocks move out of `machines/`.
+- `profiles/<name>.toml` (`[layout] profiles`) hold what machines of a
+  kind share, one subject each (`omarchy`, `omarchy-desktop`,
+  `t2-hardware`, `macos`, `work`); `machines/<hostname>.toml` are real
+  hosts. The folder decides the kind; `base = true` is gone. A profile is
+  never observed, diffed or converged; `extends` names profiles only.
+- `extends = [...]` is a list; profiles may extend profiles (cycles are
+  errors). The extending file overrides its profiles; two profiles of one
+  `extends` list setting the same program, script arguments or data key
+  differently is an error (equal values are fine), so order never changes
+  the result. No subtraction.
+- Any table other than `[data]` is a group (a label for reading): `install
+  = "<variant>"` maps the program named like the group, `[<group>.install]`
+  maps several (`tmux = "omarchy"`, `tpack = "brew-cask"`), `scripts =
+  ["name args…"]` opts in, `[<group>.data]` is `[data.<group>]`. `[pm]` and
+  the top-level `scripts` list are gone. A program mapped twice or a script
+  opted into twice in one file is an error.
+- The chezmoi `machine` partial walks the profile list and folds each
+  group's data in.
+
 **Configs** (chezmoi integration; required iff `[layout] configs` is set):
 - unit = top-level config directory, from one `chezmoi managed
   --path-style source-relative` per refresh; units are not opted in
@@ -130,8 +151,11 @@ README/AGENTS/wiki re-read):
    it; 0.x root refused (done; contract 16).
 4. File-relative paths, per-file cwd, exported env (done; contracts 4, 5).
 5. Flat machines, declared `[data]`, `explain` shows it (done; contract 2).
-6. 1.0.0: state schema 2, release notes, wiki "Repo layout", `install.sh`
-   next steps, tag.
+6a. Built-in `omarchy` / `omarchy-aur` installers (done; contract 13).
+6b. Machine files by group, profiles in `profiles/` (see Machines above).
+6. 1.0.0: state schema 2, release notes, wiki "Repo layout" and the
+   built-in installer table (Home, Writing-Your-Manifest: omarchy,
+   omarchy-aur), `install.sh` next steps, tag.
 7. Migrate the user's repos PROGRESSIVELY, one slice at a time, never all
    at once; each slice is approved before it runs. Slice 1 is the
    backbone: the merged repo's skeleton (`loadout.toml`, `.chezmoiroot`,
@@ -360,7 +384,7 @@ Explicit user decisions; don't "improve" them away.
     (probe / install / check / outdated / regex, `{pkg}` substituted)
     defines a mechanism once, repo-unique, fragment-definable. Core ships a
     library (`core/manifest/InstallerLibrary.kt`: dnf, brew, brew-cask,
-    flatpak, pacman with oracles; apt install/check only) as TOML text,
+    flatpak, pacman, omarchy, omarchy-aur with oracles; apt install/check only) as TOML text,
     merged UNDER the repo's own in `loadRepo`: a repo definition of the same
     name replaces the built-in outright, and `Manifest.builtinInstallers`
     records which survived so `explain`/`installers` label `(built-in)` vs
@@ -414,7 +438,8 @@ Explicit user decisions; don't "improve" them away.
     version already there. Moving versions is its own verb, `loadout upgrade
     <installers…>|--all` (`UpgradeEngine`), never single packages: naming a
     program is an error pointing at its mechanism. Mechanisms sharing a
-    command (dnf, dnf-repo, dnf-copr all run `dnf upgrade -y`) are ONE step,
+    command (dnf, dnf-repo, dnf-copr all run `dnf upgrade -y`; omarchy and
+    omarchy-aur both `omarchy update -y`) are ONE step,
     deduped by command; the UI groups by the TOOL they drive (their probe),
     so ticking a brew row ticks casks too. `plan` refuses an installer this
     machine doesn't map, so a repo mapping nothing to brew can't sweep it.
