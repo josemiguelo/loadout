@@ -1,5 +1,7 @@
 package loadout.core.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -15,7 +17,35 @@ data class MachineState(
     val updatedAt: String,
     val programs: Map<String, ProgramState> = emptyMap(),
     val scripts: Map<String, ScriptState> = emptyMap(),
+    /**
+     * Config units (`[layout] configs`), keyed by unit name. Left out of the
+     * file when empty, so a repo without configs writes what it always did.
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val configs: Map<String, ConfigState> = emptyMap(),
 )
+
+@Serializable
+data class ConfigState(
+    val status: ConfigStatus,
+    /** Targets `chezmoi apply` would change, relative to the destination (DRIFTED). */
+    val files: List<String> = emptyList(),
+    /** Why chezmoi couldn't answer (UNKNOWN). Text for a person; never parsed. */
+    val reason: String? = null,
+)
+
+@Serializable
+enum class ConfigStatus {
+    @SerialName("applied")
+    APPLIED,
+
+    @SerialName("drifted")
+    DRIFTED,
+
+    @SerialName("unknown")
+    UNKNOWN,
+}
 
 @Serializable
 data class ProgramState(

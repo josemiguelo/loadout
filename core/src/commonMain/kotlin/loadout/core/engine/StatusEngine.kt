@@ -22,15 +22,22 @@ import okio.Path
 
 /**
  * Builds this machine's [MachineState] by observing it: every program's
- * version check runs, and every applicable script's `check` command runs.
- * All checks are read-only, so they run concurrently (bounded), scripts
+ * version check runs, every applicable script's `check` command runs, and
+ * chezmoi reports the config units ([ConfigEngine]). All checks are
+ * read-only, so they run concurrently (bounded), scripts and configs
  * overlapping with programs — one slow check no longer serializes `status`.
  */
 class StatusEngine(
     private val checker: VersionChecker,
     private val runner: ProcessRunner,
     private val frame: CommandFrame = CommandFrame(),
+    /** Observes config units; null when the repo has no `[layout] configs`. */
+    private val configs: ConfigEngine? = null,
 ) {
+    /** Why configs went unchecked during the last [refresh] (chezmoi's answer), or null. */
+    var lastConfigsDown: String? = null
+        private set
+
     /**
      * What each failing script check printed during the last [refresh] —
      * the "missing: ..." detail two-mode checks emit. Same surfacing pattern
@@ -74,6 +81,7 @@ class StatusEngine(
         val enabled = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         coroutineScope {
             val programs = async { checker.checkAll(observedChecks) }
+            val configStates = async { configs?.observe(previous?.configs.orEmpty()).orEmpty() }
             val semaphore = Semaphore(8)
             val scripts = enabled.mapNotNull { (name, args) ->
                 val step = manifest.scripts[name] ?: return@mapNotNull null
@@ -129,6 +137,7 @@ class StatusEngine(
                 updatedAt = nowIso(),
                 programs = checked,
                 scripts = observed.associate { (name, pair) -> name to pair.first },
+                configs = configStates.await().also { lastConfigsDown = configs?.lastReason },
             )
         }
     }

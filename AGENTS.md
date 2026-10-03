@@ -33,39 +33,6 @@ something a home-screen row already does, is not wanted.
 Formerly `post-installer`: the working directory and some external
 references may still use that name. Never reintroduce it in code.
 
-## Next: configs (1.1, agreed, not built)
-
-The rest of this file describes the code as it is; this section is the
-agreed next step. The user approves every step before it runs.
-
-The user's config repo also holds their dotfiles, as chezmoi's source
-(`[layout] configs`, chezmoi reading only that folder through
-`.chezmoiroot`); a tool's fragment sits beside its config as `.loadout.toml`
-+ `.loadout/`, which chezmoi never deploys. loadout learns about configs
-additively (no state schema change: older readers ignore the new field):
-- `[layout] configs` set => chezmoi is required; unset => no configs concept;
-- unit = top-level config directory, from one `chezmoi managed
-  --path-style source-relative` per refresh; units are not opted in
-  (`.chezmoiignore` is chezmoi's membership);
-- drift is observation (contract 7): `chezmoi verify <unit targets>`,
-  detail from `chezmoi status`; a missing chezmoi is `unknown`;
-- `loadout apply [unit…]` hands off `chezmoi apply --no-tty <targets>`;
-- `sync` = pull → `chezmoi apply --no-tty` → refresh programs, scripts,
-  configs → commit the state file → push;
-- state gains `configs`; `diff` shows config drift per machine;
-- home screen: a fifth subject row, "configs", same picker/hand-off rules;
-- bootstrap (both OSes): install git + chezmoi → `chezmoi init --apply
-  <repo>` → `install.sh` → `loadout setup-new-machine`.
-
-Steps (each: three suites green on Linux, macOS checked by the user,
-README/AGENTS/wiki re-read):
-1. `ConfigEngine`, configs in status/state/diff, `apply`, `sync`;
-   `t/55-configs.sh` with a stub chezmoi.
-2. Home-screen configs row.
-3. The user's repo retires its `dotfiles-*` scripts (their bootstrap's
-   ownership repair and moving a pre-seeded Omarchy nvim config aside need
-   a new home); README quickstart = the four bootstrap commands.
-
 ## Build, run, test
 
 ```sh
@@ -141,8 +108,10 @@ core/  loadout.core
                (plan/execute), UpgradeEngine (planner only: which mechanisms
                this machine can upgrade, one step per command, refusals;
                `upgrade` runs and verifies, the home screen plans with it to
-               describe steps and refuse early), ScriptRunner, StatusEngine
-               (observes programs AND scripts; all checks concurrent, read-only)
+               describe steps and refuse early), ScriptRunner, ConfigEngine
+               (chezmoi over `[layout] configs`: units, drift, edited files,
+               the apply command; contract 17), StatusEngine (observes
+               programs, scripts AND configs; all checks concurrent, read-only)
   diff/        DiffEngine — pure: manifest × states -> DiffReport
   git/         GitClient — shells out to `git`, cwd = repo root
   platform/    expect/actual posix: hostname, isatty, uname, nowIso, envVar,
@@ -155,7 +124,7 @@ app/   loadout
   cli/         AppContext (shared services, suspend refreshAndWriteState) +
                one file per subcommand (status/explain/installers/
                setup-new-machine/install/upgrade/self-upgrade/outdated/run/
-               diff/sync/init). SelfVersion is the one remote self-check:
+               apply/diff/sync/init). SelfVersion is the one remote self-check:
                status footer (6h cache, Okio, fail-soft) + outdated self-row
                (fresh). `self-upgrade` shells to INSTALL_COMMAND and needs no
                repo, so it works under a min-tool-version refusal (which
@@ -383,6 +352,39 @@ Explicit user decisions; don't "improve" them away.
     absolute or `..` path, a wildcard in a directory key, or a glob reaching
     loadout.toml or a machine file is a load error, as is `[layout]` in a
     fragment. The min-tool-version check runs before `[layout]` is read.
+17. **Configs are chezmoi's, observed like everything else.** `[layout]
+    configs` names chezmoi's source directory inside the repo; unset, there
+    is no configs concept and chezmoi is never called. Every chezmoi call is
+    `chezmoi --source <repo>/<configs> --no-pager …` (`ConfigEngine`), so a
+    `--repo` worktree is observed and applied from that worktree, never
+    from chezmoi's own configured source.
+    - **Units**: `.config/<name>/…` is unit `<name>`, any other target its
+      first path segment (`.zshenv`, `.local`), from one `chezmoi managed
+      --include files,symlinks` per refresh. Not opted in: `.chezmoiignore`
+      is chezmoi's membership. A unit may share a program's name (tmux);
+      `explain <name>` shows both.
+    - **Drift is observation** (contract 7): one `chezmoi status --include
+      files,symlinks` per refresh. Its second column is what `apply` would
+      change (the same answer as `chezmoi verify`, in one call); a unit with
+      any such file is `drifted`, with them in `ConfigState.files`. Its
+      first column marks a file edited since chezmoi last wrote it.
+    - **chezmoi can't answer** (absent: exit 127; a template error): the
+      units last seen are `unknown` with chezmoi's line as the reason, and
+      `status` says it once (`StatusEngine.lastConfigsDown`); never a
+      refusal for status.
+    - **Writing**: `apply [unit…]` and `sync` run `chezmoi apply --no-tty`
+      (a unit = its targets, absolute via `chezmoi target-path`). Without a
+      terminal chezmoi aborts the whole apply on a file edited in place
+      (it would ask), so both refuse first when a file they'd replace is
+      edited AND drifted (`refuseEdited`), naming the files: keep them with
+      `chezmoi re-add`, or replace them with `apply --force`. `sync` =
+      pull → refuse edited → apply → refresh → commit → push; nothing is
+      committed after a refusal or a failed apply.
+    - **State**: `MachineState.configs`, left out of the file when empty
+      (`@EncodeDefault(NEVER)`), so repos without configs write what they
+      always did and older readers ignore it (schema stays 1). `diff`
+      shows a CONFIG table (`-` = the machine doesn't report that unit)
+      and exits 1 on config drift.
 
 ## Toolchain facts — don't rediscover
 
@@ -500,8 +502,9 @@ Explicit user decisions; don't "improve" them away.
   a shorter line printed next keeps the spinner line's tail.
 - **Home screen** (bare `loadout` on a TTY; a pipe gets help):
   `tui/HomeModel.kt` (all state + logic, unit-tested) + `HomeApp.kt`
-  (composables). Four subject rows (programs, scripts, remote, fleet), each
-  with its verdict and the ONE verb that resolves it. ↑↓/jk move, l/h (or
+  (composables). Subject rows (programs, scripts, configs — only with
+  `[layout] configs` —, remote, fleet), each with its verdict and the ONE
+  verb that resolves it; tests find a row by subject, never by position. ↑↓/jk move, l/h (or
   →/←) open/close a detail, pgup/pgdn page, enter ACTS (never opens or
   closes; never fires on a busy row). Machine-wide verbs are their own
   keys: r re-check, S sync, U self-upgrade, C setup-new-machine, t theme,
@@ -539,6 +542,14 @@ Explicit user decisions; don't "improve" them away.
   work). `K` opens a row's link when its source printed one. Batch oracles
   read STDOUT ONLY: stderr can carry warnings mistaken for package names.
   `l` only opens, never dispatches, so vim keys can't start an install.
+- **Configs row**: every unit the last observation saw, with its verdict
+  and drifted files; drifted ones pre-ticked (`preselectConfigs`). Enter
+  first asks chezmoi which ticked files were edited on this machine
+  (`ConfigEngine.edited`): any, and the message line names them and the
+  screen stays (the choice between `chezmoi re-add` and `apply --force`
+  is made in a terminal, never from the screen); none, and it asks, then
+  hands off `apply <names>`. The fleet row and its table count config
+  drift too (`FleetLine`: a program or a config).
 - **Scripts row**: maintain-mode scripts in run order with their last
   verdict; anything not done pre-ticked (`preselect`, re-applied after
   every refresh so picks follow verdicts). Enter hands the ticks to `run
@@ -652,7 +663,12 @@ Explicit user decisions; don't "improve" them away.
   package managers. Add an `ok "..."` test for every user-visible behavior
   change, in the file whose subject it is (new subject = new file); run
   that file with a name pattern while iterating. Never share state across
-  files through `$WORK`.
+  files through `$WORK`. Configs tests (`t/55-configs.sh`) put a stub
+  `chezmoi` on PATH for each command only (`cz_loadout`: the files are
+  sourced into one shell, so an exported PATH would leak), answering from
+  files and logging its calls; a real chezmoi would read and write the
+  developer's own dotfiles, so "chezmoi missing" is the stub's exit 127,
+  never a PATH without it.
 - TUI: reducers (`handleKey`) and pure builders (`sectionsOf`,
   `scriptRowsOf`, `preselect`, `selectionKey`, `homeLines`, `snapCursor`,
   `paneLines`, `upgradeItem`) are unit-tested via `setStateForTest`;
@@ -771,7 +787,7 @@ mode only if it IS the truth's only oracle.
   until the wiki has been re-read against it**: grep the pages for the
   screen text, keys and example output the change touches; the guides show
   rendered screens, and a stale one teaches the wrong thing. Same for README
-  and this file. The wiki links into josemiguelo/loadouts as the live
+  and this file. The wiki links into josemiguelo/.dotfiles as the live
   example, so renames there can break wiki links.
 - **Wiki voice**: friendly, direct, concise, for a USER getting work done,
   not a contributor. Show an example wherever one fits (a screen or a

@@ -102,7 +102,7 @@ class RootCommand : CliktCommand(name = "loadout") {
         while (true) {
             val closed = screen.show()
             val (command, args) = when (closed.action) {
-                HomeAction.NONE, HomeAction.INSTALL_MISSING, HomeAction.RUN_SCRIPTS,
+                HomeAction.NONE, HomeAction.INSTALL_MISSING, HomeAction.RUN_SCRIPTS, HomeAction.APPLY_CONFIGS,
                 HomeAction.REVIEW_OUTDATED, HomeAction.SHOW_DIFF -> return
                 HomeAction.UPGRADE -> SelfUpgradeCommand() to emptyList()
                 HomeAction.SYNC -> SyncCommand() to emptyList()
@@ -216,6 +216,7 @@ class RootCommand : CliktCommand(name = "loadout") {
     private fun commandFor(handoff: Handoff): CliktCommand = when (handoff.kind) {
         PaneKind.INSTALL -> InstallCommand()
         PaneKind.SCRIPTS -> RunCommand()
+        PaneKind.CONFIGS -> ApplyCommand()
         PaneKind.UPGRADE, PaneKind.LIST -> UpgradeCommand()
     }
 
@@ -224,6 +225,8 @@ class RootCommand : CliktCommand(name = "loadout") {
         PaneKind.INSTALL, PaneKind.UPGRADE, PaneKind.LIST -> handoff.args + "--yes"
         // `run` has no confirmation; --force runs a ticked script even when done.
         PaneKind.SCRIPTS -> handoff.args + "--force"
+        // The screen already refused files edited here; never --force from it.
+        PaneKind.CONFIGS -> handoff.args
     }
 }
 

@@ -1,5 +1,7 @@
 package loadout.core
 
+import loadout.core.model.ConfigState
+import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramState
 import loadout.core.model.ProgramStatus
@@ -80,6 +82,24 @@ class StateStoreTest {
         assertTrue(store.lastWarnings.isNotEmpty())
         store.read("laptop")
         assertTrue(store.lastWarnings.isEmpty())
+    }
+
+    @Test
+    fun configsAreLeftOutWhenEmptyAndRoundTripWhenPresent() {
+        val fs = FakeFileSystem()
+        val store = StateStore(fs, "/repo".toPath(), "state")
+        store.write(sampleState("plain", "14.1.0"))
+        assertTrue("configs" !in fs.read("/repo/state/plain.json".toPath()) { readUtf8() })
+
+        val withConfigs = sampleState("dotted", "14.1.0").copy(
+            configs = mapOf(
+                "tmux" to ConfigState(ConfigStatus.APPLIED),
+                "zsh" to ConfigState(ConfigStatus.DRIFTED, listOf(".config/zsh/.zshrc")),
+            ),
+        )
+        store.write(withConfigs)
+        assertTrue("\"drifted\"" in fs.read("/repo/state/dotted.json".toPath()) { readUtf8() })
+        assertEquals(withConfigs, store.read("dotted"))
     }
 
     @Test

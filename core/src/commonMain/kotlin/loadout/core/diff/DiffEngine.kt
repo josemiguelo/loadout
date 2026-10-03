@@ -1,5 +1,6 @@
 package loadout.core.diff
 
+import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramStatus
@@ -27,12 +28,30 @@ data class ProgramRow(
     val incomplete: Boolean = perMachine.values.any { it is InstallState.Missing }
 }
 
+sealed interface ConfigCell {
+    data object Applied : ConfigCell
+    data class Drifted(val files: Int) : ConfigCell
+    /** No state entry: the unit isn't on this machine, or chezmoi couldn't answer. */
+    data object Unknown : ConfigCell
+}
+
+data class ConfigRow(
+    val unit: String,
+    val perMachine: Map<String, ConfigCell>,
+) {
+    /** At least one machine's files differ from the repo. */
+    val drifted: Boolean = perMachine.values.any { it is ConfigCell.Drifted }
+}
+
 data class DiffReport(
     val machines: List<String>,
     val rows: List<ProgramRow>,
+    /** Every config unit any compared machine reports; empty without configs. */
+    val configs: List<ConfigRow> = emptyList(),
 ) {
     val hasDrift: Boolean = rows.any { it.drift }
     val hasMissing: Boolean = rows.any { it.incomplete }
+    val hasConfigDrift: Boolean = configs.any { it.drifted }
 }
 
 object DiffEngine {
@@ -53,6 +72,19 @@ object DiffEngine {
                 },
             )
         }
-        return DiffReport(machines, rows)
+        val configs = states.flatMap { it.configs.keys }.distinct().sorted().map { unit ->
+            ConfigRow(
+                unit = unit,
+                perMachine = machines.associateWith { machine ->
+                    val entry = byMachine.getValue(machine).configs[unit]
+                    when (entry?.status) {
+                        ConfigStatus.APPLIED -> ConfigCell.Applied
+                        ConfigStatus.DRIFTED -> ConfigCell.Drifted(entry.files.size)
+                        ConfigStatus.UNKNOWN, null -> ConfigCell.Unknown
+                    }
+                },
+            )
+        }
+        return DiffReport(machines, rows, configs)
     }
 }

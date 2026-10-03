@@ -5,9 +5,13 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.options.option
+import loadout.core.diff.ConfigCell
 import loadout.core.diff.DiffEngine
+import loadout.core.diff.DiffReport
 import loadout.core.diff.InstallState
 import loadout.core.diff.ProgramRow
+
+private fun driftedLabel(cell: ConfigCell.Drifted) = "drifted (${cell.files})"
 
 private fun flagsOf(row: ProgramRow) = buildList {
     if (row.drift) add("drift")
@@ -16,7 +20,7 @@ private fun flagsOf(row: ProgramRow) = buildList {
 
 class DiffCommand : CliktCommand(name = "diff") {
     override fun help(context: Context) = commandHelp(
-        "Compare all machines' state files: missing installs and version drift. Exits 1 when something is off.",
+        "Compare all machines' state files: missing installs, version drift and drifted configs. Exits 1 when something is off.",
         "--machines a,b  narrow the comparison to those machines",
     )
 
@@ -42,8 +46,9 @@ class DiffCommand : CliktCommand(name = "diff") {
 
         val report = DiffEngine.diff(manifest, states)
 
-        val nameWidth = (report.rows.map { it.program.length } + 7).max() + 2
-        val colWidth = (report.machines.map { it.length } + 8).max() + 2
+        val nameWidth = (report.rows.map { it.program.length } + report.configs.map { it.unit.length } + 7).max() + 2
+        val driftedCells = report.configs.flatMap { it.perMachine.values }.filterIsInstance<ConfigCell.Drifted>()
+        val colWidth = (report.machines.map { it.length } + driftedCells.map { driftedLabel(it).length } + 8).max() + 2
         echo(Style.header("  " + "PROGRAM".padEnd(nameWidth + 3)) + report.machines.joinToString("") { Style.machine(it.padEnd(colWidth)) })
         // Rows needing attention (drift, or a missing install somewhere) are
         // boxed by echoRows; the rest print with the same gutter.
@@ -78,14 +83,41 @@ class DiffCommand : CliktCommand(name = "diff") {
             },
         )
 
+        printConfigs(report, nameWidth, colWidth)
+
         val driftCount = report.rows.count { it.drift }
         val missingCount = report.rows.count { it.incomplete }
-        if (driftCount > 0 || missingCount > 0) {
+        val configCount = report.configs.count { it.drifted }
+        if (driftCount > 0 || missingCount > 0 || configCount > 0) {
             echo("")
-            echo(" " + Style.warn("!") + "  $driftCount program(s) with version drift, $missingCount with missing installs.")
+            echo(
+                " " + Style.warn("!") + "  $driftCount program(s) with version drift, $missingCount with missing installs" +
+                    (if (report.configs.isEmpty()) "." else ", $configCount config(s) drifted."),
+            )
             throw ProgramResult(1)
         }
         echo("")
         echo(" " + Style.ok("\u2714") + "  all ${report.machines.size} machine(s) in sync")
+    }
+
+    // A unit a machine doesn't report is "-": chezmoi ignores it there, or
+    // that machine's state predates configs.
+    private fun printConfigs(report: DiffReport, nameWidth: Int, colWidth: Int) {
+        if (report.configs.isEmpty()) return
+        echo("")
+        echo(Style.header("  " + "CONFIG".padEnd(nameWidth + 3)) + report.machines.joinToString("") { Style.machine(it.padEnd(colWidth)) })
+        echoRows(
+            report.configs.map { row ->
+                val marker = if (row.drifted) Style.warn("\u2718") else Style.ok("\u2714")
+                val cells = report.machines.joinToString("") { machine ->
+                    when (val cell = row.perMachine.getValue(machine)) {
+                        ConfigCell.Applied -> "applied".padEnd(colWidth)
+                        is ConfigCell.Drifted -> Style.warn(driftedLabel(cell).padEnd(colWidth))
+                        ConfigCell.Unknown -> Style.dim("-".padEnd(colWidth))
+                    }
+                }
+                TableRow(listOf("$marker  " + row.unit.padEnd(nameWidth) + cells), severity = if (row.drifted) false else null)
+            },
+        )
     }
 }
