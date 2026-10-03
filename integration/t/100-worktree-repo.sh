@@ -35,12 +35,11 @@ git -C origin.git log --oneline "$branch" | grep -q "m1: worktree sync" || {
 ok "sync commits and pushes from a worktree path, same as a plain clone"
 
 # --- --repo pointed at the BARE root itself (no working tree) ------------
-# No worktree there means no manifest.toml file either; this isn't a gap
-# loadRepo needs a special case for — it already refuses a missing
-# manifest with a clean one-liner (contract 9), bare root or not.
+# No worktree there means no loadout.toml either; loadRepo refuses it with
+# the same clean one-liner as any folder missing one (contract 9).
 OUT=$("$BIN" --repo bare.git status 2>&1) && fail "status against the bare root should fail" || true
-echo "$OUT" | grep -qx "error: Manifest not found: bare.git/manifest.toml" ||
-    fail "bare-root error should be the same clean one-liner as any directory with no manifest.toml"
+echo "$OUT" | grep -qx "error: Manifest not found: bare.git/loadout.toml" ||
+    fail "bare-root error should be the same clean one-liner as any directory with no loadout.toml"
 echo "$OUT" | grep -qi "Uncaught Kotlin exception" && fail "bare-root must not leak a raw stack trace" || true
 [ "$(printf '%s\n' "$OUT" | wc -l)" -eq 1 ] || fail "bare-root error should be exactly one line"
 ok "--repo at the bare root fails with the same clean one-liner as a missing manifest, not a stack trace"
