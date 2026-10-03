@@ -3,7 +3,7 @@
 
 # --- {pkg} substitution in install + check, probe, via shorthand ---------
 mkdir -p instrepo/state instrepo/machines
-cat > instrepo/manifest.toml <<'TOML'
+cat > instrepo/loadout.toml <<'TOML'
 [installers.fake]
 probe = "sh"
 install = "echo installed-{pkg} > fake-install.txt"
@@ -13,6 +13,7 @@ regex = "mytool ([0-9.]+)"
 [programs.mytool]
 via = ["fake"]
 TOML
+add_layout "instrepo"
 printf '[pm]\nmytool = "fake"\n' > instrepo/machines/m1.toml
 OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
 echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
@@ -22,7 +23,7 @@ grep -q '"version": "1.0"' instrepo/state/m1.json || fail "installer check obser
 ok "installers supply install/check/probe mechanics via {pkg}"
 
 # --- outdated: each installer's oracle reports the remote candidate ------
-cat > instrepo/manifest.toml <<'TOML'
+cat > instrepo/loadout.toml <<'TOML'
 [installers.fake]
 probe = "sh"
 install = "echo installed-{pkg} > fake-install.txt"
@@ -56,6 +57,7 @@ via = ["fake3"]
 [programs.uptodate]
 via = ["fake3"]
 TOML
+add_layout "instrepo"
 printf '[pm]\nmytool = "fake"\nothertool = "fake2"\nbatchtool = "fake3"\nuptodate = "fake3"\n' > instrepo/machines/m1.toml
 "$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated exits 0"
@@ -84,13 +86,14 @@ cat > pacbin/checkupdates <<'SH'
 printf 'fooapp 1:1.2.0-1 -> 1:1.3.0-2\nnotmine 5.1-1 -> 5.2-1\n'
 SH
 chmod +x pacbin/pacman pacbin/checkupdates
-cat > pacrepo/manifest.toml <<'TOML'
+cat > pacrepo/loadout.toml <<'TOML'
 [programs.fooapp]
 via = ["pacman"]
 
 [programs.barapp]
 via = ["pacman"]
 TOML
+add_layout "pacrepo"
 printf '[pm]\nfooapp = "pacman"\nbarapp = "pacman"\n' > pacrepo/machines/m1.toml
 PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
 grep -q '"version": "1.2.0"' pacrepo/state/m1.json || fail "pacman -Q's version is observed past the epoch"
@@ -101,7 +104,7 @@ echo "$OUT" | grep -qE "pacman +2 updates · 1 in your loadout" || fail "the pac
 ok "the built-in pacman installer checks with pacman -Q and asks checkupdates for updates"
 
 # --- custom [outdated.*] sources: arbitrary rows, the source as the tag --
-cat >> instrepo/manifest.toml <<'TOML'
+cat >> instrepo/loadout.toml <<'TOML'
 
 [outdated.plugin-pins]
 command = "printf 'javaplug aaa1111 bbb2222\n'"
@@ -116,7 +119,7 @@ ok "outdated includes custom [outdated.*] source rows, ordered after installers"
 
 # A custom source that FAILS (non-zero exit) must fail LOUD, never masquerade
 # as "nothing outdated" — loadout can't tell a crash from an empty result.
-cat >> instrepo/manifest.toml <<'TOML'
+cat >> instrepo/loadout.toml <<'TOML'
 
 [outdated.flaky]
 command = "echo boom >&2; exit 3"
@@ -130,7 +133,7 @@ ok "outdated surfaces a failing custom [outdated.*] source instead of silence"
 # A URL in a row's trailing note is lifted out as that row's PAGE — the
 # home screen marks it ↗ and K opens it; here it must reach the output
 # without eating the rest of the note.
-cat >> instrepo/manifest.toml <<'TOML'
+cat >> instrepo/loadout.toml <<'TOML'
 
 [outdated.linked-pins]
 command = "printf 'jsplug aaa1111 bbb2222 1 commit behind https://example.test/compare/aaa1111...bbb2222\n'"

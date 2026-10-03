@@ -33,6 +33,128 @@ something a home-screen row already does, is not wanted.
 Formerly `post-installer`: the working directory and some external
 references may still use that name. Never reintroduce it in code.
 
+## Target design: 1.0 (in progress on branch `layout`)
+
+The rest of this file describes the code as it is. This section is the
+agreed target; each implementation step moves its part into the sections
+below and deletes it here. The user approves every step before it runs.
+Compatibility with 0.x config repos is not a goal: 1.0 is the second
+deliberate break (contract 14).
+
+**Goal**: one repo per user holds programs, maintenance scripts, machines,
+state AND dotfiles, so a change to a tool lands in one place. Dotfiles stay
+chezmoi's; a tool's loadout fragment sits beside its chezmoi config.
+
+**Repo layout** (chezmoi clones it to its source dir, `~/.local/share/chezmoi`
+on Linux and macOS; `LOADOUT_REPO` points there):
+
+```
+<repo>/
+  .chezmoiroot      "configs": chezmoi reads only configs/
+  loadout.toml      root marker: [meta], [layout], [data]; a root manifest.toml is refused as a 0.x repo
+  programs/         installers (+ helper scripts beside them) and config-less programs
+  maintenance/      config-less scripts and oracles, one folder per concern; lib/ for shared helpers
+  machines/         flat: <hostname>.toml and base files
+  state/            generated, <hostname>.json
+  configs/          chezmoi source root; a tool's .loadout.toml + .loadout/ sit beside its config
+```
+
+Dot-prefixed `.loadout.toml`/`.loadout/` are invisible to chezmoi (it skips
+dot entries that aren't its own special files), so no `.chezmoiignore`
+rule is needed. A tool whose files land in several places keeps its fragment
+in its main config folder (zsh owns `dot_zshenv.tmpl`, mise owns
+`dot_default-gems`).
+
+**`loadout.toml`**:
+
+```toml
+[meta]
+name = "jm's machines"
+min-tool-version = "1.0.0"
+
+[layout]
+configs   = "configs"        # optional; set => chezmoi is required
+machines  = "machines"
+state     = "state"
+fragments = ["programs/**/*.toml", "maintenance/**/*.toml", "configs/**/.loadout.toml"]
+
+[data]                       # every per-machine key, with its default
+omarchy = false
+
+[data.kitty]
+opacity = 0.85
+```
+
+- Discovery is explicit: only `[layout] fragments` globs load (`*` one
+  segment, `**` any depth, `?`; `*` never matches a leading dot; `.git` is
+  never entered). A glob matching nothing, an absolute or `..` path, or a
+  glob matching `loadout.toml` or a machine file is a load error.
+- Fragments hold `[installers.*]`, `[programs.*]`, `[scripts.*]`,
+  `[outdated.*]` only.
+
+**Paths and cwd**: every path (`file`, every `file:` token, installer
+patterns) is relative to the directory of the file that declares it, must
+stay inside the repo, and is resolved to an absolute path and validated at
+load; runners never see a relative path. Every manifest command runs with
+cwd = the declaring file's directory and gets `LOADOUT_REPO`,
+`LOADOUT_CONFIGS` (if set), `LOADOUT_FRAGMENT_DIR`, `LOADOUT_MACHINE`,
+`LOADOUT_OS` (`linux`/`macos`). The `ShellCommand` value (line, cwd, env) carries
+this through `ProcessRunner`.
+
+**Machines**: flat `machines/<hostname>.toml` (chezmoi finds it by
+hostname). `extends`/`base = true`, `[pm]` and the `scripts` opt-in work as
+in contract 2/12. `[data]` merges per key (child over base over
+`loadout.toml` defaults; lists replace, as in chezmoi); a key not declared
+in `loadout.toml [data]`, or of another TOML type, is a load error. Chezmoi
+templates read the same files through `configs/.chezmoitemplates/machine`
+(`include "../machines/<host>.toml"`, verified to reach outside
+`.chezmoiroot`) and branch on `$m.omarchy`, never on `.chezmoi.hostname`.
+Nothing is generated for chezmoi.
+
+**Configs** (chezmoi integration; required iff `[layout] configs` is set):
+- unit = top-level config directory, from one `chezmoi managed
+  --path-style source-relative` per refresh; units are not opted in
+  (`.chezmoiignore` is chezmoi's membership);
+- drift is observation (contract 7): `chezmoi verify <unit targets>`,
+  detail from `chezmoi status`; a missing chezmoi is `unknown`;
+- `loadout apply [unit…]` hands off `chezmoi apply --no-tty <targets>`;
+- `sync` = pull → `chezmoi apply --no-tty` → refresh programs, scripts,
+  configs → commit `state/<machine>.json` → push;
+- state schema 2 adds `configs`; `diff` shows config drift per machine;
+- home screen: a fifth subject row, "configs", same picker/hand-off rules;
+- bootstrap (both OSes): install git + chezmoi → `chezmoi init --apply
+  <repo>` → `install.sh` → `loadout setup-new-machine`.
+
+**Contract changes**: 4 keeps its rule, paths now file-relative; 5 becomes
+cwd = declaring file's directory plus the exported env; 6 declaration
+order = order of `[layout] fragments` entries, path-sorted within one,
+table order within a file; 7 extends to configs; 8 takes its dir from
+`[layout] state`; 11 still holds for loadout files (`.loadout.toml` is never
+rendered); 12 scripts stay opt-in, configs don't; 14 the break ships as
+1.0.0. All others stand unchanged.
+
+**Open risk**: ktoml must decode `[data]` as free-form nested tables
+(today's schema avoids inline tables and dotted keys; see Toolchain facts).
+Step 5 proves it first; the fallback is tomlkt.
+
+**Steps** (each: three suites green on Linux, macOS checked by the user,
+README/AGENTS/wiki re-read):
+1. This section.
+2. `ShellCommand(line, cwd, env)` through `exec/` and the engines (done).
+3. `loadout.toml` + `[layout]` + glob discovery; machines/state dirs from
+   it; 0.x root refused (done; contract 16).
+4. File-relative paths, per-file cwd, exported env.
+5. Flat machines, declared `[data]`, `explain` shows it.
+6. 1.0.0: state schema 2, release notes, wiki "Repo layout", `install.sh`
+   next steps, tag.
+7. User's repo: `.chezmoiroot`, machine template partial, hostname checks
+   replaced (prepared by the agent, run by the user).
+8. `ConfigEngine`, configs in status/state/diff, `apply`, `sync`;
+   `t/55-configs.sh` with a stub chezmoi.
+9. Home-screen configs row.
+10. Retire the config repo's `dotfiles-*` scripts; README quickstart = the
+    four bootstrap commands.
+
 ## Build, run, test
 
 ```sh
@@ -83,15 +205,19 @@ core/  loadout.core
   LoadoutException — supertype of every refusal (contract 9)
   model/       Manifest, MachineState, System (@Serializable schemas; Manifest
                owns resolveInstall/checkFor — variant × installer resolution)
-  manifest/    ManifestLoader — loadRepo() merges manifest.toml + manifest.d
-               (recursive, subfolders cosmetic) + machines/*.toml +
+  manifest/    ManifestLoader — loadRepo() merges loadout.toml + the files its
+               [layout] fragments globs match + <machines>/*.toml +
                InstallerLibrary under the repo's own installers, validates
-               everything; parse() is single-doc, TEST-ONLY
+               everything; readLayout() reads [layout] alone (AppContext.layout);
+               parse() is single-doc, TEST-ONLY
+               Glob — the layout's glob matching and file expansion
                InstallerLibrary — the built-in installers, as TOML text
-  state/       StateStore — state/<machine>.json via Okio; pretty JSON, stable order
+  state/       StateStore — <state>/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL
                process use goes through the interface (tests use
-               FakeProcessRunner). capture (blocking), inherit (sudo/progress).
+               FakeProcessRunner). capture (blocking), inherit (sudo/progress),
+               each taking a ShellCommand (line, cwd, env); manifest commands
+               always build one, plain strings are for git/probes/self-version.
                A child killed by a signal reports -1 (kommand's wait() throws
                for it); Ctrl-C during a home-screen hand-off throws
                InterruptedByUser once the child exits
@@ -132,7 +258,7 @@ Explicit user decisions; don't "improve" them away.
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
    The only source of variant choice is `machines/<name>.toml` (`[pm]`
    maps EVERY program to a key of its install table). Inline
-   `[machines.*]` in manifest.toml or fragments is a validation error.
+   `[machines.*]` in loadout.toml or fragments is a validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't map is not in its loadout: converge skips it, status
    doesn't observe it, diff shows "-". Machine files may sit in subfolders
@@ -146,12 +272,12 @@ Explicit user decisions; don't "improve" them away.
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
    `script` fallback.
-3. **Intent and observation never mix.** `manifest.toml` + `manifest.d/` +
-   `machines/` are authored; `state/` is generated and disposable. Nothing
-   hand-edited goes in `state/`; the tool never writes authored files,
-   except `init` scaffolding and `installers --eject` (writes exactly
-   `manifest.d/00_installers.toml`, refuses to clobber it without
-   `--force`).
+3. **Intent and observation never mix.** `loadout.toml`, the fragments and
+   the machine files are authored; the `[layout] state` directory is
+   generated and disposable. Nothing hand-edited goes in state; the tool
+   never writes authored files, except `init` scaffolding and `installers
+   --eject` (writes exactly `programs/installers/builtin.toml`, refuses when
+   no fragments glob loads it, and refuses to clobber it without `--force`).
 4. **Scripts: exactly one of `file` (repo path) or `run` (inline).** `file`
    existence is validated at load (loadRepo, not parse). Variant `command`
    values and all check commands (variant `check`, program `[version]`,
@@ -164,8 +290,9 @@ Explicit user decisions; don't "improve" them away.
    (installs, scripts, version checks, `check`s), whatever the invocation
    directory.
 6. **Execution order**: all programs before all scripts; programs
-   topologically by `depends-on` (declaration order breaks ties: root
-   manifest, then fragments by filename); scripts by `after` edges.
+   topologically by `depends-on` (declaration order breaks ties:
+   loadout.toml, then fragments in `[layout] fragments` glob order,
+   path-sorted within one glob); scripts by `after` edges.
    Sequential, never parallel (only read-only checks run concurrently).
    `after` orders but never pulls anything in; `depends-on` pulls in
    transitively. A variant may carry its own `depends-on`, added to the
@@ -292,6 +419,17 @@ Explicit user decisions; don't "improve" them away.
     packages loadout doesn't declare. The binary's own update is
     `self-upgrade`, which needs no repo, so it survives a version-floor
     refusal.
+16. **The repo's shape is declared, never assumed.** The root file is
+    `loadout.toml` (`--manifest` names another); a repo with only a 0.x
+    `manifest.toml` is refused as one. Its `[layout]` is required, with no
+    defaults: `fragments` (globs), `machines` and `state` (directories),
+    `configs` optional. Only files the globs match load (`Glob`: `*` one
+    segment, `?` one char, `**` any depth; wildcards never match a leading
+    dot, so `.loadout.toml` loads only when a glob spells the dot; `.git` is
+    never entered). A glob matching nothing is fine (a fresh repo); an
+    absolute or `..` path, a wildcard in a directory key, or a glob reaching
+    loadout.toml or a machine file is a load error, as is `[layout]` in a
+    fragment. The min-tool-version check runs before `[layout]` is read.
 
 ## Toolchain facts — don't rediscover
 
@@ -302,7 +440,7 @@ Explicit user decisions; don't "improve" them away.
   binaries (`target.binaries.all`) in app/build.gradle.kts, test binaries
   included. The `kotlin.native.cacheKind` properties don't work.
 - **Kotlin nested block comments**: `/*` inside a KDoc (e.g. a glob like
-  `manifest.d/*.toml`) opens a *nested* comment and eats the file. Word
+  `programs/*.toml`) opens a *nested* comment and eats the file. Word
   globs differently in comments.
 - **Dispatchers.IO on native** needs `import kotlinx.coroutines.IO`
   (extension); fully-qualified use resolves an internal symbol. Use the
@@ -539,8 +677,8 @@ Explicit user decisions; don't "improve" them away.
   rows in place. A script's verdict is always its check.
 - ktoml insurance: the manifest schema sticks to plain nested tables (no
   inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
-- `.toml.sample` files in `machines/` and `manifest.d/` are ignored by the
-  loader (only `.toml` matches).
+- `.toml.sample` files in `machines/` and fragment folders never load:
+  machine files and the usual fragments globs only match `.toml`.
 
 ## Testing conventions
 
@@ -629,7 +767,8 @@ top-down, first fit wins:
    `check` (two-mode script or `--whatprovides`), keep the rest derived.
 7. No pm at all → `script` key + program-level `[version]` fallback.
 8. Must precede everything (pm config, e.g. dnf.conf) → a program in a
-   first-sorting fragment (`manifest.d/00_…`): programs precede scripts,
+   fragment the first `[layout] fragments` glob loads first (e.g.
+   `programs/00_…`): programs precede scripts,
    and dependency-free programs install in declaration order.
 9. Nothing to "have" (dotfiles, services) → `[scripts.*]` + check, opted in
    per machine.

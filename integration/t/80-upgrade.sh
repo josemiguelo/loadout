@@ -1,7 +1,7 @@
 # upgrade: whole mechanisms only, deduped by command; converge never upgrades.
 
 mkdir -p uprepo/machines
-cat > uprepo/manifest.toml <<'TOML'
+cat > uprepo/loadout.toml <<'TOML'
 [installers.pm]
 install = "echo installing {pkg}"
 upgrade = "echo upgrading all pm"
@@ -26,6 +26,7 @@ via = ["pm-extra"]
 [programs.charlie]
 via = ["byhand"]
 TOML
+add_layout "uprepo"
 printf '[pm]\nalpha = "pm"\nbravo = "pm-extra"\ncharlie = "byhand"\n' > uprepo/machines/m1.toml
 OUT=$("$BIN" --repo uprepo --machine m1 upgrade --all --dry-run)
 # Mechanisms sharing a command are ONE transaction, not one per installer.
@@ -45,7 +46,7 @@ ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 # screen hands off when you tick a tmux plugin or a pinned tool. Alone, or
 # beside whole mechanisms in the same run.
 mkdir -p irepo/machines irepo/state
-cat > irepo/manifest.toml <<'TOML'
+cat > irepo/loadout.toml <<'TOML'
 [installers.pm]
 install = "echo installing {pkg}"
 upgrade = "echo swept > swept.txt"
@@ -62,6 +63,7 @@ upgrade = "echo pulled > pulled-{item}.txt"
 [outdated.readonly]
 command = "echo 'x 1 2'"
 TOML
+add_layout "irepo"
 printf '[pm]\nalpha = "pm"\n' > irepo/machines/m1.toml
 "$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null
 [ -f irepo/pulled-tpack.txt ] && [ -f irepo/pulled-other.txt ] || fail "--item upgrades each named item of its source"

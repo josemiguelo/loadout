@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.OsFamily
 import loadout.core.model.ScriptState
@@ -53,14 +54,14 @@ class ScriptRunner(
         if (!step.appliesTo(os)) return ScriptOutcome.NotApplicable
 
         if (!force && step.check != null) {
-            if (runner.capture(withArgs(step.check!!, args), workDir = repoRoot.toString()).success) {
+            if (runner.capture(ShellCommand(withArgs(step.check!!, args), repoRoot.toString())).success) {
                 return ScriptOutcome.AlreadyDone
             }
         }
 
         // Validation guarantees exactly one of file/run is set, and that args
         // are only used with file scripts.
-        val exitCode = runner.inherit(commandFor(step, args), repoRoot.toString())
+        val exitCode = runner.inherit(ShellCommand(commandFor(step, args), repoRoot.toString()))
         return ScriptOutcome.Ran(
             ScriptState(
                 status = if (exitCode == 0) ScriptStatus.DONE else ScriptStatus.FAILED,

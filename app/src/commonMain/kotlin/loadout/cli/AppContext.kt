@@ -5,6 +5,7 @@ import loadout.core.exec.KommandProcessRunner
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
 import loadout.core.model.Manifest
+import loadout.core.model.RepoLayout
 import loadout.core.model.SystemInfo
 import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
@@ -24,7 +25,9 @@ class AppContext(
 ) {
     val fs: FileSystem = FileSystem.SYSTEM
     val runner: ProcessRunner = KommandProcessRunner()
-    val stateStore: StateStore by lazy { StateStore(fs, repoRoot) }
+    /** The root file's validated [layout], read alone, without loading the repo. */
+    val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot, manifestName) }
+    val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
     val detection: Detection by lazy { Detection(runner, fs) }
 
     fun loadManifest(): Manifest = ManifestLoader.loadRepo(fs, repoRoot, manifestName)

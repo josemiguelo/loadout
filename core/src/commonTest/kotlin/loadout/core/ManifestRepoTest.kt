@@ -4,6 +4,7 @@ import loadout.core.manifest.ManifestException
 import loadout.core.LoadoutException
 import loadout.core.engine.ResolutionException
 import loadout.core.git.GitException
+import loadout.core.manifest.Glob
 import loadout.core.manifest.InstallerLibrary
 import loadout.core.manifest.ManifestLoader
 import kotlin.test.Test
@@ -13,25 +14,156 @@ import kotlin.test.assertTrue
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 
-/** Tests for split-repo loading: manifest.d/ fragments and machines/ config files. */
+/** Tests for repo loading: the root file's [layout], fragment globs and machine files. */
 class ManifestRepoTest {
     private val repo = "/repo".toPath()
+
+    /** Appended to a fixture's loadout.toml unless it declares its own [layout]. */
+    private val standardLayout = """
+
+        [layout]
+        fragments = ["programs/**/*.toml"]
+        machines = "machines"
+        state = "state"
+    """.trimIndent()
 
     private fun fs(files: Map<String, String>): FakeFileSystem {
         val fs = FakeFileSystem()
         for ((path, content) in files) {
             val full = repo / path
             full.parent?.let { fs.createDirectories(it) }
-            fs.write(full) { writeUtf8(content) }
+            val text = if (path == "loadout.toml" && "[layout]" !in content) content + "\n" + standardLayout else content
+            fs.write(full) { writeUtf8(text) }
         }
         return fs
+    }
+
+    private fun layoutError(layout: String, vararg extra: Pair<String, String>): String =
+        assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(fs(mapOf("loadout.toml" to "[meta]\nname = \"x\"\n\n$layout") + extra), repo)
+        }.message.orEmpty()
+
+    @Test
+    fun fragmentsLoadInGlobOrderThenPathOrderEachFileOnce() {
+        val fs = fs(
+            mapOf(
+                "loadout.toml" to """
+                    [layout]
+                    fragments = ["maintenance/**/*.toml", "programs/**/*.toml", "maintenance/b.toml"]
+                    machines = "machines"
+                    state = "state"
+                """.trimIndent(),
+                "programs/z.toml" to "[programs.z]\n[programs.z.install.dnf]\ncommand = \"x\"",
+                "programs/a/a.toml" to "[programs.a]\n[programs.a.install.dnf]\ncommand = \"x\"",
+                "maintenance/b.toml" to "[programs.b]\n[programs.b.install.dnf]\ncommand = \"x\"",
+                "maintenance/a.toml" to "[programs.m]\n[programs.m.install.dnf]\ncommand = \"x\"",
+            ),
+        )
+        // Declaration order is install order's tie-breaker (contract 6).
+        assertEquals(listOf("m", "b", "a", "z"), ManifestLoader.loadRepo(fs, repo).programs.keys.toList())
+    }
+
+    @Test
+    fun dotFragmentsBesideConfigsLoadOnlyWhenTheGlobSpellsTheDot() {
+        val fs = fs(
+            mapOf(
+                "loadout.toml" to """
+                    [layout]
+                    fragments = ["configs/**/.loadout.toml"]
+                    machines = "machines"
+                    state = "state"
+                """.trimIndent(),
+                "configs/private_dot_config/tmux/.loadout.toml" to "[scripts.tmux-plugins]\nrun = \"true\"",
+                "configs/private_dot_config/tmux/loadout.toml" to "[scripts.not-a-fragment]\nrun = \"true\"",
+                "configs/.chezmoitemplates/x/.loadout.toml" to "[scripts.hidden]\nrun = \"true\"",
+            ),
+        )
+        assertEquals(setOf("tmux-plugins"), ManifestLoader.loadRepo(fs, repo).scripts.keys)
+    }
+
+    @Test
+    fun globMatchingFollowsTheLayoutRules() {
+        assertTrue(Glob.matches("programs/**/*.toml", "programs/a.toml"))
+        assertTrue(Glob.matches("programs/**/*.toml", "programs/x/y/a.toml"))
+        assertTrue(!Glob.matches("programs/**/*.toml", "programs/a.toml.sample"))
+        assertTrue(!Glob.matches("programs/*.toml", "programs/x/a.toml"))
+        assertTrue(Glob.matches("programs/?.toml", "programs/a.toml"))
+        assertTrue(!Glob.matches("programs/*.toml", "programs/.hidden.toml"))
+        assertTrue(!Glob.matches("**/*.toml", ".git/config.toml"))
+        assertTrue(Glob.matches("configs/**/.loadout.toml", "configs/private_dot_config/tmux/.loadout.toml"))
+    }
+
+    @Test
+    fun layoutIsRequiredAndValidated() {
+        val missing = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(fs(mapOf("loadout.toml" to "[meta]\nname = \"x\"\n[layout]\n")), repo)
+        }.message.orEmpty()
+        assertTrue("fragments is missing" in missing && "machines is missing" in missing && "state is missing" in missing, missing)
+
+        assertTrue("is empty" in layoutError("[layout]\nfragments = []\nmachines = \"m\"\nstate = \"s\""))
+        assertTrue("is absolute" in layoutError("[layout]\nfragments = [\"/etc/*.toml\"]\nmachines = \"m\"\nstate = \"s\""))
+        assertTrue("leaves the repo" in layoutError("[layout]\nfragments = [\"../*.toml\"]\nmachines = \"m\"\nstate = \"s\""))
+        assertTrue("is a directory, not a glob" in layoutError("[layout]\nfragments = [\"p/*.toml\"]\nmachines = \"m*\"\nstate = \"s\""))
+        assertTrue(
+            "matches loadout.toml itself" in
+                layoutError("[layout]\nfragments = [\"*.toml\"]\nmachines = \"machines\"\nstate = \"state\""),
+        )
+        assertTrue(
+            "matches machine file machines/m.toml" in
+                layoutError(
+                    "[layout]\nfragments = [\"**/*.toml\"]\nmachines = \"machines\"\nstate = \"state\"",
+                    "machines/m.toml" to "[pm]",
+                ),
+        )
+    }
+
+    @Test
+    fun aRepoWithoutTheRootFileButWithA0xManifestIsRefusedAsOld() {
+        val e = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(fs(mapOf("manifest.toml" to "[meta]\nname = \"old\"")), repo)
+        }
+        assertTrue("loadout 0.x repo" in e.message.orEmpty(), e.message)
+    }
+
+    @Test
+    fun layoutInAFragmentFails() {
+        val fs = fs(
+            mapOf(
+                "loadout.toml" to "[meta]\nname = \"x\"",
+                "programs/extra.toml" to "[layout]\nstate = \"elsewhere\"",
+            ),
+        )
+        val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
+        assertTrue("[layout] is only allowed in loadout.toml" in e.message.orEmpty(), e.message)
+    }
+
+    @Test
+    fun machinesComeFromTheLayoutDirectory() {
+        val fs = fs(
+            mapOf(
+                "loadout.toml" to """
+                    [programs.git]
+                    [programs.git.install.dnf]
+                    command = "x"
+
+                    [layout]
+                    fragments = ["programs/**/*.toml"]
+                    machines = "hosts"
+                    state = "observed"
+                """.trimIndent(),
+                "hosts/laptop.toml" to "[pm]\ngit = \"dnf\"",
+                "machines/ignored.toml" to "[pm]\ngit = \"dnf\"",
+            ),
+        )
+        assertEquals(setOf("laptop"), ManifestLoader.loadRepo(fs, repo).machines.keys)
+        assertEquals("observed", ManifestLoader.readLayout(fs, repo).state)
     }
 
     @Test
     fun mergesFragmentsAndMachineFiles() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [meta]
                     name = "split repo"
 
@@ -39,7 +171,7 @@ class ManifestRepoTest {
                     [programs.git.install.dnf]
                     command = "sudo dnf install -y git"
                 """.trimIndent(),
-                "manifest.d/cli.toml" to """
+                "programs/cli.toml" to """
                     [programs.ripgrep]
                     depends-on = ["git"]
                     [programs.ripgrep.install.dnf]
@@ -68,13 +200,13 @@ class ManifestRepoTest {
     fun fragmentsInSubfoldersAreMerged() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[meta]\nname = \"nested\"",
-                "manifest.d/dev/editors/kitty.toml" to """
+                "loadout.toml" to "[meta]\nname = \"nested\"",
+                "programs/dev/editors/kitty.toml" to """
                     [programs.kitty]
                     [programs.kitty.install.dnf]
                     command = "sudo dnf install -y kitty"
                 """.trimIndent(),
-                "manifest.d/media.toml" to """
+                "programs/media.toml" to """
                     [programs.vlc]
                     [programs.vlc.install.dnf]
                     command = "sudo dnf install -y vlc"
@@ -89,34 +221,34 @@ class ManifestRepoTest {
     fun duplicateAcrossSubfoldersNamesTheFullPath() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[meta]\nname = \"nested\"",
-                "manifest.d/a/tool.toml" to "[programs.tool]\n[programs.tool.install.dnf]\ncommand = \"x\"",
-                "manifest.d/b/tool.toml" to "[programs.tool]\n[programs.tool.install.dnf]\ncommand = \"y\"",
+                "loadout.toml" to "[meta]\nname = \"nested\"",
+                "programs/a/tool.toml" to "[programs.tool]\n[programs.tool.install.dnf]\ncommand = \"x\"",
+                "programs/b/tool.toml" to "[programs.tool]\n[programs.tool.install.dnf]\ncommand = \"y\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
         assertTrue("duplicate program 'tool'" in e.message.orEmpty())
-        assertTrue("manifest.d/b/tool.toml" in e.message.orEmpty())
+        assertTrue("programs/b/tool.toml" in e.message.orEmpty())
     }
 
     @Test
     fun duplicateProgramAcrossFragmentsFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
-                "manifest.d/extra.toml" to "[programs.git]\n[programs.git.install.apt]\ncommand = \"y\"",
+                "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "programs/extra.toml" to "[programs.git]\n[programs.git.install.apt]\ncommand = \"y\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
         assertTrue("duplicate program 'git'" in e.message.orEmpty())
-        assertTrue("manifest.d/extra.toml" in e.message.orEmpty())
+        assertTrue("programs/extra.toml" in e.message.orEmpty())
     }
 
     @Test
     fun inlineMachinesInRootManifestFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.git]
                     [programs.git.install.dnf]
                     command = "x"
@@ -134,21 +266,21 @@ class ManifestRepoTest {
     fun inlineMachinesInFragmentFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
-                "manifest.d/extra.toml" to "[machines.laptop.pm]\ngit = \"dnf\"",
+                "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "programs/extra.toml" to "[machines.laptop.pm]\ngit = \"dnf\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
         assertTrue("[machines.*] sections are not allowed" in e.message.orEmpty())
-        assertTrue("manifest.d/extra.toml" in e.message.orEmpty())
+        assertTrue("programs/extra.toml" in e.message.orEmpty())
     }
 
     @Test
     fun metaInFragmentFails() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
-                "manifest.d/extra.toml" to "[meta]\nname = \"nope\"",
+                "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "programs/extra.toml" to "[meta]\nname = \"nope\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo) }
@@ -159,7 +291,7 @@ class ManifestRepoTest {
     fun machineFilesInSubfoldersAndBaseInheritance() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.git]
                     [programs.git.install.dnf]
                     command = "x"
@@ -207,7 +339,7 @@ class ManifestRepoTest {
     fun aScriptEntryMaySpanLinesAndItsArgumentsReachOneShellLine() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [scripts.dotfiles]
                     run = "true"
                     [scripts.setup-ssh]
@@ -243,7 +375,7 @@ class ManifestRepoTest {
     fun baseChainsFlattenThroughIntermediateBases() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.git]
                     [programs.git.install.dnf]
                     command = "x"
@@ -263,7 +395,7 @@ class ManifestRepoTest {
     @Test
     fun machineInheritanceErrors() {
         fun repoWith(vararg machineFiles: Pair<String, String>) = fs(
-            mapOf("manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"") +
+            mapOf("loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"") +
                 machineFiles.toMap(),
         )
 
@@ -310,7 +442,7 @@ class ManifestRepoTest {
     fun baseMappingsAreValidatedEvenWithoutChildren() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
                 "machines/base/fedora.toml" to "base = true\n\n[pm]\nghost = \"dnf\"",
             ),
         )
@@ -322,7 +454,7 @@ class ManifestRepoTest {
     fun machineFileMappingIsValidatedAgainstMergedPrograms() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
+                "loadout.toml" to "[programs.git]\n[programs.git.install.dnf]\ncommand = \"x\"",
                 "machines/laptop.toml" to "[pm]\nghost = \"dnf\"",
             ),
         )
@@ -334,7 +466,7 @@ class ManifestRepoTest {
     fun scriptFileMustExistInRepo() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [scripts.dotfiles]
                     file = "scripts/dotfiles.sh"
                 """.trimIndent(),
@@ -352,7 +484,7 @@ class ManifestRepoTest {
     fun fileInstallValueMustExistInRepo() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.tool]
                     [programs.tool.install.script]
                     command = "file:scripts/install-tool.sh"
@@ -376,7 +508,7 @@ class ManifestRepoTest {
     fun fileCheckCommandsMustExistInRepo() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.tool]
                     [programs.tool.install.script]
                     command = "true"
@@ -403,7 +535,7 @@ class ManifestRepoTest {
     fun fileInstallValueWithArgumentsValidatesOnlyThePath() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.tool]
                     [programs.tool.install.script]
                     command = "file:scripts/tool.sh install --verbose"
@@ -423,13 +555,13 @@ class ManifestRepoTest {
     fun installersMergeFromFragmentsAndDuplicatesFail() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[meta]\nname = \"x\"",
-                "manifest.d/00_installers.toml" to """
+                "loadout.toml" to "[meta]\nname = \"x\"",
+                "programs/00_installers.toml" to """
                     [installers.dnf]
                     probe = "dnf"
                     install = "sudo dnf install -y {pkg}"
                 """.trimIndent(),
-                "manifest.d/cli.toml" to """
+                "programs/cli.toml" to """
                     [programs.ripgrep]
                     via = ["dnf"]
                 """.trimIndent(),
@@ -440,8 +572,8 @@ class ManifestRepoTest {
 
         val dup = fs(
             mapOf(
-                "manifest.toml" to "[installers.dnf]\ninstall = \"a {pkg}\"",
-                "manifest.d/extra.toml" to "[installers.dnf]\ninstall = \"b {pkg}\"",
+                "loadout.toml" to "[installers.dnf]\ninstall = \"a {pkg}\"",
+                "programs/extra.toml" to "[installers.dnf]\ninstall = \"b {pkg}\"",
             ),
         )
         val e = assertFailsWith<ManifestException> { ManifestLoader.loadRepo(dup, repo) }
@@ -452,7 +584,7 @@ class ManifestRepoTest {
     fun scriptsArrayAfterPmTableGetsPlacementHint() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to "[scripts.s]\nrun = \"echo hi\"",
+                "loadout.toml" to "[scripts.s]\nrun = \"echo hi\"",
                 "machines/m.toml" to """
                     [pm]
                     scripts = ["s"]
@@ -467,7 +599,7 @@ class ManifestRepoTest {
     fun machineScriptOptInsAreValidated() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [scripts.inline]
                     run = "echo hi"
                 """.trimIndent(),
@@ -485,7 +617,7 @@ class ManifestRepoTest {
     fun minToolVersionIsEnforced() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [meta]
                     min-tool-version = "999.0.0"
 
@@ -504,7 +636,7 @@ class ManifestRepoTest {
     fun minToolVersionAtOrBelowCurrentLoads() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [meta]
                     min-tool-version = "0.1.0"
 
@@ -536,7 +668,7 @@ class ManifestRepoTest {
     fun repoWithoutFragmentOrMachineDirsLoadsFine() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.git]
                     [programs.git.install.dnf]
                     command = "x"
@@ -552,7 +684,7 @@ class ManifestRepoTest {
     fun builtInInstallersResolveWithoutBeingDeclared() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [programs.ripgrep]
                     via = ["dnf"]
                 """.trimIndent(),
@@ -575,7 +707,7 @@ class ManifestRepoTest {
     fun repoInstallerReplacesTheBuiltInOfTheSameName() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [installers.dnf]
                     probe = "dnf5"
                     install = "sudo dnf5 install -y {pkg}"
@@ -612,7 +744,7 @@ class ManifestRepoTest {
             via = ["dnf"]
         """.trimIndent()
         val parsed = ManifestLoader.parse(text)
-        val loaded = ManifestLoader.loadRepo(fs(mapOf("manifest.toml" to text)), repo)
+        val loaded = ManifestLoader.loadRepo(fs(mapOf("loadout.toml" to text)), repo)
         assertEquals(
             loaded.resolveInstall("ripgrep", "dnf"),
             parsed.resolveInstall("ripgrep", "dnf"),
@@ -658,7 +790,7 @@ class ManifestRepoTest {
     fun aTemplatedManifestFailsLoudlyInsteadOfLoadingEmpty() {
         val fs = fs(
             mapOf(
-                "manifest.toml" to """
+                "loadout.toml" to """
                     [templates.rpm]
                     packages = ["vlc"]
                     [templates.rpm.install.dnf]

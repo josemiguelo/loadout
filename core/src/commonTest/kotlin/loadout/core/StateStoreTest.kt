@@ -31,7 +31,7 @@ class StateStoreTest {
     @Test
     fun roundTripsState() {
         val fs = FakeFileSystem()
-        val store = StateStore(fs, "/repo".toPath())
+        val store = StateStore(fs, "/repo".toPath(), "state")
 
         store.write(sampleState("laptop", "14.1.0"))
         val loaded = store.read("laptop")
@@ -43,7 +43,7 @@ class StateStoreTest {
     @Test
     fun readAllReturnsAllMachines() {
         val fs = FakeFileSystem()
-        val store = StateStore(fs, "/repo".toPath())
+        val store = StateStore(fs, "/repo".toPath(), "state")
 
         store.write(sampleState("laptop", "14.1.0"))
         store.write(sampleState("desktop", null))
@@ -55,14 +55,14 @@ class StateStoreTest {
 
     @Test
     fun readAllOnEmptyRepoIsEmpty() {
-        val store = StateStore(FakeFileSystem(), "/repo".toPath())
+        val store = StateStore(FakeFileSystem(), "/repo".toPath(), "state")
         assertTrue(store.readAll().isEmpty())
     }
 
     @Test
     fun newerSchemaStateFilesAreSkippedWithWarning() {
         val fs = FakeFileSystem()
-        val store = StateStore(fs, "/repo".toPath())
+        val store = StateStore(fs, "/repo".toPath(), "state")
         store.write(sampleState("laptop", "14.1.0"))
         fs.write("/repo/state/future.json".toPath()) {
             writeUtf8(
@@ -85,7 +85,7 @@ class StateStoreTest {
     @Test
     fun writtenJsonUsesLowercaseStatusNames() {
         val fs = FakeFileSystem()
-        val store = StateStore(fs, "/repo".toPath())
+        val store = StateStore(fs, "/repo".toPath(), "state")
         store.write(sampleState("laptop", "14.1.0"))
 
         val text = fs.read("/repo/state/laptop.json".toPath()) { readUtf8() }
@@ -100,7 +100,7 @@ class StateStoreTest {
         fs.createDirectories(repo / "state")
         fs.write(repo / "state" / "m1.json") { writeUtf8("{ this is not json") }
         fs.write(repo / "state" / "m2.json") { writeUtf8("{ also broken") }
-        val store = StateStore(fs, repo)
+        val store = StateStore(fs, repo, "state")
 
         // read(): a crash here reaches the user as a stack trace (contract 9).
         assertNull(store.read("m1"))

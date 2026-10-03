@@ -34,7 +34,7 @@ ok "scripts are opt-in per machine"
 
 # Arguments flow to file scripts and their checks as positional params.
 printf '#!/bin/sh\necho "$1" > arg-marker.txt\n' > repo/scripts/argscript.sh
-cat >> repo/manifest.toml <<'TOML'
+cat >> repo/loadout.toml <<'TOML'
 
 [scripts.argscript]
 file = "scripts/argscript.sh"
@@ -50,7 +50,7 @@ ok "script arguments reach the file script and its check"
 # A long opt-in can be a TOML multi-line string: its lines are arguments,
 # never commands. If the newline reached the shell, `touch pwned.txt` would run.
 printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/scripts/argcount.sh
-cat >> repo/manifest.toml <<'TOML'
+cat >> repo/loadout.toml <<'TOML'
 
 [scripts.argcount]
 file = "scripts/argcount.sh"

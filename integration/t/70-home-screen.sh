@@ -74,7 +74,8 @@ if has_pty; then
     # The transcript is gone afterwards.
     mkdir -p rt vrepo/scripts vrepo/machines vrepo/state
     printf '#!/bin/sh\necho FIRST-OUTPUT-LINE\nseq 1 80\necho LAST-OUTPUT-LINE\n' > vrepo/scripts/longrun.sh
-    printf '[scripts.longrun]\nfile = "scripts/longrun.sh"\ncheck = "false"\n' > vrepo/manifest.toml
+    printf '[scripts.longrun]\nfile = "scripts/longrun.sh"\ncheck = "false"\n' > vrepo/loadout.toml
+    add_layout "vrepo"
     printf 'scripts = ["longrun"]\n' > vrepo/machines/m1.toml
     { wait_settled tui-view.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-view.log 'space tick'
       printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-view.log 'These scripts will run'
@@ -132,7 +133,7 @@ fi
 # so only the second may ever show a chevron.
 mkdir -p orepo/state orepo/machines frepo/state frepo/machines
 fake_release_cache
-cat > orepo/manifest.toml <<'TOML'
+cat > orepo/loadout.toml <<'TOML'
 [installers.quiet]
 probe = "sh"
 install = "echo installed-{pkg} > quiet-{pkg}.txt"
@@ -144,7 +145,8 @@ upgrade = "echo swept"
 [programs.alpha]
 via = ["quiet"]
 TOML
-cat > frepo/manifest.toml <<'TOML'
+add_layout "orepo"
+cat > frepo/loadout.toml <<'TOML'
 [installers.quiet]
 probe = "sh"
 install = "echo installed-{pkg} > quiet-{pkg}.txt"
@@ -156,6 +158,7 @@ upgrade = "echo swept"
 [programs.alpha]
 via = ["quiet"]
 TOML
+add_layout "frepo"
 printf '[pm]\nalpha = "quiet"\n' > orepo/machines/m1.toml
 cp orepo/machines/m1.toml frepo/machines/m1.toml
 "$BIN" --repo orepo --machine m1 status >/dev/null
@@ -190,7 +193,7 @@ fi
 # file: the tool's command is printed on screen either way, so only the
 # filesystem can say which one actually ran.
 mkdir -p crepo/state crepo/machines
-cat > crepo/manifest.toml <<'TOML'
+cat > crepo/loadout.toml <<'TOML'
 [installers.quiet]
 probe = "sh"
 install = "echo installed-{pkg} > quiet-{pkg}.txt"
@@ -206,6 +209,7 @@ via = ["quiet"]
 command = "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'"
 upgrade = "echo pulled > pulled-{item}.txt"
 TOML
+add_layout "crepo"
 printf '[pm]\ntpack = "quiet"\n' > crepo/machines/m1.toml
 "$BIN" --repo crepo --machine m1 status >/dev/null
 if has_pty; then
@@ -241,7 +245,7 @@ fi
 # A fake sudo on PATH that prompts like the real one: a wrong password is
 # refused, the right one runs both installs, nothing typed is echoed.
 mkdir -p irepo/state irepo/machines
-cat > irepo/manifest.toml <<'TOML'
+cat > irepo/loadout.toml <<'TOML'
 [installers.fake]
 probe = "sh"
 install = "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'"
@@ -253,6 +257,7 @@ via = ["fake"]
 [programs.beta]
 via = ["fake"]
 TOML
+add_layout "irepo"
 printf '[pm]\nalpha = "fake"\nbeta = "fake"\n' > irepo/machines/m1.toml
 fake_sudo
 "$BIN" --repo irepo --machine m1 status >/dev/null
@@ -284,7 +289,7 @@ mkdir -p hrepo/state hrepo/machines
 cat > hrepo/inner.sh <<'SH'
 sudo sh -c "echo installed-$1 > fake-$1.txt"
 SH
-cat > hrepo/manifest.toml <<'TOML'
+cat > hrepo/loadout.toml <<'TOML'
 [installers.hidden]
 probe = "sh"
 install = "sh inner.sh {pkg}"
@@ -295,6 +300,7 @@ sudo = true
 [programs.gamma]
 via = ["hidden"]
 TOML
+add_layout "hrepo"
 printf '[pm]\ngamma = "hidden"\n' > hrepo/machines/m1.toml
 fake_sudo
 "$BIN" --repo hrepo --machine m1 status >/dev/null
@@ -316,7 +322,7 @@ fi
 # is printed through an escape (\167 = w) so waiting for it can't match
 # text drawn by the screen.
 mkdir -p arepo/state arepo/machines
-cat > arepo/manifest.toml <<'TOML'
+cat > arepo/loadout.toml <<'TOML'
 [installers.asks]
 probe = "sh"
 install = "true"
@@ -328,6 +334,7 @@ upgrade = '''printf 'Ans\167er me: '; read answer; echo "answered-$answer" > ask
 [programs.alpha]
 via = ["asks"]
 TOML
+add_layout "arepo"
 printf '[pm]\nalpha = "asks"\n' > arepo/machines/m1.toml
 "$BIN" --repo arepo --machine m1 status >/dev/null
 if has_pty; then

@@ -61,7 +61,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
-                        notes += "! not mapped for ${system.machine} (add it to machines/${system.machine}.toml)"
+                        notes += "! not mapped for ${system.machine} (add it to ${app.layout.machines}/${system.machine}.toml)"
                     }
                     state?.programs?.get(name)?.let {
                         val status = when (it.status) {
@@ -70,7 +70,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             ProgramStatus.UNKNOWN -> "unknown"
                         }
                         rows += "observed" to
-                            "$status${it.version?.let { v -> " $v" }.orEmpty()}  (state/${system.machine}.json)"
+                            "$status${it.version?.let { v -> " $v" }.orEmpty()}  (${app.layout.state}/${system.machine}.json)"
                     }
                 }
                 script != null -> {
@@ -83,7 +83,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
-                        enabled == null -> "no — add it to the scripts list in machines/${system.machine}.toml"
+                        enabled == null -> "no — add it to the scripts list in ${app.layout.machines}/${system.machine}.toml"
                         enabled.isEmpty() -> "yes (${system.machine})"
                         else -> "yes (${system.machine}, args: $enabled)"
                     }
@@ -93,7 +93,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             ScriptStatus.FAILED -> "failed"
                             ScriptStatus.PENDING -> "pending"
                         }
-                        rows += "observed" to "$status  (state/${system.machine}.json)"
+                        rows += "observed" to "$status  (${app.layout.state}/${system.machine}.json)"
                     }
                 }
                 else -> {

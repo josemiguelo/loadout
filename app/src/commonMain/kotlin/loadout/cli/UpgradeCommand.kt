@@ -1,5 +1,6 @@
 package loadout.cli
 
+import loadout.core.exec.ShellCommand
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
@@ -85,7 +86,7 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         // mechanism doesn't stop the rest — they're independent.
         val failed = plan.filter { step ->
             echo("\n" + Style.accent("==> upgrading ${step.label}"))
-            app.runner.inherit(step.command, workDir = app.repoRoot.toString()) != 0
+            app.runner.inherit(ShellCommand(step.command, app.repoRoot.toString())) != 0
         }
 
         echo("")

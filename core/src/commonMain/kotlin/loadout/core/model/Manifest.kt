@@ -7,6 +7,8 @@ import kotlinx.serialization.Transient
 @Serializable
 data class Manifest(
     val meta: Meta = Meta(),
+    /** Where the repo's parts live; required in the root file, refused in fragments. */
+    val layout: Layout? = null,
     /**
      * Install mechanisms (`dnf`, `brew-cask`, ...) defined once per repo.
      * Probe, install/check patterns, and regex are properties of the
@@ -275,6 +277,29 @@ data class Meta(
     val name: String = "",
     @SerialName("min-tool-version")
     val minToolVersion: String? = null,
+)
+
+/**
+ * The root file's `[layout]`, as written: every key but [configs] is
+ * required, so the fields stay nullable for the loader to name what's
+ * missing. Paths are relative to the repo root.
+ */
+@Serializable
+data class Layout(
+    /** Globs of fragment files, loaded in this order (path-sorted within one). */
+    val fragments: List<String>? = null,
+    val machines: String? = null,
+    val state: String? = null,
+    /** The chezmoi source root, when the repo holds dotfiles. */
+    val configs: String? = null,
+)
+
+/** A validated [Layout]: what the rest of the tool reads. */
+data class RepoLayout(
+    val fragments: List<String>,
+    val machines: String,
+    val state: String,
+    val configs: String? = null,
 )
 
 /**

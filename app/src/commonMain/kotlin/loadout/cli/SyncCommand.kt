@@ -10,7 +10,7 @@ import loadout.core.git.GitException
 
 class SyncCommand : CliktCommand(name = "sync") {
     override fun help(context: Context) = commandHelp(
-        "Pull the config repo, refresh this machine's state, commit only state/<machine>.json, push.",
+        "Pull the config repo, refresh this machine's state, commit only its state file, push.",
         "--no-push       commit locally, don't push",
         "-m, --message   override the commit message",
     )
@@ -40,7 +40,7 @@ class SyncCommand : CliktCommand(name = "sync") {
             app.refreshAndWriteState(manifest, system)
         }
 
-        val statePath = "state/${system.machine}.json"
+        val statePath = "${app.layout.state}/${system.machine}.json"
         val committed = git.addCommit(statePath, message ?: "${system.machine}: update state")
         if (!committed) {
             echo(" " + Style.ok("\u2714") + "  state unchanged; nothing to commit")

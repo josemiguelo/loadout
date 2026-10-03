@@ -8,16 +8,25 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.default
 import com.github.ajalt.clikt.parameters.arguments.help
 import loadout.core.git.GitClient
+import loadout.core.manifest.ManifestLoader
 import okio.Path.Companion.toPath
 
 private val STARTER_MANIFEST = """
-    # loadout manifest — programs and setup scripts for all your machines.
+    # loadout root file — programs and setup scripts for all your machines.
 
     [meta]
     name = "my machines"
     # Bump this when the repo starts using features of a newer loadout —
     # machines running older binaries then refuse with an "upgrade" error:
-    #min-tool-version = "0.10.0"
+    #min-tool-version = "1.0.0"
+
+    # Where the repo's parts live, relative to this file. Only the files the
+    # fragments globs match are loaded, in this order (* = within a folder,
+    # ** = any depth; dot-files match only when the glob spells the dot).
+    [layout]
+    fragments = ["programs/**/*.toml", "maintenance/**/*.toml"]
+    machines = "machines"
+    state = "state"
 
     # Install mechanics (commands, version checks, probes) ship with loadout:
     # `loadout installers` lists them, `via` names the ones that apply, and
@@ -33,12 +42,13 @@ private val STARTER_MANIFEST = """
     # Use `file` for a script in the repo (validated to exist) or `run` for
     # an inline command — exactly one of the two.
     #[scripts.dotfiles]
-    #file = "scripts/dotfiles.sh"
+    #file = "maintenance/dotfiles/dotfiles.sh"
     #check = "test -d ${'$'}HOME/.dotfiles"
 
     # Every machine must map each program to one of its install keys in its
     # own machines/<name>.toml file — installing fails for unmapped programs.
-    # Large manifests can also be split into manifest.d/*.toml fragments.
+    # Programs and scripts usually live in fragment files under programs/
+    # and maintenance/ rather than here.
 """.trimIndent() + "\n"
 
 private val STARTER_MACHINE = """
@@ -56,10 +66,10 @@ private val STARTER_MACHINE = """
 """.trimIndent() + "\n"
 
 private val STARTER_FRAGMENT = """
-    # Manifest fragment: same syntax as manifest.toml ([programs.*]/[scripts.*]
-    # blocks; no [meta], no machine configs). All fragments in manifest.d/ are
-    # merged with the root manifest — use them to keep it from growing huge,
-    # e.g. one file per topic (cli-tools.toml, development.toml, desktop.toml).
+    # Fragment: [installers.*], [programs.*], [scripts.*] and [outdated.*]
+    # blocks (no [meta], no [layout], no machine configs). Every file the
+    # [layout] fragments globs match is merged with loadout.toml — e.g. one
+    # file per topic (cli-tools.toml, development.toml, desktop.toml).
     #
     #[programs.fzf]
     #description = "fuzzy finder"
@@ -74,7 +84,7 @@ private val STARTER_FRAGMENT = """
 
 class InitCommand : CliktCommand(name = "init") {
     override fun help(context: Context) = commandHelp(
-        "Scaffold a new config repo (manifest, scripts/, state/, machines/) and git init it.",
+        "Scaffold a new config repo (loadout.toml, programs/, maintenance/, machines/, state/) and git init it.",
         "[path]  where to scaffold (default: current directory)",
     )
 
@@ -84,25 +94,25 @@ class InitCommand : CliktCommand(name = "init") {
 
     override fun run() {
         val root = path.toPath()
-        val manifestPath = root / "manifest.toml"
+        val manifestPath = root / ManifestLoader.ROOT_FILE
         if (app.fs.exists(manifestPath)) {
             echo("error: $manifestPath already exists; refusing to overwrite.")
             throw ProgramResult(1)
         }
 
-        app.fs.createDirectories(root / "scripts")
-        app.fs.createDirectories(root / "state")
-        app.fs.createDirectories(root / "machines")
-        app.fs.createDirectories(root / "manifest.d")
+        for (dir in listOf("programs", "maintenance", "machines", "state")) {
+            app.fs.createDirectories(root / dir)
+        }
         app.fs.write(manifestPath) { writeUtf8(STARTER_MANIFEST) }
         app.fs.write(root / "state" / ".gitkeep") { }
+        app.fs.write(root / "maintenance" / ".gitkeep") { }
         app.fs.write(root / "machines" / "example.toml.sample") { writeUtf8(STARTER_MACHINE) }
-        app.fs.write(root / "manifest.d" / "example.toml.sample") { writeUtf8(STARTER_FRAGMENT) }
+        app.fs.write(root / "programs" / "example.toml.sample") { writeUtf8(STARTER_FRAGMENT) }
         echo("Created $manifestPath")
-        echo("Created ${root / "scripts"}/")
-        echo("Created ${root / "state"}/")
+        echo("Created ${root / "programs"}/ (fragments: programs and installers; see example.toml.sample)")
+        echo("Created ${root / "maintenance"}/ (fragments: scripts, one folder per concern)")
         echo("Created ${root / "machines"}/ (rename example.toml.sample to <your-machine>.toml)")
-        echo("Created ${root / "manifest.d"}/ (optional manifest fragments; see example.toml.sample)")
+        echo("Created ${root / "state"}/")
 
         val git = GitClient(app.runner, root)
         if (git.isRepo()) {

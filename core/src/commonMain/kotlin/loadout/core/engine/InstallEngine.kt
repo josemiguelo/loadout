@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.ShellCommand
 import loadout.core.LoadoutException
 import loadout.core.exec.ProcessRunner
 import loadout.core.manifest.ManifestLoader
@@ -46,7 +47,7 @@ class InstallEngine(
      * simply not part of this machine's loadout — converge skips it.
      *
      * Strict resolution — throws [ResolutionException] (before anything runs) when:
-     * - the manifest has no `machines/<machine>.toml` config,
+     * - the manifest has no `<machines>/<machine>.toml` config,
      * - an explicitly [requested] program has no mapping for this machine,
      * - a mapped program's dependency has no mapping for this machine,
      * - a program that needs installing resolves to a probe binary (the
@@ -60,9 +61,10 @@ class InstallEngine(
         currentStates: Map<String, ProgramState>,
         binaryAvailable: (String) -> Boolean,
     ): List<PlanItem> {
+        val machineFile = "${manifest.layout?.machines ?: "machines"}/$machine.toml"
         val mapping = manifest.machines[machine]?.pm
             ?: throw ResolutionException(
-                "machine '$machine' has no config file (machines/$machine.toml) in the repo",
+                "machine '$machine' has no config file ($machineFile) in the repo",
             )
 
         // Membership: converge covers only mapped programs (declaration order).
@@ -75,10 +77,10 @@ class InstallEngine(
             val installKey = mapping[name]
             if (installKey == null) {
                 errors += if (name in requested) {
-                    "program '$name' has no pm defined for machine '$machine' (add it to machines/$machine.toml)"
+                    "program '$name' has no pm defined for machine '$machine' (add it to $machineFile)"
                 } else {
                     "program '$name' is required as a dependency but has no pm defined for " +
-                        "machine '$machine' (add it to machines/$machine.toml)"
+                        "machine '$machine' (add it to $machineFile)"
                 }
                 continue
             }
@@ -128,7 +130,7 @@ class InstallEngine(
             onStart(item)
             // Repo root as cwd, so file: scripts and relative paths behave the
             // same regardless of where the tool was invoked from.
-            val exitCode = runner.inherit(item.command, workDir = repoRoot.toString())
+            val exitCode = runner.inherit(ShellCommand(item.command, repoRoot.toString()))
             val after = checker.check(manifest.checkFor(item.program, item.installKey))
             InstallOutcome(item.program, exitCode, after)
         }

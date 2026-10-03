@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.ProgramState
 import loadout.core.model.VersionCheck
@@ -33,7 +34,7 @@ class VersionChecker(
      */
     fun check(versionCheck: VersionCheck?): ProgramState {
         if (versionCheck == null) return ProgramState(ProgramStatus.UNKNOWN)
-        val result = runner.capture(expandFilePrefix(versionCheck.command), workDir)
+        val result = runner.capture(ShellCommand(expandFilePrefix(versionCheck.command), workDir))
         val said = result.stderr.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
         if (versionCheck.probe != null && (result.exitCode == 127 || result.exitCode == 126)) {
             // The shell already names what wasn't there ("sh: brew: command

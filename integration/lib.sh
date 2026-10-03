@@ -8,6 +8,12 @@ fail() { echo "FAIL - $1"; exit 1; }
 # A fresh working directory for one test file: nothing leaks between files.
 new_work() { mktemp -d -p "$WORK"; }
 
+# Append the [layout] every fixture shares to <dir>/loadout.toml. A table of
+# its own, so it can follow the fixture's tables and precede appended ones.
+add_layout() {
+    printf '\n[layout]\nfragments = ["programs/**/*.toml", "maintenance/**/*.toml"]\nmachines = "machines"\nstate = "state"\n' >> "$1/loadout.toml"
+}
+
 # `loadout init` scaffold with a git identity so sync/commit tests can run.
 scaffold_repo() {
     "$BIN" init "$1" >/dev/null || fail "init exits 0"
@@ -21,7 +27,7 @@ scaffold_repo() {
 # m2 deliberately does NOT.
 basic_repo() {
     scaffold_repo "$1"
-    cat > "$1/manifest.toml" <<'TOML'
+    cat > "$1/loadout.toml" <<'TOML'
 [programs.git]
 [programs.git.version]
 command = "git --version"
@@ -35,8 +41,10 @@ command = "echo install git yourself && false"
 file = "scripts/marker.sh"
 check = "test -f marker.txt"
 TOML
+    add_layout "$1"
     printf 'scripts = ["marker"]\n\n[pm]\ngit = "manual"\n' > "$1/machines/m1.toml"
     printf '[pm]\ngit = "manual"\n' > "$1/machines/m2.toml"
+    mkdir -p "$1/scripts"
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
 }
 
@@ -45,7 +53,7 @@ TOML
 # passing, one whose check keeps failing, one setup-only.
 scripts_repo() {
     mkdir -p "$1/state" "$1/machines"
-    cat > "$1/manifest.toml" <<'TOML'
+    cat > "$1/loadout.toml" <<'TOML'
 [installers.fake]
 probe = "sh"
 install = "echo installed-{pkg} > fake-install.txt"
@@ -68,6 +76,7 @@ run = "echo bootstrapped > bootstrap-marker.txt"
 check = "test -f bootstrap-marker.txt"
 modes = ["setup"]
 TOML
+    add_layout "$1"
     printf 'scripts = ["healthy", "drifted", "bootstrap-only"]\n\n[pm]\nmytool = "fake"\n' > "$1/machines/m1.toml"
 }
 

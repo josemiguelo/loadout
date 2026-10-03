@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.VersionCheck
 import loadout.core.model.expandFilePrefix
@@ -24,7 +25,7 @@ class UpdateChecker(
 ) {
     /** The candidate version the remote offers, or null for up to date / no answer. */
     fun candidate(outdated: VersionCheck): String? {
-        val result = runner.capture(expandFilePrefix(outdated.command), workDir)
+        val result = runner.capture(ShellCommand(expandFilePrefix(outdated.command), workDir))
         val output = result.stdout.ifBlank { result.stderr }
         return Regex(outdated.regex).find(output)?.groupValues?.getOrNull(1)
     }
@@ -51,7 +52,7 @@ class UpdateChecker(
      * version from. Exit code ignored, like [candidate].
      */
     fun batchCandidates(command: String): Map<String, String> {
-        val result = runner.capture(expandFilePrefix(command), workDir)
+        val result = runner.capture(ShellCommand(expandFilePrefix(command), workDir))
         // stdout ONLY: an empty stdout is "nothing outdated", and a tool's
         // stderr is warnings — `brew outdated --cask` once turned a
         // deprecation notice into packages named "Warning:" and "Please".
@@ -88,7 +89,7 @@ class UpdateChecker(
      * which the CLI surfaces as a loud line instead of empty output.
      */
     fun sourceRows(command: String): SourceResult {
-        val result = runner.capture(expandFilePrefix(command), workDir)
+        val result = runner.capture(ShellCommand(expandFilePrefix(command), workDir))
         if (!result.success) {
             val detail = result.stderr.ifBlank { result.stdout }
                 .lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }

@@ -1,5 +1,6 @@
 package loadout.core.engine
 
+import loadout.core.exec.ShellCommand
 import loadout.core.TOOL_VERSION
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.MachineState
@@ -82,7 +83,7 @@ class StatusEngine(
                         val check = ScriptRunner.withArgs(step.check!!, args)
                         name to async {
                             semaphore.withPermit {
-                                val result = runner.capture(check, workDir = repoRoot.toString())
+                                val result = runner.capture(ShellCommand(check, repoRoot.toString()))
                                 val state = ScriptState(
                                     status = if (result.success) ScriptStatus.DONE else ScriptStatus.PENDING,
                                     lastRun = history?.lastRun,

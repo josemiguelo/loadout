@@ -13,14 +13,15 @@ class InterruptedByUser : LoadoutException("interrupted")
 private const val KILLED = -1
 
 class KommandProcessRunner : ProcessRunner {
-    private fun command(command: String, workDir: String?): Command {
-        var cmd = Command("sh").args(listOf("-c", command))
-        if (workDir != null) cmd = cmd.cwd(workDir)
+    private fun command(command: ShellCommand): Command {
+        var cmd = Command("sh").args(listOf("-c", command.line))
+        if (command.cwd != null) cmd = cmd.cwd(command.cwd)
+        for ((key, value) in command.env) cmd = cmd.env(key, value)
         return cmd
     }
 
-    override fun capture(command: String, workDir: String?): ExecResult {
-        val output = command(command, workDir)
+    override fun capture(command: ShellCommand): ExecResult {
+        val output = command(command)
             .stdout(Stdio.Pipe)
             .stderr(Stdio.Pipe)
             .output()
@@ -32,8 +33,8 @@ class KommandProcessRunner : ProcessRunner {
         )
     }
 
-    override fun inherit(command: String, workDir: String?): Int {
-        val child = command(command, workDir)
+    override fun inherit(command: ShellCommand): Int {
+        val child = command(command)
             .stdout(Stdio.Inherit)
             .stderr(Stdio.Inherit)
             .spawn()

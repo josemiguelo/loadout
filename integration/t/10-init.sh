@@ -1,11 +1,12 @@
 # init scaffolding, and what a scaffolded repo already knows.
 
 "$BIN" init repo >/dev/null || fail "init exits 0"
-[ -f repo/manifest.toml ] || fail "init creates manifest"
-[ -d repo/scripts ] && [ -d repo/state ] && [ -d repo/machines ] && [ -d repo/manifest.d ] || fail "init creates dirs"
+[ -f repo/loadout.toml ] || fail "init creates loadout.toml"
+[ -d repo/programs ] && [ -d repo/maintenance ] && [ -d repo/state ] && [ -d repo/machines ] || fail "init creates dirs"
+grep -q "^\[layout\]" repo/loadout.toml || fail "init declares a [layout]"
 [ -f repo/machines/example.toml.sample ] || fail "init creates machine example"
-[ -f repo/manifest.d/example.toml.sample ] || fail "init creates fragment example"
-[ -f repo/manifest.d/00_installers.toml ] && fail "init must not scaffold installers (they ship with loadout)" || true
+[ -f repo/programs/example.toml.sample ] || fail "init creates fragment example"
+[ -f repo/programs/installers/builtin.toml ] && fail "init must not scaffold installers (they ship with loadout)" || true
 # .sample files must not be picked up by the loader
 "$BIN" --repo repo status >/dev/null || fail "samples must not break loading"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -40,7 +41,7 @@ echo "$OUT" | grep -q "installer: dnf (built-in)" || fail "explain marks a built
 ok "installers ship with loadout and resolve without being declared"
 
 "$BIN" --repo repo installers --eject >/dev/null || fail "installers --eject exits 0"
-[ -f repo/manifest.d/00_installers.toml ] || fail "--eject writes the fragment"
+[ -f repo/programs/installers/builtin.toml ] || fail "--eject writes the fragment"
 "$BIN" --repo repo installers --eject >/dev/null 2>&1 && fail "--eject must not clobber" || true
 "$BIN" --repo repo installers --eject --force >/dev/null || fail "--eject --force overwrites"
 OUT=$("$BIN" --repo repo explain ripgrep)
