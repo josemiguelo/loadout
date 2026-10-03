@@ -33,19 +33,6 @@ something a home-screen row already does, is not wanted.
 Formerly `post-installer`: the working directory and some external
 references may still use that name. Never reintroduce it in code.
 
-## Next: the config repo retires its dotfiles scripts (1.1, agreed)
-
-The rest of this file describes the code as it is; this section is the
-agreed next step, in the user's config repo, not here. The user approves
-every step before it runs. Configs everywhere in loadout, home screen
-included, are built (contract 17).
-
-The `dotfiles-*` scripts go (`sync` and the configs row do their work);
-their bootstrap's ownership repair and moving a pre-seeded Omarchy nvim
-config aside need a new home. Bootstrap on both OSes = install git +
-chezmoi → `chezmoi init --apply <repo>` → `install.sh` → `loadout
-setup-new-machine`, and the config repo's README says so.
-
 ## Build, run, test
 
 ```sh
