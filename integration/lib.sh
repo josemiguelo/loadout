@@ -161,6 +161,9 @@ has_pty() { command -v script >/dev/null; }
 # name of its own: the feeder starts before this truncates the file.
 pty_run() {
     log=$1; shift
+    # A real terminal sets TERM; CI runners don't, and less (v at the pause)
+    # then stops on "terminal is not fully functional".
+    TERM=${TERM:-xterm-256color}; export TERM
     if [ "$(uname)" = "Darwin" ]; then
         # BSD script takes the log, then the command as plain argv — no -e
         # (it already exits with the child's status) and no shell in

@@ -138,7 +138,8 @@ byitself:
 YAML
 OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
 echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
-echo "$OUT" | grep -q "ghostpm-definitely-not-here: command not found" || fail "status says what wasn't there"
+# The shell's own words: bash says "command not found", dash (Ubuntu's sh) "not found".
+echo "$OUT" | grep -qE "ghostpm-definitely-not-here: (command )?not found" || fail "status says what wasn't there"
 echo "$OUT" | grep -qE "byitself +missing" || fail "a program's own check not found means missing"
 grep -q '"reason"' probed/state/m1.json || fail "the reason is recorded in state"
 echo "$OUT" | grep -q "ghostpm-definitely-not-here is not on PATH — 1 program(s) not checked" || fail "status says, once and in words, which tool was missing"

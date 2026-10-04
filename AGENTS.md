@@ -715,6 +715,9 @@ Explicit user decisions; don't "improve" them away.
 `.github/workflows/ci.yml`: ubuntu (unit + integration + release link) and
 macos (arm64 unit tests, both mac release links, integration against the
 release binary). It runs on pushes to `master` and on pull requests.
+Runners differ from a desktop: Ubuntu's `/bin/sh` is dash ("not found", not
+bash's "command not found"), and no step has `TERM` (`pty_run` sets one).
+Reproduce the Linux job locally in an `ubuntu:24.04` container as a non-root user.
 `release.yml` on `v*` tags: strip + tar.gz →
 `loadout-<tag>-{linux-x64,macos-arm64,macos-x64}.tar.gz` attached to the
 GitHub Release. It packages without testing: let CI pass before tagging. linuxArm64 builds but isn't released.
