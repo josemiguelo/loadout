@@ -6,7 +6,7 @@
 grep -q "^layout:" repo/loadout.yaml || fail "init declares a layout"
 [ -f repo/machines/example.yaml.sample ] || fail "init creates machine example"
 [ -f repo/programs/example.yaml.sample ] || fail "init creates fragment example"
-[ -f repo/programs/installers/builtin.yaml ] && fail "init must not scaffold installers (they ship with loadout)" || true
+[ -f repo/programs/installers/builtin.loadout.yaml ] && fail "init must not scaffold installers (they ship with loadout)" || true
 # .sample files must not be picked up by the loader
 "$BIN" --repo repo status >/dev/null || fail "samples must not break loading"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -43,7 +43,7 @@ echo "$OUT" | grep -q "installer: dnf (built-in)" || fail "explain marks a built
 ok "installers ship with loadout and resolve without being declared"
 
 "$BIN" --repo repo installers --eject >/dev/null || fail "installers --eject exits 0"
-[ -f repo/programs/installers/builtin.yaml ] || fail "--eject writes the fragment"
+[ -f repo/programs/installers/builtin.loadout.yaml ] || fail "--eject writes the fragment"
 "$BIN" --repo repo installers --eject >/dev/null 2>&1 && fail "--eject must not clobber" || true
 "$BIN" --repo repo installers --eject --force >/dev/null || fail "--eject --force overwrites"
 OUT=$("$BIN" --repo repo explain ripgrep)

@@ -13,7 +13,7 @@ import loadout.core.manifest.Glob
 import loadout.core.manifest.InstallerLibrary
 
 /** Where `installers --eject` writes the built-in library, relative to the repo root. */
-private const val EJECT_TARGET = "programs/installers/builtin.yaml"
+private const val EJECT_TARGET = "programs/installers/builtin.loadout.yaml"
 
 /**
  * What `via = ["dnf"]` actually means. Installers ship with loadout and are
@@ -25,13 +25,13 @@ class InstallersCommand : CliktCommand(name = "installers") {
     override fun help(context: Context) = commandHelp(
         "Show the install mechanisms available to this repo: loadout's built-ins plus your own.",
         "[name]     print one installer's full definition",
-        "--eject    write the built-ins to programs/installers/builtin.yaml so the repo owns them",
+        "--eject    write the built-ins to programs/installers/builtin.loadout.yaml so the repo owns them",
         "--force    overwrite that file if it already exists",
     )
 
     private val name by argument(name = "name", help = "Installer to describe").optional()
     private val eject by option("--eject", help = "Copy the built-in installers into the repo").flag()
-    private val force by option("--force", help = "Overwrite an existing builtin.yaml").flag()
+    private val force by option("--force", help = "Overwrite an existing builtin.loadout.yaml").flag()
 
     private val app by requireObject<AppContext>()
 

@@ -299,5 +299,5 @@ YAML
 [ -f custom/observed/m1.json ] || fail "state lands in layout state"
 [ -d custom/state ] && fail "nothing is written to a default state dir" || true
 OUT=$("$BIN" --repo custom installers --eject 2>&1) && fail "--eject must refuse a file no glob loads"
-echo "$OUT" | grep -q "no layout fragments glob loads programs/installers/builtin.yaml" || fail "--eject says why: $OUT"
+echo "$OUT" | grep -q "no layout fragments glob loads programs/installers/builtin.loadout.yaml" || fail "--eject says why: $OUT"
 ok "fragments, machines and state come from layout; --eject only writes what loads"

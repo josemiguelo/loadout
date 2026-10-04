@@ -197,7 +197,7 @@ Explicit user decisions; don't "improve" them away.
    the machine files are authored; the `layout.state` directory is
    generated and disposable. Nothing hand-edited goes in state; the tool
    never writes authored files, except `init` scaffolding and `installers
-   --eject` (writes exactly `programs/installers/builtin.yaml`, refuses when
+   --eject` (writes exactly `programs/installers/builtin.loadout.yaml`, refuses when
    no fragments glob loads it, and refuses to clobber it without `--force`).
 4. **Scripts: exactly one of `file` (path) or `run` (inline).** Variant
    `command`s, installer patterns, oracles, `outdated` commands (program and
