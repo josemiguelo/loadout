@@ -714,11 +714,10 @@ Explicit user decisions; don't "improve" them away.
 
 `.github/workflows/ci.yml`: ubuntu (unit + integration + release link) and
 macos (arm64 unit tests, both mac release links, integration against the
-release binary). It triggers on `main`, but the default branch is
-`master`, so it doesn't run yet (README TODO); run all suites locally
-before a release. `release.yml` on `v*` tags: strip + tar.gz →
+release binary). It runs on pushes to `master` and on pull requests.
+`release.yml` on `v*` tags: strip + tar.gz →
 `loadout-<tag>-{linux-x64,macos-arm64,macos-x64}.tar.gz` attached to the
-GitHub Release. linuxArm64 builds but isn't released.
+GitHub Release. It packages without testing: let CI pass before tagging. linuxArm64 builds but isn't released.
 
 `install.sh` (repo root) is the curl|sh bootstrap over those releases: it
 resolves latest via the GitHub API (pin: LOADOUT_VERSION) and installs to

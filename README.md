@@ -111,11 +111,3 @@ Stack: [Clikt](https://github.com/ajalt/clikt) ·
 
 Known limits: unix-like only · dependency edges have no version
 constraints · linux-arm64 builds but isn't released.
-
-## TODO
-
-- **Wire up CI.** `.github/workflows/ci.yml` triggers on pushes to `main`
-  and on pull requests, but the default branch is `master`, so it never
-  runs; `release.yml` packages without testing. Fix: `branches: [master]`.
-  The macOS job has never executed, so expect its first run to surface
-  something.
