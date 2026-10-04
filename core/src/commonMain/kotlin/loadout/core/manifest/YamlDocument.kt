@@ -50,7 +50,6 @@ object YamlDocument {
             element.isString && DECIMAL.matches(element.content) -> JsonPrimitive(element.content.toDouble())
             else -> element
         }
-        else -> element
     }
 
     private fun YamlNode.toJson(): JsonElement = when (this) {
@@ -60,6 +59,5 @@ object YamlDocument {
         // A key with nothing under it is an empty table: `copr:` alone means `copr: {}`.
         is YamlNull -> JsonObject(emptyMap())
         is YamlTaggedNode -> innerNode.toJson()
-        else -> throw ManifestException("unsupported YAML construct at ${path.toHumanReadableString()}")
     }
 }

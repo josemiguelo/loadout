@@ -55,7 +55,7 @@ class ScriptRunner(
         if (!step.appliesTo(os)) return ScriptOutcome.NotApplicable
 
         if (!force && step.check != null) {
-            if (runner.capture(frame.command(withArgs(step.check!!, args), step.origin)).success) {
+            if (runner.capture(frame.command(withArgs(step.check, args), step.origin)).success) {
                 return ScriptOutcome.AlreadyDone
             }
         }

@@ -8,6 +8,7 @@ kotlin {
     listOf(linuxX64(), linuxArm64()).forEach { target ->
         target.binaries.all { linkerOpts("-Wl,--as-needed") }
     }
+    @Suppress("DEPRECATION") // deprecated upstream, kept for Intel Macs
     macosX64()
     macosArm64()
 

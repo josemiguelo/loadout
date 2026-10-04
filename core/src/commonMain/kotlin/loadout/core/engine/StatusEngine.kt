@@ -89,7 +89,7 @@ class StatusEngine(
                 val history = scriptRuns[name] ?: previous?.scripts?.get(name)
                 when {
                     step.check != null -> {
-                        val check = ScriptRunner.withArgs(step.check!!, args)
+                        val check = ScriptRunner.withArgs(step.check, args)
                         name to async {
                             semaphore.withPermit {
                                 val result = runner.capture(frame.command(check, step.origin))

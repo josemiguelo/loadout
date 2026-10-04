@@ -10,6 +10,7 @@ kotlin {
     listOf(
         linuxX64(),
         linuxArm64(),
+        @Suppress("DEPRECATION") // deprecated upstream, kept for Intel Macs
         macosX64(),
         macosArm64(),
     ).forEach { target ->

@@ -1,6 +1,5 @@
 package loadout.cli
 
-import com.github.ajalt.clikt.core.BaseCliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.output.HelpFormatter
 import com.github.ajalt.clikt.output.MordantHelpFormatter
@@ -24,10 +23,8 @@ class LoadoutHelpFormatter(context: Context) : MordantHelpFormatter(context) {
     override fun renderCommands(
         parameters: List<HelpFormatter.ParameterHelp>,
     ): List<RenderedSection<Widget>> {
-        val fullHelp = (context.command as? BaseCliktCommand<*>)
-            ?.registeredSubcommands()
-            ?.associate { it.commandName to it.help(context) }
-            .orEmpty()
+        val fullHelp = context.command.registeredSubcommands()
+            .associate { it.commandName to it.help(context) }
         val commands = parameters.filterIsInstance<HelpFormatter.ParameterHelp.Subcommand>().map {
             DefinitionRow(
                 styleSubcommandName(it.name),

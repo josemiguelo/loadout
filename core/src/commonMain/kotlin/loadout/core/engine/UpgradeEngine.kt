@@ -160,7 +160,7 @@ object UpgradeEngine {
                 installers = mechanisms,
                 command = command,
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
-                tool = probes.singleOrNull()?.takeIf { it != null },
+                tool = probes.singleOrNull(),
                 origin = origin,
             )
         }
