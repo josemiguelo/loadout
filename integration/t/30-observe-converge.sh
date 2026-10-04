@@ -47,12 +47,11 @@ ok "setup-new-machine runs eligible scripts"
 
 # --- membership: a program no machine maps ------------------------------
 # Skipped by converge, an error when explicitly requested, not observed.
-cat >> repo/loadout.toml <<'TOML'
-
-[programs.never-mapped]
-[programs.never-mapped.install.manual]
-command = "false"
-TOML
+cat > repo/programs/never-mapped.yaml <<'YAML'
+install:
+  manual:
+    command: 'false'
+YAML
 OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --dry-run) || fail "converge with unmapped program should succeed"
 echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
 "$BIN" --repo repo --machine m1 install never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
@@ -64,23 +63,28 @@ ok "unmapped programs are not part of the machine's loadout"
 
 # --- machine without a config file at all --------------------------------
 OUT=$("$BIN" --repo repo --machine ghost setup-new-machine --dry-run 2>&1 || true)
-echo "$OUT" | grep -q "machines/ghost.toml" || fail "missing machine-config error message"
+echo "$OUT" | grep -q "machines/ghost.yaml" || fail "missing machine-config error message"
 ok "setup-new-machine fails for a machine with no config file"
 
 # --- mapped pm binary not present on this machine ------------------------
 mkdir -p pmrepo/state pmrepo/machines
-cat > pmrepo/loadout.toml <<'TOML'
-[installers.pacman]
-probe = "pacman"
-install = "sudo pacman -S --noconfirm {pkg}"
-check = "pacman -Q {pkg}"
-regex = "([0-9.]+)"
+cat > pmrepo/loadout.yaml <<'YAML'
+installers:
+  pacman:
+    probe: pacman
+    install: 'sudo pacman -S --noconfirm {pkg}'
+    check: 'pacman -Q {pkg}'
+    regex: '([0-9.]+)'
 
-[programs.tool]
-via = ["pacman"]
-TOML
+programs:
+  tool:
+    via: [pacman]
+YAML
 add_layout "pmrepo"
-printf '[packages.install]\ntool = "pacman"\n' > pmrepo/machines/m1.toml
+cat > pmrepo/machines/m1.yaml <<'YAML'
+tool:
+  install_with: pacman
+YAML
 if ! command -v pacman >/dev/null 2>&1; then
     OUT=$("$BIN" --repo pmrepo --machine m1 setup-new-machine --dry-run 2>&1 || true)
     echo "$OUT" | grep -q "required binary 'pacman'" || fail "pm-not-installed error message"
@@ -106,25 +110,32 @@ ok "explain prints expanded programs and scripts (all of them with no names)"
 # "command not found" is a question that couldn't be asked; a check that IS
 # the program (`rg --version`, no probe) means what it says.
 mkdir -p probed/state probed/machines
-cat > probed/loadout.toml <<'TOML'
-[installers.ghostpm]
-probe = "ghostpm-definitely-not-here"
-install = "ghostpm-definitely-not-here install {pkg}"
-check = "ghostpm-definitely-not-here query {pkg}"
-regex = "([0-9.]+)"
+cat > probed/loadout.yaml <<'YAML'
+installers:
+  ghostpm:
+    probe: ghostpm-definitely-not-here
+    install: 'ghostpm-definitely-not-here install {pkg}'
+    check: 'ghostpm-definitely-not-here query {pkg}'
+    regex: '([0-9.]+)'
 
-[programs.viapm]
-via = ["ghostpm"]
-
-[programs.byitself]
-[programs.byitself.version]
-command = "byitself-definitely-not-here --version"
-regex = "([0-9.]+)"
-[programs.byitself.install.manual]
-command = "false"
-TOML
+programs:
+  viapm:
+    via: [ghostpm]
+  byitself:
+    version:
+      command: 'byitself-definitely-not-here --version'
+      regex: '([0-9.]+)'
+    install:
+      manual:
+        command: 'false'
+YAML
 add_layout "probed"
-printf '[packages.install]\nviapm = "ghostpm"\nbyitself = "manual"\n' > probed/machines/m1.toml
+cat > probed/machines/m1.yaml <<'YAML'
+viapm:
+  install_with: ghostpm
+byitself:
+  install_with: manual
+YAML
 OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
 echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
 echo "$OUT" | grep -q "ghostpm-definitely-not-here: command not found" || fail "status says what wasn't there"
@@ -135,20 +146,31 @@ ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'
 
 # --- a variant's own depends-on comes only with that variant --------------
 mkdir -p vdeps/state vdeps/machines
-cat > vdeps/loadout.toml <<'TOML'
-[programs.prereq.install.manual]
-command = "true"
-
-[programs.tool.install.withprereq]
-command = "true"
-depends-on = ["prereq"]
-
-[programs.tool.install.plain]
-command = "true"
-TOML
+cat > vdeps/loadout.yaml <<'YAML'
+programs:
+  prereq:
+    install:
+      manual:
+        command: 'true'
+  tool:
+    install:
+      withprereq:
+        command: 'true'
+        depends-on: [prereq]
+      plain:
+        command: 'true'
+YAML
 add_layout "vdeps"
-printf '[packages.install]\ntool = "withprereq"\nprereq = "manual"\n' > vdeps/machines/m1.toml
-printf '[packages.install]\ntool = "plain"\n' > vdeps/machines/m2.toml
+cat > vdeps/machines/m1.yaml <<'YAML'
+tool:
+  install_with: withprereq
+prereq:
+  install_with: manual
+YAML
+cat > vdeps/machines/m2.yaml <<'YAML'
+tool:
+  install_with: plain
+YAML
 OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
 echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
 OUT=$("$BIN" --repo vdeps --machine m2 install tool --dry-run) || fail "the other variant needs no mapping for it"

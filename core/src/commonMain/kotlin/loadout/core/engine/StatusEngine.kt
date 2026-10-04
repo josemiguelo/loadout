@@ -31,7 +31,7 @@ class StatusEngine(
     private val checker: VersionChecker,
     private val runner: ProcessRunner,
     private val frame: CommandFrame = CommandFrame(),
-    /** Observes config units; null when the repo has no `[layout] configs`. */
+    /** Observes config units; null when the repo has no `layout configs`. */
     private val configs: ConfigEngine? = null,
 ) {
     /** Why configs went unchecked during the last [refresh] (chezmoi's answer), or null. */
@@ -63,7 +63,7 @@ class StatusEngine(
      * - check exits 0 -> done (whether or not the tool ever ran it)
      * - check fails   -> pending (even right after a run — the check is the truth)
      * - no check      -> only actual run history can be recorded
-     * Only scripts this machine opted into (its `[scripts]` table) are
+     * Only scripts this machine opted into (its `scripts` table) are
      * observed; the os filter applies on top.
      */
     suspend fun refresh(

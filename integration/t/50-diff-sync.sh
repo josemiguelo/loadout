@@ -7,17 +7,18 @@ basic_repo repo
 "$BIN" --repo repo diff >/dev/null || fail "diff exits 0 when in sync"
 ok "diff exits 0 when machines agree"
 
-cat >> repo/loadout.toml <<'TOML'
-
-[programs.definitely-not-installed-xyz]
-[programs.definitely-not-installed-xyz.version]
-command = "definitely-not-installed-xyz --version"
-regex = "([0-9.]+)"
-[programs.definitely-not-installed-xyz.install.manual]
-command = "false"
-TOML
-printf 'definitely-not-installed-xyz = "manual"\n' >> repo/machines/m1.toml
-printf 'definitely-not-installed-xyz = "manual"\n' >> repo/machines/m2.toml
+# A program file of its own: the layout's programs/**/*.yaml glob picks it
+# up, and its top-level keys are the program's fields.
+cat > repo/programs/definitely-not-installed-xyz.yaml <<'YAML'
+version:
+  command: 'definitely-not-installed-xyz --version'
+  regex: '([0-9.]+)'
+install:
+  manual:
+    command: 'false'
+YAML
+printf 'definitely-not-installed-xyz:\n  install_with: manual\n' >> repo/machines/m1.yaml
+printf 'definitely-not-installed-xyz:\n  install_with: manual\n' >> repo/machines/m2.yaml
 "$BIN" --repo repo --machine m1 status >/dev/null
 "$BIN" --repo repo --machine m2 status >/dev/null
 "$BIN" --repo repo diff >/dev/null 2>&1 && fail "diff should exit 1 on missing" || true

@@ -7,7 +7,7 @@ import okio.Path
 
 /**
  * Reads and writes `<state>/<machine>.json` files inside the config repo,
- * where [stateDirName] is the `[layout] state` directory. Each machine only
+ * where [stateDirName] is the `layout state` directory. Each machine only
  * ever writes its own file; all files are read for diffing.
  */
 class StateStore(

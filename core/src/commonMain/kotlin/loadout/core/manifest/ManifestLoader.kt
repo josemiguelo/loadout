@@ -1,7 +1,5 @@
 package loadout.core.manifest
 
-import com.akuleshov7.ktoml.Toml
-import com.akuleshov7.ktoml.TomlInputConfig
 import loadout.core.LoadoutException
 import loadout.core.TOOL_VERSION
 import loadout.core.model.INSTALL_FILE_PREFIX
@@ -14,7 +12,6 @@ import loadout.core.model.Program
 import loadout.core.model.RepoLayout
 import loadout.core.model.VersionCheck
 import loadout.core.model.scriptEntry
-import kotlinx.serialization.decodeFromString
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
@@ -22,18 +19,11 @@ import okio.Path.Companion.toPath
 class ManifestException(message: String) : LoadoutException(message)
 
 object ManifestLoader {
-    /** The repo's root file: [meta], [layout], and optionally programs/scripts of its own. */
-    const val ROOT_FILE: String = "loadout.toml"
-
-    /** The 0.x root file; a repo that has it instead of [ROOT_FILE] is refused. */
-    private const val LEGACY_ROOT_FILE: String = "manifest.toml"
-
-    private val toml = Toml(
-        inputConfig = TomlInputConfig(ignoreUnknownNames = true),
-    )
+    /** The repo's root file: `meta`, `layout`, `data`, and optionally programs/scripts of its own. */
+    const val ROOT_FILE: String = "loadout.yaml"
 
     /**
-     * The repo's validated `[layout]`, read from the root file alone, so the
+     * The repo's validated `layout`, read from the root file alone, so the
      * state store can find its directory without loading the whole repo.
      */
     fun readLayout(fs: FileSystem, repoRoot: Path, manifestName: String = ROOT_FILE): RepoLayout =
@@ -41,8 +31,8 @@ object ManifestLoader {
 
     /**
      * Load the repo's full manifest: the root file, plus the fragment files
-     * its `[layout] fragments` globs match (programs/scripts/installers/
-     * outdated sources), plus per-machine `<machines>/<name>.toml` configs —
+     * its `layout fragments` globs match (programs/scripts/installers/
+     * outdated sources), plus per-machine `<machines>/<name>.yaml` configs —
      * the only place machine configs may live. Everything is merged, then
      * validated as one manifest.
      */
@@ -61,8 +51,8 @@ object ManifestLoader {
         val machines = mutableMapOf<String, MachineConfig>()
 
         if (root.machines.isNotEmpty()) {
-            errors += "$manifestName: [machines.*] sections are not allowed; " +
-                "machine configs live in $machinesDir/<name>.toml"
+            errors += "$manifestName: machines sections are not allowed; " +
+                "machine configs live in $machinesDir/<name>.yaml"
         }
 
         val outdatedSources = root.outdated.toMutableMap()
@@ -74,19 +64,29 @@ object ManifestLoader {
         for (path in fragmentFiles(fs, repoRoot, layout, manifestName, machinePaths, profilePaths, errors)) {
             val label = Glob.relative(repoRoot, path)
             val fragmentText = fs.read(path) { readUtf8() }
-            val fragment = withOrigin(parseRaw(fragmentText, label), Glob.relative(repoRoot, path.parent!!))
-            if (MachineData.read(toml, fragmentText) != null) {
-                errors += "$label: [data] is only allowed in $manifestName and machine files"
-            }
+            val origin = Glob.relative(repoRoot, path.parent!!)
+            // A `*.loadout.yaml` fragment holds named sections; any other YAML
+            // fragment is one program, named by its file.
+            val fragment = withOrigin(
+                when {
+                    path.name.endsWith(".loadout.yaml") -> YamlManifest.fragment(fragmentText, label)
+                    path.name.endsWith(".yaml") -> {
+                        val (program, fileScripts) = YamlProgram.read(fragmentText, label)
+                        Manifest(programs = mapOf(path.name.removeSuffix(".yaml") to program), scripts = fileScripts)
+                    }
+                    else -> throw ManifestException("$label: a fragment must be a YAML file (.yaml)")
+                },
+                origin,
+            )
             if (fragment.meta != Meta()) {
-                errors += "$label: [meta] is only allowed in $manifestName"
+                errors += "$label: meta is only allowed in $manifestName"
             }
             if (fragment.layout != null) {
-                errors += "$label: [layout] is only allowed in $manifestName"
+                errors += "$label: layout is only allowed in $manifestName"
             }
             if (fragment.machines.isNotEmpty()) {
-                errors += "$label: [machines.*] sections are not allowed; " +
-                    "machine configs live in $machinesDir/<name>.toml"
+                errors += "$label: machines sections are not allowed; " +
+                    "machine configs live in $machinesDir/<name>.yaml"
             }
             for ((name, installer) in fragment.installers) {
                 if (installers.put(name, installer) != null) {
@@ -113,17 +113,24 @@ object ManifestLoader {
         // Machine files sit directly in their directory, so chezmoi templates
         // find one by hostname (the machine name is the file name); profile
         // files likewise in theirs.
-        fun readConfigs(dir: String, paths: List<Path>, kind: String, profile: Boolean): Map<String, MachineConfig> =
-            paths.mapNotNull { path ->
+        fun readConfigs(dir: String, paths: List<Path>, kind: String, profile: Boolean): Map<String, MachineConfig> {
+            val configs = linkedMapOf<String, MachineConfig>()
+            for (path in paths) {
                 val label = Glob.relative(repoRoot, path)
                 if (path.parent != repoRoot / dir) {
                     errors += "$label: $kind files live directly in $dir/ (no subfolders)"
-                    return@mapNotNull null
+                    continue
                 }
-                val config = MachineFile.read(toml, fs.read(path) { readUtf8() }, label, errors).copy(base = profile)
+                val text = fs.read(path) { readUtf8() }
+                val config = YamlMachine.read(text, label, errors).copy(base = profile)
                 errors += MachineData.validate(root.data, config.data, label)
-                path.name.removeSuffix(".toml") to config
-            }.toMap()
+                val name = path.name.substringBeforeLast('.')
+                if (configs.put(name, config) != null) {
+                    errors += "duplicate $kind '$name' (redefined in $label)"
+                }
+            }
+            return configs
+        }
         val profileConfigs = layout.profiles?.let { readConfigs(it, profilePaths, "profile", profile = true) }.orEmpty()
         errors += flattenMachines(readConfigs(machinesDir, machinePaths, "machine", profile = false), profileConfigs, layout.profiles, machines)
         // Every machine sees every declared key: defaults under its own.
@@ -175,6 +182,10 @@ object ManifestLoader {
         }
         for ((name, program) in merged.programs) {
             program.version?.let { requireFile(it.command, it.origin, "programs.$name.version") }
+            program.outdated?.let { own ->
+                requireFile(own.command, program.origin, "programs.$name.outdated")
+                own.upgrade?.let { requireFile(it, program.origin, "programs.$name.outdated upgrade") }
+            }
             for (key in program.install.keys) {
                 val resolved = merged.resolveInstall(name, key)
                 requireFile(resolved.command, resolved.commandOrigin, "programs.$name.install.$key")
@@ -219,7 +230,7 @@ object ManifestLoader {
     /**
      * Parse and validate a single manifest document. TEST-ONLY (contract 10):
      * it skips fragment/machine-file merging and, unlike [loadRepo], tolerates
-     * inline `[machines.*]` and cannot check that `file:` paths exist. It does
+     * inline `machines` and cannot check that `file:` paths exist. It does
      * go through [withBuiltinInstallers], so install resolution — the thing
      * most tests are actually about — behaves exactly as in production.
      */
@@ -270,22 +281,25 @@ object ManifestLoader {
         return manifest.copy(programs = programs)
     }
 
-    /** The installers in a standalone TOML document — used for the built-in library. */
+    /** The installers in a standalone YAML document — used for the built-in library. */
     fun parseInstallers(text: String): Map<String, Installer> = parseRaw(text, "built-in installers").installers
 
-    // Removed in 0.9.0. ktoml drops unknown keys, so without this a templated
-    // manifest would load as an EMPTY program list — a machine's whole loadout
-    // silently vanishing. Loud beats convenient.
-    private val REMOVED_TEMPLATES = Regex("^\\s*\\[templates\\.|^\\s*template\\s*=", RegexOption.MULTILINE)
+    // Removed in 0.9.0. A templated manifest must fail by name, never load as
+    // an EMPTY program list: a machine's whole loadout would silently vanish.
+    private val REMOVED_TEMPLATES = Regex("^(templates|template):", RegexOption.MULTILINE)
 
     private fun parseRaw(text: String, label: String): Manifest {
+        refuseTemplates(text, label)
+        return YamlManifest.root(text, label)
+    }
+
+    private fun refuseTemplates(text: String, label: String) {
         if (REMOVED_TEMPLATES.containsMatchIn(text)) {
             throw ManifestException(
                 "$label uses templates, removed in loadout 0.9.0 — declare each program " +
                     "explicitly (see the wiki), or pin an older loadout",
             )
         }
-        return parseDocument(text, label)
     }
 
     /** Stamp every declared item with its file's repo-relative directory (contracts 4, 5). */
@@ -297,12 +311,6 @@ object ManifestLoader {
         scripts = manifest.scripts.mapValues { it.value.copy(origin = origin) },
         outdated = manifest.outdated.mapValues { it.value.copy(origin = origin) },
     )
-
-    private fun parseDocument(text: String, label: String): Manifest = try {
-        toml.decodeFromString<Manifest>(text)
-    } catch (e: Exception) {
-        throw ManifestException("Failed to parse $label: ${e.message}")
-    }
 
     /** Numeric dotted-version comparison: is [current] >= [required]? */
     fun versionAtLeast(current: String, required: String): Boolean {
@@ -316,18 +324,11 @@ object ManifestLoader {
         return true
     }
 
-    private fun tomlFiles(fs: FileSystem, dir: Path): List<Path> =
-        if (fs.exists(dir)) {
-            fs.list(dir).filter { it.name.endsWith(".toml") }.sortedBy { it.name }
-        } else {
-            emptyList()
-        }
-
-    /** All `.toml` files under [dir], path-sorted; loadRepo refuses any in a subfolder. */
+    /** All `.yaml` files under [dir], path-sorted; loadRepo refuses any in a subfolder. */
     private fun machineFiles(fs: FileSystem, dir: Path): List<Path> {
         if (!fs.exists(dir)) return emptyList()
         return fs.listRecursively(dir)
-            .filter { it.name.endsWith(".toml") && fs.metadataOrNull(it)?.isRegularFile == true }
+            .filter { it.name.endsWith(".yaml") && fs.metadataOrNull(it)?.isRegularFile == true }
             .sortedBy { it.toString() }
             .toList()
     }
@@ -338,7 +339,7 @@ object ManifestLoader {
      * combined first — two of them setting a program's variant, a script's
      * arguments or a data key differently is an error, so their order never
      * changes the result — then the file itself overrides them ([pm] per
-     * key, `scripts` by name, `[data]` table by table, lists replace).
+     * key, `scripts` by name, `data` table by table, lists replace).
      * Profiles land in [out] too, flattened and marked `base`, so validation
      * covers them; loadRepo drops them after validating. Returns errors.
      */
@@ -356,11 +357,11 @@ object ManifestLoader {
                 val profile = profiles[name]
                 when {
                     profilesDir == null -> {
-                        errors += "${config.label}: extends '$name', but loadout.toml's [layout] has no profiles directory"
+                        errors += "${config.label}: extends '$name', but loadout.yaml's layout has no profiles directory"
                         null
                     }
                     profile == null -> {
-                        errors += "${config.label}: extends unknown profile '$name' (no $profilesDir/$name.toml)"
+                        errors += "${config.label}: extends unknown profile '$name' (no $profilesDir/$name.yaml)"
                         null
                     }
                     name in seen -> {
@@ -435,11 +436,11 @@ object ManifestLoader {
         for (pattern in layout.fragments) {
             for (path in Glob.expand(fs, repoRoot, pattern)) {
                 when (path) {
-                    rootPath -> errors += "[layout] fragments '$pattern' matches $manifestName itself"
+                    rootPath -> errors += "layout fragments '$pattern' matches $manifestName itself"
                     in machinePaths ->
-                        errors += "[layout] fragments '$pattern' matches machine file ${Glob.relative(repoRoot, path)}"
+                        errors += "layout fragments '$pattern' matches machine file ${Glob.relative(repoRoot, path)}"
                     in profilePaths ->
-                        errors += "[layout] fragments '$pattern' matches profile file ${Glob.relative(repoRoot, path)}"
+                        errors += "layout fragments '$pattern' matches profile file ${Glob.relative(repoRoot, path)}"
                     else -> files += path
                 }
             }
@@ -450,19 +451,13 @@ object ManifestLoader {
     private fun readRoot(fs: FileSystem, repoRoot: Path, manifestName: String): Manifest {
         val rootPath = repoRoot / manifestName
         if (!fs.exists(rootPath)) {
-            if (manifestName == ROOT_FILE && fs.exists(repoRoot / LEGACY_ROOT_FILE)) {
-                throw ManifestException(
-                    "$repoRoot is a loadout 0.x repo ($LEGACY_ROOT_FILE); this loadout reads " +
-                        "$ROOT_FILE with a [layout] table — see the wiki's Repo layout page",
-                )
-            }
             throw ManifestException("Manifest not found: $rootPath")
         }
-        val rootText = fs.read(rootPath) { readUtf8() }
-        val root = parseRaw(rootText, manifestName)
-        // Fail before interpreting anything else: an older binary silently
-        // ignores manifest keys it doesn't know, so the repo's declared floor
-        // is the only guard against misreading a newer config.
+        val text = fs.read(rootPath) { readUtf8() }
+        refuseTemplates(text, manifestName)
+        val root = YamlManifest.root(text, manifestName)
+        // Fail before interpreting anything else: an older binary must refuse
+        // by version, not by a parse error on a key it doesn't know.
         root.meta.minToolVersion?.let { required ->
             if (!versionAtLeast(TOOL_VERSION, required)) {
                 throw ManifestException(
@@ -471,29 +466,29 @@ object ManifestLoader {
                 )
             }
         }
-        return root.copy(data = MachineData.read(toml, rootText) ?: MachineData.EMPTY)
+        return root
     }
 
-    /** The root's `[layout]`, every required key present and every path inside the repo. */
+    /** The root's `layout`, every required key present and every path inside the repo. */
     private fun layoutOf(root: Manifest, manifestName: String): RepoLayout {
         val layout = root.layout
             ?: throw ManifestException(
-                "$manifestName has no [layout] table (fragments, machines and state are required)",
+                "$manifestName has no layout table (fragments, machines and state are required)",
             )
         val errors = mutableListOf<String>()
         val fragments = layout.fragments
         when {
-            fragments == null -> errors += "[layout] fragments is missing (a list of globs)"
-            fragments.isEmpty() -> errors += "[layout] fragments is empty"
+            fragments == null -> errors += "layout fragments is missing (a list of globs)"
+            fragments.isEmpty() -> errors += "layout fragments is empty"
             else -> fragments.forEach { pattern ->
-                Glob.problem(pattern)?.let { errors += "[layout] fragments '$pattern' $it" }
+                Glob.problem(pattern)?.let { errors += "layout fragments '$pattern' $it" }
             }
         }
         fun dir(key: String, value: String?, required: Boolean) {
             when {
-                value == null -> if (required) errors += "[layout] $key is missing (a directory)"
-                Glob.hasWildcard(value) -> errors += "[layout] $key '$value' is a directory, not a glob"
-                else -> Glob.problem(value)?.let { errors += "[layout] $key '$value' $it" }
+                value == null -> if (required) errors += "layout $key is missing (a directory)"
+                Glob.hasWildcard(value) -> errors += "layout $key '$value' is a directory, not a glob"
+                else -> Glob.problem(value)?.let { errors += "layout $key '$value' $it" }
             }
         }
         dir("machines", layout.machines, required = true)
@@ -543,6 +538,15 @@ object ManifestLoader {
         }
 
         for ((name, program) in manifest.programs) {
+            program.outdated?.let { own ->
+                if (own.command.isBlank()) {
+                    errors += "programs.$name.outdated needs a command (prints the newest version)"
+                }
+                if (program.version?.regex == null) {
+                    errors += "programs.$name.outdated needs a version with a regex: the newest version is " +
+                        "read with the program's version regex"
+                }
+            }
             for (dep in program.dependsOn) {
                 if (dep !in manifest.programs) {
                     errors += "programs.$name depends-on unknown program '$dep'"
@@ -576,7 +580,7 @@ object ManifestLoader {
                 val params = installer?.params.orEmpty()
                 for (missing in params - variant.with.keys) {
                     errors += "programs.$name.install.$key needs a value for '$missing' " +
-                        "(add it under [programs.$name.install.$key.with])"
+                        "(add it under programs.$name.install.$key.with)"
                 }
                 for (extra in variant.with.keys - params.toSet()) {
                     errors += if (installer == null) {
@@ -612,7 +616,7 @@ object ManifestLoader {
         }
 
         for ((machine, config) in manifest.machines) {
-            val file = config.label.ifEmpty { "$machinesDir/$machine.toml" }
+            val file = config.label.ifEmpty { "$machinesDir/$machine.yaml" }
             val scriptNames = config.scripts.map { scriptEntry(it).first }
             scriptNames.groupBy { it }.filterValues { it.size > 1 }.keys.forEach { dup ->
                 errors += "$file lists script '$dup' more than once"

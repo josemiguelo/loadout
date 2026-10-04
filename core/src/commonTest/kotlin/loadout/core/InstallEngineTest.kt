@@ -61,22 +61,26 @@ class InstallEngineTest {
         // needs nothing — and must not drag a dnf package into the plan.
         val m = ManifestLoader.parse(
             """
-            [programs.dnf-plugins-core.install.dnf]
-            command = "dnf install dnf-plugins-core"
-
-            [programs.kitty.install.copr]
-            command = "dnf copr enable kitty"
-            depends-on = ["dnf-plugins-core"]
-
-            [programs.kitty.install.pacman]
-            command = "pacman -S kitty"
-
-            [machines.fedora.pm]
-            kitty = "copr"
-            dnf-plugins-core = "dnf"
-
-            [machines.arch.pm]
-            kitty = "pacman"
+            programs:
+              dnf-plugins-core:
+                install:
+                  dnf:
+                    command: dnf install dnf-plugins-core
+              kitty:
+                install:
+                  copr:
+                    command: dnf copr enable kitty
+                    depends-on: [dnf-plugins-core]
+                  pacman:
+                    command: pacman -S kitty
+            machines:
+              fedora:
+                pm:
+                  kitty: copr
+                  dnf-plugins-core: dnf
+              arch:
+                pm:
+                  kitty: pacman
             """.trimIndent(),
         )
         val fedora = engine().plan(m, "fedora", listOf("kitty"), emptyMap()) { true }
@@ -91,24 +95,28 @@ class InstallEngineTest {
         // and plan exactly as without it.
         val m = ManifestLoader.parse(
             """
-            [installers.omarchy-pkg]
-            install = "omarchy pkg add {pkg}"
-            sudo = true
-
-            [programs.zsh]
-            via = ["omarchy-pkg"]
-
-            [programs.quiet.install.omarchy-pkg]
-            command = "true"
-            sudo = false
-
-            [programs.plain.install.script]
-            command = "true"
-
-            [machines.m.pm]
-            zsh = "omarchy-pkg"
-            quiet = "omarchy-pkg"
-            plain = "script"
+            installers:
+              omarchy-pkg:
+                install: omarchy pkg add {pkg}
+                sudo: true
+            programs:
+              zsh:
+                via: [omarchy-pkg]
+              quiet:
+                install:
+                  omarchy-pkg:
+                    command: true
+                    sudo: false
+              plain:
+                install:
+                  script:
+                    command: true
+            machines:
+              m:
+                pm:
+                  zsh: omarchy-pkg
+                  quiet: omarchy-pkg
+                  plain: script
             """.trimIndent(),
         )
         val plan = engine().plan(m, "m", listOf("zsh", "quiet", "plain"), emptyMap()) { true }
@@ -120,12 +128,15 @@ class InstallEngineTest {
     fun fileInstallValuesRunAsRepoScripts() {
         val withFile = ManifestLoader.parse(
             """
-            [programs.tool]
-            [programs.tool.install.script]
-            command = "file:scripts/install-tool.sh"
-
-            [machines.m.pm]
-            tool = "script"
+            programs:
+              tool:
+                install:
+                  script:
+                    command: file:scripts/install-tool.sh
+            machines:
+              m:
+                pm:
+                  tool: script
             """.trimIndent(),
         )
         val plan = engine().plan(withFile, "m", emptyList(), emptyMap()) { true }
@@ -139,12 +150,15 @@ class InstallEngineTest {
     fun fileInstallValuesPassArgumentsThrough() {
         val withArgs = ManifestLoader.parse(
             """
-            [programs.tool]
-            [programs.tool.install.script]
-            command = "file:scripts/tool.sh install --verbose"
-
-            [machines.m.pm]
-            tool = "script"
+            programs:
+              tool:
+                install:
+                  script:
+                    command: file:scripts/tool.sh install --verbose
+            machines:
+              m:
+                pm:
+                  tool: script
             """.trimIndent(),
         )
         val plan = engine().plan(withArgs, "m", emptyList(), emptyMap()) { true }
@@ -165,23 +179,26 @@ class InstallEngineTest {
         val e = assertFailsWith<ResolutionException> {
             engine().plan(manifest, "unknown-box", emptyList(), emptyMap()) { true }
         }
-        assertTrue("machines/unknown-box.toml" in e.message.orEmpty())
+        assertTrue("machines/unknown-box.yaml" in e.message.orEmpty())
     }
 
     @Test
     fun convergeSkipsUnmappedPrograms() {
         val partial = ManifestLoader.parse(
             """
-            [programs.a]
-            [programs.a.install.dnf]
-            command = "sudo dnf install -y a"
-
-            [programs.b]
-            [programs.b.install.dnf]
-            command = "sudo dnf install -y b"
-
-            [machines.m.pm]
-            a = "dnf"
+            programs:
+              a:
+                install:
+                  dnf:
+                    command: sudo dnf install -y a
+              b:
+                install:
+                  dnf:
+                    command: sudo dnf install -y b
+            machines:
+              m:
+                pm:
+                  a: dnf
             """.trimIndent(),
         )
         // b is not part of m's loadout: converge plans only a, no error.
@@ -199,17 +216,20 @@ class InstallEngineTest {
     fun unmappedDependencyOfMappedProgramFails() {
         val partial = ManifestLoader.parse(
             """
-            [programs.base]
-            [programs.base.install.dnf]
-            command = "sudo dnf install -y base"
-
-            [programs.tool]
-            depends-on = ["base"]
-            [programs.tool.install.dnf]
-            command = "sudo dnf install -y tool"
-
-            [machines.m.pm]
-            tool = "dnf"
+            programs:
+              base:
+                install:
+                  dnf:
+                    command: sudo dnf install -y base
+              tool:
+                depends-on: [base]
+                install:
+                  dnf:
+                    command: sudo dnf install -y tool
+            machines:
+              m:
+                pm:
+                  tool: dnf
             """.trimIndent(),
         )
         val e = assertFailsWith<ResolutionException> {
@@ -248,21 +268,24 @@ class InstallEngineTest {
     fun installerMechanicsResolveByMappedKey() {
         val m = ManifestLoader.parse(
             """
-            [installers.brew-cask]
-            probe = "brew"
-            install = "brew install --cask {pkg}"
-            check = "brew list --cask --versions {pkg}"
-            regex = "([0-9.]+)"
-
-            [programs.toolbox.install.brew-linux]
-            installer = "brew-cask"
-            pkg = "toolbox-linux"
-
-            [programs.toolbox.install.brew-macos]
-            installer = "brew-cask"
-
-            [machines.m.pm]
-            toolbox = "brew-linux"
+            installers:
+              brew-cask:
+                probe: brew
+                install: brew install --cask {pkg}
+                check: brew list --cask --versions {pkg}
+                regex: ([0-9.]+)
+            programs:
+              toolbox:
+                install:
+                  brew-linux:
+                    installer: brew-cask
+                    pkg: toolbox-linux
+                  brew-macos:
+                    installer: brew-cask
+            machines:
+              m:
+                pm:
+                  toolbox: brew-linux
             """.trimIndent(),
         )
         // Probe: the variant inherits its installer's probe binary.

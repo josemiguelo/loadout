@@ -27,7 +27,7 @@ class AppContext(
 ) {
     val fs: FileSystem = FileSystem.SYSTEM
     val runner: ProcessRunner = KommandProcessRunner()
-    /** The root file's validated [layout], read alone, without loading the repo. */
+    /** The root file's validated layout, read alone, without loading the repo. */
     val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot, manifestName) }
     val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
     val detection: Detection by lazy { Detection(runner, fs) }
@@ -40,7 +40,7 @@ class AppContext(
     fun frame(system: SystemInfo): CommandFrame =
         CommandFrame.of(fs.canonicalize(repoRoot).toString(), system, layout.configs)
 
-    /** chezmoi over the `[layout] configs` directory; null when the repo has none. */
+    /** chezmoi over the `layout configs` directory; null when the repo has none. */
     val configs: ConfigEngine? by lazy {
         layout.configs?.let { ConfigEngine(runner, "${fs.canonicalize(repoRoot)}/$it") }
     }

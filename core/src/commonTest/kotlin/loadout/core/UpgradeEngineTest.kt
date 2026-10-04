@@ -10,40 +10,40 @@ import kotlin.test.assertTrue
 
 private val MANIFEST = ManifestLoader.parse(
     """
-    [installers.pm]
-    install = "install {pkg}"
-    upgrade = "pm upgrade -y"
-    check = "pm show {pkg}"
-    regex = "([0-9.]+)"
-
-    [installers.rolling]
-    install = "roll {pkg}"
-    upgrade = "roll -Syu"
-    check = "roll -Q {pkg}"
-    regex = "([0-9.]+)"
-
-    [installers.manual]
-    install = "by hand {pkg}"
-    check = "true"
-    regex = "([0-9.]+)"
-
-    [programs.alpha]
-    via = ["pm"]
-    [programs.bravo]
-    via = ["pm"]
-    [programs.charlie]
-    via = ["rolling"]
-    [programs.delta]
-    via = ["manual"]
-
-    [machines.m1.pm]
-    alpha = "pm"
-    bravo = "pm"
-    charlie = "rolling"
-    delta = "manual"
-
-    [machines.m2.pm]
-    delta = "manual"
+    installers:
+      pm:
+        install: install {pkg}
+        upgrade: pm upgrade -y
+        check: pm show {pkg}
+        regex: ([0-9.]+)
+      rolling:
+        install: roll {pkg}
+        upgrade: roll -Syu
+        check: roll -Q {pkg}
+        regex: ([0-9.]+)
+      manual:
+        install: by hand {pkg}
+        check: true
+        regex: ([0-9.]+)
+    programs:
+      alpha:
+        via: [pm]
+      bravo:
+        via: [pm]
+      charlie:
+        via: [rolling]
+      delta:
+        via: [manual]
+    machines:
+      m1:
+        pm:
+          alpha: pm
+          bravo: pm
+          charlie: rolling
+          delta: manual
+      m2:
+        pm:
+          delta: manual
     """.trimIndent(),
 )
 
@@ -92,9 +92,10 @@ class UpgradeEngineTest {
     fun aCustomSourceUpgradesItsItemsOneAtATime() {
         val manifest = ManifestLoader.parse(
             """
-            [outdated.pins]
-            command = "list-pins"
-            upgrade = "repin {item}"
+            outdated:
+              pins:
+                command: list-pins
+                upgrade: repin {item}
             """.trimIndent(),
         )
         val plan = engine().planSourceItems(manifest, "pins", listOf("golang", "nodejs"))
@@ -107,27 +108,28 @@ class UpgradeEngineTest {
         // `sudo = true` is obsolete: it must parse and change nothing.
         val manifest = ManifestLoader.parse(
             """
-            [installers.omarchy-pkg]
-            install = "omarchy pkg add {pkg}"
-            upgrade = "omarchy update -y"
-            check = "pacman -Q {pkg}"
-            regex = "([0-9.]+)"
-            sudo = true
-
-            [programs.zsh]
-            via = ["omarchy-pkg"]
-
-            [machines.m.pm]
-            zsh = "omarchy-pkg"
-
-            [outdated.pins]
-            command = "list-pins"
-            upgrade = "repin {item}"
-            sudo = true
-
-            [outdated.plain]
-            command = "list"
-            upgrade = "bump {item}"
+            installers:
+              omarchy-pkg:
+                install: omarchy pkg add {pkg}
+                upgrade: omarchy update -y
+                check: pacman -Q {pkg}
+                regex: ([0-9.]+)
+                sudo: true
+            programs:
+              zsh:
+                via: [omarchy-pkg]
+            machines:
+              m:
+                pm:
+                  zsh: omarchy-pkg
+            outdated:
+              pins:
+                command: list-pins
+                upgrade: repin {item}
+                sudo: true
+              plain:
+                command: list
+                upgrade: bump {item}
             """.trimIndent(),
         )
         assertEquals("omarchy update -y", engine().plan(manifest, "m", listOf("omarchy-pkg")).single().command)
@@ -138,8 +140,9 @@ class UpgradeEngineTest {
     fun aSourceWithNoUpgradeCommandIsRefused() {
         val manifest = ManifestLoader.parse(
             """
-            [outdated.pins]
-            command = "list-pins"
+            outdated:
+              pins:
+                command: list-pins
             """.trimIndent(),
         )
         val e = assertFailsWith<UpgradeException> {

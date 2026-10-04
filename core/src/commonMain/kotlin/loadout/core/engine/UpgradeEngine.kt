@@ -19,6 +19,8 @@ data class UpgradeStep(
     val tool: String? = null,
     /** Where [command] runs: its declaring file's repo-relative directory. */
     val origin: String = "",
+    /** True for a program's own upgrade ([covers] is that program alone), not an installer's or a source's. */
+    val program: Boolean = false,
 ) {
     /**
      * What to call this step on screen: a sweep is the TOOL it drives when
@@ -28,6 +30,7 @@ data class UpgradeStep(
      * pin failed.
      */
     val label: String get() = when {
+        !sweep && installers.single() == covers.single() -> covers.single()
         !sweep -> "${installers.single()}: ${covers.single()}"
         tool != null -> tool
         else -> installers.joinToString(", ")
@@ -68,7 +71,7 @@ object UpgradeEngine {
     }
 
     /**
-     * One step per item of a custom `[outdated.<name>]` source. Unlike a
+     * One step per item of a custom `outdated.<name>` source. Unlike a
      * package mechanism, these update one at a time: each row is a pin in a
      * file or a clone of its own, so nothing is shared and one failure
      * doesn't take the rest with it.
@@ -90,6 +93,31 @@ object UpgradeEngine {
                 covers = listOf(item),
                 sweep = false,
                 origin = declared.origin,
+            )
+        }
+    }
+
+    /**
+     * One step per program that declares its own `upgrade` (its `outdated`
+     * block), run once for that program alone, like one custom-source item.
+     * A program this machine doesn't map is refused, as an installer is.
+     */
+    fun planPrograms(manifest: Manifest, machine: String, programs: Collection<String>): List<UpgradeStep> {
+        val mapping = manifest.machines[machine]?.pm.orEmpty()
+        return programs.distinct().map { name ->
+            val program = manifest.programs.getValue(name)
+            val command = program.outdated?.upgrade
+                ?: throw UpgradeException("cannot upgrade:\n  - '$name' declares no upgrade command")
+            if (name !in mapping) {
+                throw UpgradeException("cannot upgrade:\n  - '$name' is not used by machine '$machine'")
+            }
+            UpgradeStep(
+                installers = listOf(name),
+                command = expandFilePrefix(command),
+                covers = listOf(name),
+                sweep = false,
+                origin = program.origin,
+                program = true,
             )
         }
     }

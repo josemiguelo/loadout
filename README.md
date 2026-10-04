@@ -15,16 +15,16 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ## How it thinks
 
-- **You declare intent** in TOML: programs with their install mechanics,
+- **You declare intent** in YAML: programs with their install mechanics,
   scripts with idempotency checks, and an explicit per-machine mapping of
-  who carries what, grouped by tool. Machines share small *profiles*
-  (`profiles/macos.toml`, `profiles/work.toml`); a standard machine is a
-  one-line file (`extends = ["macos", "work"]`).
-- **One repo, laid out the way you choose.** `loadout.toml`'s `[layout]`
+  who carries what. Machines share small *profiles*
+  (`profiles/macos.yaml`, `profiles/work.yaml`); a standard machine is a
+  one-line file (`extends: [macos, work]`).
+- **One repo, laid out the way you choose.** `loadout.yaml`'s `layout`
   names where fragments, machines, profiles and state live. A tool's
-  fragment can sit beside its dotfiles (`configs/.config/tmux/.loadout.toml`
+  fragment can sit beside its dotfiles (`configs/.config/tmux/.loadout.yaml`
   next to `tmux.conf`), and every path in it is relative to that file.
-- **Your dotfiles are part of the loadout.** With `[layout] configs`, the
+- **Your dotfiles are part of the loadout.** With `layout.configs`, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
@@ -39,9 +39,9 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
   pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
-  so `via = ["dnf"]` works in an empty repo. `loadout installers` shows them, your own
-  `[installers.<name>]` replaces one, and `--eject` copies them all into
-  your repo.
+  so `via: [dnf]` works in an empty repo. `loadout installers` shows them, your own
+  `installers` entry with the same name replaces one, and `--eject` copies
+  them all into your repo.
 
 ## Commands
 
@@ -51,11 +51,11 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Programs, scripts or configs exactly as the engine resolves them (default: every program and script) |
 | | `installers [name]` | The install mechanisms available here, built-in and your own (`--eject` copies the built-ins into your repo) |
-| | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `[outdated.*]` sources included |
+| | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `outdated` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
-| | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `[outdated.*]` source |
+| | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
 | | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push |
@@ -66,8 +66,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ```console
 $ loadout init ~/loadouts && cd ~/loadouts
-$ $EDITOR loadout.toml programs/             # declare programs and scripts
-$ $EDITOR machines/$(hostname).toml          # map what this machine carries
+$ $EDITOR loadout.yaml programs/            # declare programs and scripts
+$ $EDITOR machines/$(hostname).yaml          # map what this machine carries
 $ loadout status                             # observe
 $ loadout setup-new-machine                  # converge
 $ loadout sync                               # publish (after adding a git remote)
@@ -77,7 +77,7 @@ $ loadout sync                               # publish (after adding a git remot
 
 - **[Writing your manifest](../../wiki/Writing-Your-Manifest)**: from a
   three-line loadout to installers, variants, scripts and profiles.
-- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.toml`, fragments
+- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.yaml`, fragments
   beside their dotfiles, machines, profiles and configs.
 - **[A day with loadout](../../wiki/A-Day-With-Loadout)**: the whole loop in
   practice: observing drift, maintaining, adding gear, new-machine day.
@@ -104,7 +104,7 @@ linux-x64 / macos-arm64 / macos-x64, which the install one-liner and
 `loadout self-upgrade` download.
 
 Stack: [Clikt](https://github.com/ajalt/clikt) ·
-[ktoml](https://github.com/orchestr7/ktoml) · kotlinx-serialization ·
+[kaml](https://github.com/charleskorn/kaml) (YAML) · kotlinx-serialization ·
 [kommand](https://github.com/kgit2/kommand) ·
 [Okio](https://square.github.io/okio/) ·
 [Mosaic](https://github.com/JakeWharton/mosaic) (the home screen).

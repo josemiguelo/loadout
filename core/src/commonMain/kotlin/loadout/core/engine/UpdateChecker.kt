@@ -79,7 +79,7 @@ class UpdateChecker(
         }
 
     /**
-     * Run one custom `[outdated.<name>]` source: each output line is
+     * Run one custom `outdated.<name>` source: each output line is
      * `<item> <current> <candidate> [note...]` (whitespace-separated; the
      * optional tail renders as a dim annotation, short lines are skipped).
      *

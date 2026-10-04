@@ -21,7 +21,7 @@ class CommandFrame(
     }
 
     companion object {
-        /** The frame for [system] in the repo at absolute [repoRoot], with its `[layout] configs`. */
+        /** The frame for [system] in the repo at absolute [repoRoot], with its `layout configs`. */
         fun of(repoRoot: String, system: SystemInfo, configs: String?): CommandFrame =
             CommandFrame(
                 repoRoot,

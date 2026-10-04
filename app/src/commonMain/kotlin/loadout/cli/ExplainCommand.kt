@@ -30,12 +30,12 @@ class ExplainCommand : CliktCommand(name = "explain") {
         val mapping = manifest.machines[system.machine]?.pm.orEmpty()
 
         // Everything explained starts with the machine: the profiles it
-        // extends, its own groups, and its merged [data] (what its chezmoi
+        // extends, its own groups, and its merged data (what its chezmoi
         // templates see).
         if (names.isEmpty()) {
             val machine = manifest.machines[system.machine]
-            echo(Style.header("machine ") + Style.bold(system.machine) + Style.dim("  ${app.layout.machines}/${system.machine}.toml"))
-            if (machine == null) echo("  " + Style.warn("! no machine file — showing loadout.toml's [data] defaults"))
+            echo(Style.header("machine ") + Style.bold(system.machine) + Style.dim("  ${app.layout.machines}/${system.machine}.yaml"))
+            if (machine == null) echo("  " + Style.warn("! no machine file — showing loadout.yaml's data defaults"))
             val rows = mutableListOf<Pair<String, String>>()
             if (machine != null && machine.extends.isNotEmpty()) rows += "extends" to machine.extends.joinToString()
             for ((group, contents) in machine?.groups.orEmpty()) {
@@ -46,7 +46,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                 rows += "[$group]" to parts.joinToString(" · ").ifEmpty { "data only" }
             }
             rows += MachineData.lines(machine?.data ?: manifest.data).map { (key, value) -> "data.$key" to value }
-            if (rows.none { it.first.startsWith("data.") }) echo("  " + Style.dim("no [data] declared in loadout.toml"))
+            if (rows.none { it.first.startsWith("data.") }) echo("  " + Style.dim("no data declared in loadout.yaml"))
             val width = rows.maxOfOrNull { it.first.length } ?: 0
             for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
             echo("")
@@ -97,7 +97,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
-                        notes += "! not mapped for ${system.machine} (add it to ${app.layout.machines}/${system.machine}.toml)"
+                        notes += "! not mapped for ${system.machine} (add it to ${app.layout.machines}/${system.machine}.yaml)"
                     }
                     state?.programs?.get(name)?.let {
                         val status = when (it.status) {
@@ -119,7 +119,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
-                        enabled == null -> "no — add it to a group's scripts in ${app.layout.machines}/${system.machine}.toml"
+                        enabled == null -> "no — add it to a program's scripts in ${app.layout.machines}/${system.machine}.yaml"
                         enabled.isEmpty() -> "yes (${system.machine})"
                         else -> "yes (${system.machine}, args: $enabled)"
                     }

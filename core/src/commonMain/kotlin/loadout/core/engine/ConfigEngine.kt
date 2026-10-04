@@ -21,7 +21,7 @@ data class ConfigEntry(val target: String, val edited: Boolean, val drifted: Boo
 
 /**
  * The repo's dotfiles as loadout sees them, through chezmoi, with
- * `[layout] configs` as its source directory. A unit is a top-level config:
+ * `layout configs` as its source directory. A unit is a top-level config:
  * `.config/<name>` is `<name>`, anything else its first path segment
  * (`.zshenv`, `.local`). Units come from chezmoi's own list, so
  * `.chezmoiignore` decides what exists; nothing is opted in. Only the

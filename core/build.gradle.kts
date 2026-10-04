@@ -27,7 +27,7 @@ kotlin {
             implementation(libs.serialization.json)
             implementation(libs.datetime)
             implementation(libs.okio)
-            implementation(libs.ktoml.core)
+            implementation(libs.kaml)
             implementation(libs.kommand)
         }
         commonTest.dependencies {

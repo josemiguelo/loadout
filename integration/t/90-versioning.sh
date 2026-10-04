@@ -1,14 +1,16 @@
 # Version floors, newer state files, and install.sh (the release bootstrap).
 
 mkdir -p verrepo/state
-cat > verrepo/loadout.toml <<'TOML'
-[meta]
-min-tool-version = "999.0.0"
+cat > verrepo/loadout.yaml <<'YAML'
+meta:
+  min-tool-version: '999.0.0'
 
-[programs.git]
-[programs.git.install.manual]
-command = "false"
-TOML
+programs:
+  git:
+    install:
+      manual:
+        command: 'false'
+YAML
 add_layout "verrepo"
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
@@ -16,19 +18,21 @@ echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "refusal should point 
 "$BIN" --help | grep -q "self-upgrade" || fail "self-upgrade command should be registered"
 ok "manifest min-tool-version blocks an outdated binary with recovery hint"
 
-cat > verrepo/loadout.toml <<'TOML'
-[programs.git]
-[programs.git.version]
-command = "git --version"
-regex = "git version ([0-9.]+)"
-[programs.git.install.manual]
-command = "false"
-TOML
+cat > verrepo/loadout.yaml <<'YAML'
+programs:
+  git:
+    version:
+      command: 'git --version'
+      regex: 'git version ([0-9.]+)'
+    install:
+      manual:
+        command: 'false'
+YAML
 add_layout "verrepo"
-cat > verrepo/state/future.json <<'TOML'
+cat > verrepo/state/future.json <<'JSON'
 {"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
  "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}
-TOML
+JSON
 "$BIN" --repo verrepo --machine m1 status >/dev/null || fail "status works despite future state file"
 OUT=$("$BIN" --repo verrepo diff 2>&1 || true)
 echo "$OUT" | grep -q "newer loadout" || fail "future state file should warn"

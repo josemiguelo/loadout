@@ -72,7 +72,7 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
                 " " + Style.warn("↑") + "  ${updates.size} update(s) available" +
                     // Converge adds what's MISSING; a newer version of something
                     // already installed is the package manager's business.
-                    Style.dim(" — neither `setup-new-machine` nor `install --all` upgrades them; both only install what's MISSING. Upgrade with the package manager, then `loadout status`"),
+                    Style.dim(" — neither `setup-new-machine` nor `install --all` upgrades them; both only install what's MISSING. Upgrade with the package manager, or `loadout upgrade <program>` for one that declares its own upgrade; then `loadout status`"),
             )
         }
         // A broken oracle is a different severity sitting under a long list of

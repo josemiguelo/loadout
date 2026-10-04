@@ -28,24 +28,26 @@ import kotlin.test.assertTrue
 
 private val MANIFEST = ManifestLoader.parse(
     """
-    [programs.git]
-    via = ["dnf"]
-    [programs.kitty]
-    via = ["dnf"]
+    programs:
+      git:
+        via: [dnf]
+      kitty:
+        via: [dnf]
 
-    [scripts.dotfiles]
-    run = "true"
-    check = "true"
+    scripts:
+      dotfiles:
+        run: true
+        check: true
+      bootstrap:
+        run: true
+        modes: [setup]
 
-    [scripts.bootstrap]
-    run = "true"
-    modes = ["setup"]
-
-    [machines.m1]
-    scripts = ["dotfiles", "bootstrap"]
-    [machines.m1.pm]
-    git = "dnf"
-    kitty = "dnf"
+    machines:
+      m1:
+        scripts: [dotfiles, bootstrap]
+        pm:
+          git: dnf
+          kitty: dnf
     """.trimIndent(),
 )
 
@@ -267,7 +269,7 @@ class RemoteSummaryTest {
 class HomeKeysTest {
     private fun model(sections: List<HomeSection>, cursor: Int = 0): HomeModel {
         // No AppContext work: the reducer is pure over state.
-        val m = HomeModel(loadout.cli.AppContext("/repo".let { okio.Path.Companion.run { it.toPath() } }, "loadout.toml", null, false))
+        val m = HomeModel(loadout.cli.AppContext("/repo".let { okio.Path.Companion.run { it.toPath() } }, "loadout.yaml", null, false))
         m.setStateForTest(HomeState(sections = sections, cursor = cursor))
         return m
     }
@@ -554,15 +556,16 @@ class HomeKeysTest {
     fun anObsoleteSudoOnAScriptStillLoads() {
         val manifest = ManifestLoader.parse(
             """
-            [scripts.hid]
-            run = "true"
-            sudo = true
+            scripts:
+              hid:
+                run: true
+                sudo: true
+              plain:
+                run: true
 
-            [scripts.plain]
-            run = "true"
-
-            [machines.m1]
-            scripts = ["hid", "plain"]
+            machines:
+              m1:
+                scripts: [hid, plain]
             """.trimIndent(),
         )
         assertEquals(listOf("hid", "plain"), scriptRowsOf(manifest, SYSTEM, null).map { it.name })
@@ -1388,5 +1391,24 @@ class ThemeDetectionTest {
         // Ignoring it would look exactly like the bug it was set to fix.
         val e = assertFailsWith<ThemeException> { forcedDark("lite") }
         assertTrue("lite" in e.message!!, e.message!!)
+    }
+
+    @Test
+    fun aProgramWithItsOwnUpgradeTicksAloneAndHandsOffByName() {
+        val row = update("claude", "1.0.0", "1.2.0", source = "script")
+        val answered = RemoteStatus.Answered(
+            updates = listOf(row),
+            failedSources = 0,
+            programUpgrades = setOf("claude"),
+        )
+        assertEquals("prog:claude", selectionKey(answered, row))
+        val step = loadout.core.engine.UpgradeStep(
+            installers = listOf("claude"),
+            command = "sh 'outdated.sh' update",
+            covers = listOf("claude"),
+            sweep = false,
+            program = true,
+        )
+        assertEquals("claude" to "claude 1.0.0 → 1.2.0", upgradeItem(step, answered))
     }
 }

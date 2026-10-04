@@ -22,19 +22,19 @@ data class Manifest(
     val machines: Map<String, MachineConfig> = emptyMap(),
     /**
      * Custom `loadout outdated` oracles beyond the installer ones —
-     * `[outdated.<name>]` entries whose command prints one
+     * `outdated.<name>` entries whose command prints one
      * `<item> <current> <candidate>` line per outdated item (nothing when
      * current). The entry name becomes the row's source tag. The built-in
      * self-version row is conceptually the first of these, hardcoded.
      */
     val outdated: Map<String, OutdatedSource> = emptyMap(),
     /**
-     * Which of [installers] came from [loadout.core.manifest.InstallerLibrary]
+     * Which of installers came from [loadout.core.manifest.InstallerLibrary]
      * rather than the repo — provenance for `explain`/`installers`, never
      * behavior. Not a manifest field: loadRepo fills it in.
      */
     @Transient val builtinInstallers: Set<String> = emptySet(),
-    /** loadout.toml's `[data]`: every per-machine key with its default. Filled by loadRepo. */
+    /** loadout.yaml's `data`: every per-machine key with its default. Filled by loadRepo. */
     @Transient val data: JsonObject = JsonObject(emptyMap()),
 ) {
     /**
@@ -55,10 +55,12 @@ data class Manifest(
         fun sub(s: String) = values.entries.fold(s) { acc, (key, value) -> acc.replace("{$key}", value) }
         val checkCommand = variant.check ?: installer?.check
         val regex = variant.regex ?: installer?.regex
-        // Outdated precedence: explicit per-variant oracle, else the
-        // installer's batch oracle (one command for all its packages), else
-        // the installer's per-package pattern.
-        val explicitOutdated = variant.outdated
+        // Outdated precedence: explicit per-variant oracle, else the program's
+        // own check (read with its version regex), else the installer's batch
+        // oracle (one command for all its packages), else the installer's
+        // per-package pattern.
+        val explicitOutdated = variant.outdated ?: program.outdated?.command
+        val outdatedRegex = if (variant.outdated == null && program.outdated != null) program.version?.regex else regex
         val batch = if (explicitOutdated == null) installer?.outdatedAll else null
         val outdatedCommand = explicitOutdated ?: if (batch == null) installer?.outdated else null
         val installerName = variant.installer ?: key.takeIf { installers.containsKey(it) }
@@ -78,8 +80,8 @@ data class Manifest(
                 program.version
             },
             probe = probe,
-            outdated = if (outdatedCommand != null && regex != null) {
-                VersionCheck(sub(outdatedCommand), regex, origin = originOf(explicitOutdated))
+            outdated = if (outdatedCommand != null && outdatedRegex != null) {
+                VersionCheck(sub(outdatedCommand), outdatedRegex, origin = originOf(explicitOutdated))
             } else {
                 null
             },
@@ -181,9 +183,9 @@ data class Installer(
      */
     val outdated: String? = null,
     /**
-     * Batch form of [outdated]: ONE command printing a `<pkg> <candidate>`
+     * Batch form of outdated: ONE command printing a `<pkg> <candidate>`
      * line per outdated package this installer manages. When present it
-     * replaces the per-package [outdated] pattern (which older binaries
+     * replaces the per-package outdated pattern (which older binaries
      * still fall back to — the field is ignored by them).
      */
     @SerialName("outdated-all")
@@ -199,7 +201,7 @@ data class Installer(
     /**
      * Obsolete: parsed so existing manifests load, otherwise ignored.
      * Commands run on the terminal, where sudo prompts for itself. Same for
-     * `sudo` on install variants, scripts and `[outdated.*]` sources.
+     * `sudo` on install variants, scripts and `outdated.*` sources.
      */
     val sudo: Boolean = false,
     /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
@@ -229,7 +231,7 @@ data class InstallVariant(
     val outdated: String? = null,
     /**
      * Values for the installer's [Installer.params], as a nested table:
-     * `[programs.kitty.install.dnf-copr.with]` / `copr = "solopasha/kitty"`.
+     * `programs.kitty.install.dnf-copr.with` / `copr = "solopasha/kitty"`.
      * Each becomes `{copr}` in the resolved commands.
      */
     val with: Map<String, String> = emptyMap(),
@@ -247,14 +249,13 @@ data class InstallVariant(
 /**
  * A machine (or profile) as the engines see it: the groups of its file
  * folded into one program mapping and one script list. Machine and profile
- * files are read by `MachineFile` from the TOML tree; the serializable form
- * (`[machines.<name>]` with `pm`/`scripts`) exists only for the test-only
- * `ManifestLoader.parse`.
+ * files are read by `YamlMachine`; the serializable form (`machines.<name>`
+ * with `pm`/`scripts`) exists only for the test-only `ManifestLoader.parse`.
  */
 @Serializable
 data class MachineConfig(
     /**
-     * A profile (a `[layout] profiles` file), not a machine: flattened into
+     * A profile (a `layout profiles` file), not a machine: flattened into
      * the machines extending it, then dropped — never observed, diffed or
      * converged. Set by the loader from the file's folder.
      */
@@ -267,8 +268,8 @@ data class MachineConfig(
     val extends: List<String> = emptyList(),
     /**
      * Which entry of each program's `install` table this machine uses,
-     * keyed by program name, from the groups' `install`. Every program a
-     * machine installs must be mapped.
+     * keyed by program name, from each program's `install_with`. Every program
+     * a machine installs must be mapped.
      */
     val pm: Map<String, String> = emptyMap(),
     /**
@@ -276,22 +277,21 @@ data class MachineConfig(
      * `"name args..."` (first word = script name, rest = arguments passed as
      * positional parameters to `file` scripts and their checks). Any
      * whitespace separates words, newlines included, so a long entry can be a
-     * TOML multi-line string. Scripts run and are observed only on machines
+     * YAML multi-line string. Scripts run and are observed only on machines
      * that opt in.
      */
     val scripts: List<String> = emptyList(),
     /**
-     * This file's `[data]` overrides (each group's `[<group>.data]` under
-     * the group's name), read from the TOML tree at load; after flattening,
-     * the machine's whole data (defaults, profiles, own). Not decoded.
+     * This file's `data` overrides, read at load; after flattening, the
+     * machine's whole data (defaults, profiles, own). Not decoded.
      */
     @Transient val data: JsonObject = JsonObject(emptyMap()),
-    /** This file's own groups, as written, for `explain`. */
+    /** This file's own program entries, as written, for `explain`. */
     @Transient val groups: Map<String, MachineGroup> = emptyMap(),
     /** The file it was read from, repo-relative, for messages. */
     @Transient val label: String = "",
 ) {
-    /** [scripts] parsed into script name -> argument string (see [scriptEntry]). */
+    /** scripts parsed into script name -> argument string (see [scriptEntry]). */
     fun scriptArgs(): Map<String, String> = scripts.associate(::scriptEntry)
 }
 
@@ -323,7 +323,7 @@ data class Meta(
 )
 
 /**
- * The root file's `[layout]`, as written: every key but [configs] is
+ * The root file's `layout`, as written: every key but [configs] is
  * required, so the fields stay nullable for the loader to name what's
  * missing. Paths are relative to the repo root.
  */
@@ -383,11 +383,27 @@ data class Program(
     /**
      * Install variants keyed by arbitrary labels — installer names (`dnf`) or
      * custom variants (`script`, `brew-linux`). Each machine's mapping in
-     * `machines/<name>.toml` picks which key to use.
+     * `machines/<name>.yaml` picks which key to use.
      */
     val install: Map<String, InstallVariant> = emptyMap(),
+    /**
+     * This program's own remote check, for programs no installer's oracle
+     * covers (a binary that updates itself). Its candidate is read with the
+     * program's [version] regex, and [ProgramOutdated.upgrade] moves this one
+     * program on its own.
+     */
+    val outdated: ProgramOutdated? = null,
     /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
     @Transient val origin: String = "",
+)
+
+/** A program's own `outdated` block: [command] prints the newest version, [upgrade] updates it. */
+@Serializable
+data class ProgramOutdated(
+    /** Prints the newest version available (nothing when up to date); the program's version regex reads it. */
+    val command: String,
+    /** Updates this program alone. Runs once per upgrade; `{item}` is not substituted. */
+    val upgrade: String? = null,
 )
 
 @Serializable
@@ -435,7 +451,7 @@ data class ScriptStep(
     fun runsIn(mode: String): Boolean = mode in modes
 }
 
-/** One `[outdated.<name>]` custom oracle; see [Manifest.outdated]. */
+/** One `outdated.<name>` custom oracle; see [Manifest.outdated]. */
 @Serializable
 data class OutdatedSource(
     /** Command printing `<item> <current> <candidate>` lines. `file:` allowed. */

@@ -18,7 +18,7 @@ data class MachineState(
     val programs: Map<String, ProgramState> = emptyMap(),
     val scripts: Map<String, ScriptState> = emptyMap(),
     /**
-     * Config units (`[layout] configs`), keyed by unit name. Left out of the
+     * Config units (`layout configs`), keyed by unit name. Left out of the
      * file when empty, so a repo without configs writes what it always did.
      */
     @OptIn(ExperimentalSerializationApi::class)

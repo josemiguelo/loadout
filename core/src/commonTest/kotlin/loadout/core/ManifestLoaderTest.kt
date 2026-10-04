@@ -9,66 +9,68 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 val EXAMPLE_MANIFEST = """
-    [meta]
-    name = "example machines"
-    min-tool-version = "0.1.0"
+    meta:
+      name: example machines
+      min-tool-version: 0.1.0
 
-    [installers.brew]
-    probe = "brew"
-    install = "brew install {pkg}"
+    installers:
+      brew:
+        probe: brew
+        install: brew install {pkg}
 
-    [installers.dnf]
-    probe = "dnf"
-    install = "sudo dnf install -y {pkg}"
+      dnf:
+        probe: dnf
+        install: sudo dnf install -y {pkg}
 
-    [installers.apt]
-    probe = "apt-get"
-    install = "sudo apt-get install -y {pkg}"
+      apt:
+        probe: apt-get
+        install: sudo apt-get install -y {pkg}
 
-    [programs.git]
-    description = "version control"
-    via = ["brew", "dnf", "apt"]
+    programs:
+      git:
+        description: version control
+        via: [brew, dnf, apt]
+        version:
+          command: git --version
+          regex: git version ([0-9.]+)
 
-    [programs.git.version]
-    command = "git --version"
-    regex = "git version ([0-9.]+)"
+      ripgrep:
+        description: fast grep
+        tags: [cli]
+        depends-on: [git]
+        via: [brew, dnf]
+        version:
+          command: rg --version
+          regex: ripgrep ([0-9][0-9a-zA-Z.-]*)
 
-    [programs.ripgrep]
-    description = "fast grep"
-    tags = ["cli"]
-    depends-on = ["git"]
-    via = ["brew", "dnf"]
+      rustup:
+        description: rust toolchain manager
+        version:
+          command: rustup --version
+          regex: rustup ([0-9.]+)
+        install:
+          script:
+            command: curl -sSf https://sh.rustup.rs | sh -s -- -y
 
-    [programs.ripgrep.version]
-    command = "rg --version"
-    regex = "ripgrep ([0-9][0-9a-zA-Z.-]*)"
+    scripts:
+      dotfiles:
+        description: clone and link dotfiles
+        file: scripts/dotfiles.sh
+        os: [linux, macos]
+        check: test -d ${'$'}HOME/.dotfiles
+        after: [programs.git]
 
-    [programs.rustup]
-    description = "rust toolchain manager"
-
-    [programs.rustup.version]
-    command = "rustup --version"
-    regex = "rustup ([0-9.]+)"
-
-    [programs.rustup.install.script]
-    command = "curl -sSf https://sh.rustup.rs | sh -s -- -y"
-
-    [scripts.dotfiles]
-    description = "clone and link dotfiles"
-    file = "scripts/dotfiles.sh"
-    os = ["linux", "macos"]
-    check = "test -d ${'$'}HOME/.dotfiles"
-    after = ["programs.git"]
-
-    [machines.laptop.pm]
-    git = "dnf"
-    ripgrep = "dnf"
-    rustup = "script"
-
-    [machines.macbook.pm]
-    git = "brew"
-    ripgrep = "brew"
-    rustup = "script"
+    machines:
+      laptop:
+        pm:
+          git: dnf
+          ripgrep: dnf
+          rustup: script
+      macbook:
+        pm:
+          git: brew
+          ripgrep: brew
+          rustup: script
 """.trimIndent()
 
 class ManifestLoaderTest {
@@ -100,8 +102,9 @@ class ManifestLoaderTest {
     @Test
     fun rejectsUnknownDependency() {
         val text = """
-            [programs.a]
-            depends-on = ["nope"]
+            programs:
+              a:
+                depends-on: [nope]
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("unknown program 'nope'" in e.message.orEmpty())
@@ -112,9 +115,12 @@ class ManifestLoaderTest {
         val unknown = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [programs.kitty.install.dnf-copr]
-                command = "true"
-                depends-on = ["dnf-plugins-core"]
+                programs:
+                  kitty:
+                    install:
+                      dnf-copr:
+                        command: true
+                        depends-on: [dnf-plugins-core]
                 """.trimIndent(),
             )
         }
@@ -124,11 +130,14 @@ class ManifestLoaderTest {
         val cycle = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [programs.a]
-                depends-on = ["b"]
-                [programs.b.install.x]
-                command = "true"
-                depends-on = ["a"]
+                programs:
+                  a:
+                    depends-on: [b]
+                  b:
+                    install:
+                      x:
+                        command: true
+                        depends-on: [a]
                 """.trimIndent(),
             )
         }
@@ -138,11 +147,11 @@ class ManifestLoaderTest {
     @Test
     fun rejectsDependencyCycle() {
         val text = """
-            [programs.a]
-            depends-on = ["b"]
-
-            [programs.b]
-            depends-on = ["a"]
+            programs:
+              a:
+                depends-on: [b]
+              b:
+                depends-on: [a]
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("cycle" in e.message.orEmpty())
@@ -151,9 +160,10 @@ class ManifestLoaderTest {
     @Test
     fun rejectsUnknownAfterReference() {
         val text = """
-            [scripts.s]
-            run = "echo x"
-            after = ["programs.ghost"]
+            scripts:
+              s:
+                run: echo x
+                after: [programs.ghost]
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("unknown step 'programs.ghost'" in e.message.orEmpty())
@@ -163,12 +173,12 @@ class ManifestLoaderTest {
     fun scriptModesParseValidateAndDefaultToBothSurfaces() {
         val manifest = ManifestLoader.parse(
             """
-            [scripts.bootstrap]
-            run = "echo x"
-            modes = ["setup"]
-
-            [scripts.everyday]
-            run = "echo y"
+            scripts:
+              bootstrap:
+                run: echo x
+                modes: [setup]
+              everyday:
+                run: echo y
             """.trimIndent(),
         )
         assertTrue(manifest.scripts.getValue("bootstrap").runsIn("setup"))
@@ -179,9 +189,10 @@ class ManifestLoaderTest {
         val unknown = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [scripts.s]
-                run = "echo x"
-                modes = ["bogus"]
+                scripts:
+                  s:
+                    run: echo x
+                    modes: [bogus]
                 """.trimIndent(),
             )
         }
@@ -190,9 +201,10 @@ class ManifestLoaderTest {
         val empty = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [scripts.s]
-                run = "echo x"
-                modes = []
+                scripts:
+                  s:
+                    run: echo x
+                    modes: []
                 """.trimIndent(),
             )
         }
@@ -202,9 +214,10 @@ class ManifestLoaderTest {
     @Test
     fun rejectsScriptWithBothFileAndRun() {
         val text = """
-            [scripts.s]
-            file = "x.sh"
-            run = "echo x"
+            scripts:
+              s:
+                file: x.sh
+                run: echo x
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("exactly one of 'file'" in e.message.orEmpty())
@@ -213,8 +226,9 @@ class ManifestLoaderTest {
     @Test
     fun rejectsScriptWithNeitherFileNorRun() {
         val text = """
-            [scripts.s]
-            description = "does nothing"
+            scripts:
+              s:
+                description: does nothing
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("exactly one of 'file'" in e.message.orEmpty())
@@ -223,12 +237,16 @@ class ManifestLoaderTest {
     @Test
     fun rejectsMachineMappingToUnknownProgram() {
         val text = """
-            [programs.a]
-            [programs.a.install.dnf]
-            command = "sudo dnf install -y a"
+            programs:
+              a:
+                install:
+                  dnf:
+                    command: sudo dnf install -y a
 
-            [machines.m.pm]
-            ghost = "dnf"
+            machines:
+              m:
+                pm:
+                  ghost: dnf
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("unknown program 'ghost'" in e.message.orEmpty())
@@ -237,12 +255,16 @@ class ManifestLoaderTest {
     @Test
     fun rejectsMachineMappingToMissingInstallKey() {
         val text = """
-            [programs.a]
-            [programs.a.install.dnf]
-            command = "sudo dnf install -y a"
+            programs:
+              a:
+                install:
+                  dnf:
+                    command: sudo dnf install -y a
 
-            [machines.m.pm]
-            a = "brew"
+            machines:
+              m:
+                pm:
+                  a: brew
         """.trimIndent()
         val e = assertFailsWith<ManifestException> { ManifestLoader.parse(text) }
         assertTrue("no 'brew' entry" in e.message.orEmpty())
@@ -252,19 +274,22 @@ class ManifestLoaderTest {
     fun installerResolutionAppliesPkgAndOverrides() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.brew-cask]
-            probe = "brew"
-            install = "brew install --cask {pkg}"
-            check = "brew list --cask --versions {pkg}"
-            regex = "([0-9.]+)"
+            installers:
+              brew-cask:
+                probe: brew
+                install: brew install --cask {pkg}
+                check: brew list --cask --versions {pkg}
+                regex: ([0-9.]+)
 
-            [programs.toolbox.install.brew-linux]
-            installer = "brew-cask"
-            pkg = "toolbox-linux"
-            command = "brew tap x/y && brew install --cask toolbox-linux"
-
-            [programs.toolbox.install.brew-macos]
-            installer = "brew-cask"
+            programs:
+              toolbox:
+                install:
+                  brew-linux:
+                    installer: brew-cask
+                    pkg: toolbox-linux
+                    command: brew tap x/y && brew install --cask toolbox-linux
+                  brew-macos:
+                    installer: brew-cask
             """.trimIndent(),
         )
         val linux = manifest.resolveInstall("toolbox", "brew-linux")
@@ -281,14 +306,18 @@ class ManifestLoaderTest {
     fun variantCheckOverridesInstallerCheckKeepingItsRegex() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.dnf]
-            probe = "dnf"
-            install = "sudo dnf install -y {pkg}"
-            check = "rpm -q {pkg}"
-            regex = "([0-9.]+)"
+            installers:
+              dnf:
+                probe: dnf
+                install: sudo dnf install -y {pkg}
+                check: rpm -q {pkg}
+                regex: ([0-9.]+)
 
-            [programs.zlib-devel.install.dnf]
-            check = "rpm -q --whatprovides zlib-devel"
+            programs:
+              zlib-devel:
+                install:
+                  dnf:
+                    check: rpm -q --whatprovides zlib-devel
             """.trimIndent(),
         )
         val resolved = manifest.resolveInstall("zlib-devel", "dnf")
@@ -300,15 +329,18 @@ class ManifestLoaderTest {
     @Test
     fun rejectsUnknownInstallerReferences() {
         val viaError = assertFailsWith<ManifestException> {
-            ManifestLoader.parse("[programs.a]\nvia = [\"ghost\"]")
+            ManifestLoader.parse("programs:\n  a:\n    via: [ghost]")
         }
         assertTrue("via references unknown installer 'ghost'" in viaError.message.orEmpty())
 
         val refError = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [programs.b.install.dnf]
-                installer = "phantom"
+                programs:
+                  b:
+                    install:
+                      dnf:
+                        installer: phantom
                 """.trimIndent(),
             )
         }
@@ -320,11 +352,15 @@ class ManifestLoaderTest {
         val e = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [installers.checker-only]
-                check = "which {pkg}"
-                regex = "(.+)"
+                installers:
+                  checker-only:
+                    check: which {pkg}
+                    regex: (.+)
 
-                [programs.a.install.checker-only]
+                programs:
+                  a:
+                    install:
+                      checker-only: {}
                 """.trimIndent(),
             )
         }
@@ -336,9 +372,10 @@ class ManifestLoaderTest {
         val e = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [installers.bad]
-                install = "install {pkg}"
-                check = "query {pkg}"
+                installers:
+                  bad:
+                    install: install {pkg}
+                    check: query {pkg}
                 """.trimIndent(),
             )
         }
@@ -347,9 +384,12 @@ class ManifestLoaderTest {
         val e2 = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [programs.a.install.manual]
-                command = "true"
-                check = "query a"
+                programs:
+                  a:
+                    install:
+                      manual:
+                        command: true
+                        check: query a
                 """.trimIndent(),
             )
         }
@@ -360,15 +400,17 @@ class ManifestLoaderTest {
     fun explicitVariantWinsOverViaForTheSameKey() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.dnf]
-            probe = "dnf"
-            install = "sudo dnf install -y {pkg}"
+            installers:
+              dnf:
+                probe: dnf
+                install: sudo dnf install -y {pkg}
 
-            [programs.a]
-            via = ["dnf"]
-
-            [programs.a.install.dnf]
-            command = "sudo dnf install -y a-special"
+            programs:
+              a:
+                via: [dnf]
+                install:
+                  dnf:
+                    command: sudo dnf install -y a-special
             """.trimIndent(),
         )
         // The explicit table refines via's entry — and still resolves through
@@ -393,17 +435,20 @@ class ManifestLoaderTest {
     fun installerParamsSubstituteIntoEveryPattern() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.copr]
-            probe = "dnf"
-            params = ["copr"]
-            install = "sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}"
-            check = "rpm -q {pkg} && echo {copr}"
-            regex = "([0-9.]+)"
+            installers:
+              copr:
+                probe: dnf
+                params: [copr]
+                install: sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}
+                check: rpm -q {pkg} && echo {copr}
+                regex: ([0-9.]+)
 
-            [programs.kitty]
-            [programs.kitty.install.copr]
-            [programs.kitty.install.copr.with]
-            copr = "solopasha/kitty"
+            programs:
+              kitty:
+                install:
+                  copr:
+                    with:
+                      copr: solopasha/kitty
             """.trimIndent(),
         )
         val resolved = manifest.resolveInstall("kitty", "copr")
@@ -414,24 +459,27 @@ class ManifestLoaderTest {
     @Test
     fun aMissingOrUndeclaredParamIsALoadError() {
         val installer = """
-            [installers.copr]
-            params = ["copr"]
-            install = "install {copr} {pkg}"
+            installers:
+              copr:
+                params: [copr]
+                install: install {copr} {pkg}
 
         """.trimIndent()
         val missing = assertFailsWith<ManifestException> {
-            ManifestLoader.parse(installer + "[programs.kitty]\n[programs.kitty.install.copr]\n")
+            ManifestLoader.parse(installer + "programs:\n  kitty:\n    install:\n      copr: {}\n")
         }
         assertTrue("needs a value for 'copr'" in missing.message.orEmpty(), missing.message.orEmpty())
 
         val undeclared = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 installer + """
-                [programs.kitty]
-                [programs.kitty.install.copr]
-                [programs.kitty.install.copr.with]
-                copr = "a/b"
-                repo = "nope"
+                programs:
+                  kitty:
+                    install:
+                      copr:
+                        with:
+                          copr: a/b
+                          repo: nope
                 """.trimIndent(),
             )
         }

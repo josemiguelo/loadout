@@ -18,7 +18,7 @@ written as the rule it produced, not as a story.
 
 `loadout` is a single Kotlin/Native binary (no JVM at runtime) that sets up
 unix-like machines from a shared git "config repo" and tracks installed
-program versions across machines. In TOML, users declare installers
+program versions across machines. In YAML, users declare installers
 (mechanisms: probe/install/check), programs (install variants over those
 installers) and scripts (idempotent setup steps); each machine maps every
 program to one variant; state files record what each machine has; `diff`
@@ -83,15 +83,19 @@ core/  loadout.core
   LoadoutException — supertype of every refusal (contract 9)
   model/       Manifest, MachineState, System (@Serializable schemas; Manifest
                owns resolveInstall/checkFor — variant × installer resolution)
-  manifest/    ManifestLoader — loadRepo() merges loadout.toml + the files its
-               [layout] fragments globs match + <machines>/ and <profiles>/ files +
+  manifest/    ManifestLoader — loadRepo() merges loadout.yaml + the files its
+               layout.fragments globs match + <machines>/ and <profiles>/ files +
                InstallerLibrary under the repo's own installers, validates
-               everything; readLayout() reads [layout] alone (AppContext.layout);
+               everything; readLayout() reads layout alone (AppContext.layout);
                parse() is single-doc, TEST-ONLY
                Glob — the layout's glob matching and file expansion
-               MachineFile — machine/profile files: groups, extends, [data]
-               MachineData — [data] read, merged, validated, compared
-               InstallerLibrary — the built-in installers, as TOML text
+               YamlConfig — YamlProgram (a program file), YamlMachine (machine and
+               profile files: extends, data, program entries), YamlManifest (the
+               root file and *.loadout.yaml fragments, by section)
+               YamlDocument — kaml parse into the JSON tree the readers share;
+               typed() gives data its booleans and numbers
+               MachineData — data read, merged, validated, compared
+               InstallerLibrary — the built-in installers, as YAML text
   state/       StateStore — <state>/<machine>.json via Okio; pretty JSON, stable order
   exec/        ProcessRunner interface + KommandProcessRunner (kommand); ALL
                process use goes through the interface (tests use
@@ -109,7 +113,7 @@ core/  loadout.core
                this machine can upgrade, one step per command, refusals;
                `upgrade` runs and verifies, the home screen plans with it to
                describe steps and refuse early), ScriptRunner, ConfigEngine
-               (chezmoi over `[layout] configs`: units, drift, edited files,
+               (chezmoi over `layout.configs`: units, drift, edited files,
                the apply command; contract 17), StatusEngine (observes
                programs, scripts AND configs; all checks concurrent, read-only)
   diff/        DiffEngine — pure: manifest × states -> DiffReport
@@ -140,40 +144,40 @@ Explicit user decisions; don't "improve" them away.
 
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
    The only source of variant choice is the machine file and the profiles
-   it extends (each group's `install` maps a program to a key of its
-   install table). Inline `[machines.*]` in loadout.toml or fragments is a
-   validation error.
+   it extends (each machine file's `install_with` names a program's key in
+   its install table). A top-level `machines:` section in loadout.yaml or a
+   fragment is a validation error.
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't map is not in its loadout: converge skips it, status
    doesn't observe it, diff shows "-".
-   - **Files** (`MachineFile`, read from the TOML tree): machine files sit
-     directly in the `[layout] machines` directory, profiles directly in
-     `[layout] profiles` (a subfolder is a load error: chezmoi templates
+   - **Files** (`YamlMachine`, read from the YAML tree): machine files sit
+     directly in the `layout.machines` directory, profiles directly in
+     `layout.profiles` (a subfolder is a load error: chezmoi templates
      find a machine by hostname; name = file name). The folder decides the
-     kind; `base = true` is a load error pointing at profiles.
-   - **Shape**: `extends = [...]` (a list), `[data]`, and any other table is
-     a group, a tool or concern (a label for reading, `explain` lists a
-     machine's own): `install = "<key>"` maps the program named like the
-     group, `[<group>.install]` maps several, `scripts = ["name args…"]` opts
-     in, `[<group>.data]` is `[data.<group>]` (setting a key in both is an
-     error). Groups fold into one mapping and one script list; nothing
-     downstream sees them. A program mapped twice or a script opted into
-     twice in one file, or an unknown key, is a load error.
+     kind.
+   - **Shape**: `extends: [...]` (a list of profiles), `data:` (a mapping),
+     and any other top-level key names a program: `install_with: <key>` maps
+     it to one key of its install table, and `scripts: ["name args…"]` opts
+     in. A key with only `scripts` maps no program. Entries fold into one
+     mapping and one script list; nothing downstream sees the keys. A script
+     opted into twice in one file, an unknown field (`install-with`), or a
+     key whose value isn't a mapping is a load error.
    - **Profiles**: `extends` names profiles only (a machine is never
      extended); profiles may extend profiles (cycles are errors). A file's
      profiles are combined first: two of one `extends` list setting a
      program's key, a script's arguments or a data key differently is an
      error (equal values are fine), so their order never changes the
      result. Then the file overrides them (mapping per program, scripts by
-     name, `[data]` table by table, lists replace, as chezmoi merges data).
+     name, `data` table by table, lists replace, as chezmoi merges data).
      Profiles are flattened, validated (errors name the file), then
      dropped: never observed, diffed or converged. No subtraction: a
      profile's entry is a promise every machine extending it keeps.
-   - **`[data]`** is free-form but declared: `loadout.toml [data]` lists
+   - **`data`** is free-form but declared: loadout.yaml's `data:` lists
      every key with its default, and a machine or profile key that isn't
      declared, or is another kind (string/boolean/number/list/table), is a
      load error; every machine ends up with all declared keys
-     (`MachineData`; bare `explain` shows them). `[data]` in a fragment is
+     (`MachineData`; bare `explain` shows them). `true`/`false` and whole
+     numbers are typed; other scalars are text. `data` in a fragment is
      a load error.
 
    `setup-new-machine` throws ResolutionException before
@@ -181,15 +185,15 @@ Explicit user decisions; don't "improve" them away.
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
    `script` fallback.
-3. **Intent and observation never mix.** `loadout.toml`, the fragments and
-   the machine files are authored; the `[layout] state` directory is
+3. **Intent and observation never mix.** `loadout.yaml`, the fragments and
+   the machine files are authored; the `layout.state` directory is
    generated and disposable. Nothing hand-edited goes in state; the tool
    never writes authored files, except `init` scaffolding and `installers
-   --eject` (writes exactly `programs/installers/builtin.toml`, refuses when
+   --eject` (writes exactly `programs/installers/builtin.yaml`, refuses when
    no fragments glob loads it, and refuses to clobber it without `--force`).
 4. **Scripts: exactly one of `file` (path) or `run` (inline).** Variant
-   `command`s, installer patterns, oracles, `[outdated.*]` commands and all
-   check commands may use the `file:` prefix. Every path is relative to the
+   `command`s, installer patterns, oracles, `outdated` commands (program and
+   custom source) and all check commands may use the `file:` prefix. Every path is relative to the
    directory of the file that declared it (its `origin`, stamped at load
    by `withOrigin`; "" = the repo root, also for built-in installers), is
    kept as written, and is validated at load (loadRepo, not parse) to
@@ -205,14 +209,14 @@ Explicit user decisions; don't "improve" them away.
    directory** (installs, scripts, version checks, `check`s, oracles,
    upgrades), whatever the invocation directory, with `LOADOUT_REPO`,
    `LOADOUT_FRAGMENT_DIR` (= that directory), `LOADOUT_MACHINE`,
-   `LOADOUT_OS` (`linux`/`macos`) and, with `[layout] configs`,
+   `LOADOUT_OS` (`linux`/`macos`) and, with `layout.configs`,
    `LOADOUT_CONFIGS`, all absolute (`CommandFrame.of`, via
    `AppContext.frame`). A command takes the origin of the file that WROTE
    it: an installer pattern runs in the installer's directory, a variant's
    own `command`/`check`/`outdated` in the program's (`resolveInstall`).
 6. **Execution order**: all programs before all scripts; programs
    topologically by `depends-on` (declaration order breaks ties:
-   loadout.toml, then fragments in `[layout] fragments` glob order,
+   loadout.yaml, then fragments in `layout.fragments` glob order,
    path-sorted within one glob); scripts by `after` edges.
    Sequential, never parallel (only read-only checks run concurrently).
    `after` orders but never pulls anything in; `depends-on` pulls in
@@ -245,20 +249,20 @@ Explicit user decisions; don't "improve" them away.
    (plus `okio.IOException`, which isn't ours), so a new failure type needs
    no new catch block. A test asserts the hierarchy.
 10. **Product code loads manifests via `ManifestLoader.loadRepo`** (merging
-    + file validation). `parse()` is for tests only: it tolerates inline
-    `[machines.*]` and can't check `file:` paths. Both share
+    + file validation). `parse()` is for tests only: it tolerates an inline
+    `machines:` section and can't check `file:` paths. Both share
     `withBuiltinInstallers`, so install resolution is identical (a test
     asserts it); anything else that must hold for both goes in that helper.
-11. **No templates.** `[templates.<name>]` was removed in 0.9.0; prefer
-    explicit repetition over abstraction. `template = "..."` and
-    `[templates.*]` are unknown keys now, and ktoml ignores unknown keys,
-    so an old manifest silently loses those programs (contract 14 is what
-    makes repos bump their floor). Don't reintroduce it.
-12. **Scripts are opt-in per machine**: a group's `scripts` (in the
-    machine file or a profile it extends) has entries
+11. **No templates.** `templates:` was removed in 0.9.0; prefer
+    explicit repetition over abstraction. `template:` and `templates:` are
+    unknown keys now, and the readers are strict (contract 14), so an old
+    manifest fails to load instead of silently losing programs. Don't
+    reintroduce it.
+12. **Scripts are opt-in per machine**: a machine or profile file's
+    `scripts` list (under a program key, or a key of its own) has entries
     "name" or "name args...", parsed by `scriptEntry` (the one parser; any
     whitespace separates words, newlines included, so a long entry can be a
-    TOML multi-line string; args are re-joined with single spaces because
+    multi-line YAML string; args are re-joined with single spaces because
     they're pasted into a shell command line, where a newline would run the
     next line as a command). Only opted-in scripts converge and are
     observed; `run` errors on others.
@@ -270,53 +274,56 @@ Explicit user decisions; don't "improve" them away.
     converges setup-mode scripts, the home screen's scripts picker lists
     maintain-mode ones; status observes all opted-in scripts and `run`
     ignores modes. Empty or unknown modes are load errors.
-13. **Installers own mechanics; variants refine them.** `[installers.<name>]`
-    (probe / install / check / outdated / regex, `{pkg}` substituted)
+13. **Installers own mechanics; variants refine them.** An `installers`
+    entry (probe / install / check / outdated / regex, `{pkg}` substituted)
     defines a mechanism once, repo-unique, fragment-definable. Core ships a
     library (`core/manifest/InstallerLibrary.kt`: dnf, brew, brew-cask,
-    flatpak, pacman, omarchy, omarchy-aur with oracles; apt install/check only) as TOML text,
+    flatpak, pacman, omarchy, omarchy-aur with oracles; apt install/check only) as YAML text,
     merged UNDER the repo's own in `loadRepo`: a repo definition of the same
     name replaces the built-in outright, and `Manifest.builtinInstallers`
     records which survived so `explain`/`installers` label `(built-in)` vs
     `(repo)`. Knowledge, never detection: nothing probes the machine to pick
     an installer. `installers --eject` writes the library into the repo; a
-    repo relying on built-ins should declare `[meta] min-tool-version`.
-    A program's install entry is a variant table `{installer, pkg, command,
-    check, regex, probe}`, every field optional and defaulting from its
-    installer; `pkg` defaults to the program name. An installer may declare
-    `params = [...]`: values a variant supplies in a nested
-    `[...install.<key>.with]` table, substituted like `{pkg}`. All declared,
-    never inferred: a missing param, an undeclared `with` key, or a `with`
-    on a variant without an installer is a load error, so an unsubstituted
-    `{placeholder}` never reaches a shell. That's what lets one
+    repo relying on built-ins should declare `meta.min-tool-version`.
+    A program's `install` entry is a variant: a mapping with `installer`,
+    `pkg`, `command`, `check`, `regex` and `probe`, every field optional and
+    defaulting from its installer; `pkg` defaults to the program name. An
+    installer may declare `params: [...]`: values a variant supplies in its
+    `with:` mapping (under the same `install` key), substituted like `{pkg}`.
+    All declared, never inferred: a missing param, an undeclared `with` key,
+    or a `with` on a variant without an installer is a load error, so an
+    unsubstituted `{placeholder}` never reaches a shell. That's what lets one
     `dnf-repo`/`dnf-copr` mechanism replace near-identical install scripts
-    (recipe 5). `via = [...]` is shorthand for one all-defaults variant per
+    (recipe 5). `via: [...]` is shorthand for one all-defaults variant per
     named installer.
     Resolution (`Manifest.resolveInstall`/`checkFor`, used by every
     engine/UI): command → installer install pattern (else load error);
-    check → installer check (else program `[version]`); probe → installer
+    check → installer check (else program `version`); probe → installer
     probe (else none); outdated → variant override, else installer
     `outdated-all` (one batch command per installer, per-program regex
     extracts; binaries that don't know it fall back to per-pkg), else
     installer per-pkg pattern, else no oracle (`outdated` skips and says
     so). These oracles' exit codes are always ignored.
-    Repos may also declare `[outdated.<name>]` custom sources (`<item>
-    <current> <candidate> [note…]` lines; a URL in the note becomes the
-    row's link, opened with `K`; `file:` allowed, repo-unique). Unlike
-    installer oracles, a source's exit code is NOT ignored: non-zero
-    surfaces as `outdated source [name] failed: ...`, so a crashing oracle
-    can't hide updates.
+    Repos may also declare custom `outdated` sources by name, in the root
+    file or a fragment (`<item> <current> <candidate> [note…]` lines; a URL
+    in the note becomes the row's link, opened with `K`; `file:` allowed,
+    repo-unique). Unlike installer oracles, a source's exit code is NOT
+    ignored: non-zero surfaces as `outdated source [name] failed: ...`, so a
+    crashing oracle can't hide updates.
     Installers may declare `upgrade`: the ONE command that moves everything
     the mechanism manages, with no `{pkgs}` placeholder (contract 15).
     Never write cross-variant `||` chains in checks.
-    `sudo = true` (installer, variant, script, `[outdated.*]` source) is
+    `sudo: true` (installer, variant, script, `outdated` source) is
     obsolete: parsed so existing manifests load, used nowhere.
 14. **Versioning contract.** The manifest format evolves ADDITIVELY (new
-    optional fields; never repurpose existing ones). The two deliberate
-    breaks: 0.2.0 (string install values became variant tables) and 0.9.0
-    (`[templates.*]` removed). A removal is decided once, loudly, in the
-    release notes, never silently, because ktoml drops unknown keys instead
-    of failing. `[meta] min-tool-version` is enforced at loadRepo: repos
+    optional fields; never repurpose existing ones). The deliberate breaks:
+    0.2.0 (string install values became variant mappings), 0.9.0
+    (`templates` removed), and the switch to a YAML root file, `loadout.yaml`.
+    A removal is decided once, loudly, in the release notes,
+    never silently. The readers are strict: an unknown key is a load error,
+    so a removed key fails the load instead of vanishing, and an older binary
+    meets a newer key as a parse error. `meta.min-tool-version` is enforced
+    at loadRepo right after the root file parses: repos
     needing newer features declare their floor and old binaries refuse with
     an "upgrade loadout" error. State files with `schemaVersion >
     StateStore.SCHEMA_VERSION` are skipped with a warning
@@ -333,8 +340,8 @@ Explicit user decisions; don't "improve" them away.
     deduped by command; the UI groups by the TOOL they drive (their probe),
     so ticking a brew row ticks casks too. `plan` refuses an installer this
     machine doesn't map, so a repo mapping nothing to brew can't sweep it.
-    Custom `[outdated.<name>]` sources upgrade per item: a declared `upgrade
-    = "... {item}"` runs once per row (`upgrade --item <source>/<name>`),
+    Custom `outdated` sources upgrade per item: a declared `upgrade: "... {item}"`
+    runs once per row (`upgrade --item <source>/<name>`),
     since items (a pin, a clone) are independent and one failure shouldn't
     stop the rest; a source without it is read-only (`[–]`). Afterwards
     EVERY mapped program is re-checked, since the transaction can move
@@ -342,18 +349,18 @@ Explicit user decisions; don't "improve" them away.
     `self-upgrade`, which needs no repo, so it survives a version-floor
     refusal.
 16. **The repo's shape is declared, never assumed.** The root file is
-    `loadout.toml` (`--manifest` names another); a repo with only a 0.x
-    `manifest.toml` is refused as one. Its `[layout]` is required, with no
-    defaults: `fragments` (globs), `machines` and `state` (directories),
-    `configs` optional. Only files the globs match load (`Glob`: `*` one
-    segment, `?` one char, `**` any depth; wildcards never match a leading
-    dot, so `.loadout.toml` loads only when a glob spells the dot; `.git` is
-    never entered). A glob matching nothing is fine (a fresh repo); an
-    absolute or `..` path, a wildcard in a directory key, or a glob reaching
-    loadout.toml or a machine file is a load error, as is `[layout]` in a
-    fragment. The min-tool-version check runs before `[layout]` is read.
-17. **Configs are chezmoi's, observed like everything else.** `[layout]
-    configs` names chezmoi's source directory inside the repo; unset, there
+    `loadout.yaml` (`--manifest` names another). Its `layout` is required,
+    with no defaults: `fragments` (globs), `machines` and `state`
+    (directories), `configs` optional. Only files the globs match load
+    (`Glob`: `*` one segment, `?` one char, `**` any depth; wildcards never
+    match a leading dot, so `.loadout.yaml` loads only when a glob spells
+    the dot; `.git` is never entered). A glob matching nothing is fine (a
+    fresh repo); an absolute or `..` path, a wildcard in a directory key, or
+    a glob reaching loadout.yaml or a machine file is a load error, as is a
+    `layout` section in a fragment. The min-tool-version check runs before
+    `layout` is read.
+17. **Configs are chezmoi's, observed like everything else.** `layout.configs`
+    names chezmoi's source directory inside the repo; unset, there
     is no configs concept and chezmoi is never called. Every chezmoi call is
     `chezmoi --source <repo>/<configs> --no-pager …` (`ConfigEngine`), so a
     `--repo` worktree is observed and applied from that worktree, never
@@ -395,7 +402,7 @@ Explicit user decisions; don't "improve" them away.
   binaries (`target.binaries.all`) in app/build.gradle.kts, test binaries
   included. The `kotlin.native.cacheKind` properties don't work.
 - **Kotlin nested block comments**: `/*` inside a KDoc (e.g. a glob like
-  `programs/*.toml`) opens a *nested* comment and eats the file. Word
+  `programs/*.yaml`) opens a *nested* comment and eats the file. Word
   globs differently in comments.
 - **Dispatchers.IO on native** needs `import kotlinx.coroutines.IO`
   (extension); fully-qualified use resolves an internal symbol. Use the
@@ -482,7 +489,7 @@ Explicit user decisions; don't "improve" them away.
   output) ride inside it. Plain rows get the same 2-column gutter, so
   columns line up; box width is measured with ANSI stripped. Boxed: diff's
   drift (amber) / incomplete (red), status' missing programs (red) and
-  pending (amber) / failed (red) scripts, outdated's failed `[outdated.*]`
+  pending (amber) / failed (red) scripts, outdated's failed custom `outdated`
   sources (red, message clamped to the terminal width: a wrapping box is
   worse than a plain line). Not outdated's update rows: every row there is
   an update, so a highlight would contrast with nothing.
@@ -503,7 +510,7 @@ Explicit user decisions; don't "improve" them away.
 - **Home screen** (bare `loadout` on a TTY; a pipe gets help):
   `tui/HomeModel.kt` (all state + logic, unit-tested) + `HomeApp.kt`
   (composables). Subject rows (programs, scripts, configs — only with
-  `[layout] configs` —, remote, fleet), each with its verdict and the ONE
+  `layout.configs` —, remote, fleet), each with its verdict and the ONE
   verb that resolves it; tests find a row by subject, never by position. ↑↓/jk move, l/h (or
   →/←) open/close a detail, pgup/pgdn page, enter ACTS (never opens or
   closes; never fires on a busy row). Machine-wide verbs are their own
@@ -639,14 +646,15 @@ Explicit user decisions; don't "improve" them away.
 - **The picker opens on the LAST OBSERVED verdicts**: `load()` reads
   `state/<machine>.json`; the refresh that follows re-asks and updates the
   rows in place. A script's verdict is always its check.
-- ktoml insurance: the manifest schema sticks to plain nested tables (no
-  inline tables / dotted keys). Fallback parser if ever needed: tomlkt.
-  Free-form tables (`[data]`) can't be decoded into the model; read them
-  from ktoml's tree (`toml.tomlParser.parseString`, TomlTable /
-  TomlKeyValuePrimitive / TomlKeyValueArray), which also normalizes inline
-  tables and dotted keys into tables (`MachineData.read`).
-- `.toml.sample` files in `machines/` and fragment folders never load:
-  machine files and the usual fragments globs only match `.toml`.
+- **Manifests are YAML with pure indentation.** kaml
+  (https://github.com/charleskorn/kaml) parses every file (`YamlDocument`)
+  into the JSON tree the readers share, so the manifests use pure indentation.
+  Scalars stay text as written (a command or regex can't change type);
+  only `data` values are typed (`YamlDocument.typed`). `data` is read from
+  that tree (`MachineData`), since the serializable model can't hold
+  free-form tables.
+- `.yaml.sample` files in `machines/`, `profiles/` and fragment folders never
+  load: machine and profile files and the usual fragment globs only match `.yaml`.
 
 ## Testing conventions
 
@@ -659,8 +667,8 @@ Explicit user decisions; don't "improve" them away.
   every `t/NN-*.sh` in name order, each in its OWN fresh directory: a file
   builds its fixtures (`basic_repo`, `scripts_repo`, `scaffold_repo`, or
   inline) and never depends on another file; the numbers only fix the
-  order. `manual = "..."` custom install keys keep tests off the host's
-  package managers. Add an `ok "..."` test for every user-visible behavior
+  order. A `manual` install key with a failing command keeps tests off the
+  host's package managers. Add an `ok "..."` test for every user-visible behavior
   change, in the file whose subject it is (new subject = new file); run
   that file with a name pattern while iterating. Never share state across
   files through `$WORK`. Configs tests (`t/55-configs.sh`) put a stub
@@ -719,7 +727,7 @@ the test: a Rosetta shell says x86_64 where macos-arm64 is still right).
 README's "Recipe: adding a program" is the user-facing long form. Match
 top-down, first fit wins:
 
-1. Standard package → `via = [...]` listing ONLY installers where the claim
+1. Standard package → `via: [...]` listing ONLY installers where the claim
    is true (via is unverified; a false entry is a mappable lie). The named
    installer usually ships with loadout (`loadout installers`); declare one
    only to add a mechanism or replace a built-in.
@@ -731,35 +739,35 @@ top-down, first fit wins:
    never `&&`-chained into another program's command. On the variant when
    only that mechanism needs it (a COPR's dnf-plugins-core).
 5. Repo-script install that lands in a pm's database → variant keyed by
-   that pm with `command = "file:..."`; check/probe derive; override
+   that pm with `command: "file:..."`; check/probe derive; override
    `regex` for odd version formats. When several programs need the SAME
    shaped script (rpm repo + key + install), make it an installer with
    `params` and one `file:` pattern; the variants carry only their `with`
    values.
 6. Truth not in a package db (dnf groups, virtual provides) → override
    `check` (two-mode script or `--whatprovides`), keep the rest derived.
-7. No pm at all → `script` key + program-level `[version]` fallback.
+7. No pm at all → `script` key + program-level `version` fallback.
 8. Must precede everything (pm config, e.g. dnf.conf) → a program in a
-   fragment the first `[layout] fragments` glob loads first (e.g.
+   fragment the first `layout.fragments` glob loads first (e.g.
    `programs/00-…`): programs precede scripts,
    and dependency-free programs install in declaration order.
-9. Nothing to "have" (dotfiles, services) → `[scripts.*]` + check, opted in
+9. Nothing to "have" (dotfiles, services) → a `scripts` entry + check, opted in
    per machine.
 
 Cross-cutting: no `||` chains or trailing pipes in checks; versions are the
 mapped pm's truth (rpm's version, not the binary's self-report: expected,
 not a bug); `file:` for every repo script (load-time existence check);
 prefer repetition over abstraction (no templates, contract 11). Verify
-loop: `explain` → map in a group of machines/<name>.toml (or a profile) → `setup-new-machine
+loop: `explain` → map in a group of machines/<name>.yaml (or a profile) → `setup-new-machine
 --dry-run` → `status`.
 
 Where the check lives: loadout never trusts "it ran once"; everything
 converges against a re-askable check, declared where the truth lives via
 the resolution chain (variant check → installer check → program
-[version]). Program-install scripts are install-only: pm-keyed ones get the
-pm-database check derived (recipe 5), pm-less ones fall back to [version]
+version). Program-install scripts are install-only: pm-keyed ones get the
+pm-database check derived (recipe 5), pm-less ones fall back to version
 (recipe 7). Only when neither holds the truth (dnf groups, recipe 6, and
-every [scripts.*] step) is there a hand-written check: an inline one-liner
+every `scripts` step) is there a hand-written check: an inline one-liner
 or the script's own two-mode `check` argument. A script file needs a check
 mode only if it IS the truth's only oracle.
 

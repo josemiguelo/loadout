@@ -4,10 +4,10 @@ import okio.FileSystem
 import okio.Path
 
 /**
- * The `[layout] fragments` globs, on `/`-separated paths relative to the
+ * The `layout fragments` globs, on `/`-separated paths relative to the
  * repo root. `*` matches within one segment, `?` one character, `**` any
  * number of segments. Wildcards never match a segment starting with `.`:
- * a dot entry (`.loadout.toml`, `.chezmoitemplates`) matches only when the
+ * a dot entry (`.loadout.yaml`, `.chezmoitemplates`) matches only when the
  * pattern spells the dot. `.git` is never entered.
  */
 object Glob {

@@ -34,14 +34,17 @@ class UpdateCheckerTest {
     fun outdatedResolvesThroughInstallerWithPkgSubstitution() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.dnf]
-            install = "sudo dnf install -y {pkg}"
-            check = "rpm -q {pkg}"
-            outdated = "dnf -q check-update {pkg}"
-            regex = "([0-9.]+)"
-
-            [programs.zlib-devel.install.dnf]
-            pkg = "zlib-ng"
+            installers:
+              dnf:
+                install: sudo dnf install -y {pkg}
+                check: rpm -q {pkg}
+                outdated: dnf -q check-update {pkg}
+                regex: ([0-9.]+)
+            programs:
+              zlib-devel:
+                install:
+                  dnf:
+                    pkg: zlib-ng
             """.trimIndent(),
         )
         val resolved = manifest.resolveInstall("zlib-devel", "dnf")
@@ -51,8 +54,11 @@ class UpdateCheckerTest {
         // No oracle declared -> null.
         val bare = ManifestLoader.parse(
             """
-            [programs.x.install.manual]
-            command = "true"
+            programs:
+              x:
+                install:
+                  manual:
+                    command: true
             """.trimIndent(),
         )
         assertNull(bare.resolveInstall("x", "manual").outdated)
@@ -76,18 +82,22 @@ class UpdateCheckerTest {
     fun outdatedAllResolvesPerInstallerAndVariantOverrideWins() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.dnf]
-            install = "sudo dnf install -y {pkg}"
-            check = "rpm -q {pkg}"
-            outdated = "dnf -q check-update {pkg}"
-            outdated-all = "dnf -q check-update"
-            regex = "([0-9.]+)"
-
-            [programs.kitty.install.dnf]
-            pkg = "kitty-terminal"
-
-            [programs.special.install.dnf]
-            outdated = "custom-oracle"
+            installers:
+              dnf:
+                install: sudo dnf install -y {pkg}
+                check: rpm -q {pkg}
+                outdated: dnf -q check-update {pkg}
+                outdated-all: dnf -q check-update
+                regex: ([0-9.]+)
+            programs:
+              kitty:
+                install:
+                  dnf:
+                    pkg: kitty-terminal
+              special:
+                install:
+                  dnf:
+                    outdated: custom-oracle
             """.trimIndent(),
         )
         // Batch oracle covers the plain variant; per-pkg pattern is not used.
@@ -126,8 +136,9 @@ class UpdateCheckerTest {
 
         val manifest = ManifestLoader.parse(
             """
-            [outdated.asdf-plugins]
-            command = "sh sweep.sh"
+            outdated:
+              asdf-plugins:
+                command: sh sweep.sh
             """.trimIndent(),
         )
         assertEquals("sh sweep.sh", manifest.outdated.getValue("asdf-plugins").command)
@@ -135,7 +146,8 @@ class UpdateCheckerTest {
         val e = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [outdated.broken]
+                outdated:
+                  broken: {}
                 """.trimIndent(),
             )
         }
@@ -171,9 +183,10 @@ class UpdateCheckerTest {
         val e = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [installers.bad]
-                install = "install {pkg}"
-                outdated-all = "query"
+                installers:
+                  bad:
+                    install: install {pkg}
+                    outdated-all: query
                 """.trimIndent(),
             )
         }
@@ -185,9 +198,10 @@ class UpdateCheckerTest {
         val e = assertFailsWith<ManifestException> {
             ManifestLoader.parse(
                 """
-                [installers.bad]
-                install = "install {pkg}"
-                outdated = "query {pkg}"
+                installers:
+                  bad:
+                    install: install {pkg}
+                    outdated: query {pkg}
                 """.trimIndent(),
             )
         }

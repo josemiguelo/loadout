@@ -1,0 +1,70 @@
+# Example loadout config repo root file (loadout.yaml in a real repo).
+# Programs are installed in dependency order; each entry declares how to
+# install it per package manager and how to read its installed version.
+
+meta:
+  name: example machines
+  min-tool-version: 0.1.0
+
+# Where the repo's parts live, relative to this file.
+layout:
+  fragments:
+    - manifest.d/*.loadout.yaml
+  machines: machines
+  state: state
+
+# Every machine explicitly maps each program to one key of that program's
+# install table, in its own machines/<name>.yaml file (see machines/).
+# Installing errors out if a program is unmapped or if a mapped package
+# manager isn't present on the machine. Large manifests can be split into
+# fragments under manifest.d/ (programs: and scripts: sections).
+
+programs:
+  git:
+    description: version control
+    version:
+      command: git --version
+      regex: 'git version ([0-9.]+)'
+    install:
+      brew:
+        command: brew install git
+      dnf:
+        command: sudo dnf install -y git
+      apt:
+        command: sudo apt-get install -y git
+      pacman:
+        command: sudo pacman -S --noconfirm git
+
+  ripgrep:
+    description: fast grep
+    tags: [cli]
+    version:
+      command: rg --version
+      regex: 'ripgrep ([0-9][0-9a-zA-Z.-]*)'
+    install:
+      brew:
+        command: brew install ripgrep
+      dnf:
+        command: sudo dnf install -y ripgrep
+      apt:
+        command: sudo apt-get install -y ripgrep
+      pacman:
+        command: sudo pacman -S --noconfirm ripgrep
+
+  rustup:
+    description: rust toolchain manager
+    version:
+      command: rustup --version
+      regex: 'rustup ([0-9.]+)'
+    # 'script' is the package-manager-independent fallback.
+    install:
+      script:
+        command: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+
+scripts:
+  dotfiles:
+    description: clone and link dotfiles
+    file: scripts/dotfiles.sh    # a repo file (validated to exist); use `run` for inline commands
+    os: [linux, macos]
+    check: 'test -d $HOME/.dotfiles'
+    after: [programs.git]

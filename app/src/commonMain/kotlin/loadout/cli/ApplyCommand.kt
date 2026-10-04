@@ -26,7 +26,7 @@ class ApplyCommand : CliktCommand(name = "apply") {
     private val app by requireObject<AppContext>()
 
     override fun run() {
-        val configs = app.configs ?: throw ConfigException("this repo has no configs ([layout] configs)")
+        val configs = app.configs ?: throw ConfigException("this repo has no configs (layout configs)")
         val manifest = app.loadManifest()
         val system = app.detectSystem()
 

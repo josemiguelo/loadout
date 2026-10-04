@@ -13,7 +13,7 @@ import loadout.core.manifest.Glob
 import loadout.core.manifest.InstallerLibrary
 
 /** Where `installers --eject` writes the built-in library, relative to the repo root. */
-private const val EJECT_TARGET = "programs/installers/builtin.toml"
+private const val EJECT_TARGET = "programs/installers/builtin.yaml"
 
 /**
  * What `via = ["dnf"]` actually means. Installers ship with loadout and are
@@ -25,13 +25,13 @@ class InstallersCommand : CliktCommand(name = "installers") {
     override fun help(context: Context) = commandHelp(
         "Show the install mechanisms available to this repo: loadout's built-ins plus your own.",
         "[name]     print one installer's full definition",
-        "--eject    write the built-ins to programs/installers/builtin.toml so the repo owns them",
+        "--eject    write the built-ins to programs/installers/builtin.yaml so the repo owns them",
         "--force    overwrite that file if it already exists",
     )
 
     private val name by argument(name = "name", help = "Installer to describe").optional()
     private val eject by option("--eject", help = "Copy the built-in installers into the repo").flag()
-    private val force by option("--force", help = "Overwrite an existing builtin.toml").flag()
+    private val force by option("--force", help = "Overwrite an existing builtin.yaml").flag()
 
     private val app by requireObject<AppContext>()
 
@@ -83,14 +83,14 @@ class InstallersCommand : CliktCommand(name = "installers") {
             )
         }
         echo("")
-        echo(Style.dim("  A repo [installers.<name>] replaces the built-in of that name."))
+        echo(Style.dim("  A repo installers.<name> replaces the built-in of that name."))
     }
 
     private fun ejectLibrary() {
         val target = app.repoRoot / EJECT_TARGET
         // A file no fragment glob loads would sit in the repo doing nothing.
         if (app.layout.fragments.none { Glob.matches(it, EJECT_TARGET) }) {
-            echo("error: no [layout] fragments glob loads $EJECT_TARGET; add one (e.g. \"programs/**/*.toml\") first")
+            echo("error: no layout fragments glob loads $EJECT_TARGET; add one (e.g. \"programs/**/*.yaml\") first")
             throw ProgramResult(1)
         }
         if (app.fs.exists(target) && !force) {
@@ -98,7 +98,7 @@ class InstallersCommand : CliktCommand(name = "installers") {
             throw ProgramResult(1)
         }
         target.parent?.let { app.fs.createDirectories(it) }
-        app.fs.write(target) { writeUtf8(InstallerLibrary.TOML) }
+        app.fs.write(target) { writeUtf8(InstallerLibrary.YAML) }
         echo(" " + Style.ok("✔") + "  wrote $target")
         echo(Style.dim("  These now override the built-ins; delete the ones you don't want to own."))
     }

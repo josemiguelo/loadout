@@ -50,21 +50,23 @@ class VersionCheckerTest {
     fun resolvedChecksCarryTheirInstallersProbe() {
         val manifest = ManifestLoader.parse(
             """
-            [installers.pm]
-            probe = "pm"
-            install = "pm install {pkg}"
-            check = "pm query {pkg}"
-            regex = "([0-9.]+)"
+            installers:
+              pm:
+                probe: pm
+                install: pm install {pkg}
+                check: pm query {pkg}
+                regex: ([0-9.]+)
 
-            [programs.bat]
-            via = ["pm"]
-
-            [programs.rg]
-            [programs.rg.version]
-            command = "rg --version"
-            regex = "([0-9.]+)"
-            [programs.rg.install.pm]
-            check = "rg --version"
+            programs:
+              bat:
+                via: [pm]
+              rg:
+                version:
+                  command: rg --version
+                  regex: ([0-9.]+)
+                install:
+                  pm:
+                    check: rg --version
             """.trimIndent(),
         )
         // A check through the mechanism knows the tool it asks through...

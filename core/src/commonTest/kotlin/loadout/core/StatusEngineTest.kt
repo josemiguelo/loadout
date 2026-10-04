@@ -18,34 +18,34 @@ import okio.Path.Companion.toPath
 class StatusEngineTest {
     private val manifest = ManifestLoader.parse(
         """
-        [programs.git]
-        [programs.git.version]
-        command = "git --version"
-        regex = "git version ([0-9.]+)"
-        [programs.git.install.dnf]
-        command = "sudo dnf install -y git"
+        programs:
+          git:
+            version:
+              command: git --version
+              regex: git version ([0-9.]+)
+            install:
+              dnf:
+                command: sudo dnf install -y git
 
-        [scripts.dotfiles]
-        run = "echo setup"
-        check = "test -d ${'$'}HOME/.dotfiles"
+        scripts:
+          dotfiles:
+            run: echo setup
+            check: test -d ${'$'}HOME/.dotfiles
+          mac-only:
+            run: echo mac
+            os: [macos]
+            check: true
+          uncheckable:
+            run: echo once
+          not-opted-in:
+            run: echo never
+            check: true
 
-        [scripts.mac-only]
-        run = "echo mac"
-        os = ["macos"]
-        check = "true"
-
-        [scripts.uncheckable]
-        run = "echo once"
-
-        [scripts.not-opted-in]
-        run = "echo never"
-        check = "true"
-
-        [machines.laptop]
-        scripts = ["dotfiles", "mac-only", "uncheckable"]
-
-        [machines.laptop.pm]
-        git = "dnf"
+        machines:
+          laptop:
+            scripts: [dotfiles, mac-only, uncheckable]
+            pm:
+              git: dnf
         """.trimIndent(),
     )
 

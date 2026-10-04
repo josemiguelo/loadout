@@ -7,23 +7,24 @@ import loadout.core.model.Installer
  * belongs to the repo: a config repo says "1password, via dnf" and loadout
  * knows what dnf means.
  *
- * These are merged UNDER a repo's own `[installers.*]` at load
+ * These are merged UNDER a repo's own `installers.*` at load
  * ([ManifestLoader.loadRepo]) — a repo definition of the same name replaces
  * the built-in outright — and they are never *detected*: nothing here probes the
  * machine or picks an installer for you, mapping still decides everything.
  *
- * Kept as TOML text, not as constructed objects, so `installers --eject`
+ * Kept as YAML text, not as constructed objects, so `installers --eject`
  * hands you the exact thing loadout uses and `installers <name>` can show
  * it verbatim.
  */
 object InstallerLibrary {
-    val TOML: String = """
+    val YAML: String = """
+installers:
 # Installers that ship with loadout: each mechanism's probe, install
 # command, version check and update oracles, defined once. {pkg} is the
 # package id — it defaults to the program name.
 #
-# A repo does not need this file: these are built in, and `via = ["dnf"]`
-# resolves to the definition below. Declaring [installers.<name>] in your
+# A repo does not need this file: these are built in, and `via: [dnf]`
+# resolves to the definition below. Declaring installers.<name> in your
 # own manifest replaces the built-in of that name outright.
 # `loadout installers --eject` writes this file into your repo when you
 # want to pin or patch it.
@@ -39,62 +40,62 @@ object InstallerLibrary {
 # (Manifest.resolveInstall), so spelling one out here would be dead config.
 
 # --- exercised on the maintainer's fleet ---------------------------------
-[installers.dnf]
-probe = "dnf"
-install = "sudo dnf install -y {pkg}"
-upgrade = "sudo dnf upgrade --refresh -y"
-check = "rpm -q {pkg}"
-outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  dnf:
+    probe: 'dnf'
+    install: 'sudo dnf install -y {pkg}'
+    upgrade: 'sudo dnf upgrade --refresh -y'
+    check: 'rpm -q {pkg}'
+    outdated-all: 'dnf -q --cacheonly check-update | awk ''NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, "", name); print name, ${'$'}2}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
-[installers.brew]
-probe = "brew"
-install = "brew install {pkg}"
-upgrade = "brew upgrade"
-check = "brew list --versions {pkg}"
-outdated-all = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=${'$'}NF; gsub(/[()]/, \"\", v); print n, v}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  brew:
+    probe: 'brew'
+    install: 'brew install {pkg}'
+    upgrade: 'brew upgrade'
+    check: 'brew list --versions {pkg}'
+    outdated-all: 'HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | awk ''{n=${'$'}1; sub(/.*[/]/, "", n); v=${'$'}NF; gsub(/[()]/, "", v); print n, v}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
-[installers.brew-cask]
-probe = "brew"
-install = "brew install --cask {pkg}"
-upgrade = "brew upgrade --cask"
-check = "brew list --cask --versions {pkg}"
-outdated-all = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=${'$'}NF; gsub(/[()]/, \"\", v); print n, v}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  brew-cask:
+    probe: 'brew'
+    install: 'brew install --cask {pkg}'
+    upgrade: 'brew upgrade --cask'
+    check: 'brew list --cask --versions {pkg}'
+    outdated-all: 'HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | awk ''{n=${'$'}1; sub(/.*[/]/, "", n); v=${'$'}NF; gsub(/[()]/, "", v); print n, v}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
 # Flatpak apps at user level; pkg is the application id. The batch line says
 # "Version:" so the shared regex (shaped for remote-info) matches it too.
-[installers.flatpak]
-probe = "flatpak"
-install = "flatpak --user install -y flathub {pkg}"
-upgrade = "flatpak --user update -y"
-check = "flatpak --user info {pkg}"
-outdated-all = "flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk '{print $1, \"Version:\", $2}'"
-regex = "Version: ([0-9][0-9.]*)"
+  flatpak:
+    probe: 'flatpak'
+    install: 'flatpak --user install -y flathub {pkg}'
+    upgrade: 'flatpak --user update -y'
+    check: 'flatpak --user info {pkg}'
+    outdated-all: 'flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk ''{print ${'$'}1, "Version:", ${'$'}2}'''
+    regex: 'Version: ([0-9][0-9.]*)'
 
 # A vendor rpm repository: `repofile` is its .repo file — a URL the vendor
 # publishes, or a path in your config repo (commands run with the repo root
 # as cwd). dnf imports the key the file names at install time. dnf5 only
 # (`config-manager addrepo`); on dnf4 declare your own installer.
-[installers.dnf-repo]
-probe = "dnf"
-params = ["repofile"]
-install = "sudo dnf config-manager addrepo --overwrite --from-repofile={repofile} && sudo dnf install -y {pkg}"
-upgrade = "sudo dnf upgrade --refresh -y"
-check = "rpm -q {pkg}"
-outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  dnf-repo:
+    probe: 'dnf'
+    params: ['repofile']
+    install: 'sudo dnf config-manager addrepo --overwrite --from-repofile={repofile} && sudo dnf install -y {pkg}'
+    upgrade: 'sudo dnf upgrade --refresh -y'
+    check: 'rpm -q {pkg}'
+    outdated-all: 'dnf -q --cacheonly check-update | awk ''NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, "", name); print name, ${'$'}2}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
 # A COPR is dnf plus one enable step; `copr` names it (params).
-[installers.dnf-copr]
-probe = "dnf"
-params = ["copr"]
-install = "sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}"
-upgrade = "sudo dnf upgrade --refresh -y"
-check = "rpm -q {pkg}"
-outdated-all = "dnf -q --cacheonly check-update | awk 'NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, \"\", name); print name, ${'$'}2}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  dnf-copr:
+    probe: 'dnf'
+    params: ['copr']
+    install: 'sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}'
+    upgrade: 'sudo dnf upgrade --refresh -y'
+    check: 'rpm -q {pkg}'
+    outdated-all: 'dnf -q --cacheonly check-update | awk ''NF>=3 && ${'$'}2 ~ /^[0-9]/ {name=${'$'}1; sub(/[.][^.]*${'$'}/, "", name); print name, ${'$'}2}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
 # Arch repo packages. The oracle is `checkupdates` (pacman-contrib), not
 # `pacman -Qu`: nothing on Arch refreshes the sync databases between
@@ -102,13 +103,13 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 # checkupdates syncs a private copy without root. Its lines read
 # "<pkg> <installed> -> <candidate>". Without pacman-contrib installed the
 # oracle finds nothing — map pacman-contrib itself so status catches that.
-[installers.pacman]
-probe = "pacman"
-install = "sudo pacman -S --noconfirm {pkg}"
-upgrade = "sudo pacman -Syu --noconfirm"
-check = "pacman -Q {pkg}"
-outdated-all = "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  pacman:
+    probe: 'pacman'
+    install: 'sudo pacman -S --noconfirm {pkg}'
+    upgrade: 'sudo pacman -Syu --noconfirm'
+    check: 'pacman -Q {pkg}'
+    outdated-all: 'checkupdates --nocolor | awk ''${'$'}3 == "->" {print ${'$'}1, ${'$'}4}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
 # Arch packages the Omarchy way: `omarchy pkg add` (pacman -S --needed, then
 # its own pacman -Q verification) instead of a bare pacman install. The
@@ -118,40 +119,40 @@ regex = "([0-9]+\\.[0-9][0-9.]*)"
 # questions still ask, on the terminal). The oracle is pacman's: the
 # databases checkupdates syncs track Omarchy's pinned mirror snapshot,
 # exactly what `omarchy update` brings.
-[installers.omarchy]
-probe = "omarchy"
-install = "omarchy pkg add {pkg}"
-upgrade = "omarchy update -y"
-check = "pacman -Q {pkg}"
-outdated-all = "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  omarchy:
+    probe: 'omarchy'
+    install: 'omarchy pkg add {pkg}'
+    upgrade: 'omarchy update -y'
+    check: 'pacman -Q {pkg}'
+    outdated-all: 'checkupdates --nocolor | awk ''${'$'}3 == "->" {print ${'$'}1, ${'$'}4}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
 # AUR packages the Omarchy way: `omarchy pkg aur add` (yay, then pacman -Q).
 # The AUR is community build recipes, not Omarchy's repo: map a program here
 # only after deciding to trust it. The upgrade is the same `omarchy update
 # -y` (it upgrades AUR packages too), so `loadout upgrade` runs it once for
 # both. The oracle is yay's AUR check, "<pkg> <installed> -> <candidate>".
-[installers.omarchy-aur]
-probe = "omarchy"
-install = "omarchy pkg aur add {pkg}"
-upgrade = "omarchy update -y"
-check = "pacman -Q {pkg}"
-outdated-all = "yay -Qua 2>/dev/null | awk '$3 == \"->\" {print $1, $4}'"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  omarchy-aur:
+    probe: 'omarchy'
+    install: 'omarchy pkg aur add {pkg}'
+    upgrade: 'omarchy update -y'
+    check: 'pacman -Q {pkg}'
+    outdated-all: 'yay -Qua 2>/dev/null | awk ''${'$'}3 == "->" {print ${'$'}1, ${'$'}4}'''
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 
 # --- best effort: install/check only, no update oracle -------------------
 # Not exercised by the maintainer; `loadout outdated` reports "no oracle"
 # for programs mapped here. Override in your repo to add one.
-[installers.apt]
-probe = "apt-get"
-install = "sudo apt-get install -y {pkg}"
-upgrade = "sudo apt-get upgrade -y"
-check = "dpkg-query -W {pkg}"
-regex = "([0-9]+\\.[0-9][0-9.]*)"
+  apt:
+    probe: 'apt-get'
+    install: 'sudo apt-get install -y {pkg}'
+    upgrade: 'sudo apt-get upgrade -y'
+    check: 'dpkg-query -W {pkg}'
+    regex: '([0-9]+\.[0-9][0-9.]*)'
 """.trimIndent() + "\n"
 
     /** Parsed once; the same map every load merges under the repo's own. */
-    val installers: Map<String, Installer> by lazy { ManifestLoader.parseInstallers(TOML) }
+    val installers: Map<String, Installer> by lazy { ManifestLoader.parseInstallers(YAML) }
 
     val names: Set<String> get() = installers.keys
 }

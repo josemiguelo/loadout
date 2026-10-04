@@ -8,10 +8,10 @@ fail() { echo "FAIL - $1"; exit 1; }
 # A fresh working directory for one test file: nothing leaks between files.
 new_work() { mktemp -d -p "$WORK"; }
 
-# Append the [layout] every fixture shares to <dir>/loadout.toml. A table of
-# its own, so it can follow the fixture's tables and precede appended ones.
+# Append the layout every fixture shares to <dir>/loadout.yaml. A top-level
+# key of its own, so it can follow the fixture's sections and precede appended ones.
 add_layout() {
-    printf '\n[layout]\nfragments = ["programs/**/*.toml", "maintenance/**/*.toml"]\nmachines = "machines"\nprofiles = "profiles"\nstate = "state"\n' >> "$1/loadout.toml"
+    printf "\nlayout:\n  fragments: ['programs/**/*.yaml', 'maintenance/**/*.yaml']\n  machines: machines\n  profiles: profiles\n  state: state\n" >> "$1/loadout.yaml"
 }
 
 # `loadout init` scaffold with a git identity so sync/commit tests can run.
@@ -27,23 +27,26 @@ scaffold_repo() {
 # m2 deliberately does NOT.
 basic_repo() {
     scaffold_repo "$1"
-    cat > "$1/loadout.toml" <<'TOML'
-[programs.git]
-[programs.git.version]
-command = "git --version"
-regex = "git version ([0-9.]+)"
-[programs.git.install.dnf]
-command = "sudo dnf install -y git"
-[programs.git.install.manual]
-command = "echo install git yourself && false"
+    cat > "$1/loadout.yaml" <<'YAML'
+programs:
+  git:
+    version:
+      command: 'git --version'
+      regex: 'git version ([0-9.]+)'
+    install:
+      dnf:
+        command: 'sudo dnf install -y git'
+      manual:
+        command: 'echo install git yourself && false'
 
-[scripts.marker]
-file = "scripts/marker.sh"
-check = "test -f marker.txt"
-TOML
+scripts:
+  marker:
+    file: scripts/marker.sh
+    check: 'test -f marker.txt'
+YAML
     add_layout "$1"
-    printf '[setup]\nscripts = ["marker"]\n\n[packages.install]\ngit = "manual"\n' > "$1/machines/m1.toml"
-    printf '[packages.install]\ngit = "manual"\n' > "$1/machines/m2.toml"
+    printf 'setup:\n  scripts: [marker]\n\ngit:\n  install_with: manual\n' > "$1/machines/m1.yaml"
+    printf 'git:\n  install_with: manual\n' > "$1/machines/m2.yaml"
     mkdir -p "$1/scripts"
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
 }
@@ -74,31 +77,32 @@ worktree_repo() {
 # passing, one whose check keeps failing, one setup-only.
 scripts_repo() {
     mkdir -p "$1/state" "$1/machines"
-    cat > "$1/loadout.toml" <<'TOML'
-[installers.fake]
-probe = "sh"
-install = "echo installed-{pkg} > fake-install.txt"
-check = "test -f fake-install.txt && echo mytool 1.0"
-regex = "mytool ([0-9.]+)"
+    cat > "$1/loadout.yaml" <<'YAML'
+installers:
+  fake:
+    probe: sh
+    install: 'echo installed-{pkg} > fake-install.txt'
+    check: 'test -f fake-install.txt && echo mytool 1.0'
+    regex: 'mytool ([0-9.]+)'
 
-[programs.mytool]
-via = ["fake"]
+programs:
+  mytool:
+    via: [fake]
 
-[scripts.healthy]
-run = "true"
-check = "true"
-
-[scripts.drifted]
-run = "true"
-check = "echo missing: nodejs 16 npm firebase-tools; false"
-
-[scripts.bootstrap-only]
-run = "echo bootstrapped > bootstrap-marker.txt"
-check = "test -f bootstrap-marker.txt"
-modes = ["setup"]
-TOML
+scripts:
+  healthy:
+    run: 'true'
+    check: 'true'
+  drifted:
+    run: 'true'
+    check: 'echo missing: nodejs 16 npm firebase-tools; false'
+  bootstrap-only:
+    run: 'echo bootstrapped > bootstrap-marker.txt'
+    check: 'test -f bootstrap-marker.txt'
+    modes: [setup]
+YAML
     add_layout "$1"
-    printf '[setup]\nscripts = ["healthy", "drifted", "bootstrap-only"]\n\n[packages.install]\nmytool = "fake"\n' > "$1/machines/m1.toml"
+    printf 'setup:\n  scripts: [healthy, drifted, bootstrap-only]\n\nmytool:\n  install_with: fake\n' > "$1/machines/m1.yaml"
 }
 
 # A stand-in sudo on PATH that asks like the real one: `-n` succeeds only

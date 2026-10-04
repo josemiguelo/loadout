@@ -23,7 +23,7 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         "Upgrade everything a package manager on this machine manages — the whole mechanism, never single packages (the binary itself is `self-upgrade`).",
         "<installers...>  which mechanisms to upgrade (dnf, brew, flatpak, ...)",
         "--all            every mechanism this machine's mapping uses",
-        "--item <source>/<name>  one item of an [outdated.<source>] (a tmux plugin, a pinned tool); repeatable",
+        "--item <source>/<name>  one item of an outdated.<source> (a tmux plugin, a pinned tool); repeatable",
         "--dry-run        print the commands, run nothing",
         "--yes            skip the confirmation",
     )
@@ -55,15 +55,19 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
 
         bySource.keys.firstOrNull { it !in manifest.outdated }?.let {
-            throw UsageError("Unknown outdated source '$it' (sources are the manifest's [outdated.*] tables)")
+            throw UsageError("Unknown outdated source '$it' (sources are the manifest's outdated.* tables)")
         }
         val engine = UpgradeEngine
-        val targets = if (all) engine.upgradableInstallers(manifest, system.machine).keys else names
-        if (targets.isEmpty() && bySource.isEmpty()) {
+        // A program with its own upgrade command is upgraded alone; every other
+        // name is a mechanism, planned whole.
+        val programs = if (all) emptyList() else names.filter { manifest.programs[it]?.outdated?.upgrade != null }
+        val targets = if (all) engine.upgradableInstallers(manifest, system.machine).keys else names - programs.toSet()
+        if (targets.isEmpty() && programs.isEmpty() && bySource.isEmpty()) {
             echo(Style.dim("No mechanism on ${system.machine} declares an upgrade command."))
             return
         }
         val plan = engine.plan(manifest, system.machine, targets) +
+            engine.planPrograms(manifest, system.machine, programs) +
             bySource.flatMap { (source, names) -> engine.planSourceItems(manifest, source, names) }
 
         echo("")
@@ -77,7 +81,9 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         echo("")
         // A whole-mechanism upgrade touches everything that mechanism has,
         // not only what this repo declares. Say so before it runs.
-        echo(Style.dim("  This upgrades everything each mechanism manages — including packages loadout doesn't declare."))
+        if (plan.any { it.sweep }) {
+            echo(Style.dim("  This upgrades everything each mechanism manages — including packages loadout doesn't declare."))
+        }
         if (dryRun) return
         confirmOrAbort(yes)
 

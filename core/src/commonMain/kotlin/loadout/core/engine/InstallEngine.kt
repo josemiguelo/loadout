@@ -50,7 +50,7 @@ class InstallEngine(
      * simply not part of this machine's loadout — converge skips it.
      *
      * Strict resolution — throws [ResolutionException] (before anything runs) when:
-     * - the manifest has no `<machines>/<machine>.toml` config,
+     * - the manifest has no `<machines>/<machine>.yaml` config,
      * - an explicitly [requested] program has no mapping for this machine,
      * - a mapped program's dependency has no mapping for this machine,
      * - a program that needs installing resolves to a probe binary (the
@@ -64,7 +64,7 @@ class InstallEngine(
         currentStates: Map<String, ProgramState>,
         binaryAvailable: (String) -> Boolean,
     ): List<PlanItem> {
-        val machineFile = "${manifest.layout?.machines ?: "machines"}/$machine.toml"
+        val machineFile = "${manifest.layout?.machines ?: "machines"}/$machine.yaml"
         val mapping = manifest.machines[machine]?.pm
             ?: throw ResolutionException(
                 "machine '$machine' has no config file ($machineFile) in the repo",

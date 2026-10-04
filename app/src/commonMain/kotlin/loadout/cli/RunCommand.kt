@@ -46,7 +46,7 @@ class RunCommand : CliktCommand(name = "run") {
             if (disabled.isNotEmpty()) {
                 for (name in disabled) {
                     echo("error: script '$name' is not enabled for machine '${system.machine}' " +
-                        "(add it to a group's scripts in ${app.layout.machines}/${system.machine}.toml)")
+                        "(add it to a program's scripts in ${app.layout.machines}/${system.machine}.yaml)")
                 }
                 throw ProgramResult(1)
             }

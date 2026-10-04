@@ -35,7 +35,7 @@ printf '.config/zsh/.zshrc\n.config/zsh/conf.d/a.zsh\n.config/tmux/tmux.conf\n.z
 printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
 
 basic_repo repo
-printf 'configs = "configs"\n' >> repo/loadout.toml
+printf '  configs: configs\n' >> repo/loadout.yaml
 mkdir -p repo/configs
 
 # --- status ---------------------------------------------------------------
@@ -46,12 +46,12 @@ echo "$OUT" | grep -q "\.config/zsh/\.zshrc" || fail "the drifted file is named:
 echo "$OUT" | grep -qE "tmux +applied" || fail "a unit with nothing to apply is applied: $OUT"
 echo "$OUT" | grep -qE "\.zshenv +applied" || fail "a home-level file is its own unit: $OUT"
 grep -q '"drifted"' repo/state/m1.json || fail "configs are written to the state file"
-grep -q -- "--source $(cd repo && pwd)/configs" "$CZ/log" || fail "chezmoi reads [layout] configs as its source"
+grep -q -- "--source $(cd repo && pwd)/configs" "$CZ/log" || fail "chezmoi reads the layout's configs as its source"
 ok "status observes each config unit through chezmoi and writes it to state"
 
 basic_repo plain
-"$BIN" --repo plain --machine m1 status | grep -q "CONFIG" && fail "no configs section without [layout] configs" || true
-grep -q '"configs"' plain/state/m1.json && fail "no configs key without [layout] configs" || true
+"$BIN" --repo plain --machine m1 status | grep -q "CONFIG" && fail "no configs section without the layout's configs" || true
+grep -q '"configs"' plain/state/m1.json && fail "no configs key without the layout's configs" || true
 ok "a repo without configs never asks chezmoi and writes no configs"
 
 OUT=$(cz_loadout --repo repo --machine m1 explain zsh) || fail "explain a config exits 0"

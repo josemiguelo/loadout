@@ -5,9 +5,9 @@ serialization = "1.9.0"
 datetime = "0.7.1"
 okio = "3.16.0"
 clikt = "5.1.0"
-ktoml = "0.7.1"
 kommand = "2.2.1"
 mosaic = "0.18.0"
+kaml = "0.104.0"
 
 [libraries]
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -17,7 +17,7 @@ datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "d
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", version.ref = "okio" }
 clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
-ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }
+kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 kommand = { module = "com.kgit2:kommand", version.ref = "kommand" }
 mosaic-runtime = { module = "com.jakewharton.mosaic:mosaic-runtime", version.ref = "mosaic" }
 mosaic-terminal = { module = "com.jakewharton.mosaic:mosaic-terminal", version.ref = "mosaic" }

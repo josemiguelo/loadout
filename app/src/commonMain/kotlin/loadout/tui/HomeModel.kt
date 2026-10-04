@@ -150,6 +150,11 @@ sealed interface RemoteStatus {
          * "can be upgraded" can never drift apart.
          */
         val sources: Map<String, Boolean> = emptyMap(),
+        /**
+         * Programs this machine maps that declare their own `upgrade`: each is
+         * upgraded alone (`loadout upgrade <name>`), whatever installer its variant names.
+         */
+        val programUpgrades: Set<String> = emptySet(),
     ) : RemoteStatus {
         /** Sources that can move an item; their rows tick one at a time. */
         val upgradableSources: Set<String> get() = sources.filterValues { it }.keys
@@ -229,7 +234,7 @@ data class HomeState(
     val scripts: List<ScriptRow> = emptyList(),
     /** Scripts ticked to run. Follows the verdicts: not done = ticked, after every re-check. */
     val picked: Set<String> = emptySet(),
-    /** This machine's config units with their last verdicts; empty without `[layout] configs`. */
+    /** This machine's config units with their last verdicts; empty without `layout configs`. */
     val configs: List<ConfigItem> = emptyList(),
     /** Configs ticked to apply. Follows the verdicts: drifted = ticked, after every re-check. */
     val applying: Set<String> = emptySet(),
@@ -299,7 +304,7 @@ class HomeModel(private val app: AppContext) {
     private var stored: MachineState? = null
     /** The body's height at the last key; [resume] scrolls with it. */
     private var lastViewport = 8
-    /** The repo has `[layout] configs`: the configs row is on screen. */
+    /** The repo has `layout configs`: the configs row is on screen. */
     private val withConfigs: Boolean get() = runCatching { app.configs != null }.getOrDefault(false)
 
     /** Stored verdicts, on screen immediately. Call before runMosaic; may throw. */
@@ -524,6 +529,7 @@ class HomeModel(private val app: AppContext) {
                         toolOf = used.keys.associateWith { m.installers[it]?.probe ?: it },
                         mechanismsOfTool = used.keys.groupBy { m.installers[it]?.probe ?: it },
                         sources = m.outdated.mapValues { (_, s) -> s.upgrade != null },
+                        programUpgrades = mapping.keys.filter { m.programs[it]?.outdated?.upgrade != null }.toSet(),
                     )
                 },
                 onFailure = { e ->
@@ -832,6 +838,7 @@ class HomeModel(private val app: AppContext) {
 
         // Tools sweep; source items go one at a time, in the order shown.
         val tools = selection.filter { it.startsWith("tool:") }.map { it.removePrefix("tool:") }
+        val programs = selection.filter { it.startsWith("prog:") }.map { it.removePrefix("prog:") }.sorted()
         val items = selection.filter { it.startsWith("item:") }
             .map { it.removePrefix("item:") }
             .groupBy({ it.substringBefore('/') }, { it.substringAfter('/') })
@@ -839,13 +846,14 @@ class HomeModel(private val app: AppContext) {
         val sorted = items.mapValues { (_, rows) -> rows.sorted() }
         val plan = runCatching {
             engine.plan(m, sys.machine, installers) +
+                engine.planPrograms(m, sys.machine, programs) +
                 sorted.flatMap { (source, rows) -> engine.planSourceItems(m, source, rows) }
         }.getOrElse { e ->
             say(e.message?.lineSequence()?.firstOrNull())
             return
         }
         if (plan.isEmpty()) return
-        val args = installers + sorted.flatMap { (source, rows) -> rows.flatMap { listOf("--item", "$source/$it") } }
+        val args = installers + programs + sorted.flatMap { (source, rows) -> rows.flatMap { listOf("--item", "$source/$it") } }
         ask(Handoff(PaneKind.UPGRADE, args), plan.map { upgradeItem(it, answered) })
     }
 
@@ -1144,6 +1152,11 @@ internal fun paneLines(run: PaneRun, width: Int? = null): List<String> {
  * loadout"); a source item gives its version change.
  */
 internal fun upgradeItem(step: UpgradeStep, answered: RemoteStatus.Answered): Pair<String, String> {
+    if (step.program) {
+        val name = step.covers.single()
+        val row = answered.updates.firstOrNull { it.name == name && it.source !in answered.sources }
+        return name to (row?.let { "$name ${it.current} → ${it.candidate}" } ?: name)
+    }
     if (!step.sweep) {
         val source = step.installers.single()
         val item = step.covers.single()
@@ -1352,6 +1365,8 @@ internal fun remoteLines(answered: RemoteStatus.Answered, collapsed: Set<String>
  */
 internal fun selectionKey(answered: RemoteStatus.Answered, row: UpdateRow): String? {
     if (row.source == "release") return null
+    // A program with its own upgrade moves alone, never through its installer's sweep.
+    if (row.name in answered.programUpgrades && row.source !in answered.sources) return "prog:${row.name}"
     // A source's row ticks itself or nothing at all. It never falls through
     // to a tool: sharing a name with a mapped program would otherwise tick
     // that program's sweep, which cannot move what the source tracks.
@@ -1537,7 +1552,7 @@ private fun groupLabel(row: UpdateRow) = if (row.source == "release") "loadout" 
 
 /**
  * Pure: the subject lines for a machine's observed state — programs,
- * scripts, configs ([withConfigs]: the repo has `[layout] configs`),
+ * scripts, configs ([withConfigs]: the repo has `layout configs`),
  * remote, fleet.
  */
 internal fun sectionsOf(
