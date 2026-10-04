@@ -53,11 +53,12 @@ class OutdatedCommand : CliktCommand(name = "outdated") {
         if (updates.isEmpty() && report.errors.isEmpty()) {
             echo(" " + Style.ok("✔") + "  everything is up to date")
         } else if (updates.isNotEmpty()) {
-            val nameWidth = updates.maxOf { it.name.length } + 2
-            val currentWidth = updates.maxOf { it.current.length } + 2
-            val candidateWidth = updates.maxOf { it.candidate.length } + 2
+            // A column is as wide as its heading or its longest value, so the heading never runs into the next one.
+            val nameWidth = maxOf(updates.maxOf { it.name.length }, "PROGRAM".length) + 2
+            val currentWidth = maxOf(updates.maxOf { it.current.length }, "CURRENT".length) + 2
+            val candidateWidth = maxOf(updates.maxOf { it.candidate.length }, "CANDIDATE".length) + 2
             echo(Style.header(" " + "PROGRAM".padEnd(nameWidth + 3) + "CURRENT".padEnd(currentWidth + 3) + "CANDIDATE".padEnd(candidateWidth) + "SOURCE"))
-            val sourceWidth = updates.maxOf { it.source.length } + 2
+            val sourceWidth = maxOf(updates.maxOf { it.source.length }, "SOURCE".length) + 2
             for (row in updates) {
                 val (name, current, candidate, source, note) = row
                 val annotation = (if (note.isEmpty()) "" else Style.dim("  $note")) +
