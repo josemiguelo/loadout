@@ -38,12 +38,13 @@ class ExplainCommand : CliktCommand(name = "explain") {
             if (machine == null) echo("  " + Style.warn("! no machine file — showing loadout.yaml's data defaults"))
             val rows = mutableListOf<Pair<String, String>>()
             if (machine != null && machine.extends.isNotEmpty()) rows += "extends" to machine.extends.joinToString()
-            for ((group, contents) in machine?.groups.orEmpty()) {
+            // One row per program the machine names: its install_with and the scripts it opts into.
+            for ((program, contents) in machine?.groups.orEmpty()) {
                 val parts = listOfNotNull(
-                    contents.install.entries.joinToString { (program, key) -> "$program = $key" }.ifEmpty { null },
+                    contents.install.values.joinToString { "install_with $it" }.ifEmpty { null },
                     contents.scripts.joinToString { scriptEntry(it).first }.ifEmpty { null }?.let { "scripts $it" },
                 )
-                rows += "[$group]" to parts.joinToString(" · ").ifEmpty { "data only" }
+                rows += program to parts.joinToString(" · ").ifEmpty { "nothing" }
             }
             rows += MachineData.lines(machine?.data ?: manifest.data).map { (key, value) -> "data.$key" to value }
             if (rows.none { it.first.startsWith("data.") }) echo("  " + Style.dim("no data declared in loadout.yaml"))

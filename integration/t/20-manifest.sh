@@ -163,7 +163,7 @@ YAML
 OUT=$("$BIN" --repo repo --machine m9 explain) || fail "explain shows a machine with data"
 echo "$OUT" | grep -qE "data.kitty.opacity +0.99" || fail "the machine's own value wins: $OUT"
 echo "$OUT" | grep -qE "data.omarchy +true" || fail "the profile's value comes through: $OUT"
-echo "$OUT" | grep -qE "\[git\] +git = manual" || fail "explain shows the machine's own groups: $OUT"
+echo "$OUT" | grep -qE "^ *git +install_with manual" || fail "explain shows each program the machine names: $OUT"
 OUT=$("$BIN" --repo repo --machine m2 explain)
 echo "$OUT" | grep -qE "data.omarchy +false" || fail "a machine without data gets the defaults: $OUT"
 cat > repo/machines/m9.yaml <<'YAML'

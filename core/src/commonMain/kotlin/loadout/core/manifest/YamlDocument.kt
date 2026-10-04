@@ -57,7 +57,8 @@ object YamlDocument {
         is YamlMap -> JsonObject(entries.entries.associate { (key, value) -> key.content to value.toJson() })
         is YamlList -> JsonArray(items.map { it.toJson() })
         is YamlScalar -> JsonPrimitive(content)
-        is YamlNull -> JsonNull
+        // A key with nothing under it is an empty table: `copr:` alone means `copr: {}`.
+        is YamlNull -> JsonObject(emptyMap())
         is YamlTaggedNode -> innerNode.toJson()
         else -> throw ManifestException("unsupported YAML construct at ${path.toHumanReadableString()}")
     }

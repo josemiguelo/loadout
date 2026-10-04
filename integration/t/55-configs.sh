@@ -46,7 +46,7 @@ echo "$OUT" | grep -q "\.config/zsh/\.zshrc" || fail "the drifted file is named:
 echo "$OUT" | grep -qE "tmux +applied" || fail "a unit with nothing to apply is applied: $OUT"
 echo "$OUT" | grep -qE "\.zshenv +applied" || fail "a home-level file is its own unit: $OUT"
 grep -q '"drifted"' repo/state/m1.json || fail "configs are written to the state file"
-grep -q -- "--source $(cd repo && pwd)/configs" "$CZ/log" || fail "chezmoi reads the layout's configs as its source"
+grep -q -- "--source $(cd repo && pwd -P)/configs" "$CZ/log" || fail "chezmoi reads the layout's configs as its source"
 ok "status observes each config unit through chezmoi and writes it to state"
 
 basic_repo plain

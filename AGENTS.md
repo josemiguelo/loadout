@@ -318,7 +318,8 @@ Explicit user decisions; don't "improve" them away.
 14. **Versioning contract.** The manifest format evolves ADDITIVELY (new
     optional fields; never repurpose existing ones). The deliberate breaks:
     0.2.0 (string install values became variant mappings), 0.9.0
-    (`templates` removed), and the switch to a YAML root file, `loadout.yaml`.
+    (`templates` removed), and 2.0.0 (the manifests moved from TOML to YAML:
+    `loadout.yaml`, one YAML file per program, `install_with` in machines).
     A removal is decided once, loudly, in the release notes,
     never silently. The readers are strict: an unknown key is a load error,
     so a removed key fails the load instead of vanishing, and an older binary

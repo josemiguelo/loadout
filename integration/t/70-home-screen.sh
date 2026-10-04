@@ -90,8 +90,11 @@ YAML
     seen tui-view.log "v views the full output" || fail "the pause offers the full output"
     [ "$(plain_screen tui-view.log | grep -c 'FIRST-OUTPUT-LINE')" -ge 2 ] \
         || fail "v shows the output from its first line, past what scrolled off"
-    # Once: the test harness's own capture is a script(1) log with its header.
-    [ "$(plain_screen tui-view.log | grep -c 'Script started on')" -eq 1 ] \
+    # The test harness's own capture is a script(1) log. util-linux writes a
+    # "Script started on" header into it, once; BSD script (macOS) writes none.
+    # Either way the viewer must not show it.
+    if [ "$(uname)" = "Darwin" ]; then header_lines=0; else header_lines=1; fi
+    [ "$(plain_screen tui-view.log | grep -c 'Script started on')" -eq "$header_lines" ] \
         || fail "the viewer strips the transcript's script(1) header"
     [ -z "$(ls rt)" ] || fail "the transcript is deleted once the user moves on"
     ok "v pages through a command's whole output; one key acts, and the transcript goes"

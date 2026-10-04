@@ -239,4 +239,29 @@ class YamlManifestTest {
         }
         assertTrue("unknown section 'machines'" in error.message.orEmpty(), error.message)
     }
+
+    @Test
+    fun aKeyWithNothingUnderItIsAnEmptyTable() {
+        val manifest = load(
+            mapOf(
+                "loadout.yaml" to layout,
+                "programs/core/zlib-devel.yaml" to "via: [dnf]\ninstall:\n  dnf:\n",
+            ),
+        )
+        assertEquals("dnf", manifest.programs.getValue("zlib-devel").install.keys.single())
+    }
+
+    @Test
+    fun aMachineEntryWithNothingUnderItIsAnError() {
+        val error = assertFailsWith<ManifestException> {
+            load(
+                mapOf(
+                    "loadout.yaml" to layout,
+                    "programs/core/curl.yaml" to "via: [dnf]\n",
+                    "machines/host.yaml" to "curl:\n",
+                ),
+            )
+        }
+        assertTrue("curl has nothing under it" in error.message.orEmpty(), error.message)
+    }
 }

@@ -85,6 +85,9 @@ object YamlMachine {
                                 null
                             }
                     }
+                    if (variant == null && entry.isEmpty()) {
+                        errors += "$label: $key has nothing under it (give install_with, or scripts)"
+                    }
                     val entryScripts = entry["scripts"]?.let { strings(it, "$label: $key scripts", errors) }.orEmpty()
                     if (variant != null) {
                         pm[key] = variant
