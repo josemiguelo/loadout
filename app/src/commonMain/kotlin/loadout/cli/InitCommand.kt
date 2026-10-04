@@ -18,7 +18,7 @@ private val STARTER_MANIFEST = """
       name: my machines
       # Bump this when the repo starts using features of a newer loadout —
       # machines running older binaries then refuse with an "upgrade" error:
-      # min-tool-version: 1.1.0
+      # min-tool-version: 2.0.0
 
     # Where the repo's parts live, relative to this file. Only the files the
     # fragment globs match are loaded, in this order (* = within a folder,
