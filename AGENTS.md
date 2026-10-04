@@ -164,12 +164,19 @@ Explicit user decisions; don't "improve" them away.
      find a machine by hostname; name = file name). The folder decides the
      kind.
    - **Shape**: `extends: [...]` (a list of profiles), `data:` (a mapping),
-     and any other top-level key names a program: `install_with: <key>` maps
-     it to one key of its install table, and `scripts: ["name args…"]` opts
-     in. A key with only `scripts` maps no program. Entries fold into one
-     mapping and one script list; nothing downstream sees the keys. A script
-     opted into twice in one file, an unknown field (`install-with`), or a
-     key whose value isn't a mapping is a load error.
+     `install_with:` (a variant -> programs mapping, `dnf: [curl, gcc]`,
+     each listed program mapped to that key of its install table), and any
+     other top-level key names a program: `install_with: <key>` maps it the
+     same way, and `scripts: ["name args…"]` opts in. A key with only
+     `scripts` maps no program; that's how a listed program keeps its
+     scripts. Entries fold into one mapping and one script list; nothing
+     downstream sees the keys or which form mapped a program. A program
+     listed twice, or listed and given its own `install_with` (even an equal
+     one: one file, one place per program), a script opted into twice in one
+     file, an unknown field (`install-with`), or a key whose value isn't a
+     mapping is a load error. The top-level `install_with` is grouping, not
+     a template (contract 11): it names no variant contents, only which
+     programs use one.
    - **Profiles**: `extends` names profiles only (a machine is never
      extended); profiles may extend profiles (cycles are errors). A file's
      profiles are combined first: two of one `extends` list setting a

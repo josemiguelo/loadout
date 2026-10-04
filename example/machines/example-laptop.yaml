@@ -1,8 +1,6 @@
 # Per-machine config for "example-laptop" (the filename is the machine name).
-# Maps every program to one key of its install table, with install_with.
-git:
-  install_with: dnf
-ripgrep:
-  install_with: dnf
-rustup:
-  install_with: script
+# Maps every program to one key of its install table: install_with lists the
+# programs under each key.
+install_with:
+  dnf: [git, ripgrep]
+  script: [rustup]

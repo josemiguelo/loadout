@@ -45,9 +45,12 @@ object YamlProgram {
 
 /**
  * A machine or profile file in YAML. Top-level `extends` is a list of
- * profiles, `data` is the machine-wide data table, and every other key is a
- * program (or a script-only group) with `install_with` (the variant it uses)
- * and `scripts` (the scripts opted into).
+ * profiles, `data` is the machine-wide data table, `install_with` maps a
+ * variant to the programs that use it (`dnf: [curl, gcc]`), and every other
+ * key is a program (or a script-only group) with `install_with` (the variant
+ * it uses) and `scripts` (the scripts opted into). A program listed under
+ * the top-level `install_with` may keep an entry of its own for its
+ * `scripts`, never for a second `install_with`.
  */
 object YamlMachine {
     private val entryFields = setOf("install_with", "scripts")
@@ -60,10 +63,27 @@ object YamlMachine {
         val pm = linkedMapOf<String, String>()
         val scripts = mutableListOf<String>()
         val scriptGroup = mutableMapOf<String, String>()
+        val listed = linkedMapOf<String, String>()
 
         for ((key, value) in root) {
             when (key) {
                 "extends" -> extends = strings(value, "$label: extends", errors)
+                "install_with" -> {
+                    val table = value as? JsonObject
+                    if (table == null) {
+                        errors += "$label: install_with must be a mapping of variants to programs (dnf: [curl, gcc])"
+                        continue
+                    }
+                    for ((variant, programs) in table) {
+                        for (program in strings(programs, "$label: install_with.$variant", errors)) {
+                            val previous = listed.put(program, variant)
+                            if (previous != null) {
+                                errors += "$label: $program is listed twice under install_with ($previous and $variant)"
+                                listed[program] = previous
+                            }
+                        }
+                    }
+                }
                 "data" -> {
                     val table = value as? JsonObject
                     if (table == null) errors += "$label: data must be a mapping of keys to values"
@@ -107,6 +127,18 @@ object YamlMachine {
                     }
                 }
             }
+        }
+        for ((program, variant) in listed) {
+            val own = pm[program]
+            if (own != null) {
+                errors += "$label: $program is listed under install_with.$variant and has its own install_with: $own"
+                continue
+            }
+            pm[program] = variant
+            groups[program] = MachineGroup(
+                install = mapOf(program to variant),
+                scripts = groups[program]?.scripts.orEmpty(),
+            )
         }
         return MachineConfig(
             extends = extends,

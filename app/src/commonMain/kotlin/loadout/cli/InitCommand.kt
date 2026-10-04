@@ -18,7 +18,7 @@ private val STARTER_MANIFEST = """
       name: my machines
       # Bump this when the repo starts using features of a newer loadout —
       # machines running older binaries then refuse with an "upgrade" error:
-      # min-tool-version: 2.0.0
+      # min-tool-version: 2.1.0
 
     # Where the repo's parts live, relative to this file. Only the files the
     # fragment globs match are loaded, in this order (* = within a folder,
@@ -69,11 +69,15 @@ private val STARTER_MACHINE = """
     # this file says overrides them.
     #extends: [linux]
 
-    # Each program this machine installs, with the install_with variant it
-    # uses; `scripts` opts into setup scripts ("name" or "name args...", args
-    # become positional params for file scripts and their checks).
-    #ripgrep:
-    #  install_with: dnf
+    # The programs this machine installs, listed under the install_with
+    # variant each uses.
+    #install_with:
+    #  dnf: [ripgrep, fd-find]
+
+    # A program (or a key of its own) with `scripts` opts into setup scripts
+    # ("name" or "name args...", args become positional params for file
+    # scripts and their checks). A program can name its variant here instead
+    # (`install_with: dnf`), never in both places.
     #dotfiles:
     #  scripts:
     #    - dotfiles
@@ -86,8 +90,8 @@ private val STARTER_MACHINE = """
 private val STARTER_PROFILE = """
     # A profile: what every machine extending it shares (extends: [<name>]).
     # Same entries as a machine file; never a machine itself.
-    #ripgrep:
-    #  install_with: dnf
+    #install_with:
+    #  dnf: [ripgrep]
 """.trimIndent() + "\n"
 
 private val STARTER_FRAGMENT = """

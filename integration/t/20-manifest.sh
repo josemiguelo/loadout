@@ -139,6 +139,39 @@ echo "$OUT" | grep -q "machines/hosts/m9.yaml: machine files live directly in ma
 rm -rf repo/profiles/testbase.yaml repo/machines/hosts
 ok "machines extend profiles from profiles/ and sit directly in machines/"
 
+# --- install_with: programs listed per variant ----------------------------
+cat > repo/profiles/testbase.yaml <<'YAML'
+install_with:
+  manual: [git]
+git:
+  scripts: [marker]
+YAML
+cat > repo/machines/m9.yaml <<'YAML'
+extends: [testbase]
+YAML
+OUT=$("$BIN" --repo repo --machine m9 setup-new-machine --dry-run) || fail "a listed program plans"
+echo "$OUT" | grep -q "git" || fail "the listed program is mapped: $OUT"
+echo "$OUT" | grep -qE "~ marker +script" || fail "its own entry still opts into scripts: $OUT"
+cat > repo/machines/m9.yaml <<'YAML'
+install_with:
+  manual: [git]
+git:
+  scripts: [marker]
+YAML
+OUT=$("$BIN" --repo repo --machine m9 explain)
+echo "$OUT" | grep -qE "^ *git +install_with manual · scripts marker" || fail "explain shows a listed program as one row: $OUT"
+cat > repo/machines/m9.yaml <<'YAML'
+install_with:
+  manual: [git]
+git:
+  install_with: manual
+YAML
+OUT=$("$BIN" --repo repo --machine m9 status --no-write 2>&1) && fail "a program mapped twice must be refused"
+echo "$OUT" | grep -q "machines/m9.yaml: git is listed under install_with.manual and has its own install_with: manual" ||
+    fail "the double mapping is named: $OUT"
+rm -f repo/profiles/testbase.yaml repo/machines/m9.yaml
+ok "install_with lists programs per variant; a program's own entry adds scripts, never a second mapping"
+
 # --- data: declared in loadout.yaml, overridden per profile and machine -
 cp repo/loadout.yaml repo/loadout.yaml.bak
 cat >> repo/loadout.yaml <<'YAML'

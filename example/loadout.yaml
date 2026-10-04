@@ -4,7 +4,7 @@
 
 meta:
   name: example machines
-  min-tool-version: 0.1.0
+  min-tool-version: 2.1.0
 
 # Where the repo's parts live, relative to this file.
 layout:

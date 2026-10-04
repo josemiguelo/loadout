@@ -9,6 +9,7 @@ import loadout.core.manifest.Glob
 import loadout.core.manifest.InstallerLibrary
 import loadout.core.manifest.MachineData
 import loadout.core.manifest.ManifestLoader
+import loadout.core.model.MachineGroup
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -858,6 +859,62 @@ class ManifestRepoTest {
             error("a:\n  scripts: [s]\nb:\n  scripts: [s]"))
         assertTrue("machines/m.yaml: tmux has unknown key 'pkg' (install_with, scripts)" in error("tmux:\n  pkg: x"))
         assertTrue("machines/m.yaml: scripts must be a mapping (install_with, scripts)" in error("scripts: [s]"))
+    }
+
+    @Test
+    fun topLevelInstallWithListsProgramsPerVariant() {
+        val files = mapOf(
+            "loadout.yaml" to """
+                scripts:
+                  s:
+                    run: echo hi
+                programs:
+                  tmux:
+                    install:
+                      omarchy: {}
+                  tpack:
+                    install:
+                      brew-cask: {}
+                  git:
+                    install:
+                      omarchy: {}
+            """.trimIndent(),
+            // A listed program keeps an entry of its own for its scripts.
+            "machines/m.yaml" to """
+                install_with:
+                  omarchy: [tmux, git]
+                  brew-cask: [tpack]
+
+                git:
+                  scripts: [s]
+            """.trimIndent(),
+        )
+        val m = ManifestLoader.loadRepo(fs(files), repo).machines.getValue("m")
+        assertEquals(mapOf("tmux" to "omarchy", "git" to "omarchy", "tpack" to "brew-cask"), m.pm)
+        assertEquals(listOf("s"), m.scripts)
+        assertEquals(MachineGroup(install = mapOf("git" to "omarchy"), scripts = listOf("s")), m.groups["git"])
+        assertEquals(setOf("tmux", "tpack", "git"), m.groups.keys)
+
+        fun error(machine: String) = assertFailsWith<ManifestException> {
+            ManifestLoader.loadRepo(fs(files + ("machines/m.yaml" to machine)), repo)
+        }.message.orEmpty()
+        assertTrue("machines/m.yaml: tmux is listed twice under install_with (omarchy and brew-cask)" in
+            error("install_with:\n  omarchy: [tmux]\n  brew-cask: [tmux]"))
+        assertTrue("machines/m.yaml: tmux is listed under install_with.omarchy and has its own install_with: omarchy" in
+            error("install_with:\n  omarchy: [tmux]\ntmux:\n  install_with: omarchy"))
+        assertTrue("machines/m.yaml: install_with must be a mapping of variants to programs (dnf: [curl, gcc])" in
+            error("install_with: omarchy"))
+        assertTrue("machines/m.yaml: install_with.omarchy is a list of strings" in error("install_with:\n  omarchy: tmux"))
+    }
+
+    @Test
+    fun aMachineOverridesAProfilesListedProgram() {
+        val files = mapOf(
+            "loadout.yaml" to "programs:\n  git:\n    install:\n      dnf: {}\n      brew: {}",
+            "profiles/p.yaml" to "install_with:\n  dnf: [git]",
+            "machines/m.yaml" to "extends: [p]\n\ninstall_with:\n  brew: [git]",
+        )
+        assertEquals("brew", ManifestLoader.loadRepo(fs(files), repo).machines.getValue("m").pm["git"])
     }
 
     @Test
