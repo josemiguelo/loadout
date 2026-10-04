@@ -89,7 +89,7 @@ YAML
         | XDG_CACHE_HOME=$FAKE_CACHE XDG_RUNTIME_DIR=$PWD/rt pty_run tui-view.log --repo vrepo --machine m1
     seen tui-view.log "v views the full output" || fail "the pause offers the full output"
     [ "$(plain_screen tui-view.log | grep -c 'FIRST-OUTPUT-LINE')" -ge 2 ] \
-        || fail "v shows the output from its first line, past what scrolled off"
+        || fail_screen tui-view.log "v shows the output from its first line, past what scrolled off"
     # The test harness's own capture is a script(1) log. util-linux writes a
     # "Script started on" header into it, once; BSD script (macOS) writes none.
     # Either way the viewer must not show it.

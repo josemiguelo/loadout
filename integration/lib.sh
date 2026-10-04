@@ -219,6 +219,15 @@ plain_screen() {
     perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a\e]*(\a|\e\\)//g' "$1"
 }
 
+# Fail with [message] $2, showing the end of the capture $1: a CI log
+# otherwise says only which check failed, not what the screen showed.
+fail_screen() {
+    echo "--- last lines of $1 ---"
+    plain_screen "$1" | tail -n "${SCREEN_LINES:-60}"
+    echo "---"
+    fail "$2"
+}
+
 # [pattern] is on screen in the capture $1, colours or not.
 seen() {
     plain_screen "$1" | grep -qaE -- "$2"
