@@ -18,7 +18,9 @@ import loadout.cli.SyncCommand
 import loadout.cli.SelfUpgradeCommand
 import loadout.cli.UpgradeCommand
 import loadout.core.LoadoutException
+import loadout.core.exec.InterruptedByUser
 import loadout.core.platform.envVar
+import loadout.core.platform.trapInterrupts
 import loadout.theme.forcedDark
 import kotlin.system.exitProcess
 
@@ -29,6 +31,10 @@ fun main(args: Array<String>) {
         // one of those in FileFailedToInitializeException — not a
         // LoadoutException, so it escapes the catch below as a stack trace.
         forcedDark(envVar("LOADOUT_THEME"))
+        // A home-screen hand-off's child (see Recorded.kt) takes Ctrl-C here, on
+        // the terminal it shares with its command: it stops and exits 130, the
+        // exit the hand-off reads as "interrupted", whatever the script(1) in between.
+        if (envVar("LOADOUT_HANDOFF") == "1") trapInterrupts(true)
         RootCommand()
             .subcommands(
                 StatusCommand(),
@@ -48,6 +54,8 @@ fun main(args: Array<String>) {
             .main(args)
         // Every loadout refusal is a LoadoutException, so a new failure mode
         // reports cleanly without anyone remembering to add a catch here.
+    } catch (e: InterruptedByUser) {
+        exitProcess(INTERRUPTED)
     } catch (e: LoadoutException) {
         println("error: ${e.message}")
         exitProcess(1)
@@ -57,3 +65,6 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
 }
+
+/** The exit a shell reports for a command stopped by Ctrl-C (128 + SIGINT). */
+private const val INTERRUPTED = 130

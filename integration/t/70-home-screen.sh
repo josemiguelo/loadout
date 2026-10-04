@@ -349,7 +349,7 @@ installers:
     check: 'echo {pkg} 1.0'
     regex: '([0-9][0-9.]*)'
     outdated-all: 'echo ''alpha 2.0'''
-    upgrade: 'printf ''Ans\167er me: ''; read answer; echo "answered-$answer" > asked.txt'
+    upgrade: 'printf ''Ans\167er me: ''; read answer && echo "answered-$answer" > asked.txt'
 
 programs:
   alpha:
@@ -370,23 +370,17 @@ if has_pty; then
     seen_after_back tui-asks.log 'loadout' || fail "the screen comes back after the upgrade"
     ok "an upgrade that asks something gets its answer in the terminal"
 
-    # Ctrl-C through BSD script (macOS) never reaches loadout, so this check runs
-    # on Linux only; AGENTS.md (Testing conventions) says how to check Ctrl-C by hand.
-    if [ "$(uname)" = "Darwin" ]; then
-        ok "Ctrl-C check skipped on macOS (AGENTS.md: Ctrl-C under macOS)"
-    else
-        # Ctrl-C stops the command, not loadout; the closing rule says so and
-        # the ticks stay.
-        rm -f arepo/asked.txt
-        { wait_settled tui-intr.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-intr.log '1 update'
-          printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-intr.log 'These will upgrade'
-          printf '\r'; wait_screen tui-intr.log 'Answer me:'; printf '\003'
-          wait_back tui-intr.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
-            | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-intr.log --repo arepo --machine m1
-        [ -f arepo/asked.txt ] && fail "Ctrl-C stops the command before it goes on" || true
-        seen tui-intr.log "━━ interrupted ━" || fail "the closing rule says it was interrupted"
-        seen_after_back tui-intr.log 'loadout' || fail "loadout survives Ctrl-C and shows the screen again"
-        seen_after_back tui-intr.log '\[x\] sh' || fail "an interrupted upgrade keeps its ticks for another go"
-        ok "Ctrl-C stops the running command and comes back to the screen"
-    fi
+    # Ctrl-C stops the command, not loadout: the hand-off child traps it and
+    # exits 130 (see Main.kt), so the closing rule says so and the ticks stay.
+    rm -f arepo/asked.txt
+    { wait_settled tui-intr.log; printf 'j'; sleep 0.4; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-intr.log '1 update'
+      printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-intr.log 'These will upgrade'
+      printf '\r'; wait_screen tui-intr.log 'Answer me:'; printf '\003'
+      wait_back tui-intr.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
+        | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-intr.log --repo arepo --machine m1
+    [ -f arepo/asked.txt ] && fail "Ctrl-C stops the command before it goes on" || true
+    seen tui-intr.log "━━ interrupted ━" || fail "the closing rule says it was interrupted"
+    seen_after_back tui-intr.log 'loadout' || fail "loadout survives Ctrl-C and shows the screen again"
+    seen_after_back tui-intr.log '\[x\] sh' || fail "an interrupted upgrade keeps its ticks for another go"
+    ok "Ctrl-C stops the running command and comes back to the screen"
 fi

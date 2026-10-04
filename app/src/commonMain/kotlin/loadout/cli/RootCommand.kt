@@ -180,7 +180,7 @@ class RootCommand : CliktCommand(name = "loadout") {
             addAll(args)
         }
         val script = recordCommand(argv, transcript.toString(), darwin = unameInfo().sysname == "Darwin")
-        return app.runner.inherit("PAGER=cat GIT_PAGER=cat $script </dev/tty")
+        return app.runner.inherit("LOADOUT_HANDOFF=1 PAGER=cat GIT_PAGER=cat $script </dev/tty")
     }
 
     /** The whole recorded output in `less`, from the top, on this screen (-X keeps it off the normal one). */

@@ -66,13 +66,13 @@ A run that doesn't exit usually means an effect or coroutine kept the
 composition alive (see Toolchain facts). Rendering changes still need a
 human check: ask the user to run it.
 
-**Ctrl-C under macOS**: BSD `script` doesn't deliver a pty's Ctrl-C to
-loadout. The upgrade's child (`sh`) sees the interrupt, exits 2 on its own,
-and loadout never gets SIGINT, so the "interrupted" closing rule can't be
-seen. `70-home-screen` skips that check on Darwin and runs it on Linux.
-Check Ctrl-C by hand in a real terminal: an upgrade waiting on a
-question, then Ctrl-C; the rule should say `interrupted`, the screen comes
-back and the ticks stay.
+**Ctrl-C in a hand-off**: every hand-off runs its command as a child loadout
+under script(1) (Recorded.kt), so the parent loadout never gets Ctrl-C. The
+child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT (Main.kt), stops,
+and exits 130, the one exit both util-linux and BSD script pass on
+unchanged. The home screen reads 130 as "interrupted". BSD script reports a
+signal-killed child as the signal number (2), so don't rely on a child being
+killed by SIGINT. `70-home-screen` checks Ctrl-C on both platforms.
 
 Manual testing target: the user's live config repo (`$LOADOUT_REPO`: chezmoi's
 source, `~/.local/share/chezmoi`; machine name = hostname; the user's machines run Omarchy/Arch and macOS).
