@@ -40,6 +40,20 @@ class ScriptRunner(
             step.file?.let { "sh '$it'" + if (args.isEmpty()) "" else " $args" } ?: step.run!!
     }
 
+    /** Whether running [step] needs sudo's password: it says so, or its command runs sudo. */
+    fun needsSudo(step: ScriptStep, args: String = ""): Boolean =
+        step.sudo || commandNeedsSudo(commandFor(step, args))
+
+    /**
+     * Whether [run] would execute [step] here: it applies to [os] and its
+     * `check` doesn't pass (or [force]). Asks the check, as [run] will again.
+     */
+    fun pending(step: ScriptStep, os: OsFamily, force: Boolean = false, args: String = ""): Boolean {
+        if (!step.appliesTo(os)) return false
+        if (force || step.check == null) return true
+        return !runner.capture(frame.command(withArgs(step.check, args), step.origin)).success
+    }
+
     /**
      * Run [step] unless its `check` already passes (or [force]). [args] is the
      * machine's argument string; it reaches both the `check` (as positional

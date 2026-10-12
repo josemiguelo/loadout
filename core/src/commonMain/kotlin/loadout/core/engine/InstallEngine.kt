@@ -24,6 +24,8 @@ sealed interface PlanItem {
         val command: String,
         /** Where [command] runs: its declaring file's repo-relative directory. */
         val origin: String = "",
+        /** [command] needs sudo's password: it runs sudo, or its variant or installer says so. */
+        val sudo: Boolean = false,
     ) : PlanItem
 
     /** Already installed at [version]; nothing to do. */
@@ -94,7 +96,8 @@ class InstallEngine(
                 // Key existence and command resolvability are validated at
                 // manifest load, as is the existence of any file: script.
                 val resolved = manifest.resolveInstall(name, installKey)
-                items += PlanItem.Install(name, installKey, expandFilePrefix(resolved.command!!), resolved.commandOrigin)
+                val command = expandFilePrefix(resolved.command!!)
+                items += PlanItem.Install(name, installKey, command, resolved.commandOrigin, resolved.sudo || commandNeedsSudo(command))
             }
         }
 

@@ -6,6 +6,7 @@ import loadout.core.engine.InstallEngine
 import loadout.core.engine.InstallOutcome
 import loadout.core.engine.PlanItem
 import loadout.core.engine.VersionChecker
+import loadout.core.exec.ProcessRunner
 import loadout.core.model.Manifest
 import loadout.core.model.SystemInfo
 
@@ -86,6 +87,35 @@ fun CliktCommand.confirmOrAbort(yes: Boolean) {
         throw ProgramResult(1)
     }
 }
+
+/**
+ * When [needed] (a step of the run needs sudo's password), ask for it once,
+ * now, before the first step, instead of in the middle of the run whenever
+ * sudo's credentials have run out. Then keep them fresh until loadout exits:
+ * a step an hour in finds them as valid as the first. Nothing is asked when
+ * they're still valid. Refusing stops the run before anything ran.
+ *
+ * The refresher is a shell loop in the background, not a thread: `sudo -n
+ * -v` every 50s while loadout's process ($PPID of the `sh -c` that starts
+ * it) lives. It looks every second, so it ends within one of loadout,
+ * however loadout ends. It shares loadout's terminal, the one sudo keys its
+ * credentials to.
+ */
+fun CliktCommand.askForSudoUpfront(runner: ProcessRunner, needed: Boolean) {
+    if (!needed) return
+    if (!runner.capture("sudo -n true").success) {
+        echo("\n" + Style.accent("A step needs your sudo password."))
+        if (runner.inherit("sudo -v") != 0) {
+            echo("Aborted: the steps that need sudo can't run without it.", err = true)
+            throw ProgramResult(1)
+        }
+    }
+    runner.capture(SUDO_KEEPALIVE)
+}
+
+internal const val SUDO_KEEPALIVE =
+    "( while :; do i=0; while [ \$i -lt 50 ]; do kill -0 \$PPID 2>/dev/null || exit 0; sleep 1; i=\$((i + 1)); done; " +
+        "sudo -n -v 2>/dev/null || exit 0; done ) </dev/null >/dev/null 2>&1 &"
 
 /** Run the plan, announcing each install as it starts. */
 fun CliktCommand.installPrograms(plan: ProgramPlan, manifest: Manifest): List<InstallOutcome> =

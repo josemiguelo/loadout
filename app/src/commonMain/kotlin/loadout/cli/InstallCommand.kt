@@ -53,6 +53,7 @@ class InstallCommand : CliktCommand(name = "install") {
         }
         if (dryRun) return
         confirmOrAbort(yes)
+        askForSudoUpfront(app.runner, plan.installs.any { it.sudo })
 
         val outcomes = installPrograms(plan, manifest)
 

@@ -70,6 +70,7 @@ data class Manifest(
         val installerOrigin = installer?.origin.orEmpty()
         fun originOf(override: String?) = if (override != null) program.origin else installerOrigin
         return ResolvedInstall(
+            sudo = variant.sudo ?: installer?.sudo ?: false,
             command = (variant.command ?: installer?.install)?.let(::sub),
             commandOrigin = originOf(variant.command),
             // A check through the mechanism carries its probe; the program's
@@ -133,6 +134,8 @@ data class ResolvedInstall(
     val outdatedAll: BatchOracle? = null,
     /** How this variant upgrades in place, when its mechanism can. */
     val upgradeWith: UpgradeMechanism? = null,
+    /** [command] needs sudo's password without saying `sudo` itself (see [Installer.sudo]). */
+    val sudo: Boolean = false,
 )
 
 /** How a variant's mechanism upgrades: all of it, in one command. */
@@ -199,8 +202,12 @@ data class Installer(
      */
     val upgrade: String? = null,
     /**
-     * Obsolete: parsed so existing manifests load, otherwise ignored.
-     * Commands run on the terminal, where sudo prompts for itself. Same for
+     * [install] and [upgrade] need sudo's password but don't say `sudo`
+     * themselves: they call it from inside (`omarchy pkg add`, a `file:`
+     * script). A run whose plan holds a step that needs sudo (this, or a
+     * command that visibly runs it) asks for the password once, before the
+     * first step, and keeps sudo's credentials fresh until it ends. Declared,
+     * never guessed: nothing reads a script to find sudo in it. Same for
      * `sudo` on install variants, scripts and `outdated.*` sources.
      */
     val sudo: Boolean = false,
@@ -235,7 +242,7 @@ data class InstallVariant(
      * Each becomes `{copr}` in the resolved commands.
      */
     val with: Map<String, String> = emptyMap(),
-    /** Obsolete and ignored; see [Installer.sudo]. */
+    /** Replaces the installer's [Installer.sudo] for this variant's install command. */
     val sudo: Boolean? = null,
     /**
      * Programs THIS variant needs first, on top of the program's own
@@ -441,7 +448,7 @@ data class ScriptStep(
      * script regardless, and `run <name>` is the explicit escape hatch.
      */
     val modes: List<String> = listOf("setup", "maintain"),
-    /** Obsolete and ignored; see [Installer.sudo]. */
+    /** The script needs sudo's password without saying `sudo`; see [Installer.sudo]. */
     val sudo: Boolean = false,
     /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
     @Transient val origin: String = "",
@@ -464,7 +471,7 @@ data class OutdatedSource(
      * read-only. `file:` allowed.
      */
     val upgrade: String? = null,
-    /** Obsolete and ignored; see [Installer.sudo]. */
+    /** [upgrade] needs sudo's password without saying `sudo`; see [Installer.sudo]. */
     val sudo: Boolean = false,
     /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
     @Transient val origin: String = "",

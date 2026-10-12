@@ -118,9 +118,10 @@ installers:
 # migrations (-y skips the opening confirmation; sudo and its other
 # questions still ask, on the terminal). The oracle is pacman's: the
 # databases checkupdates syncs track Omarchy's pinned mirror snapshot,
-# exactly what `omarchy update` brings.
+# exactly what `omarchy update` brings. Both commands run sudo from inside.
   omarchy:
     probe: 'omarchy'
+    sudo: true
     install: 'omarchy pkg add {pkg}'
     upgrade: 'omarchy update -y'
     check: 'pacman -Q {pkg}'
@@ -132,8 +133,10 @@ installers:
 # only after deciding to trust it. The upgrade is the same `omarchy update
 # -y` (it upgrades AUR packages too), so `loadout upgrade` runs it once for
 # both. The oracle is yay's AUR check, "<pkg> <installed> -> <candidate>".
+# yay runs sudo from inside.
   omarchy-aur:
     probe: 'omarchy'
+    sudo: true
     install: 'omarchy pkg aur add {pkg}'
     upgrade: 'omarchy update -y'
     check: 'pacman -Q {pkg}'

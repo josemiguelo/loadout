@@ -298,10 +298,10 @@ if has_pty; then
     ok "the programs row installs in the terminal, where sudo asks for its own password"
 fi
 
-# --- sudo called from inside a command prompts without a declaration -----
-# `omarchy pkg add`, Homebrew's installer: the command never says sudo; on
-# the terminal its prompt appears anyway. The obsolete `sudo: true` still
-# loads and changes nothing.
+# --- sudo called from inside a command, declared -------------------------
+# `omarchy pkg add`, Homebrew's installer: the command never says sudo, so it
+# declares `sudo: true`, and the hand-off's run asks for the password once,
+# upfront, on the terminal (t/45-sudo.sh covers the CLI side).
 mkdir -p hrepo/state hrepo/machines
 cat > hrepo/inner.sh <<'SH'
 sudo sh -c "echo installed-$1 > fake-$1.txt"
@@ -324,16 +324,17 @@ printf 'gamma:\n  install_with: hidden\n' > hrepo/machines/m1.yaml
 fake_sudo
 "$BIN" --repo hrepo --machine m1 status >/dev/null
 OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
-echo "$OUT" | grep -q "sudo" && fail "explain doesn't show the obsolete sudo declaration" || true
+echo "$OUT" | grep -q "sudo.hidden" || fail "explain shows the sudo declaration"
 if has_pty; then
     { wait_settled tui-hidden.log; printf 'l'; wait_screen tui-hidden.log 'space tick'
       printf '\r'; wait_screen tui-hidden.log 'These programs will install'
       printf '\r'; wait_screen tui-hidden.log '\[sudo\] password for tester'; printf 'secret\r'; wait_back tui-hidden.log
       printf 'q\r'; sleep 1; } \
         | PATH="$FAKE_SUDO_PATH:$PATH" XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-hidden.log --repo hrepo --machine m1
-    grep -qa "\[sudo\] password for tester" tui-hidden.log || fail "a sudo inside a script prompts in the terminal"
+    grep -qa "A step needs your sudo password" tui-hidden.log || fail "the run says why it asks"
+    grep -qa "\[sudo\] password for tester" tui-hidden.log || fail "sudo's prompt reaches the terminal"
     [ -f hrepo/fake-gamma.txt ] || fail "the install ran once the password was typed"
-    ok "a sudo called from inside a command prompts in the terminal, declared or not"
+    ok "a declared sudo inside a command is asked for once, upfront, in the terminal"
 fi
 
 # --- anything else that asks, like `omarchy update`'s "Reboot?" ----------

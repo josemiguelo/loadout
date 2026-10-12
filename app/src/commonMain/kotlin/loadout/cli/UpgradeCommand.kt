@@ -86,6 +86,7 @@ class UpgradeCommand : CliktCommand(name = "upgrade") {
         }
         if (dryRun) return
         confirmOrAbort(yes)
+        askForSudoUpfront(app.runner, plan.any { it.sudo })
 
         // Inherited stdio: sudo may prompt, dnf shows progress. A failing
         // mechanism doesn't stop the rest — they're independent.

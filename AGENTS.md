@@ -328,8 +328,22 @@ Explicit user decisions; don't "improve" them away.
     Installers may declare `upgrade`: the ONE command that moves everything
     the mechanism manages, with no `{pkgs}` placeholder (contract 15).
     Never write cross-variant `||` chains in checks.
-    `sudo: true` (installer, variant, script, `outdated` source) is
-    obsolete: parsed so existing manifests load, used nowhere.
+    `sudo: true` (installer, variant, script, `outdated` source) declares
+    a command that needs sudo's password without saying `sudo` itself
+    (`omarchy pkg add`, a `file:` script); a variant's replaces its
+    installer's. `setup-new-machine`, `install`, `run` and `upgrade` ask
+    for the password once, after the confirmation and before the first
+    step (`askForSudoUpfront` in cli/Converge.kt), when their plan holds a
+    step that needs it: declared, or a command matching `commandNeedsSudo`
+    (core/engine/Sudo.kt: the word sudo, not "pseudo"). Scripts count only
+    while pending (`ScriptRunner.pending` asks the check, which `run` asks
+    again). Valid credentials ask nothing; a refusal stops the run before
+    any step. A background shell loop then runs `sudo -n -v` every 50s
+    while loadout's pid lives, checked every second (`SUDO_KEEPALIVE`), so
+    a step an hour in finds them valid. Never inferred from a script's
+    content: an undeclared sudo inside a `file:` script still prompts
+    mid-run, on the terminal, as before. Home-screen hand-offs get this
+    for free: each runs one of these subcommands.
 14. **Versioning contract.** The manifest format evolves ADDITIVELY (new
     optional fields; never repurpose existing ones). The deliberate breaks:
     0.2.0 (string install values became variant mappings), 0.9.0

@@ -21,6 +21,8 @@ data class UpgradeStep(
     val origin: String = "",
     /** True for a program's own upgrade ([covers] is that program alone), not an installer's or a source's. */
     val program: Boolean = false,
+    /** [command] needs sudo's password: it runs sudo, or its installer or source says so. */
+    val sudo: Boolean = false,
 ) {
     /**
      * What to call this step on screen: a sweep is the TOOL it drives when
@@ -87,12 +89,14 @@ object UpgradeEngine {
                 "cannot upgrade:\n  - outdated source '$source' declares no upgrade command",
             )
         return items.map { item ->
+            val command = expandFilePrefix(pattern).replace("{item}", item)
             UpgradeStep(
                 installers = listOf(source),
-                command = expandFilePrefix(pattern).replace("{item}", item),
+                command = command,
                 covers = listOf(item),
                 sweep = false,
                 origin = declared.origin,
+                sudo = declared.sudo || commandNeedsSudo(command),
             )
         }
     }
@@ -118,6 +122,7 @@ object UpgradeEngine {
                 sweep = false,
                 origin = program.origin,
                 program = true,
+                sudo = commandNeedsSudo(command),
             )
         }
     }
@@ -162,6 +167,7 @@ object UpgradeEngine {
                 covers = mechanisms.flatMap { available[it].orEmpty() }.distinct().sorted(),
                 tool = probes.singleOrNull(),
                 origin = origin,
+                sudo = mechanisms.any { manifest.installers[it]?.sudo == true } || commandNeedsSudo(command),
             )
         }
     }

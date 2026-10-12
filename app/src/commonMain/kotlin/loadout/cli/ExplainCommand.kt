@@ -95,6 +95,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             rows += "check.$key" to "${it.command}  =~ /${it.regex}/"
                         }
                         resolved.probe?.let { rows += "probe.$key" to it }
+                        if (resolved.sudo) rows += "sudo.$key" to "yes — a run that installs it asks for the password first"
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
@@ -118,6 +119,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     if (script.os.isNotEmpty()) rows += "os" to script.os.joinToString()
                     if (script.after.isNotEmpty()) rows += "after" to script.after.joinToString()
                     if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
+                    if (script.sudo) rows += "sudo" to "yes — a run that runs it asks for the password first"
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
                         enabled == null -> "no — add it to a program's scripts in ${app.layout.machines}/${system.machine}.yaml"

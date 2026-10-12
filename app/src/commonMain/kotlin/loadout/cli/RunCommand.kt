@@ -63,9 +63,17 @@ class RunCommand : CliktCommand(name = "run") {
         }
 
         val runner = ScriptRunner(app.runner, app.frame(system))
+        val ordered = ManifestLoader.scriptOrder(manifest, targets).filter { it in targets }
+        askForSudoUpfront(
+            app.runner,
+            ordered.any { name ->
+                val step = manifest.scripts.getValue(name)
+                val args = enabled.getValue(name)
+                runner.needsSudo(step, args) && runner.pending(step, system.os, force, args)
+            },
+        )
         val results = mutableMapOf<String, ScriptState>()
-        for (name in ManifestLoader.scriptOrder(manifest, targets)) {
-            if (name !in targets) continue
+        for (name in ordered) {
             val step = manifest.scripts.getValue(name)
             when (val outcome = runner.run(step, system.os, force, args = enabled.getValue(name))) {
                 is ScriptOutcome.NotApplicable -> echo(" " + Style.dim("\u00b7") + "  skipped $name " + Style.dim("(not for ${system.os.id})"))

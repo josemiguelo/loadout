@@ -32,7 +32,7 @@ class InstallEngineTest {
         assertEquals(
             listOf(
                 PlanItem.AlreadyInstalled("git", "2.46.0"),
-                PlanItem.Install("ripgrep", "dnf", "sudo dnf install -y ripgrep"),
+                PlanItem.Install("ripgrep", "dnf", "sudo dnf install -y ripgrep", sudo = true),
             ),
             plan,
         )

@@ -53,6 +53,14 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
         }
         if (dryRun) return
         confirmOrAbort(yes)
+        askForSudoUpfront(
+            app.runner,
+            plan.installs.any { it.sudo } || scriptNames.any { name ->
+                val step = manifest.scripts.getValue(name)
+                val args = enabledScripts.getValue(name)
+                scriptRunner.needsSudo(step, args) && scriptRunner.pending(step, system.os, args = args)
+            },
+        )
 
         val outcomes = installPrograms(plan, manifest)
 
