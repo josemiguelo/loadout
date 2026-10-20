@@ -39,14 +39,3 @@ val bundle by tasks.registering(Copy::class) {
         bundleDir.get().file("VERSION").asFile.writeText(version + "\n")
     }
 }
-
-/** gradle.properties' version and the binary's TOOL_VERSION must agree. */
-val checkVersion by tasks.registering {
-    val source = file("model/src/commonMain/kotlin/loadout/core/Version.kt")
-    val expected = project.version.toString()
-    inputs.file(source)
-    doLast {
-        val actual = Regex("""TOOL_VERSION: String = "([^"]+)"""").find(source.readText())?.groupValues?.get(1)
-        check(actual == expected) { "TOOL_VERSION is $actual but gradle.properties says $expected" }
-    }
-}

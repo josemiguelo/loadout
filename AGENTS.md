@@ -98,6 +98,7 @@ and `loadout compile` share one model and one set of error messages;
 ```
 model/  loadout.core (the binary's and the DSL's common ground)
   LoadoutException — supertype of every refusal (contract 9); TOOL_VERSION
+               (generated from gradle.properties by `generateVersion`)
   model/       Manifest (@Serializable, what the lock holds; owns
                resolveInstall/checkFor/dependenciesOf/forMachine — variant ×
                installer resolution), shellLine (file: + PATH prefix)
@@ -887,7 +888,7 @@ Explicit user decisions; don't "improve" them away.
 
 ## CI / release
 
-`.github/workflows/ci.yml`: ubuntu (checkVersion, unit tests of every
+`.github/workflows/ci.yml`: ubuntu (unit tests of every
 module, debug binary + bundle, integration, release link) and macos
 (arm64 unit tests, both mac release links + bundle, integration against
 the release binary). It runs on pushes to `master` and on pull requests.
@@ -900,9 +901,13 @@ Reproduce the Linux job locally in an `ubuntu:24.04` container as a non-root use
 plugin JVM artifacts, `gradle/` with the wrapper `init` copies, `VERSION`)
 → `loadout-<tag>-{linux-x64,macos-arm64,macos-x64}.tar.gz` attached to the
 GitHub Release. It packages without testing: let CI pass before tagging.
-linuxArm64 builds but isn't released. `gradle.properties`' `version` is
-what the DSL and plugin are published at; `checkVersion` fails when it
-differs from TOOL_VERSION.
+linuxArm64 builds but isn't released. **The version lives in ONE place**,
+`gradle.properties`' `version`: the DSL and plugin publish at it, `bundle`
+writes it to VERSION, and model's `generateVersion` writes `TOOL_VERSION`
+from it (build/generated/version; the IDE sees it after a Gradle sync).
+Each of those tasks declares the version as an input, or a bump leaves
+its output stale. release.yml's first job refuses a tag that isn't
+`v<version>`. A release = bump that line, commit, tag.
 
 `install.sh` (repo root) is the curl|sh bootstrap over those releases: it
 resolves latest via the GitHub API (pin: LOADOUT_VERSION) and installs the

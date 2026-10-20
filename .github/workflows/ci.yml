@@ -21,7 +21,7 @@ jobs:
           path: ~/.konan
           key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Unit tests
-        run: ./gradlew checkVersion :model:linuxX64Test :model:jvmTest :dsl:linuxX64Test :dsl:jvmTest :core:linuxX64Test :app:linuxX64Test
+        run: ./gradlew :model:linuxX64Test :model:jvmTest :dsl:linuxX64Test :dsl:jvmTest :core:linuxX64Test :app:linuxX64Test
       - name: Build debug binary and share directory
         run: ./gradlew :app:linkDebugExecutableLinuxX64 bundle
       - name: Integration tests

@@ -8,7 +8,19 @@ permissions:
   contents: write
 
 jobs:
+  # The tag must name gradle.properties' version, the binary's own: a tag
+  # can't publish a binary that reports another version.
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches gradle.properties
+        run: |
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME but gradle.properties says $version"; exit 1; }
+
   linux:
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +48,7 @@ jobs:
           files: loadout-*.tar.gz
 
   macos:
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
