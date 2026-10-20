@@ -760,7 +760,8 @@ Explicit user decisions; don't "improve" them away.
   rows in place. A script's verdict is always its check.
 - **Manifests are Kotlin, compiled on the JVM; the binary reads JSON.**
   `loadout compile` runs `./gradlew -q loadoutCompile` in the repo with
-  `LOADOUT_HOME` set, output held until it fails (a spinner otherwise).
+  `LOADOUT_HOME` set, output held until it fails (a spinner otherwise);
+  on success only its `warning: ` lines are shown.
   The plugin is resolved from `$LOADOUT_HOME/maven` at `$LOADOUT_HOME/
   VERSION` (settings.gradle.kts reads it), and adds that repo for the DSL.
   Inside `pluginManagement { plugins { } }`, `java` is the java plugin's
@@ -785,7 +786,10 @@ Explicit user decisions; don't "improve" them away.
   inside. Obvious one-argument calls (`file`, `run`, `check`, `managedBy`,
   `present`, `runAfter`) stay positional.
 - **Kotlin `$` in shell strings**: both `"…"` and `"""…"""` substitute
-  `$name`, so inline shell writes `\$HOME`; a raw string needs `${'$'}`.
+  `$name`. The DSL's `HOME` and `USER` constants are the shell's own
+  `$HOME`/`$USER`, so `"$HOME/.local/bin"` reads as shell and reaches it
+  unchanged; any other shell variable is written `\$1`, and a raw string
+  needs `${'$'}`.
   Prefer repo scripts (`managedBy`, `runScript`) for anything longer than
   a line.
 - **Manifest file names are unique**, and compile refuses two of one name:
@@ -803,6 +807,19 @@ Explicit user decisions; don't "improve" them away.
   object's members goes inside it. The DSL turns the null into "<who>
   refers to something not declared yet" (`declared`), since Kotlin's own
   failure is a `NoWhenBranchMatchedException` deep in the DSL.
+- **Compile warns about what no machine uses** (`dsl/Unused.kt`): a
+  profile no machine extends, a program none installs (dependencies
+  count), a way to install one none picks (programs with several), a
+  script or script variant none runs, a repo installer nothing in use goes
+  through. Warnings, never refusals: the lock is written either way.
+  `spare(reason = …)` marks one kept on purpose (on the profile, program,
+  variant, script variant, installer); a spare profile's contents count as
+  used, and a spare mark on something used is itself a warning, so marks
+  can't go stale. A machine can't be spare.
+- **A profile's long block can live beside its scripts**: `fun
+  MachineScope.omarchyBar() { run(…) }` in the scripts' file, called from
+  the profile. The calls record only references, so where the function
+  lives changes nothing in the lock.
 - **The lock always says its format**: the lock's Json drops defaults
   (short, diffable), so `Lock.format` carries `@EncodeDefault(ALWAYS)`;
   without it format 1 vanished and an old binary couldn't refuse a newer
@@ -934,7 +951,7 @@ top-down, first fit wins:
    derived.
 7. No pm at all → `custom { installedBy("x.sh") }` (or `command = …`) + a
    program-level `version(…)`;
-   `path("\$HOME/.local/bin")` when it lands off a fresh shell's PATH.
+   `path("$HOME/.local/bin")` when it lands off a fresh shell's PATH.
 8. Nothing to "have" (dotfiles, services) → a `script` + check, run per
    machine. A *managing script* (`<file>` does the step, `<file> check`
    says whether it's done) is `managedBy("x.sh")`. A step done differently

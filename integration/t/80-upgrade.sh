@@ -2,31 +2,43 @@
 
 kt_repo uprepo
 kt_file uprepo/programs/up.loadout.kt <<'KT'
-val pm = root.installer("pm") {
+val pm = root.installer(name = "pm") {
     install = "echo installing {pkg}"
     upgrade = "echo upgrading all pm"
     check = "echo {pkg} 1.0"
     regex = "([0-9.]+)"
 }
 
-val pmExtra = root.installer("pm-extra") {
+val pmExtra = root.installer(name = "pm-extra") {
     install = "echo installing {pkg}"
     upgrade = "echo upgrading all pm"
     check = "echo {pkg} 1.0"
     regex = "([0-9.]+)"
 }
 
-val byhand = root.installer("byhand") {
+val byhand = root.installer(name = "byhand") {
     install = "echo installing {pkg}"
     check = "echo {pkg} 1.0"
     regex = "([0-9.]+)"
 }
 
-val alpha = root.program("alpha") { installVia(pm) }
-val bravo = root.program("bravo") { installVia(pmExtra) }
-val charlie = root.program("charlie") { installVia(byhand) }
+val alpha = root.program(name = "alpha") {
+    installVia(
+        pm,
+    )
+}
+val bravo = root.program(name = "bravo") {
+    installVia(
+        pmExtra,
+    )
+}
+val charlie = root.program(name = "charlie") {
+    installVia(
+        byhand,
+    )
+}
 
-val m1 = machine("m1") { install(alpha, bravo, charlie) }
+val m1 = machine(hostname = "m1") { install(alpha, bravo, charlie) }
 KT
 compile_repo uprepo
 OUT=$("$BIN" --repo uprepo --machine m1 upgrade --all --dry-run)
@@ -48,19 +60,23 @@ ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 # beside whole mechanisms in the same run.
 kt_repo irepo
 kt_file irepo/programs/items.loadout.kt <<'KT'
-val pm = root.installer("pm") {
+val pm = root.installer(name = "pm") {
     install = "echo installing {pkg}"
     upgrade = "echo swept > swept.txt"
     check = "echo {pkg} 1.0"
     regex = "([0-9.]+)"
 }
 
-val alpha = root.program("alpha") { installVia(pm) }
+val alpha = root.program(name = "alpha") {
+    installVia(
+        pm,
+    )
+}
 
-val plugins = root.outdated("plugins", "echo 'tpack aaa bbb'", upgrade = "echo pulled > pulled-{item}.txt")
-val readonly = root.outdated("readonly", "echo 'x 1 2'")
+val plugins = root.outdated(name = "plugins", command = "echo 'tpack aaa bbb'", upgrade = "echo pulled > pulled-{item}.txt")
+val readonly = root.outdated(name = "readonly", command = "echo 'x 1 2'")
 
-val m1 = machine("m1") { install(alpha) }
+val m1 = machine(hostname = "m1") { install(alpha) }
 KT
 compile_repo irepo
 "$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null

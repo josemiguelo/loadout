@@ -4,16 +4,20 @@
 # --- {pkg} substitution in install + check, probe, via shorthand ---------
 kt_repo instrepo
 kt_file instrepo/programs/tools.loadout.kt <<'KT'
-val fake = root.installer("fake") {
+val fake = root.installer(name = "fake") {
     probe = "sh"
     install = "echo installed-{pkg} > fake-install.txt"
     check = "test -f fake-install.txt && echo mytool 1.0"
     regex = "mytool ([0-9.]+)"
 }
 
-val mytool = root.program("mytool") { installVia(fake) }
+val mytool = root.program(name = "mytool") {
+    installVia(
+        fake,
+    )
+}
 
-val m1 = machine("m1") { install(mytool) }
+val m1 = machine(hostname = "m1") { install(mytool) }
 KT
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
@@ -25,7 +29,7 @@ ok "installers supply install/check/probe mechanics via {pkg}"
 
 # --- outdated: each installer's oracle reports the remote candidate ------
 kt_file instrepo/programs/tools.loadout.kt <<'KT'
-val fake = root.installer("fake") {
+val fake = root.installer(name = "fake") {
     probe = "sh"
     install = "echo installed-{pkg} > fake-install.txt"
     check = "test -f fake-install.txt && echo mytool 1.0"
@@ -33,7 +37,7 @@ val fake = root.installer("fake") {
     regex = "([0-9][0-9.]*)"
 }
 
-val fake2 = root.installer("fake2") {
+val fake2 = root.installer(name = "fake2") {
     probe = "sh"
     install = "true"
     check = "echo other 1.0"
@@ -41,21 +45,37 @@ val fake2 = root.installer("fake2") {
     regex = "([0-9][0-9.]*)"
 }
 
-val fake3 = root.installer("fake3") {
+val fake3 = root.installer(name = "fake3") {
     probe = "sh"
     install = "true"
     check = "echo batchtool 1.0"
     outdatedAll = "printf 'batchtool 3.0\\nuptodate 1.0\\n'"
-    upgrade = "file:upgrade-fake3.sh --all"
+    upgrade = runScript("upgrade-fake3.sh --all")
     regex = "([0-9][0-9.]*)"
 }
 
-val mytool = root.program("mytool") { installVia(fake) }
-val othertool = root.program("othertool") { installVia(fake2) }
-val batchtool = root.program("batchtool") { installVia(fake3) }
-val uptodate = root.program("uptodate") { installVia(fake3) }
+val mytool = root.program(name = "mytool") {
+    installVia(
+        fake,
+    )
+}
+val othertool = root.program(name = "othertool") {
+    installVia(
+        fake2,
+    )
+}
+val batchtool = root.program(name = "batchtool") {
+    installVia(
+        fake3,
+    )
+}
+val uptodate = root.program(name = "uptodate") {
+    installVia(
+        fake3,
+    )
+}
 
-val m1 = machine("m1") { install(mytool, othertool, batchtool, uptodate) }
+val m1 = machine(hostname = "m1") { install(mytool, othertool, batchtool, uptodate) }
 KT
 printf '#!/bin/sh\necho upgraded\n' > instrepo/upgrade-fake3.sh
 compile_repo instrepo
@@ -90,10 +110,18 @@ printf 'fooapp 1:1.2.0-1 -> 1:1.3.0-2\nnotmine 5.1-1 -> 5.2-1\n'
 SH
 chmod +x pacbin/pacman pacbin/checkupdates
 kt_file pacrepo/programs/pac.loadout.kt <<'KT'
-val fooapp = root.program("fooapp") { installVia(Builtin.pacman) }
-val barapp = root.program("barapp") { installVia(Builtin.pacman) }
+val fooapp = root.program(name = "fooapp") {
+    installVia(
+        Builtin.pacman,
+    )
+}
+val barapp = root.program(name = "barapp") {
+    installVia(
+        Builtin.pacman,
+    )
+}
 
-val m1 = machine("m1") { install(fooapp, barapp) }
+val m1 = machine(hostname = "m1") { install(fooapp, barapp) }
 KT
 compile_repo pacrepo
 PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
@@ -106,7 +134,7 @@ ok "the built-in pacman installer checks with pacman -Q and asks checkupdates fo
 
 # --- custom outdated sources: arbitrary rows, the source as the tag -------
 kt_file instrepo/programs/sources.loadout.kt <<'KT'
-val sources = root.outdated("plugin-pins", "printf 'javaplug aaa1111 bbb2222\\n'")
+val sources = root.outdated(name = "plugin-pins", command = "printf 'javaplug aaa1111 bbb2222\\n'")
 KT
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with custom source exits 0"
@@ -120,8 +148,8 @@ ok "outdated includes custom outdated source rows, ordered after installers"
 # A custom source that FAILS (non-zero exit) must fail LOUD, never masquerade
 # as "nothing outdated" — loadout can't tell a crash from an empty result.
 kt_file instrepo/programs/sources.loadout.kt <<'KT'
-val sources = root.outdated("plugin-pins", "printf 'javaplug aaa1111 bbb2222\\n'")
-val flaky = root.outdated("flaky", "echo boom >&2; exit 3")
+val sources = root.outdated(name = "plugin-pins", command = "printf 'javaplug aaa1111 bbb2222\\n'")
+val flaky = root.outdated(name = "flaky", command = "echo boom >&2; exit 3")
 KT
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a failing source still exits 0"
@@ -134,9 +162,9 @@ ok "outdated surfaces a failing custom outdated source instead of silence"
 # home screen marks it ↗ and K opens it; here it must reach the output
 # without eating the rest of the note.
 kt_file instrepo/programs/sources.loadout.kt <<'KT'
-val sources = root.outdated("plugin-pins", "printf 'javaplug aaa1111 bbb2222\\n'")
-val flaky = root.outdated("flaky", "echo boom >&2; exit 3")
-val linked = root.outdated("linked-pins", "printf 'jsplug aaa1111 bbb2222 1 commit behind https://example.test/compare/aaa1111...bbb2222\\n'")
+val sources = root.outdated(name = "plugin-pins", command = "printf 'javaplug aaa1111 bbb2222\\n'")
+val flaky = root.outdated(name = "flaky", command = "echo boom >&2; exit 3")
+val linked = root.outdated(name = "linked-pins", command = "printf 'jsplug aaa1111 bbb2222 1 commit behind https://example.test/compare/aaa1111...bbb2222\\n'")
 KT
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a linked source exits 0"

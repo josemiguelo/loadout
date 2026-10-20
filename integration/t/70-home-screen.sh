@@ -77,12 +77,12 @@ if has_pty; then
     mkdir -p vrepo/scripts
     printf '#!/bin/sh\necho FIRST-OUTPUT-LINE\nseq 1 80\necho LAST-OUTPUT-LINE\n' > vrepo/scripts/longrun.sh
     kt_file vrepo/maintenance/longrun.loadout.kt <<'KT'
-val longrun = root.script("longrun") {
+val longrun = root.script(name = "longrun") {
     file("scripts/longrun.sh")
     check("false")
 }
 
-val m1 = machine("m1") { run(longrun) }
+val m1 = machine(hostname = "m1") { run(longrun) }
 KT
     compile_repo vrepo
     { wait_settled tui-view.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-view.log 'space tick'
@@ -145,7 +145,7 @@ fi
 fake_release_cache
 kt_repo orepo
 kt_file orepo/programs/alpha.loadout.kt <<'KT'
-val quiet = root.installer("quiet") {
+val quiet = root.installer(name = "quiet") {
     probe = "sh"
     install = "echo installed-{pkg} > quiet-{pkg}.txt"
     check = "echo {pkg} 1.0"
@@ -154,13 +154,17 @@ val quiet = root.installer("quiet") {
     upgrade = "echo swept"
 }
 
-val alpha = root.program("alpha") { installVia(quiet) }
+val alpha = root.program(name = "alpha") {
+    installVia(
+        quiet,
+    )
+}
 
-val m1 = machine("m1") { install(alpha) }
+val m1 = machine(hostname = "m1") { install(alpha) }
 KT
 kt_repo frepo
 kt_file frepo/programs/alpha.loadout.kt <<'KT'
-val quiet = root.installer("quiet") {
+val quiet = root.installer(name = "quiet") {
     probe = "sh"
     install = "echo installed-{pkg} > quiet-{pkg}.txt"
     check = "echo {pkg} 1.0"
@@ -169,9 +173,13 @@ val quiet = root.installer("quiet") {
     upgrade = "echo swept"
 }
 
-val alpha = root.program("alpha") { installVia(quiet) }
+val alpha = root.program(name = "alpha") {
+    installVia(
+        quiet,
+    )
+}
 
-val m1 = machine("m1") { install(alpha) }
+val m1 = machine(hostname = "m1") { install(alpha) }
 KT
 compile_repo orepo
 compile_repo frepo
@@ -208,7 +216,7 @@ fi
 # filesystem can say which one actually ran.
 kt_repo crepo
 kt_file crepo/programs/tpack.loadout.kt <<'KT'
-val quiet = root.installer("quiet") {
+val quiet = root.installer(name = "quiet") {
     probe = "sh"
     install = "echo installed-{pkg} > quiet-{pkg}.txt"
     check = "echo {pkg} 1.0"
@@ -217,7 +225,11 @@ val quiet = root.installer("quiet") {
     upgrade = "echo swept > the-tool-swept.txt"
 }
 
-val tpack = root.program("tpack") { installVia(quiet) }
+val tpack = root.program(name = "tpack") {
+    installVia(
+        quiet,
+    )
+}
 
 val tmuxPlugins = root.outdated(
     "tmux-plugins",
@@ -225,7 +237,7 @@ val tmuxPlugins = root.outdated(
     upgrade = "echo pulled > pulled-{item}.txt",
 )
 
-val m1 = machine("m1") { install(tpack) }
+val m1 = machine(hostname = "m1") { install(tpack) }
 KT
 compile_repo crepo
 "$BIN" --repo crepo --machine m1 status >/dev/null
@@ -263,17 +275,25 @@ fi
 # refused, the right one runs both installs, nothing typed is echoed.
 kt_repo irepo
 kt_file irepo/programs/fake.loadout.kt <<'KT'
-val fake = root.installer("fake") {
+val fake = root.installer(name = "fake") {
     probe = "sh"
     install = "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'"
     check = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
     regex = "([0-9][0-9.]*)"
 }
 
-val alpha = root.program("alpha") { installVia(fake) }
-val beta = root.program("beta") { installVia(fake) }
+val alpha = root.program(name = "alpha") {
+    installVia(
+        fake,
+    )
+}
+val beta = root.program(name = "beta") {
+    installVia(
+        fake,
+    )
+}
 
-val m1 = machine("m1") { install(alpha, beta) }
+val m1 = machine(hostname = "m1") { install(alpha, beta) }
 KT
 compile_repo irepo
 fake_sudo
@@ -307,7 +327,7 @@ cat > hrepo/inner.sh <<'SH'
 sudo sh -c "echo installed-$1 > fake-$1.txt"
 SH
 kt_file hrepo/programs/hidden.loadout.kt <<'KT'
-val hidden = root.installer("hidden") {
+val hidden = root.installer(name = "hidden") {
     probe = "sh"
     install = "sh inner.sh {pkg}"
     check = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
@@ -315,9 +335,13 @@ val hidden = root.installer("hidden") {
     needsSudo()
 }
 
-val gamma = root.program("gamma") { installVia(hidden) }
+val gamma = root.program(name = "gamma") {
+    installVia(
+        hidden,
+    )
+}
 
-val m1 = machine("m1") { install(gamma) }
+val m1 = machine(hostname = "m1") { install(gamma) }
 KT
 compile_repo hrepo
 fake_sudo
@@ -342,7 +366,7 @@ fi
 # text drawn by the screen.
 kt_repo arepo
 kt_file arepo/programs/asks.loadout.kt <<'KT'
-val asks = root.installer("asks") {
+val asks = root.installer(name = "asks") {
     probe = "sh"
     install = "true"
     check = "echo {pkg} 1.0"
@@ -351,9 +375,13 @@ val asks = root.installer("asks") {
     upgrade = "printf 'Ans\\167er me: '; read answer && echo \"answered-\$answer\" > asked.txt"
 }
 
-val alpha = root.program("alpha") { installVia(asks) }
+val alpha = root.program(name = "alpha") {
+    installVia(
+        asks,
+    )
+}
 
-val m1 = machine("m1") { install(alpha) }
+val m1 = machine(hostname = "m1") { install(alpha) }
 KT
 compile_repo arepo
 "$BIN" --repo arepo --machine m1 status >/dev/null

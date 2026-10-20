@@ -56,6 +56,8 @@ fun main(args: Array<String>) {
             manifest = manifest,
         )
         writeIfChanged(repoRoot / LockFile.NAME, LockFile.encode(lock))
+        // Warnings, not refusals: the lock is written either way.
+        for (warning in unusedWarnings(draft, manifest, Registry.current.spares)) println("warning: $warning")
         // A repo with dotfiles gets their templates' data and partial beside them.
         manifest.layout.configs?.let { configs ->
             for ((path, text) in ChezmoiData.files(manifest, configs)) {

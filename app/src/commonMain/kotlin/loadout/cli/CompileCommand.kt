@@ -41,5 +41,9 @@ class CompileCommand : CliktCommand(name = "compile") {
             throw ProgramResult(result.exitCode)
         }
         echo(" " + Style.ok("✔") + "  wrote ${LockFile.NAME}")
+        // What the manifests declare but no machine uses.
+        for (line in result.stdout.lines().filter { it.startsWith("warning: ") }) {
+            echo(" " + Style.warn("!") + "  " + line.removePrefix("warning: "))
+        }
     }
 }

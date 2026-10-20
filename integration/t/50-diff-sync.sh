@@ -9,17 +9,19 @@ ok "diff exits 0 when machines agree"
 
 # A program in a file of its own, installed on both machines.
 kt_file repo/programs/missing.loadout.kt <<'KT'
-val notInstalled = root.program("definitely-not-installed-xyz") {
-    version("definitely-not-installed-xyz --version", "([0-9.]+)")
-    custom("manual") { command = "false" }
+val notInstalled = root.program(name = "definitely-not-installed-xyz") {
+    version(command = "definitely-not-installed-xyz --version", regex = "([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 
-val m1 = machine("m1") {
-    install(git.variant("manual"), notInstalled)
+val m1 = machine(hostname = "m1") {
+    install(git.variant(name = "manual"), notInstalled)
     run(marker)
 }
 
-val m2 = machine("m2") { install(git.variant("manual"), notInstalled) }
+val m2 = machine(hostname = "m2") { install(git.variant(name = "manual"), notInstalled) }
 KT
 cat > repo/machines.loadout.kt <<'KT'
 package repo

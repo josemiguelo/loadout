@@ -5,31 +5,39 @@
 # --- installer params ----------------------------------------------------
 kt_repo paramrepo
 kt_file paramrepo/programs/tool.loadout.kt <<'KT'
-val faux = root.installer("faux") {
+val faux = root.installer(name = "faux") {
     params("flavor")
     install = "echo installing {pkg} from {flavor}"
     check = "echo {pkg} 1.0"
     regex = "([0-9.]+)"
 }
 
-val tool = root.program("tool") {
-    installVia(faux { param("flavor", "vanilla") })
+val tool = root.program(name = "tool") {
+    installVia(
+        faux {
+            param(name = "flavor", value = "vanilla")
+        },
+    )
 }
 
-val m1 = machine("m1") { install(tool) }
+val m1 = machine(hostname = "m1") { install(tool) }
 KT
 compile_repo paramrepo
 OUT=$("$BIN" --repo paramrepo --machine m1 explain tool)
 echo "$OUT" | grep -q "echo installing tool from vanilla" || fail "installer params substitute"
 kt_file paramrepo/programs/tool.loadout.kt <<'KT'
-val faux = root.installer("faux") {
+val faux = root.installer(name = "faux") {
     params("flavor")
     install = "echo {flavor}"
 }
 
-val tool = root.program("tool") { installVia(faux) }
+val tool = root.program(name = "tool") {
+    installVia(
+        faux,
+    )
+}
 
-val m1 = machine("m1") { install(tool) }
+val m1 = machine(hostname = "m1") { install(tool) }
 KT
 OUT=$("$BIN" --repo paramrepo compile 2>&1) && fail "a missing param must fail the compile"
 echo "$OUT" | grep -q "needs a value for 'flavor'" || fail "the missing param is named: $OUT"
@@ -39,18 +47,22 @@ ok "installers take declared params, and a missing one is a compile error"
 # installer's command runs (here: the repo root).
 kt_repo fparam
 kt_file fparam/programs/tool/tool.loadout.kt <<'KT'
-val copyin = root.installer("copyin") {
+val copyin = root.installer(name = "copyin") {
     params("src")
     install = "cp {src} installed-{pkg}.txt"
     check = "cat installed-{pkg}.txt"
     regex = "([0-9.]+)"
 }
 
-val tool = program("tool") {
-    installVia(copyin { param("src", file("payload.txt")) })
+val tool = program(name = "tool") {
+    installVia(
+        copyin {
+            param(name = "src", value = file("payload.txt"))
+        },
+    )
 }
 
-val m1 = machine("m1") { install(tool) }
+val m1 = machine(hostname = "m1") { install(tool) }
 KT
 printf 'tool 4.2\n' > fparam/programs/tool/payload.txt
 compile_repo fparam
@@ -64,13 +76,15 @@ ok "a file: param resolves next to its program and is checked when the lock is r
 # --- programs in several files, machines in another --------------------
 basic_repo repo
 kt_file repo/programs/split.loadout.kt <<'KT'
-val splitprog = root.program("splitprog") {
-    version("git --version", "git version ([0-9.]+)")
-    custom("manual") { command = "false" }
+val splitprog = root.program(name = "splitprog") {
+    version(command = "git --version", regex = "git version ([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 
-val m3 = machine("m3") {
-    install(git.variant("manual"), splitprog)
+val m3 = machine(hostname = "m3") {
+    install(git.variant(name = "manual"), splitprog)
 }
 KT
 compile_repo repo
@@ -83,12 +97,12 @@ ok "every file the sources globs match compiles into one manifest"
 
 # --- profiles ------------------------------------------------------------
 kt_file repo/programs/profiles.loadout.kt <<'KT'
-val testbase = profile("testbase") {
-    install(git.variant("manual"))
+val testbase = profile(name = "testbase") {
+    install(git.variant(name = "manual"))
     run(marker)
 }
 
-val m9 = machine("m9") { extends(testbase) }
+val m9 = machine(hostname = "m9") { extends(testbase) }
 KT
 compile_repo repo
 OUT=$("$BIN" --repo repo --machine m9 setup-new-machine --dry-run) || fail "inherited machine plans"
@@ -103,24 +117,24 @@ echo "$OUT" | grep -qE "^ *run +marker" || fail "explain shows what the machine 
 ok "machines extend profiles, which are never machines themselves"
 
 kt_file repo/programs/profiles.loadout.kt <<'KT'
-val a = profile("a") { install(git.variant("manual")) }
-val b = profile("b") { install(Builtin.dnf, git) }
-val m9 = machine("m9") { extends(a, b) }
+val a = profile(name = "a") { install(git.variant(name = "manual")) }
+val b = profile(name = "b") { install(Builtin.dnf, git) }
+val m9 = machine(hostname = "m9") { extends(a, b) }
 KT
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "two profiles mapping a program differently must fail"
 echo "$OUT" | grep -q "machine 'm9': profiles 'a' and 'b' map 'git' differently ('manual' vs 'dnf')" || fail "the disagreement is named: $OUT"
 ok "two profiles of one machine that disagree are a compile error"
 
 kt_file repo/programs/profiles.loadout.kt <<'KT'
-val m9 = machine("m9") {
-    install(git.variant("manual"))
+val m9 = machine(hostname = "m9") {
+    install(git.variant(name = "manual"))
     install(Builtin.dnf, git)
 }
 KT
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a program installed twice must be refused"
 echo "$OUT" | grep -q "machine 'm9' installs 'git' twice" || fail "the double mapping is named: $OUT"
 kt_file repo/programs/profiles.loadout.kt <<'KT'
-val m9 = machine("m9") { install(ghostProgram) }
+val m9 = machine(hostname = "m9") { install(ghostProgram) }
 KT
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "an unknown program must not compile"
 echo "$OUT" | grep -q "profiles.loadout.kt.*Unresolved reference 'ghostProgram'" || fail "Kotlin names the unknown program and its file: $OUT"
@@ -144,21 +158,23 @@ class Data : MachineData() {
 
 fun MachineScope.data(block: Data.() -> Unit) = data(::Data, block)
 
-val git = root.program("git") {
-    version("git --version", "git version ([0-9.]+)")
-    custom("manual") { command = "false" }
+val git = root.program(name = "git") {
+    version(command = "git --version", regex = "git version ([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 KT
 kt_file datarepo/machines.loadout.kt <<'KT'
-val omarchyProfile = profile("omarchy") { data { omarchy = true } }
+val omarchyProfile = profile(name = "omarchy") { data { omarchy = true } }
 
-val m9 = machine("m9") {
+val m9 = machine(hostname = "m9") {
     extends(omarchyProfile)
     install(git)
     data { kitty.opacity = 0.99 }
 }
 
-val m2 = machine("m2") { install(git) }
+val m2 = machine(hostname = "m2") { install(git) }
 KT
 compile_repo datarepo
 OUT=$("$BIN" --repo datarepo --machine m9 explain) || fail "explain shows a machine with data"
@@ -168,7 +184,7 @@ OUT=$("$BIN" --repo datarepo --machine m2 explain)
 echo "$OUT" | grep -qE "data.omarchy +false" || fail "a machine without data gets the defaults: $OUT"
 grep -q '"opacity": 0.99' datarepo/loadout.lock.json || fail "the lock carries each machine's merged data"
 kt_file datarepo/machines.loadout.kt <<'KT'
-val m9 = machine("m9") {
+val m9 = machine(hostname = "m9") {
     install(git)
     data { kitty.opacty = 0.5 }
 }
@@ -179,7 +195,7 @@ ok "data defaults, profile and machine values merge, and explain shows them; a t
 
 # --- script file that doesn't exist ----------------------------------------
 kt_file repo/maintenance/ghost.loadout.kt <<'KT'
-val ghostScript = root.script("ghost-script") { file("scripts/does-not-exist.sh") }
+val ghostScript = root.script(name = "ghost-script") { file("scripts/does-not-exist.sh") }
 KT
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a missing script file must fail the compile"
 echo "$OUT" | grep -q "file 'scripts/does-not-exist.sh' not found" || fail "the missing file is named: $OUT"
@@ -189,11 +205,15 @@ ok "a script file that doesn't exist is caught at compile"
 # --- installing through a variant the program doesn't have -------------------
 kt_repo badmap
 kt_file badmap/programs/tool.loadout.kt <<'KT'
-val tool = root.program("tool") {
-    installVia(Builtin.dnf { command = "sudo dnf install -y tool" })
+val tool = root.program(name = "tool") {
+    installVia(
+        Builtin.dnf {
+            command = "sudo dnf install -y tool"
+        },
+    )
 }
 
-val m1 = machine("m1") { install(Builtin.brew, tool) }
+val m1 = machine(hostname = "m1") { install(Builtin.brew, tool) }
 KT
 OUT=$("$BIN" --repo badmap compile 2>&1) && fail "a variant the program lacks must fail the compile"
 echo "$OUT" | grep -q "machine 'm1' installs 'tool' through 'brew', but it has no such variant (has: dnf)" || fail "bad-mapping message: $OUT"
@@ -202,12 +222,14 @@ ok "a machine can't install a program through a variant it doesn't have"
 # --- file: install values run as repo scripts, repo-root cwd, from anywhere
 kt_repo filerepo
 kt_file filerepo/programs/filetool.loadout.kt <<'KT'
-val filetool = root.program("filetool") {
-    version("test -f installed-marker.txt && echo filetool 1.0", "filetool ([0-9.]+)")
-    custom("script") { command = "file:scripts/install-filetool.sh install" }
+val filetool = root.program(name = "filetool") {
+    version(command = "test -f installed-marker.txt && echo filetool 1.0", regex = "filetool ([0-9.]+)")
+    custom(name = "script") {
+        installedBy("scripts/install-filetool.sh install")
+    }
 }
 
-val m1 = machine("m1") { install(filetool) }
+val m1 = machine(hostname = "m1") { install(filetool) }
 KT
 mkdir -p filerepo/scripts
 # Requires the "install" argument and writes relative to cwd — proves both
@@ -227,14 +249,14 @@ ok "a file: install script deleted after compile is caught when the lock is read
 
 # file: works in check commands too.
 kt_file filerepo/programs/filetool.loadout.kt <<'KT'
-val filetool = root.program("filetool") {
-    custom("script") {
+val filetool = root.program(name = "filetool") {
+    custom(name = "script") {
         command = "true"
-        version("file:scripts/check-filetool.sh", "(done)")
+        version(command = runScript("scripts/check-filetool.sh"), regex = "(done)")
     }
 }
 
-val m1 = machine("m1") { install(filetool) }
+val m1 = machine(hostname = "m1") { install(filetool) }
 KT
 printf '#!/bin/sh\necho done\n' > filerepo/scripts/check-filetool.sh
 compile_repo filerepo
@@ -245,11 +267,13 @@ ok "file: works in check commands"
 # --- a yes/no check: installed, no version ----------------------------------
 kt_repo yesno
 kt_file yesno/programs/setup.loadout.kt <<'KT'
-val setupThing = root.program("setup-thing") {
-    custom { managedBy("setup-thing.sh") }
+val setupThing = root.program(name = "setup-thing") {
+    custom {
+        managedBy("setup-thing.sh")
+    }
 }
 
-val m1 = machine("m1") { install(setupThing) }
+val m1 = machine(hostname = "m1") { install(setupThing) }
 KT
 printf '#!/bin/sh\ncase "${1:-}" in check) test -f configured.txt ;; install) touch configured.txt ;; esac\n' > yesno/setup-thing.sh
 compile_repo yesno
@@ -267,12 +291,15 @@ ok "a yes/no check reports installed without a version"
 # (with its scripts) to another folder needs no edit.
 kt_repo moved
 kt_file moved/maintenance/hello/hello.loadout.kt <<'KT'
-val hello = script("hello", "says hello") {
+val hello = script(
+    name = "hello",
+    description = "says hello",
+) {
     file("hello.sh")
     check("test -f hello-ran.txt")
 }
 
-val m1 = machine("m1") { run(hello) }
+val m1 = machine(hostname = "m1") { run(hello) }
 KT
 printf '#!/bin/sh\ntouch hello-ran.txt\n' > moved/maintenance/hello/hello.sh
 compile_repo moved
@@ -292,7 +319,10 @@ ok "a file's declarations take its folder, so moving it needs no edit"
 kt_repo spaced
 kt_file spaced/maintenance/things/things.loadout.kt <<'KT'
 object Things {
-    val hello = script(name = "things-hello", description = "says hello") {
+    val hello = script(
+        name = "things-hello",
+        description = "says hello",
+    ) {
         file("hello.sh")
         check("test -f hello-ran.txt")
     }
@@ -309,37 +339,43 @@ ok "an object groups declarations; they keep their names and their file's folder
 # --- script variants: the machine picks one ---------------------------------
 kt_repo variants
 kt_file variants/maintenance/keyboard.loadout.kt <<'KT'
-val keyboard = script("keyboard", "fn/ctrl swap") {
-    variant("arch") {
+val keyboard = script(
+    name = "keyboard",
+    description = "fn/ctrl swap",
+) {
+    variant(name = "arch") {
         file("arch.sh")
         check("test -f arch-ran.txt")
     }
-    variant("fedora") {
+    variant(name = "fedora") {
         file("fedora.sh")
         check("test -f fedora-ran.txt")
     }
 }
 
-val m1 = machine("m1") { run(keyboard.variant("fedora")) }
-val m2 = machine("m2") { run(keyboard) }
+val m1 = machine(hostname = "m1") { run(keyboard.variant(name = "fedora")) }
+val m2 = machine(hostname = "m2") { run(keyboard) }
 KT
 printf '#!/bin/sh\ntouch arch-ran.txt\n' > variants/maintenance/arch.sh
 printf '#!/bin/sh\ntouch fedora-ran.txt\n' > variants/maintenance/fedora.sh
 OUT=$("$BIN" --repo variants compile 2>&1) && fail "running a script with variants without picking one must fail"
 echo "$OUT" | grep -q "machine 'm2' runs 'keyboard' without saying which variant (has: arch, fedora)" || fail "the missing pick is named: $OUT"
 kt_file variants/maintenance/keyboard.loadout.kt <<'KT'
-val keyboard = script("keyboard", "fn/ctrl swap") {
-    variant("arch") {
+val keyboard = script(
+    name = "keyboard",
+    description = "fn/ctrl swap",
+) {
+    variant(name = "arch") {
         file("arch.sh")
         check("test -f arch-ran.txt")
     }
-    variant("fedora") {
+    variant(name = "fedora") {
         file("fedora.sh")
         check("test -f fedora-ran.txt")
     }
 }
 
-val m1 = machine("m1") { run(keyboard.variant("fedora")) }
+val m1 = machine(hostname = "m1") { run(keyboard.variant(name = "fedora")) }
 KT
 compile_repo variants
 OUT=$("$BIN" --repo variants --machine m1 explain keyboard)
@@ -360,12 +396,14 @@ kt_repo custom
 kt_file custom/loadout.kt <<'KT'
 val repo = repo(name = "test", state = "observed")
 
-val git = root.program("git") {
-    version("git --version", "git version ([0-9.]+)")
-    custom("manual") { command = "false" }
+val git = root.program(name = "git") {
+    version(command = "git --version", regex = "git version ([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 
-val m1 = machine("m1") { install(git) }
+val m1 = machine(hostname = "m1") { install(git) }
 KT
 rm -rf custom/state
 compile_repo custom
@@ -373,3 +411,49 @@ compile_repo custom
 [ -f custom/observed/m1.json ] || fail "state lands in the repo's state directory"
 [ -d custom/state ] && fail "nothing is written to a default state dir" || true
 ok "state goes where the repo says"
+
+# --- compile warns about what no machine uses -------------------------------
+kt_repo unused
+kt_file unused/programs/tools.loadout.kt <<'KT'
+val tool = root.program(name = "tool") {
+    installVia(
+        Builtin.dnf,
+        Builtin.brew,
+    )
+}
+
+val orphan = root.program(name = "orphan") {
+    installVia(
+        Builtin.dnf,
+    )
+}
+
+val m1 = machine(hostname = "m1") { install(Builtin.dnf, tool) }
+KT
+OUT=$("$BIN" --repo unused compile 2>&1) || fail "warnings don't fail the compile: $OUT"
+echo "$OUT" | grep -q "wrote loadout.lock.json" || fail "the lock is written anyway: $OUT"
+echo "$OUT" | grep -q "program 'orphan' isn't installed on any machine" || fail "an unused program is named: $OUT"
+echo "$OUT" | grep -q "program 'tool': no machine installs it via 'brew'" || fail "an unpicked variant is named: $OUT"
+kt_file unused/programs/tools.loadout.kt <<'KT'
+val tool = root.program(name = "tool") {
+    installVia(
+        Builtin.dnf,
+        Builtin.brew {
+            spare(reason = "for macOS")
+        },
+    )
+}
+
+val orphan = root.program(name = "orphan") {
+    spare(reason = "for later")
+    installVia(
+        Builtin.dnf,
+    )
+}
+
+val m1 = machine(hostname = "m1") { install(Builtin.dnf, tool, orphan) }
+KT
+OUT=$("$BIN" --repo unused compile 2>&1) || fail "spare marks compile: $OUT"
+echo "$OUT" | grep -q "tool" && fail "a spare variant isn't warned about: $OUT"
+echo "$OUT" | grep -q "program 'orphan' is marked spare, but machine 'm1' uses it" || fail "a stale spare mark is named: $OUT"
+ok "compile warns about what no machine uses, unless it's marked spare"

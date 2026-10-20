@@ -5,9 +5,11 @@ kt_repo verrepo
 kt_file verrepo/loadout.kt <<'KT'
 val repo = repo(name = "test", state = "state", minToolVersion = "999.0.0")
 
-val git = root.program("git") {
-    version("git --version", "git version ([0-9.]+)")
-    custom("manual") { command = "false" }
+val git = root.program(name = "git") {
+    version(command = "git --version", regex = "git version ([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 KT
 compile_repo verrepo
@@ -22,12 +24,14 @@ ok "a repo's min-tool-version blocks an outdated binary with recovery hint"
 kt_file verrepo/loadout.kt <<'KT'
 val repo = repo(name = "test", state = "state")
 
-val git = root.program("git") {
-    version("git --version", "git version ([0-9.]+)")
-    custom("manual") { command = "false" }
+val git = root.program(name = "git") {
+    version(command = "git --version", regex = "git version ([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 
-val m1 = machine("m1") { install(git) }
+val m1 = machine(hostname = "m1") { install(git) }
 KT
 compile_repo verrepo
 cp verrepo/loadout.lock.json lock.good

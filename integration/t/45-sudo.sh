@@ -12,18 +12,18 @@ cat > srepo/plain.sh <<'SH'
 touch plain-ran.txt
 SH
 kt_file srepo/maintenance/sudo.loadout.kt <<'KT'
-val needs = root.script("needs") {
+val needs = root.script(name = "needs") {
     file("needs.sh")
     check("test -f needs-ran.txt")
     needsSudo()
 }
 
-val plain = root.script("plain") {
+val plain = root.script(name = "plain") {
     file("plain.sh")
     check("test -f plain-ran.txt")
 }
 
-val m1 = machine("m1") { run(needs, plain) }
+val m1 = machine(hostname = "m1") { run(needs, plain) }
 KT
 compile_repo srepo
 fake_sudo

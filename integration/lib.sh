@@ -69,25 +69,31 @@ basic_repo() {
     scaffold_repo "$1"
     rm -f "$1/programs/cli.loadout.kt"
     kt_file "$1/programs/git.loadout.kt" <<'KT'
-val git = root.program("git") {
-    version("git --version", "git version ([0-9.]+)")
-    installVia(Builtin.dnf { command = "sudo dnf install -y git" })
-    custom("manual") { command = "echo install git yourself && false" }
+val git = root.program(name = "git") {
+    version(command = "git --version", regex = "git version ([0-9.]+)")
+    installVia(
+        Builtin.dnf {
+            command = "sudo dnf install -y git"
+        },
+    )
+    custom(name = "manual") {
+        command = "echo install git yourself && false"
+    }
 }
 
-val marker = root.script("marker") {
+val marker = root.script(name = "marker") {
     file("scripts/marker.sh")
     check("test -f marker.txt")
 }
 KT
     kt_file "$1/machines.loadout.kt" <<'KT'
-val m1 = machine("m1") {
-    install(git.variant("manual"))
+val m1 = machine(hostname = "m1") {
+    install(git.variant(name = "manual"))
     run(marker)
 }
 
-val m2 = machine("m2") {
-    install(git.variant("manual"))
+val m2 = machine(hostname = "m2") {
+    install(git.variant(name = "manual"))
 }
 KT
     mkdir -p "$1/scripts"
@@ -123,33 +129,37 @@ worktree_repo() {
 scripts_repo() {
     kt_repo "$1"
     kt_file "$1/programs/scripts.loadout.kt" <<'KT'
-val fake = root.installer("fake") {
+val fake = root.installer(name = "fake") {
     probe = "sh"
     install = "echo installed-{pkg} > fake-install.txt"
     check = "test -f fake-install.txt && echo mytool 1.0"
     regex = "mytool ([0-9.]+)"
 }
 
-val mytool = root.program("mytool") { installVia(fake) }
+val mytool = root.program(name = "mytool") {
+    installVia(
+        fake,
+    )
+}
 
-val healthy = root.script("healthy") {
+val healthy = root.script(name = "healthy") {
     run("true")
     check("true")
 }
 
-val drifted = root.script("drifted") {
+val drifted = root.script(name = "drifted") {
     run("true")
     check("echo missing: nodejs 16 npm firebase-tools; false")
 }
 
-val bootstrapOnly = root.script("bootstrap-only") {
+val bootstrapOnly = root.script(name = "bootstrap-only") {
     run("echo bootstrapped > bootstrap-marker.txt")
     check("test -f bootstrap-marker.txt")
     setupOnly()
 }
 KT
     kt_file "$1/machines.loadout.kt" <<'KT'
-val m1 = machine("m1") {
+val m1 = machine(hostname = "m1") {
     install(mytool)
     run(healthy, drifted, bootstrapOnly)
 }

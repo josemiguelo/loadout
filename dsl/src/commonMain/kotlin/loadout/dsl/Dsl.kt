@@ -15,6 +15,16 @@ import loadout.core.model.VersionCheck
 /** The default version regex: the first dotted number in the output. */
 const val VERSION: String = """([0-9]+\.[0-9][0-9.]*)"""
 
+/**
+ * The shell's `$HOME`, for commands and paths: `path("$HOME/.local/bin")`.
+ * Kotlin reads `$name` in a string as its own, so this turns back into the
+ * shell variable instead of needing `\$HOME`.
+ */
+const val HOME: String = "\$HOME"
+
+/** The shell's `$USER` (see [HOME]). */
+const val USER: String = "\$USER"
+
 private val registry get() = Registry.current
 
 // ─── Repo ──────────────────────────────────────────────────────────────
@@ -67,7 +77,7 @@ fun <D : MachineData> machineData(schema: () -> D) {
  */
 class Dir(val path: String) {
     fun installer(name: String, block: InstallerScope.() -> Unit): Installer {
-        val scope = InstallerScope().apply(block)
+        val scope = InstallerScope(name).apply(block)
         registry.add("installer", name, registry.installers, scope.build(path))
         return Installer(name)
     }
@@ -172,14 +182,18 @@ internal fun <T> declared(items: Array<out T>, who: String): Array<out T> {
 sealed interface InstallMethod
 
 /** An installer configured for one program; see [Installer.invoke]. */
-class ConfiguredInstaller internal constructor(val installer: Installer, internal val variant: InstallVariant) : InstallMethod
+class ConfiguredInstaller internal constructor(
+    val installer: Installer,
+    internal val variant: InstallVariant,
+    internal val spare: String? = null,
+) : InstallMethod
 
 /**
  * This installer, configured for one program: its package id, and the
  * block's command, check or param values. Hand it to [ProgramScope.installVia].
  */
 operator fun Installer.invoke(pkg: String? = null, block: VariantScope.() -> Unit = {}): InstallMethod =
-    ConfiguredInstaller(this, VariantScope(pkg).apply(block).build(installer = null))
+    VariantScope(pkg).apply(block).let { ConfiguredInstaller(this, it.build(installer = null), it.spare) }
 
 class Installer(val name: String) : InstallMethod {
     /**
@@ -193,7 +207,7 @@ class Installer(val name: String) : InstallMethod {
     }
 }
 
-class InstallerScope internal constructor() {
+class InstallerScope internal constructor(private val name: String) {
     var probe: String? = null
     var install: String? = null
     var check: String? = null
@@ -211,6 +225,11 @@ class InstallerScope internal constructor() {
     /** Values each variant supplies, substituted like `{pkg}`: `{tap}`. */
     fun params(vararg names: String) {
         params += names
+    }
+
+    /** Kept though no machine uses it, on purpose; `loadout compile` doesn't warn about it. */
+    fun spare(reason: String) {
+        registry.spares["installer '$name'"] = reason
     }
 
     internal fun build(origin: String) = InstallerModel(
@@ -282,14 +301,24 @@ class ProgramScope internal constructor(
         for (way in declared(ways, "program '$name'")) {
             when (way) {
                 is Installer -> add(way.name, InstallVariant())
-                is ConfiguredInstaller -> add(way.installer.name, way.variant)
+                is ConfiguredInstaller -> {
+                    add(way.installer.name, way.variant)
+                    way.spare?.let { registry.spares["program '$name' via '${way.installer.name}'"] = it }
+                }
             }
         }
     }
 
     /** A variant with no installer: its own command and check. Named only when a program has several. */
     fun custom(name: String = "custom", block: VariantScope.() -> Unit) {
-        add(name, VariantScope(null).apply(block).build(installer = null))
+        val scope = VariantScope(null).apply(block)
+        add(name, scope.build(installer = null))
+        scope.spare?.let { registry.spares["program '${this.name}' via '$name'"] = it }
+    }
+
+    /** Kept though no machine installs it, on purpose; `loadout compile` doesn't warn about it. */
+    fun spare(reason: String) {
+        registry.spares["program '$name'"] = reason
     }
 
     fun dependsOn(vararg programs: Program) {
@@ -342,6 +371,13 @@ class ProgramScope internal constructor(
 }
 
 class VariantScope internal constructor(var pkg: String?) {
+    internal var spare: String? = null
+
+    /** Kept though no machine installs the program this way, on purpose; `loadout compile` doesn't warn about it. */
+    fun spare(reason: String) {
+        spare = reason
+    }
+
     var command: String? = null
     var probe: String? = null
     var outdated: String? = null
@@ -442,7 +478,12 @@ class Script internal constructor(
 
 class ScriptVariant internal constructor(val script: Script, val name: String) : Runnable
 
-class ScriptScope internal constructor(private val dir: Dir, private val name: String) {
+class ScriptScope internal constructor(
+    private val dir: Dir,
+    private val name: String,
+    /** The variant being declared, inside `variant(name = …) { }`. */
+    private val variantName: String? = null,
+) {
     private var file: String? = null
     private var run: String? = null
     private var check: String? = null
@@ -500,7 +541,7 @@ class ScriptScope internal constructor(private val dir: Dir, private val name: S
 
     /** One step, several ways, picked by the machine: `run(t2HidAppleKeyboard.variant(name = "arch"))`. */
     fun variant(name: String, block: ScriptScope.() -> Unit) {
-        val scope = ScriptScope(dir, this.name).apply(block)
+        val scope = ScriptScope(dir, this.name, variantName = name).apply(block)
         if (variants.put(name, scope.build("")) != null) registry.errors += "a script has two '$name' variants"
     }
 
@@ -517,6 +558,12 @@ class ScriptScope internal constructor(private val dir: Dir, private val name: S
      */
     fun updatesManagedBy(script: String, name: String? = null) =
         outdated(command = "file:$script", upgrade = "file:$script update {item}", name = name)
+
+    /** Kept though no machine runs it (or this variant of it), on purpose; `loadout compile` doesn't warn about it. */
+    fun spare(reason: String) {
+        val key = variantName?.let { "script '$name' as '$it'" } ?: "script '$name'"
+        registry.spares[key] = reason
+    }
 
     internal fun variantNames(): List<String> = variants.keys.toList()
 
@@ -549,7 +596,7 @@ class Machine internal constructor(val hostname: String)
 
 fun profile(name: String, block: MachineScope.() -> Unit): Profile {
     val label = "profile '$name'"
-    registry.add("profile", name, registry.profiles, MachineScope(label).apply(block).build())
+    registry.add("profile", name, registry.profiles, MachineScope(label, profile = name).apply(block).build())
     return Profile(name)
 }
 
@@ -564,12 +611,22 @@ fun machine(hostname: String, block: MachineScope.() -> Unit): Machine {
  * The body of a machine or a profile: two verbs, `install` and `run`. Merge
  * rules are contract 2's.
  */
-class MachineScope internal constructor(private val label: String) {
+class MachineScope internal constructor(
+    private val label: String,
+    /** The profile being declared; null for a machine. */
+    private val profile: String? = null,
+) {
     private val extends = mutableListOf<String>()
     private val pm = linkedMapOf<String, String>()
     private val scripts = mutableListOf<String>()
     private val scriptVariants = linkedMapOf<String, String>()
     private var data = MachineData.EMPTY_JSON
+
+    /** A profile kept though no machine extends it, on purpose; `loadout compile` doesn't warn about it. */
+    fun spare(reason: String) {
+        if (profile == null) registry.errors += "$label is marked spare, but only a profile can be: a machine is used by being declared"
+        else registry.spares["profile '$profile'"] = reason
+    }
 
     fun extends(vararg profiles: Profile) {
         extends += declared(profiles, label).map { it.name }

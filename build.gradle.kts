@@ -33,6 +33,8 @@ val bundle by tasks.registering(Copy::class) {
     }
     into(bundleDir.map { it.dir("gradle") })
     val version = project.version.toString()
+    // An input, so a version bump rewrites VERSION (the copy alone would be up to date).
+    inputs.property("version", version)
     doLast {
         bundleDir.get().file("VERSION").asFile.writeText(version + "\n")
     }

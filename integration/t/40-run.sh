@@ -42,30 +42,30 @@ printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$
 kt_file repo/maintenance/args/args.loadout.kt <<'KT'
 private val args = Dir("maintenance/args")
 
-val argscript = args.script("argscript") {
+val argscript = args.script(name = "argscript") {
     file("argscript.sh")
     check("test -f arg-marker.txt && grep -qx \$1 arg-marker.txt")
 }
 
-val argcount = args.script("argcount") { file("argcount.sh") }
+val argcount = args.script(name = "argcount") { file("argcount.sh") }
 
 private val greetDir = Dir("maintenance/greet")
 
-val greet = greetDir.script("greet") {
+val greet = greetDir.script(name = "greet") {
     file("greet.sh")
     check("test -f greeted.txt")
 }
 
-val m3 = machine("m3") {
-    install(git.variant("manual"))
+val m3 = machine(hostname = "m3") {
+    install(git.variant(name = "manual"))
     run(argscript, "fedora")
     // A long entry may span lines: its lines are arguments, never commands.
     // If the newline reached the shell, `touch pwned.txt` would run.
     run(argcount, "one\ntouch pwned.txt")
 }
 
-val m5 = machine("m5") {
-    install(git.variant("manual"))
+val m5 = machine(hostname = "m5") {
+    install(git.variant(name = "manual"))
     run(greet)
 }
 KT

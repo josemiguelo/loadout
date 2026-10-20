@@ -33,6 +33,9 @@ class Registry {
     internal val profiles = linkedMapOf<String, MachineConfig>()
     internal val errors = mutableListOf<String>()
 
+    /** What `spare(reason)` marked, keyed as warnings name it ("program 'x'"), with the reason. */
+    internal val spares = linkedMapOf<String, String>()
+
     internal fun <V> add(kind: String, name: String, map: MutableMap<String, V>, value: V) {
         if (map.put(name, value) != null) errors += "duplicate $kind '$name'"
     }

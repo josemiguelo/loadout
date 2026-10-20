@@ -48,8 +48,10 @@ ok "setup-new-machine runs eligible scripts"
 # --- membership: a program no machine maps ------------------------------
 # Skipped by converge, an error when explicitly requested, not observed.
 kt_file repo/programs/never.loadout.kt <<'KT'
-val neverMapped = root.program("never-mapped") {
-    custom("manual") { command = "false" }
+val neverMapped = root.program(name = "never-mapped") {
+    custom(name = "manual") {
+        command = "false"
+    }
 }
 KT
 compile_repo repo
@@ -70,16 +72,20 @@ ok "setup-new-machine fails for a machine the repo doesn't declare"
 # --- mapped pm binary not present on this machine ------------------------
 kt_repo pmrepo
 kt_file pmrepo/programs/tool.loadout.kt <<'KT'
-val pacman = root.installer("pacman") {
+val pacman = root.installer(name = "pacman") {
     probe = "pacman"
     install = "sudo pacman -S --noconfirm {pkg}"
     check = "pacman -Q {pkg}"
     regex = "([0-9.]+)"
 }
 
-val tool = root.program("tool") { installVia(pacman) }
+val tool = root.program(name = "tool") {
+    installVia(
+        pacman,
+    )
+}
 
-val m1 = machine("m1") { install(tool) }
+val m1 = machine(hostname = "m1") { install(tool) }
 KT
 compile_repo pmrepo
 if ! command -v pacman >/dev/null 2>&1; then
@@ -108,21 +114,27 @@ ok "explain prints expanded programs and scripts (all of them with no names)"
 # the program (`rg --version`, no probe) means what it says.
 kt_repo probed
 kt_file probed/programs/probed.loadout.kt <<'KT'
-val ghostpm = root.installer("ghostpm") {
+val ghostpm = root.installer(name = "ghostpm") {
     probe = "ghostpm-definitely-not-here"
     install = "ghostpm-definitely-not-here install {pkg}"
     check = "ghostpm-definitely-not-here query {pkg}"
     regex = "([0-9.]+)"
 }
 
-val viapm = root.program("viapm") { installVia(ghostpm) }
-
-val byitself = root.program("byitself") {
-    version("byitself-definitely-not-here --version", "([0-9.]+)")
-    custom("manual") { command = "false" }
+val viapm = root.program(name = "viapm") {
+    installVia(
+        ghostpm,
+    )
 }
 
-val m1 = machine("m1") { install(viapm, byitself) }
+val byitself = root.program(name = "byitself") {
+    version(command = "byitself-definitely-not-here --version", regex = "([0-9.]+)")
+    custom(name = "manual") {
+        command = "false"
+    }
+}
+
+val m1 = machine(hostname = "m1") { install(viapm, byitself) }
 KT
 compile_repo probed
 OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
@@ -137,20 +149,24 @@ ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'
 # --- a variant's own depends-on comes only with that variant --------------
 kt_repo vdeps
 kt_file vdeps/programs/vdeps.loadout.kt <<'KT'
-val prereq = root.program("prereq") {
-    custom("manual") { command = "true" }
+val prereq = root.program(name = "prereq") {
+    custom(name = "manual") {
+        command = "true"
+    }
 }
 
-val tool = root.program("tool") {
-    custom("withprereq") {
+val tool = root.program(name = "tool") {
+    custom(name = "withprereq") {
         command = "true"
         dependsOn(prereq)
     }
-    custom("plain") { command = "true" }
+    custom(name = "plain") {
+        command = "true"
+    }
 }
 
-val m1 = machine("m1") { install(tool.variant("withprereq"), prereq) }
-val m2 = machine("m2") { install(tool.variant("plain")) }
+val m1 = machine(hostname = "m1") { install(tool.variant(name = "withprereq"), prereq) }
+val m2 = machine(hostname = "m2") { install(tool.variant(name = "plain")) }
 KT
 compile_repo vdeps
 OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
