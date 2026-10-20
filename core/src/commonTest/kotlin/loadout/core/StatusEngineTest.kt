@@ -3,7 +3,11 @@ package loadout.core
 import loadout.core.exec.CommandFrame
 import loadout.core.engine.StatusEngine
 import loadout.core.engine.VersionChecker
-import loadout.core.manifest.ManifestLoader
+import loadout.dsl.Builtin
+import loadout.dsl.invoke
+import loadout.dsl.machine
+import loadout.dsl.manifestOf
+import loadout.dsl.root
 import loadout.core.model.OsFamily
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
@@ -16,38 +20,25 @@ import kotlinx.coroutines.test.runTest
 import okio.Path.Companion.toPath
 
 class StatusEngineTest {
-    private val manifest = ManifestLoader.parse(
-        """
-        programs:
-          git:
-            version:
-              command: git --version
-              regex: git version ([0-9.]+)
-            install:
-              dnf:
-                command: sudo dnf install -y git
-
-        scripts:
-          dotfiles:
-            run: echo setup
-            check: test -d ${'$'}HOME/.dotfiles
-          mac-only:
-            run: echo mac
-            os: [macos]
-            check: true
-          uncheckable:
-            run: echo once
-          not-opted-in:
-            run: echo never
-            check: true
-
-        machines:
-          laptop:
-            scripts: [dotfiles, mac-only, uncheckable]
-            pm:
-              git: dnf
-        """.trimIndent(),
-    )
+    private val manifest = manifestOf {
+        val git = root.program("git") {
+            version("git --version", "git version ([0-9.]+)")
+            installVia(Builtin.dnf { command = "sudo dnf install -y git" })
+        }
+        val dotfiles = root.script("dotfiles") {
+            run("echo setup")
+            check("test -d \$HOME/.dotfiles")
+        }
+        val uncheckable = root.script("uncheckable") { run("echo once") }
+        root.script("not-opted-in") {
+            run("echo never")
+            check("true")
+        }
+        machine("laptop") {
+            install(Builtin.dnf, git)
+            run(dotfiles, uncheckable)
+        }
+    }
 
     private val system = SystemInfo("laptop", OsFamily.LINUX, "fedora", "x86_64")
 
@@ -69,12 +60,6 @@ class StatusEngineTest {
     fun checkedScriptObservedAsPendingWhenCheckFails() = runTest {
         val state = engine(FakeProcessRunner()).refresh(manifest, system, previous = null)
         assertEquals(ScriptStatus.PENDING, state.scripts.getValue("dotfiles").status)
-    }
-
-    @Test
-    fun osFilteredScriptIsAbsent() = runTest {
-        val state = engine(FakeProcessRunner()).refresh(manifest, system, previous = null)
-        assertFalse("mac-only" in state.scripts)
     }
 
     @Test

@@ -30,24 +30,28 @@ class ExplainCommand : CliktCommand(name = "explain") {
         val mapping = manifest.machines[system.machine]?.pm.orEmpty()
 
         // Everything explained starts with the machine: the profiles it
-        // extends, its own groups, and its merged data (what its chezmoi
-        // templates see).
+        // extends, what it installs and runs (its profiles' included), and
+        // its merged data (what its chezmoi templates see).
         if (names.isEmpty()) {
             val machine = manifest.machines[system.machine]
-            echo(Style.header("machine ") + Style.bold(system.machine) + Style.dim("  ${app.layout.machines}/${system.machine}.yaml"))
-            if (machine == null) echo("  " + Style.warn("! no machine file — showing loadout.yaml's data defaults"))
+            echo(Style.header("machine ") + Style.bold(system.machine))
+            if (machine == null) echo("  " + Style.warn("! not declared in the repo — showing the data defaults"))
             val rows = mutableListOf<Pair<String, String>>()
             if (machine != null && machine.extends.isNotEmpty()) rows += "extends" to machine.extends.joinToString()
-            // One row per program the machine names: its install_with and the scripts it opts into.
-            for ((program, contents) in machine?.groups.orEmpty()) {
-                val parts = listOfNotNull(
-                    contents.install.values.joinToString { "install_with $it" }.ifEmpty { null },
-                    contents.scripts.joinToString { scriptEntry(it).first }.ifEmpty { null }?.let { "scripts $it" },
-                )
-                rows += program to parts.joinToString(" · ").ifEmpty { "nothing" }
+            // What it installs, grouped by the variant each program uses.
+            val byVariant = machine?.pm.orEmpty().entries.groupBy({ it.value }, { it.key })
+            for (variant in byVariant.keys.sorted()) {
+                val programs = byVariant.getValue(variant)
+                rows += "install $variant" to programs.sorted().joinToString()
+            }
+            machine?.scripts?.takeIf { it.isNotEmpty() }?.let { entries ->
+                rows += "run" to entries.joinToString { entry ->
+                    val name = scriptEntry(entry).first
+                    machine.scriptVariants[name]?.let { "$name ($it)" } ?: name
+                }
             }
             rows += MachineData.lines(machine?.data ?: manifest.data).map { (key, value) -> "data.$key" to value }
-            if (rows.none { it.first.startsWith("data.") }) echo("  " + Style.dim("no data declared in loadout.yaml"))
+            if (rows.none { it.first.startsWith("data.") }) echo("  " + Style.dim("no data declared"))
             val width = rows.maxOfOrNull { it.first.length } ?: 0
             for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
             echo("")
@@ -74,10 +78,11 @@ class ExplainCommand : CliktCommand(name = "explain") {
                 program != null -> {
                     echo(Style.header("program ") + Style.bold(name) + program.description.ifEmpty { null }?.let { Style.dim("  — $it") }.orEmpty())
                     rows += "version" to (
-                        program.version?.let { "${it.command}  =~ /${it.regex}/" }
+                        program.version?.let(::describe)
                             ?: "(none — status will always be 'unknown')"
                         )
                     if (program.dependsOn.isNotEmpty()) rows += "depends-on" to program.dependsOn.joinToString()
+                    if (program.path.isNotEmpty()) rows += "path" to program.path.joinToString(":") + "  (first on PATH for its commands)"
                     if (program.tags.isNotEmpty()) rows += "tags" to program.tags.joinToString()
                     if (program.install.isEmpty()) rows += "install" to "(none — not installable anywhere)"
                     for ((key, variant) in program.install) {
@@ -92,14 +97,14 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         val marker = if (key == mapping[name]) Style.machine("   <- ${system.machine}") else ""
                         rows += "install.$key" to "${resolved.command}$via$marker"
                         resolved.check?.takeIf { it != program.version }?.let {
-                            rows += "check.$key" to "${it.command}  =~ /${it.regex}/"
+                            rows += "check.$key" to describe(it)
                         }
                         resolved.probe?.let { rows += "probe.$key" to it }
                         if (resolved.sudo) rows += "sudo.$key" to "yes — a run that installs it asks for the password first"
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
                     }
                     if (name !in mapping) {
-                        notes += "! not mapped for ${system.machine} (add it to ${app.layout.machines}/${system.machine}.yaml)"
+                        notes += "! not installed on ${system.machine} (install it in machine '${system.machine}' or a profile it extends)"
                     }
                     state?.programs?.get(name)?.let {
                         val status = when (it.status) {
@@ -116,13 +121,13 @@ class ExplainCommand : CliktCommand(name = "explain") {
                     script.file?.let { rows += "file" to it }
                     script.run?.let { rows += "run" to it }
                     script.check?.let { rows += "check" to it }
-                    if (script.os.isNotEmpty()) rows += "os" to script.os.joinToString()
+                    if (script.variants.isNotEmpty()) rows += "variants" to script.variants.keys.joinToString()
                     if (script.after.isNotEmpty()) rows += "after" to script.after.joinToString()
                     if (script.modes != listOf("setup", "maintain")) rows += "modes" to script.modes.joinToString()
                     if (script.sudo) rows += "sudo" to "yes — a run that runs it asks for the password first"
                     val enabled = manifest.machines[system.machine]?.scriptArgs()?.get(name)
                     rows += "enabled" to when {
-                        enabled == null -> "no — add it to a program's scripts in ${app.layout.machines}/${system.machine}.yaml"
+                        enabled == null -> "no — run it in machine '${system.machine}' or a profile it extends"
                         enabled.isEmpty() -> "yes (${system.machine})"
                         else -> "yes (${system.machine}, args: $enabled)"
                     }
@@ -161,3 +166,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
         }
     }
 }
+
+/** A check as explain shows it: its command and what reads the version, or that it only says yes or no. */
+private fun describe(check: loadout.core.model.VersionCheck): String =
+    check.regex?.let { "${check.command}  =~ /$it/" } ?: "${check.command}  (yes/no)"

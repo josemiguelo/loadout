@@ -50,10 +50,10 @@ if has_pty; then
       printf '\r'; wait_back tui-scripts.log; printf '\r'; sleep 1.5; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-scripts.log --repo srepo --machine m1
     grep -qa "space tick" tui-scripts.log || fail "the scripts row opens a picker"
-    grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list modes: [setup] scripts" || true
+    grep -qa "bootstrap-only" tui-scripts.log && fail "the picker must not list setup-only scripts" || true
     grep -qa "These scripts will run" tui-scripts.log || fail "the pane asks before running scripts"
     grep -qa "ran drifted (exit 0)" tui-scripts.log || fail "the terminal runs the ticked scripts"
-    seen tui-scripts.log "━━ loadout run healthy drifted --force ━" || fail "a rule names the command before its output"
+    seen tui-scripts.log "━━ loadout run drifted healthy --force ━" || fail "a rule names the command before its output"
     seen tui-scripts.log "━━ ✔ done ━" || fail "and one closes it with the verdict"
     seen tui-scripts.log "Run .* Cancel" || fail "the question shows its two buttons"
     grep -qa "still not done: drifted (missing: nodejs 16" tui-scripts.log \
@@ -72,16 +72,19 @@ if has_pty; then
     # The pause takes one key: v pages through the command's whole output
     # from its first line (script(1)'s own header lines stripped), q quits.
     # The transcript is gone afterwards.
-    mkdir -p rt vrepo/scripts vrepo/machines vrepo/state
+    mkdir -p rt
+    kt_repo vrepo
+    mkdir -p vrepo/scripts
     printf '#!/bin/sh\necho FIRST-OUTPUT-LINE\nseq 1 80\necho LAST-OUTPUT-LINE\n' > vrepo/scripts/longrun.sh
-    cat > vrepo/loadout.yaml <<'YAML'
-scripts:
-  longrun:
-    file: scripts/longrun.sh
-    check: 'false'
-YAML
-    add_layout "vrepo"
-    printf 'setup:\n  scripts: [longrun]\n' > vrepo/machines/m1.yaml
+    kt_file vrepo/maintenance/longrun.loadout.kt <<'KT'
+val longrun = root.script("longrun") {
+    file("scripts/longrun.sh")
+    check("false")
+}
+
+val m1 = machine("m1") { run(longrun) }
+KT
+    compile_repo vrepo
     { wait_settled tui-view.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-view.log 'space tick'
       printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-view.log 'These scripts will run'
       printf '\r'; wait_back tui-view.log; printf 'v'; sleep 1.5
@@ -139,40 +142,39 @@ fi
 # Two repos with one batch oracle each: one reports nothing outdated, one
 # reports a package. A tool that heads no rows hides nothing when folded,
 # so only the second may ever show a chevron.
-mkdir -p orepo/state orepo/machines frepo/state frepo/machines
 fake_release_cache
-cat > orepo/loadout.yaml <<'YAML'
-installers:
-  quiet:
-    probe: sh
-    install: 'echo installed-{pkg} > quiet-{pkg}.txt'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9][0-9.]*)'
-    outdated-all: 'true'
-    upgrade: 'echo swept'
+kt_repo orepo
+kt_file orepo/programs/alpha.loadout.kt <<'KT'
+val quiet = root.installer("quiet") {
+    probe = "sh"
+    install = "echo installed-{pkg} > quiet-{pkg}.txt"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9][0-9.]*)"
+    outdatedAll = "true"
+    upgrade = "echo swept"
+}
 
-programs:
-  alpha:
-    via: [quiet]
-YAML
-add_layout "orepo"
-cat > frepo/loadout.yaml <<'YAML'
-installers:
-  quiet:
-    probe: sh
-    install: 'echo installed-{pkg} > quiet-{pkg}.txt'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9][0-9.]*)'
-    outdated-all: 'echo ''alpha 2.0'''
-    upgrade: 'echo swept'
+val alpha = root.program("alpha") { installVia(quiet) }
 
-programs:
-  alpha:
-    via: [quiet]
-YAML
-add_layout "frepo"
-printf 'alpha:\n  install_with: quiet\n' > orepo/machines/m1.yaml
-cp orepo/machines/m1.yaml frepo/machines/m1.yaml
+val m1 = machine("m1") { install(alpha) }
+KT
+kt_repo frepo
+kt_file frepo/programs/alpha.loadout.kt <<'KT'
+val quiet = root.installer("quiet") {
+    probe = "sh"
+    install = "echo installed-{pkg} > quiet-{pkg}.txt"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9][0-9.]*)"
+    outdatedAll = "echo 'alpha 2.0'"
+    upgrade = "echo swept"
+}
+
+val alpha = root.program("alpha") { installVia(quiet) }
+
+val m1 = machine("m1") { install(alpha) }
+KT
+compile_repo orepo
+compile_repo frepo
 "$BIN" --repo orepo --machine m1 status >/dev/null
 "$BIN" --repo frepo --machine m1 status >/dev/null
 if has_pty; then
@@ -204,28 +206,28 @@ fi
 # back outdated after every refresh, forever. Each upgrade writes its own
 # file: the tool's command is printed on screen either way, so only the
 # filesystem can say which one actually ran.
-mkdir -p crepo/state crepo/machines
-cat > crepo/loadout.yaml <<'YAML'
-installers:
-  quiet:
-    probe: sh
-    install: 'echo installed-{pkg} > quiet-{pkg}.txt'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9][0-9.]*)'
-    outdated-all: 'echo ''tpack 2.0'''
-    upgrade: 'echo swept > the-tool-swept.txt'
+kt_repo crepo
+kt_file crepo/programs/tpack.loadout.kt <<'KT'
+val quiet = root.installer("quiet") {
+    probe = "sh"
+    install = "echo installed-{pkg} > quiet-{pkg}.txt"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9][0-9.]*)"
+    outdatedAll = "echo 'tpack 2.0'"
+    upgrade = "echo swept > the-tool-swept.txt"
+}
 
-programs:
-  tpack:
-    via: [quiet]
+val tpack = root.program("tpack") { installVia(quiet) }
 
-outdated:
-  tmux-plugins:
-    command: 'echo ''tpack aaa1111 bbb2222 156 commit(s) behind'''
-    upgrade: 'echo pulled > pulled-{item}.txt'
-YAML
-add_layout "crepo"
-printf 'tpack:\n  install_with: quiet\n' > crepo/machines/m1.yaml
+val tmuxPlugins = root.outdated(
+    "tmux-plugins",
+    "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'",
+    upgrade = "echo pulled > pulled-{item}.txt",
+)
+
+val m1 = machine("m1") { install(tpack) }
+KT
+compile_repo crepo
 "$BIN" --repo crepo --machine m1 status >/dev/null
 if has_pty; then
     # jj to the remote row, l opens the table, then jjj walks the tool
@@ -259,23 +261,21 @@ fi
 # --- the programs row: sudo prompts on the terminal ------------------------
 # A fake sudo on PATH that prompts like the real one: a wrong password is
 # refused, the right one runs both installs, nothing typed is echoed.
-mkdir -p irepo/state irepo/machines
-cat > irepo/loadout.yaml <<'YAML'
-installers:
-  fake:
-    probe: sh
-    install: 'sudo sh -c ''echo installed-{pkg} > fake-{pkg}.txt'''
-    check: 'test -f fake-{pkg}.txt && echo {pkg} 1.0'
-    regex: '([0-9][0-9.]*)'
+kt_repo irepo
+kt_file irepo/programs/fake.loadout.kt <<'KT'
+val fake = root.installer("fake") {
+    probe = "sh"
+    install = "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'"
+    check = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
+    regex = "([0-9][0-9.]*)"
+}
 
-programs:
-  alpha:
-    via: [fake]
-  beta:
-    via: [fake]
-YAML
-add_layout "irepo"
-printf 'alpha:\n  install_with: fake\nbeta:\n  install_with: fake\n' > irepo/machines/m1.yaml
+val alpha = root.program("alpha") { installVia(fake) }
+val beta = root.program("beta") { installVia(fake) }
+
+val m1 = machine("m1") { install(alpha, beta) }
+KT
+compile_repo irepo
 fake_sudo
 "$BIN" --repo irepo --machine m1 status >/dev/null
 if has_pty; then
@@ -300,27 +300,26 @@ fi
 
 # --- sudo called from inside a command, declared -------------------------
 # `omarchy pkg add`, Homebrew's installer: the command never says sudo, so it
-# declares `sudo: true`, and the hand-off's run asks for the password once,
+# declares needsSudo(), and the hand-off's run asks for the password once,
 # upfront, on the terminal (t/45-sudo.sh covers the CLI side).
-mkdir -p hrepo/state hrepo/machines
+kt_repo hrepo
 cat > hrepo/inner.sh <<'SH'
 sudo sh -c "echo installed-$1 > fake-$1.txt"
 SH
-cat > hrepo/loadout.yaml <<'YAML'
-installers:
-  hidden:
-    probe: sh
-    install: 'sh inner.sh {pkg}'
-    check: 'test -f fake-{pkg}.txt && echo {pkg} 1.0'
-    regex: '([0-9][0-9.]*)'
-    sudo: true
+kt_file hrepo/programs/hidden.loadout.kt <<'KT'
+val hidden = root.installer("hidden") {
+    probe = "sh"
+    install = "sh inner.sh {pkg}"
+    check = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
+    regex = "([0-9][0-9.]*)"
+    needsSudo()
+}
 
-programs:
-  gamma:
-    via: [hidden]
-YAML
-add_layout "hrepo"
-printf 'gamma:\n  install_with: hidden\n' > hrepo/machines/m1.yaml
+val gamma = root.program("gamma") { installVia(hidden) }
+
+val m1 = machine("m1") { install(gamma) }
+KT
+compile_repo hrepo
 fake_sudo
 "$BIN" --repo hrepo --machine m1 status >/dev/null
 OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
@@ -341,23 +340,22 @@ fi
 # The upgrade's own question reaches the terminal and gets its answer. It
 # is printed through an escape (\167 = w) so waiting for it can't match
 # text drawn by the screen.
-mkdir -p arepo/state arepo/machines
-cat > arepo/loadout.yaml <<'YAML'
-installers:
-  asks:
-    probe: sh
-    install: 'true'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9][0-9.]*)'
-    outdated-all: 'echo ''alpha 2.0'''
-    upgrade: 'printf ''Ans\167er me: ''; read answer && echo "answered-$answer" > asked.txt'
+kt_repo arepo
+kt_file arepo/programs/asks.loadout.kt <<'KT'
+val asks = root.installer("asks") {
+    probe = "sh"
+    install = "true"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9][0-9.]*)"
+    outdatedAll = "echo 'alpha 2.0'"
+    upgrade = "printf 'Ans\\167er me: '; read answer && echo \"answered-\$answer\" > asked.txt"
+}
 
-programs:
-  alpha:
-    via: [asks]
-YAML
-add_layout "arepo"
-printf 'alpha:\n  install_with: asks\n' > arepo/machines/m1.yaml
+val alpha = root.program("alpha") { installVia(asks) }
+
+val m1 = machine("m1") { install(alpha) }
+KT
+compile_repo arepo
 "$BIN" --repo arepo --machine m1 status >/dev/null
 if has_pty; then
     # jj to the remote row, l opens it, a ticks it, enter asks, enter runs;

@@ -7,10 +7,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * The free-form `data` tables: `loadout.yaml` declares every key and its
- * default, machine and profile files override them, and chezmoi templates read
- * the same files. Kept as JSON elements, because the serializable model can't
- * hold free-form tables.
+ * The per-machine `data` tables: the repo's data schema declares every key
+ * and its default, machines and profiles override them, and chezmoi
+ * templates read each machine's merged table from the lock. Kept as JSON
+ * elements, because the serializable model can't hold free-form tables.
  */
 object MachineData {
     val EMPTY: JsonObject = JsonObject(emptyMap())
@@ -33,9 +33,9 @@ object MachineData {
             val declared = defaults[key]
             when {
                 declared == null ->
-                    listOf("$label: data key '$path' is not declared in loadout.yaml")
+                    listOf("$label: data key '$path' is not declared in the data schema")
                 kind(declared) != kind(value) ->
-                    listOf("$label: data key '$path' is a ${kind(value)}, but loadout.yaml declares a ${kind(declared)}")
+                    listOf("$label: data key '$path' is a ${kind(value)}, but the data schema declares a ${kind(declared)}")
                 declared is JsonObject && value is JsonObject -> validate(declared, value, label, "$path.")
                 else -> emptyList()
             }

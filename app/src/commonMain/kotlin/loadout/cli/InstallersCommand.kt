@@ -2,43 +2,27 @@ package loadout.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
-import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.optional
-import com.github.ajalt.clikt.parameters.options.flag
-import com.github.ajalt.clikt.parameters.options.option
-import loadout.core.manifest.Glob
-import loadout.core.manifest.InstallerLibrary
-
-/** Where `installers --eject` writes the built-in library, relative to the repo root. */
-private const val EJECT_TARGET = "programs/installers/builtin.loadout.yaml"
 
 /**
- * What `via = ["dnf"]` actually means. Installers ship with loadout and are
+ * What `installVia(dnf)` actually means. Installers ship with loadout and are
  * merged under the repo's own, so this is where you see which definition
- * won — and `--eject` copies the built-ins into the repo when you want to
- * own them.
+ * won. To own a built-in, declare an installer of the same name.
  */
 class InstallersCommand : CliktCommand(name = "installers") {
     override fun help(context: Context) = commandHelp(
         "Show the install mechanisms available to this repo: loadout's built-ins plus your own.",
         "[name]     print one installer's full definition",
-        "--eject    write the built-ins to programs/installers/builtin.loadout.yaml so the repo owns them",
-        "--force    overwrite that file if it already exists",
     )
 
     private val name by argument(name = "name", help = "Installer to describe").optional()
-    private val eject by option("--eject", help = "Copy the built-in installers into the repo").flag()
-    private val force by option("--force", help = "Overwrite an existing builtin.loadout.yaml").flag()
 
     private val app by requireObject<AppContext>()
 
     override fun run() {
-        if (eject && name != null) throw UsageError("Give an installer name or --eject, not both")
-        if (eject) return ejectLibrary()
-
         val manifest = app.loadManifest()
         // Style AFTER padding — escape codes would break the column width.
         fun source(key: String, width: Int = 0) =
@@ -63,6 +47,7 @@ class InstallersCommand : CliktCommand(name = "installers") {
                 installer.regex?.let { "regex" to it },
                 installer.outdated?.let { "outdated" to it },
                 installer.outdatedAll?.let { "outdated-all" to it },
+                installer.requires.takeIf { it.isNotEmpty() }?.let { "requires" to it.joinToString() },
             )
             val width = rows.maxOf { it.first.length }
             for ((label, value) in rows) echo("  " + Style.dim(label.padEnd(width)) + "  $value")
@@ -84,23 +69,6 @@ class InstallersCommand : CliktCommand(name = "installers") {
             )
         }
         echo("")
-        echo(Style.dim("  A repo installers.<name> replaces the built-in of that name."))
-    }
-
-    private fun ejectLibrary() {
-        val target = app.repoRoot / EJECT_TARGET
-        // A file no fragment glob loads would sit in the repo doing nothing.
-        if (app.layout.fragments.none { Glob.matches(it, EJECT_TARGET) }) {
-            echo("error: no layout fragments glob loads $EJECT_TARGET; add one (e.g. \"programs/**/*.yaml\") first")
-            throw ProgramResult(1)
-        }
-        if (app.fs.exists(target) && !force) {
-            echo("error: $target already exists (use --force to overwrite)")
-            throw ProgramResult(1)
-        }
-        target.parent?.let { app.fs.createDirectories(it) }
-        app.fs.write(target) { writeUtf8(InstallerLibrary.YAML) }
-        echo(" " + Style.ok("✔") + "  wrote $target")
-        echo(Style.dim("  These now override the built-ins; delete the ones you don't want to own."))
+        echo(Style.dim("  A repo installer of the same name replaces the built-in."))
     }
 }

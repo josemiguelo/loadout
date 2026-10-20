@@ -2,7 +2,12 @@ package loadout.tui
 
 import loadout.core.diff.ConfigCell
 import loadout.core.diff.DiffReport
-import loadout.core.manifest.ManifestLoader
+import loadout.dsl.Builtin
+import loadout.dsl.invoke
+import loadout.dsl.layout
+import loadout.dsl.machine
+import loadout.dsl.manifestOf
+import loadout.dsl.root
 import loadout.core.model.ConfigState
 import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
@@ -26,30 +31,23 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private val MANIFEST = ManifestLoader.parse(
-    """
-    programs:
-      git:
-        via: [dnf]
-      kitty:
-        via: [dnf]
-
-    scripts:
-      dotfiles:
-        run: true
-        check: true
-      bootstrap:
-        run: true
-        modes: [setup]
-
-    machines:
-      m1:
-        scripts: [dotfiles, bootstrap]
-        pm:
-          git: dnf
-          kitty: dnf
-    """.trimIndent(),
-)
+private val MANIFEST = manifestOf {
+    layout(state = "state")
+    val git = root.program("git") { installVia(Builtin.dnf) }
+    val kitty = root.program("kitty") { installVia(Builtin.dnf) }
+    val dotfiles = root.script("dotfiles") {
+        run("true")
+        check("true")
+    }
+    val bootstrap = root.script("bootstrap") {
+        run("true")
+        setupOnly()
+    }
+    machine("m1") {
+        install(Builtin.dnf, git, kitty)
+        run(dotfiles, bootstrap)
+    }
+}
 
 private val SYSTEM = SystemInfo("m1", OsFamily.LINUX, "fedora", "x86_64")
 
@@ -269,7 +267,7 @@ class RemoteSummaryTest {
 class HomeKeysTest {
     private fun model(sections: List<HomeSection>, cursor: Int = 0): HomeModel {
         // No AppContext work: the reducer is pure over state.
-        val m = HomeModel(loadout.cli.AppContext("/repo".let { okio.Path.Companion.run { it.toPath() } }, "loadout.yaml", null, false))
+        val m = HomeModel(loadout.cli.AppContext("/repo".let { okio.Path.Companion.run { it.toPath() } }, null, false))
         m.setStateForTest(HomeState(sections = sections, cursor = cursor))
         return m
     }
@@ -554,20 +552,15 @@ class HomeKeysTest {
 
     @Test
     fun anObsoleteSudoOnAScriptStillLoads() {
-        val manifest = ManifestLoader.parse(
-            """
-            scripts:
-              hid:
-                run: true
-                sudo: true
-              plain:
-                run: true
-
-            machines:
-              m1:
-                scripts: [hid, plain]
-            """.trimIndent(),
-        )
+        val manifest = manifestOf {
+            layout(state = "state")
+            val hid = root.script("hid") {
+                run("true")
+                needsSudo()
+            }
+            val plain = root.script("plain") { run("true") }
+            machine("m1") { run(hid, plain) }
+        }
         assertEquals(listOf("hid", "plain"), scriptRowsOf(manifest, SYSTEM, null).map { it.name })
     }
 

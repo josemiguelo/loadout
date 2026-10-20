@@ -5,7 +5,7 @@ import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
 import loadout.core.model.ProgramState
 import loadout.core.model.VersionCheck
-import loadout.core.model.expandFilePrefix
+import loadout.core.model.shellLine
 import loadout.core.model.ProgramStatus
 import loadout.core.platform.blockingDispatcher
 import kotlinx.coroutines.async
@@ -35,7 +35,7 @@ class VersionChecker(
      */
     fun check(versionCheck: VersionCheck?): ProgramState {
         if (versionCheck == null) return ProgramState(ProgramStatus.UNKNOWN)
-        val result = runner.capture(frame.command(expandFilePrefix(versionCheck.command), versionCheck.origin))
+        val result = runner.capture(frame.command(shellLine(versionCheck.command, versionCheck.path), versionCheck.origin))
         val said = result.stderr.lineSequence().map { it.trim() }.lastOrNull { it.isNotEmpty() }
         if (versionCheck.probe != null && (result.exitCode == 127 || result.exitCode == 126)) {
             // The shell already names what wasn't there ("sh: brew: command
@@ -45,7 +45,8 @@ class VersionChecker(
         if (!result.success) return ProgramState(ProgramStatus.MISSING, reason = said)
 
         val output = result.stdout.ifBlank { result.stderr }
-        val version = Regex(versionCheck.regex).find(output)?.groupValues?.getOrNull(1)
+        // A yes/no check (no regex) records presence alone.
+        val version = versionCheck.regex?.let { Regex(it).find(output)?.groupValues?.getOrNull(1) }
         return ProgramState(ProgramStatus.INSTALLED, version)
     }
 

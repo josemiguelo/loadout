@@ -5,11 +5,15 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
 
+/**
+ * A config repo, resolved: what the DSL compiles to, what loadout.lock.json
+ * holds, and what every engine reads. Machines are already flattened
+ * (profiles merged in, then dropped) and carry their whole data.
+ */
 @Serializable
 data class Manifest(
     val meta: Meta = Meta(),
-    /** Where the repo's parts live; required in the root file, refused in fragments. */
-    val layout: Layout? = null,
+    val layout: RepoLayout = RepoLayout(),
     /**
      * Install mechanisms (`dnf`, `brew-cask`, ...) defined once per repo.
      * Probe, install/check patterns, and regex are properties of the
@@ -18,24 +22,24 @@ data class Manifest(
     val installers: Map<String, Installer> = emptyMap(),
     val programs: Map<String, Program> = emptyMap(),
     val scripts: Map<String, ScriptStep> = emptyMap(),
-    /** Optional per-machine settings, keyed by machine name. */
+    /** Every machine, keyed by hostname. */
     val machines: Map<String, MachineConfig> = emptyMap(),
     /**
      * Custom `loadout outdated` oracles beyond the installer ones —
-     * `outdated.<name>` entries whose command prints one
-     * `<item> <current> <candidate>` line per outdated item (nothing when
-     * current). The entry name becomes the row's source tag. The built-in
-     * self-version row is conceptually the first of these, hardcoded.
+     * entries whose command prints one `<item> <current> <candidate>` line
+     * per outdated item (nothing when current). The entry name becomes the
+     * row's source tag. The built-in self-version row is conceptually the
+     * first of these, hardcoded.
      */
     val outdated: Map<String, OutdatedSource> = emptyMap(),
     /**
      * Which of installers came from [loadout.core.manifest.InstallerLibrary]
      * rather than the repo — provenance for `explain`/`installers`, never
-     * behavior. Not a manifest field: loadRepo fills it in.
+     * behavior.
      */
-    @Transient val builtinInstallers: Set<String> = emptySet(),
-    /** loadout.yaml's `data`: every per-machine key with its default. Filled by loadRepo. */
-    @Transient val data: JsonObject = JsonObject(emptyMap()),
+    val builtinInstallers: Set<String> = emptySet(),
+    /** Every per-machine data key with its default. */
+    val data: JsonObject = JsonObject(emptyMap()),
 ) {
     /**
      * Everything the [key] variant of program [programName] resolves to.
@@ -44,17 +48,18 @@ data class Manifest(
     fun resolveInstall(programName: String, key: String): ResolvedInstall {
         val program = programs.getValue(programName)
         val variant = program.install.getValue(key)
-        // An explicit `installer = ...` reference wins; otherwise a variant
-        // whose key names an installer uses it (`via` expands to exactly this).
+        // An explicit `installer` reference wins; otherwise a variant whose
+        // key names an installer uses it.
         val installer = variant.installer?.let(installers::get)
             ?: if (variant.installer == null) installers[key] else null
         val pkg = variant.pkg ?: programName
         // {pkg} plus whatever the installer declared as params — validated at
-        // load, so an unsubstituted placeholder can't reach a shell here.
+        // compile, so an unsubstituted placeholder can't reach a shell here.
         val values = mapOf("pkg" to pkg) + variant.with
         fun sub(s: String) = values.entries.fold(s) { acc, (key, value) -> acc.replace("{$key}", value) }
         val checkCommand = variant.check ?: installer?.check
-        val regex = variant.regex ?: installer?.regex
+        // A yes/no check records no version, so it needs no regex.
+        val regex = if (variant.present) null else variant.regex ?: installer?.regex
         // Outdated precedence: explicit per-variant oracle, else the program's
         // own check (read with its version regex), else the installer's batch
         // oracle (one command for all its packages), else the installer's
@@ -74,15 +79,15 @@ data class Manifest(
             command = (variant.command ?: installer?.install)?.let(::sub),
             commandOrigin = originOf(variant.command),
             // A check through the mechanism carries its probe; the program's
-            // own `[version]` fallback is the program itself and carries none.
-            check = if (checkCommand != null && regex != null) {
-                VersionCheck(sub(checkCommand), regex, probe = probe, origin = originOf(variant.check))
+            // own `version` fallback is the program itself and carries none.
+            check = if (checkCommand != null && (regex != null || variant.present)) {
+                VersionCheck(sub(checkCommand), regex, probe = probe, origin = originOf(variant.check), path = program.path)
             } else {
                 program.version
             },
             probe = probe,
             outdated = if (outdatedCommand != null && outdatedRegex != null) {
-                VersionCheck(sub(outdatedCommand), outdatedRegex, origin = originOf(explicitOutdated))
+                VersionCheck(sub(outdatedCommand), outdatedRegex, origin = originOf(explicitOutdated), path = program.path)
             } else {
                 null
             },
@@ -94,6 +99,7 @@ data class Manifest(
             upgradeWith = installer?.upgrade?.let {
                 UpgradeMechanism(installerName ?: return@let null, it, installerOrigin)
             },
+            path = program.path,
         )
     }
 
@@ -103,14 +109,31 @@ data class Manifest(
 
     /**
      * What [programName] needs installed first on a machine mapping it to
-     * [key]: the program's own `depends-on`, then that variant's (a COPR
-     * needs dnf-plugins-core; the same program from pacman needs nothing).
-     * A null [key] (no machine in view) gives the program's alone.
+     * [key]: the program's own `depends-on`, that variant's (a COPR needs
+     * dnf-plugins-core; the same program from pacman needs nothing), and
+     * what the variant's installer requires of everything it installs (brew
+     * needs setup-brew), except the program itself. A null [key] (no machine
+     * in view) gives the program's alone.
      */
     fun dependenciesOf(programName: String, key: String?): List<String> {
         val program = programs[programName] ?: return emptyList()
         val variant = key?.let { program.install[it] }
-        return (program.dependsOn + variant?.dependsOn.orEmpty()).distinct()
+        val installer = variant?.let { installers[it.installer ?: key] }
+        val required = installer?.requires.orEmpty().filter { it != programName }
+        return (program.dependsOn + variant?.dependsOn.orEmpty() + required).distinct()
+    }
+
+    /**
+     * This manifest as [machine] sees it: each script it runs as a variant
+     * becomes that variant, so engines read `scripts[name]` and never ask
+     * which variant a machine picked.
+     */
+    fun forMachine(machine: String): Manifest {
+        val picks = machines[machine]?.scriptVariants.orEmpty()
+        if (picks.isEmpty()) return this
+        return copy(
+            scripts = scripts.mapValues { (name, step) -> picks[name]?.let(step::variant) ?: step },
+        )
     }
 }
 
@@ -120,7 +143,7 @@ data class ResolvedInstall(
     val command: String?,
     /** Where [command] runs: the declaring file's repo-relative directory. */
     val commandOrigin: String = "",
-    /** Version check for this variant, falling back to the program's `[version]`. */
+    /** Version check for this variant, falling back to the program's `version`. */
     val check: VersionCheck?,
     /** Binary that must exist before installing, or null for no probe. */
     val probe: String?,
@@ -136,6 +159,8 @@ data class ResolvedInstall(
     val upgradeWith: UpgradeMechanism? = null,
     /** [command] needs sudo's password without saying `sudo` itself (see [Installer.sudo]). */
     val sudo: Boolean = false,
+    /** Directories put first on PATH for [command] (see [Program.path]). */
+    val path: List<String> = emptyList(),
 )
 
 /** How a variant's mechanism upgrades: all of it, in one command. */
@@ -170,7 +195,7 @@ data class Installer(
      * `params = ["copr"]` makes `{copr}` substitutable in every pattern
      * below, and every variant using this installer must supply it in its
      * `with` table. Declared, never inferred — an undeclared `with` key and
-     * a missing declared one are both load errors. "pkg" is reserved.
+     * a missing declared one are both errors. "pkg" is reserved.
      */
     val params: List<String> = emptyList(),
     /** Install command pattern; `{pkg}` is replaced with the package id. */
@@ -188,8 +213,7 @@ data class Installer(
     /**
      * Batch form of outdated: ONE command printing a `<pkg> <candidate>`
      * line per outdated package this installer manages. When present it
-     * replaces the per-package outdated pattern (which older binaries
-     * still fall back to — the field is ignored by them).
+     * replaces the per-package outdated pattern.
      */
     @SerialName("outdated-all")
     val outdatedAll: String? = null,
@@ -208,16 +232,23 @@ data class Installer(
      * command that visibly runs it) asks for the password once, before the
      * first step, and keeps sudo's credentials fresh until it ends. Declared,
      * never guessed: nothing reads a script to find sudo in it. Same for
-     * `sudo` on install variants, scripts and `outdated.*` sources.
+     * `sudo` on install variants, scripts and `outdated` sources.
      */
     val sudo: Boolean = false,
-    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
-    @Transient val origin: String = "",
+    /**
+     * Programs every program installed through this installer depends on
+     * (setup-brew before any brew install). A required program installed
+     * through this same installer is exempt from its own rule.
+     */
+    val requires: List<String> = emptyList(),
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. */
+    val origin: String = "",
 )
 
 /**
- * One entry of a program's install table. Every field is optional: `installer`
- * (or a key that names one) supplies defaults, and `pkg` defaults to the
+ * One entry of a program's install table, keyed by its installer's name or,
+ * for a command of its own, by a name the program picks. Every field is
+ * optional: the installer supplies defaults, and `pkg` defaults to the
  * program name — so the empty variant means "the standard package".
  */
 @Serializable
@@ -232,15 +263,13 @@ data class InstallVariant(
     val check: String? = null,
     /** Version regex, replacing the installer's. */
     val regex: String? = null,
+    /** The check only says yes or no: exit 0 = installed, no version recorded. */
+    val present: Boolean = false,
     /** Probe binary, replacing the installer's. */
     val probe: String? = null,
     /** Remote-candidate command, replacing the installer's (see [Installer.outdated]). */
     val outdated: String? = null,
-    /**
-     * Values for the installer's [Installer.params], as a nested table:
-     * `programs.kitty.install.dnf-copr.with` / `copr = "solopasha/kitty"`.
-     * Each becomes `{copr}` in the resolved commands.
-     */
+    /** Values for the installer's [Installer.params]; each becomes `{name}` in the resolved commands. */
     val with: Map<String, String> = emptyMap(),
     /** Replaces the installer's [Installer.sudo] for this variant's install command. */
     val sudo: Boolean? = null,
@@ -254,61 +283,36 @@ data class InstallVariant(
 )
 
 /**
- * A machine (or profile) as the engines see it: the groups of its file
- * folded into one program mapping and one script list. Machine and profile
- * files are read by `YamlMachine`; the serializable form (`machines.<name>`
- * with `pm`/`scripts`) exists only for the test-only `ManifestLoader.parse`.
+ * A machine as the engines see it: its profiles merged in (contract 2), one
+ * program mapping and one script list, and its whole data.
  */
 @Serializable
 data class MachineConfig(
-    /**
-     * A profile (a `layout profiles` file), not a machine: flattened into
-     * the machines extending it, then dropped — never observed, diffed or
-     * converged. Set by the loader from the file's folder.
-     */
-    @Transient val base: Boolean = false,
-    /**
-     * Profiles this file builds on, in order. Their settings come first and
-     * this file's override them; two of them setting the same thing
-     * differently is a load error. Profiles may extend profiles.
-     */
+    /** Profiles this machine was built on, in order; kept for `explain`. */
     val extends: List<String> = emptyList(),
     /**
-     * Which entry of each program's `install` table this machine uses,
-     * keyed by program name, from each program's `install_with`. Every program
-     * a machine installs must be mapped.
+     * Which entry of each program's `install` table this machine uses, keyed
+     * by program name. Every program a machine installs must be mapped.
      */
     val pm: Map<String, String> = emptyMap(),
     /**
-     * Scripts this machine opts into: entries are `"name"` or
-     * `"name args..."` (first word = script name, rest = arguments passed as
-     * positional parameters to `file` scripts and their checks). Any
-     * whitespace separates words, newlines included, so a long entry can be a
-     * YAML multi-line string. Scripts run and are observed only on machines
-     * that opt in.
+     * Scripts this machine runs: entries are `"name"` or `"name args..."`
+     * (first word = script name, rest = arguments passed as positional
+     * parameters to `file` scripts and their checks). Scripts run and are
+     * observed only on machines that opt in.
      */
     val scripts: List<String> = emptyList(),
-    /**
-     * This file's `data` overrides, read at load; after flattening, the
-     * machine's whole data (defaults, profiles, own). Not decoded.
-     */
-    @Transient val data: JsonObject = JsonObject(emptyMap()),
-    /** This file's own program entries, as written, for `explain`. */
-    @Transient val groups: Map<String, MachineGroup> = emptyMap(),
-    /** The file it was read from, repo-relative, for messages. */
+    /** The variant this machine runs, for each of its scripts that has variants. */
+    @SerialName("script-variants")
+    val scriptVariants: Map<String, String> = emptyMap(),
+    /** The machine's whole data: defaults, profiles, its own. */
+    val data: JsonObject = JsonObject(emptyMap()),
+    /** What declared it (`machine 'x'`, `profile 'y'`), for messages. */
     @Transient val label: String = "",
 ) {
     /** scripts parsed into script name -> argument string (see [scriptEntry]). */
     fun scriptArgs(): Map<String, String> = scripts.associate(::scriptEntry)
 }
-
-/** One `[<group>]` table of a machine or profile file: a tool or concern. */
-data class MachineGroup(
-    /** program -> install key: `install = "x"` maps the program named like the group. */
-    val install: Map<String, String> = emptyMap(),
-    /** Script opt-ins, `"name"` or `"name args…"`. */
-    val scripts: List<String> = emptyList(),
-)
 
 private val WHITESPACE = Regex("\\s+")
 
@@ -330,38 +334,29 @@ data class Meta(
 )
 
 /**
- * The root file's `layout`, as written: every key but [configs] is
- * required, so the fields stay nullable for the loader to name what's
- * missing. Paths are relative to the repo root.
+ * Where the repo keeps what loadout writes and reads besides the manifests.
+ * Paths are relative to the repo root.
  */
 @Serializable
-data class Layout(
-    /** Globs of fragment files, loaded in this order (path-sorted within one). */
-    val fragments: List<String>? = null,
-    val machines: String? = null,
-    /** Profiles: what machines of a kind share, `extends`-referenced, never machines. */
-    val profiles: String? = null,
-    val state: String? = null,
+data class RepoLayout(
+    /** The state directory: one `<machine>.json` per machine. Required. */
+    val state: String = "",
     /** The chezmoi source root, when the repo holds dotfiles. */
     val configs: String? = null,
-)
-
-/** A validated [Layout]: what the rest of the tool reads. */
-data class RepoLayout(
-    val fragments: List<String>,
-    val machines: String,
-    val profiles: String? = null,
-    val state: String,
-    val configs: String? = null,
+    /**
+     * Globs of the manifest sources, in compile order. The lock's hash covers
+     * the files they match, so an edit the lock hasn't seen is refused.
+     */
+    val sources: List<String> = emptyList(),
 )
 
 /**
  * Commands starting with this prefix (install variant `command`s, installer
  * patterns, oracles and any check command) name a script file relative to
  * the declaring file's directory — where the command also runs — validated
- * at manifest load to exist inside the repo, instead of an inline command.
- * Tokens after the first space are arguments, so the path itself can't
- * contain spaces.
+ * at compile to exist inside the repo, instead of an inline command. Tokens
+ * after the first space are arguments, so the path itself can't contain
+ * spaces.
  */
 const val INSTALL_FILE_PREFIX: String = "file:"
 
@@ -374,6 +369,16 @@ fun expandFilePrefix(command: String): String {
     return "sh '$path'" + if (args.isNotEmpty()) " $args" else ""
 }
 
+/**
+ * The shell line for [command]: `file:` expanded, and [path] put first on
+ * PATH. The directories are expanded by the shell, so `$HOME` works.
+ */
+fun shellLine(command: String, path: List<String> = emptyList()): String {
+    val line = expandFilePrefix(command)
+    if (path.isEmpty()) return line
+    return "PATH=\"${path.joinToString(":")}:\$PATH\"; export PATH; $line"
+}
+
 @Serializable
 data class Program(
     val description: String = "",
@@ -383,14 +388,9 @@ data class Program(
     /** Variant-independent version check; the fallback when a variant resolves no check. */
     val version: VersionCheck? = null,
     /**
-     * Installer names this program installs through with all defaults —
-     * shorthand expanded into [install] entries at manifest load.
-     */
-    val via: List<String> = emptyList(),
-    /**
-     * Install variants keyed by arbitrary labels — installer names (`dnf`) or
-     * custom variants (`script`, `brew-linux`). Each machine's mapping in
-     * `machines/<name>.yaml` picks which key to use.
+     * Install variants, keyed by installer name (`dnf`) or, for a command of
+     * the program's own, by the name it gives it (`linux`). Each machine's
+     * mapping picks which key to use.
      */
     val install: Map<String, InstallVariant> = emptyMap(),
     /**
@@ -400,8 +400,13 @@ data class Program(
      * program on its own.
      */
     val outdated: ProgramOutdated? = null,
-    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
-    @Transient val origin: String = "",
+    /**
+     * Directories put first on PATH for this program's commands, for a tool
+     * that lands somewhere a fresh shell doesn't look yet (`$HOME/.local/bin`).
+     */
+    val path: List<String> = emptyList(),
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. */
+    val origin: String = "",
 )
 
 /** A program's own `outdated` block: [command] prints the newest version, [upgrade] updates it. */
@@ -416,16 +421,19 @@ data class ProgramOutdated(
 @Serializable
 data class VersionCheck(
     val command: String,
-    val regex: String,
+    /** Extracts the version (capture group 1); null for a yes/no check, which records none. */
+    val regex: String? = null,
     /**
      * The tool this check asks through (the installer's probe), when the
-     * check isn't the program's own binary. Set by resolveInstall, never a
-     * manifest key: it's what lets "brew: command not found" mean "couldn't
-     * ask" instead of "not installed".
+     * check isn't the program's own binary. Set by resolveInstall, never
+     * declared: it's what lets "brew: command not found" mean "couldn't ask"
+     * instead of "not installed".
      */
     @Transient val probe: String? = null,
-    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
-    @Transient val origin: String = "",
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. */
+    val origin: String = "",
+    /** Directories put first on PATH (see [Program.path]). */
+    val path: List<String> = emptyList(),
 )
 
 @Serializable
@@ -435,8 +443,6 @@ data class ScriptStep(
     val file: String? = null,
     /** Inline shell command to execute. Exactly one of [file]/[run]. */
     val run: String? = null,
-    /** OS families this step applies to; empty = all. */
-    val os: List<String> = emptyList(),
     /** Shell command; exit 0 means the step is already done and is skipped. */
     val check: String? = null,
     /** Ordering constraints: entries like "programs.git" or "scripts.dotfiles". */
@@ -450,15 +456,33 @@ data class ScriptStep(
     val modes: List<String> = listOf("setup", "maintain"),
     /** The script needs sudo's password without saying `sudo`; see [Installer.sudo]. */
     val sudo: Boolean = false,
-    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
-    @Transient val origin: String = "",
+    /**
+     * Ways to do this one step, keyed by name; a machine running the script
+     * picks one. Each holds its own [file]/[run], [check] and [after]; the
+     * step's own description, modes and sudo apply to all of them.
+     */
+    val variants: Map<String, ScriptStep> = emptyMap(),
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. */
+    val origin: String = "",
 ) {
-    fun appliesTo(osFamily: OsFamily): Boolean = os.isEmpty() || os.contains(osFamily.id)
-
     fun runsIn(mode: String): Boolean = mode in modes
+
+    /** The step as variant [name] does it. Assumes the variant exists. */
+    fun variant(name: String): ScriptStep {
+        val chosen = variants.getValue(name)
+        return copy(
+            file = chosen.file,
+            run = chosen.run,
+            check = chosen.check ?: check,
+            after = (after + chosen.after).distinct(),
+            sudo = sudo || chosen.sudo,
+            variants = emptyMap(),
+            origin = chosen.origin,
+        )
+    }
 }
 
-/** One `outdated.<name>` custom oracle; see [Manifest.outdated]. */
+/** One custom `outdated` oracle; see [Manifest.outdated]. */
 @Serializable
 data class OutdatedSource(
     /** Command printing `<item> <current> <candidate>` lines. `file:` allowed. */
@@ -473,6 +497,6 @@ data class OutdatedSource(
     val upgrade: String? = null,
     /** [upgrade] needs sudo's password without saying `sudo`; see [Installer.sudo]. */
     val sudo: Boolean = false,
-    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. Set at load. */
-    @Transient val origin: String = "",
+    /** Repo-relative directory of the declaring file ("" = repo root): paths resolve and commands run there. */
+    val origin: String = "",
 )

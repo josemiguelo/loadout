@@ -23,15 +23,17 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(project(":model"))
             implementation(libs.coroutines.core)
             implementation(libs.serialization.json)
             implementation(libs.datetime)
             implementation(libs.okio)
-            implementation(libs.kaml)
             implementation(libs.kommand)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            // Tests build their manifests the way repos do.
+            implementation(project(":dsl"))
             implementation(libs.okio.fakefilesystem)
             implementation(libs.coroutines.test)
         }

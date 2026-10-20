@@ -7,8 +7,11 @@ import loadout.core.engine.UpgradeEngine
 import loadout.core.engine.VersionChecker
 import loadout.core.engine.commandNeedsSudo
 import loadout.core.exec.CommandFrame
-import loadout.core.manifest.ManifestLoader
-import loadout.core.model.OsFamily
+import loadout.dsl.Builtin
+import loadout.dsl.invoke
+import loadout.dsl.machine
+import loadout.dsl.manifestOf
+import loadout.dsl.root
 import loadout.core.model.ScriptStep
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,44 +31,30 @@ class SudoTest {
         assertFalse(commandNeedsSudo("sh 'setup.sh' install"))
     }
 
-    private val manifest = ManifestLoader.parse(
-        """
-        installers:
-          sneaky:
-            install: 'helper add {pkg}'
-            upgrade: 'helper update'
-            sudo: true
-          plain:
-            install: 'plain add {pkg}'
-            upgrade: 'plain update'
-        programs:
-          visible:
-            install:
-              pacman:
-                command: sudo pacman -S visible
-          declared:
-            via: [sneaky]
-          opted-out:
-            install:
-              sneaky:
-                sudo: false
-          own-script:
-            install:
-              plain:
-                command: sh setup.sh
-                sudo: true
-          none:
-            via: [plain]
-        machines:
-          m:
-            pm:
-              visible: pacman
-              declared: sneaky
-              opted-out: sneaky
-              own-script: plain
-              none: plain
-        """.trimIndent(),
-    )
+    private val manifest = manifestOf {
+        val sneaky = root.installer("sneaky") {
+            install = "helper add {pkg}"
+            upgrade = "helper update"
+            needsSudo()
+        }
+        val plain = root.installer("plain") {
+            install = "plain add {pkg}"
+            upgrade = "plain update"
+        }
+        val visible = root.program("visible") { installVia(Builtin.pacman { command = "sudo pacman -S visible" }) }
+        val declared = root.program("declared") { installVia(sneaky) }
+        val optedOut = root.program("opted-out") { installVia(sneaky { needsSudo(false) }) }
+        val ownScript = root.program("own-script") {
+            installVia(plain {
+                command = "sh setup.sh"
+                needsSudo()
+            })
+        }
+        val none = root.program("none") { installVia(plain) }
+        machine("m") {
+            install(visible, declared, optedOut, ownScript, none)
+        }
+    }
 
     @Test
     fun anInstallNeedsSudoWhenItsCommandRunsItOrItsVariantOrInstallerSaysSo() {
@@ -95,14 +84,13 @@ class SudoTest {
     }
 
     @Test
-    fun aScriptIsPendingUnlessItsCheckPassesOrItDoesNotApply() {
+    fun aScriptIsPendingUnlessItsCheckPasses() {
         val fake = FakeProcessRunner()
         fake.onCommand("test -f done")
         val runner = ScriptRunner(fake, CommandFrame("/repo"))
-        assertFalse(runner.pending(ScriptStep(file = "x.sh", check = "test -f done"), OsFamily.LINUX))
-        assertTrue(runner.pending(ScriptStep(file = "x.sh", check = "test -f done"), OsFamily.LINUX, force = true))
-        assertTrue(runner.pending(ScriptStep(file = "x.sh", check = "test -f missing"), OsFamily.LINUX))
-        assertTrue(runner.pending(ScriptStep(file = "x.sh"), OsFamily.LINUX))
-        assertFalse(runner.pending(ScriptStep(file = "x.sh", os = listOf("macos")), OsFamily.LINUX))
+        assertFalse(runner.pending(ScriptStep(file = "x.sh", check = "test -f done")))
+        assertTrue(runner.pending(ScriptStep(file = "x.sh", check = "test -f done"), force = true))
+        assertTrue(runner.pending(ScriptStep(file = "x.sh", check = "test -f missing")))
+        assertTrue(runner.pending(ScriptStep(file = "x.sh")))
     }
 }

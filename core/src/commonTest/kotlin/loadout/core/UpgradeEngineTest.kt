@@ -2,50 +2,40 @@ package loadout.core
 
 import loadout.core.engine.UpgradeEngine
 import loadout.core.engine.UpgradeException
-import loadout.core.manifest.ManifestLoader
+import loadout.dsl.machine
+import loadout.dsl.invoke
+import loadout.dsl.manifestOf
+import loadout.dsl.root
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-private val MANIFEST = ManifestLoader.parse(
-    """
-    installers:
-      pm:
-        install: install {pkg}
-        upgrade: pm upgrade -y
-        check: pm show {pkg}
-        regex: ([0-9.]+)
-      rolling:
-        install: roll {pkg}
-        upgrade: roll -Syu
-        check: roll -Q {pkg}
-        regex: ([0-9.]+)
-      manual:
-        install: by hand {pkg}
-        check: true
-        regex: ([0-9.]+)
-    programs:
-      alpha:
-        via: [pm]
-      bravo:
-        via: [pm]
-      charlie:
-        via: [rolling]
-      delta:
-        via: [manual]
-    machines:
-      m1:
-        pm:
-          alpha: pm
-          bravo: pm
-          charlie: rolling
-          delta: manual
-      m2:
-        pm:
-          delta: manual
-    """.trimIndent(),
-)
+private val MANIFEST = manifestOf {
+    val pm = root.installer("pm") {
+        install = "install {pkg}"
+        upgrade = "pm upgrade -y"
+        check = "pm show {pkg}"
+        regex = "([0-9.]+)"
+    }
+    val rolling = root.installer("rolling") {
+        install = "roll {pkg}"
+        upgrade = "roll -Syu"
+        check = "roll -Q {pkg}"
+        regex = "([0-9.]+)"
+    }
+    val manual = root.installer("manual") {
+        install = "by hand {pkg}"
+        check = "true"
+        regex = "([0-9.]+)"
+    }
+    val alpha = root.program("alpha") { installVia(pm) }
+    val bravo = root.program("bravo") { installVia(pm) }
+    val charlie = root.program("charlie") { installVia(rolling) }
+    val delta = root.program("delta") { installVia(manual) }
+    machine("m1") { install(alpha, bravo, charlie, delta) }
+    machine("m2") { install(delta) }
+}
 
 class UpgradeEngineTest {
     private fun engine() = UpgradeEngine
@@ -90,61 +80,36 @@ class UpgradeEngineTest {
 
     @Test
     fun aCustomSourceUpgradesItsItemsOneAtATime() {
-        val manifest = ManifestLoader.parse(
-            """
-            outdated:
-              pins:
-                command: list-pins
-                upgrade: repin {item}
-            """.trimIndent(),
-        )
+        val manifest = manifestOf { root.outdated("pins", command = "list-pins", upgrade = "repin {item}") }
         val plan = engine().planSourceItems(manifest, "pins", listOf("golang", "nodejs"))
         assertEquals(listOf("repin golang", "repin nodejs"), plan.map { it.command })
         assertEquals(listOf(listOf("golang"), listOf("nodejs")), plan.map { it.covers })
     }
 
     @Test
-    fun anObsoleteSudoDeclarationStillLoadsAndPlansAsUsual() {
-        // `sudo = true` is obsolete: it must parse and change nothing.
-        val manifest = ManifestLoader.parse(
-            """
-            installers:
-              omarchy-pkg:
-                install: omarchy pkg add {pkg}
-                upgrade: omarchy update -y
-                check: pacman -Q {pkg}
-                regex: ([0-9.]+)
-                sudo: true
-            programs:
-              zsh:
-                via: [omarchy-pkg]
-            machines:
-              m:
-                pm:
-                  zsh: omarchy-pkg
-            outdated:
-              pins:
-                command: list-pins
-                upgrade: repin {item}
-                sudo: true
-              plain:
-                command: list
-                upgrade: bump {item}
-            """.trimIndent(),
-        )
-        assertEquals("omarchy update -y", engine().plan(manifest, "m", listOf("omarchy-pkg")).single().command)
+    fun sudoDeclarationsPlanAsUsual() {
+        val manifest = manifestOf {
+            val pkg = root.installer("omarchy-pkg") {
+                install = "omarchy pkg add {pkg}"
+                upgrade = "omarchy update -y"
+                check = "pacman -Q {pkg}"
+                regex = "([0-9.]+)"
+                needsSudo()
+            }
+            val zsh = root.program("zsh") { installVia(pkg) }
+            machine("m") { install(zsh) }
+            root.outdated("pins", command = "list-pins", upgrade = "repin {item}", needsSudo = true)
+            root.outdated("plain", command = "list", upgrade = "bump {item}")
+        }
+        val step = engine().plan(manifest, "m", listOf("omarchy-pkg")).single()
+        assertEquals("omarchy update -y", step.command)
+        assertTrue(step.sudo)
         assertEquals("repin golang", engine().planSourceItems(manifest, "pins", listOf("golang")).single().command)
     }
 
     @Test
     fun aSourceWithNoUpgradeCommandIsRefused() {
-        val manifest = ManifestLoader.parse(
-            """
-            outdated:
-              pins:
-                command: list-pins
-            """.trimIndent(),
-        )
+        val manifest = manifestOf { root.outdated("pins", command = "list-pins") }
         val e = assertFailsWith<UpgradeException> {
             engine().planSourceItems(manifest, "pins", listOf("golang"))
         }

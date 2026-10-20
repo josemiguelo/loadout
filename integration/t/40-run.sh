@@ -27,91 +27,68 @@ ok "run --all covers this machine's opted-in scripts, and rejects names alongsid
 # m2 never opted into the marker script.
 "$BIN" --repo repo --machine m2 run marker >/dev/null 2>&1 && fail "run without opt-in should fail" || true
 OUT=$("$BIN" --repo repo --machine m2 run marker 2>&1 || true)
-echo "$OUT" | grep -q "not enabled for machine 'm2'" || fail "not-enabled error message"
+echo "$OUT" | grep -q "is not run on machine 'm2'" || fail "not-enabled error message: $OUT"
 "$BIN" --repo repo --machine m2 status >/dev/null
 grep -q '"marker"' repo/state/m2.json && fail "m2 must not observe un-opted script" || true
 ok "scripts are opt-in per machine"
 
 # Arguments flow to file scripts and their checks as positional params. The
-# scripts sit in a fragment's folder, so they run (and write) there.
-mkdir -p repo/maintenance/args
+# scripts sit in their file's folder, so they run (and write) there.
+mkdir -p repo/maintenance/args repo/maintenance/greet
 printf '#!/bin/sh\necho "$1" > arg-marker.txt\n' > repo/maintenance/args/argscript.sh
-cat > repo/maintenance/args/argscript.loadout.yaml <<'YAML'
-scripts:
-  argscript:
-    file: argscript.sh
-    check: 'test -f arg-marker.txt && grep -qx $1 arg-marker.txt'
-YAML
-cat > repo/machines/m2.yaml <<'YAML'
-setup:
-  scripts: [argscript fedora]
-git:
-  install_with: manual
-YAML
-"$BIN" --repo repo --machine m2 run argscript >/dev/null || fail "run with args exits 0"
+printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/maintenance/args/argcount.sh
+printf 'hello from greet\n' > repo/maintenance/greet/message.txt
+printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$LOADOUT_REPO" "$LOADOUT_FRAGMENT_DIR" "$LOADOUT_MACHINE" "$LOADOUT_OS" > env.txt\n' > repo/maintenance/greet/greet.sh
+kt_file repo/maintenance/args/args.loadout.kt <<'KT'
+private val args = Dir("maintenance/args")
+
+val argscript = args.script("argscript") {
+    file("argscript.sh")
+    check("test -f arg-marker.txt && grep -qx \$1 arg-marker.txt")
+}
+
+val argcount = args.script("argcount") { file("argcount.sh") }
+
+private val greetDir = Dir("maintenance/greet")
+
+val greet = greetDir.script("greet") {
+    file("greet.sh")
+    check("test -f greeted.txt")
+}
+
+val m3 = machine("m3") {
+    install(git.variant("manual"))
+    run(argscript, "fedora")
+    // A long entry may span lines: its lines are arguments, never commands.
+    // If the newline reached the shell, `touch pwned.txt` would run.
+    run(argcount, "one\ntouch pwned.txt")
+}
+
+val m5 = machine("m5") {
+    install(git.variant("manual"))
+    run(greet)
+}
+KT
+compile_repo repo
+"$BIN" --repo repo --machine m3 run argscript >/dev/null || fail "run with args exits 0"
 grep -qx "fedora" repo/maintenance/args/arg-marker.txt || fail "argument reached the script"
-OUT=$("$BIN" --repo repo --machine m2 run argscript)
+OUT=$("$BIN" --repo repo --machine m3 run argscript)
 echo "$OUT" | grep -q "already done" || fail "check with args should pass after run"
 ok "script arguments reach the file script and its check"
 
-# A long opt-in can be a YAML block scalar: its lines are arguments, never
-# commands. If the newline reached the shell, `touch pwned.txt` would run.
-printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/maintenance/args/argcount.sh
-cat > repo/maintenance/args/argcount.loadout.yaml <<'YAML'
-scripts:
-  argcount:
-    file: argcount.sh
-YAML
-cat > repo/machines/m3.yaml <<'YAML'
-setup:
-  scripts:
-    - |-
-      argcount one
-      touch pwned.txt
-git:
-  install_with: manual
-YAML
-"$BIN" --repo repo --machine m3 run argcount >/dev/null || fail "run with a multi-line entry exits 0"
-grep -qx "3:one touch pwned.txt" repo/maintenance/args/argcount.txt || fail "a multi-line entry's lines arrive as arguments"
-[ -e repo/maintenance/args/pwned.txt ] && fail "a multi-line entry's line must never run as a command" || true
-# The name alone on the first line works too.
-cat > repo/machines/m4.yaml <<'YAML'
-setup:
-  scripts:
-    - |-
-      argcount
-      a
-      b
-git:
-  install_with: manual
-YAML
-"$BIN" --repo repo --machine m4 run argcount >/dev/null || fail "a name alone on the first line is still the name"
-grep -qx "2:a b" repo/maintenance/args/argcount.txt || fail "the lines after a lone name are its arguments"
-ok "a multi-line script entry passes its lines as arguments"
+"$BIN" --repo repo --machine m3 run argcount >/dev/null || fail "run with a multi-line argument exits 0"
+grep -qx "3:one touch pwned.txt" repo/maintenance/args/argcount.txt || fail "a multi-line argument's lines arrive as arguments: $(cat repo/maintenance/args/argcount.txt)"
+[ -e repo/maintenance/args/pwned.txt ] && fail "a multi-line argument's line must never run as a command" || true
+ok "a multi-line script argument passes its lines as arguments"
 
-# A fragment's paths are relative to its own folder, and its commands run
-# there: the script reads a sibling file with no $(dirname "$0").
-mkdir -p repo/maintenance/greet
-printf 'hello from greet\n' > repo/maintenance/greet/message.txt
-printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$LOADOUT_REPO" "$LOADOUT_FRAGMENT_DIR" "$LOADOUT_MACHINE" "$LOADOUT_OS" > env.txt\n' > repo/maintenance/greet/greet.sh
-cat > repo/maintenance/greet/greet.loadout.yaml <<'YAML'
-scripts:
-  greet:
-    file: greet.sh
-    check: test -f greeted.txt
-YAML
-cat > repo/machines/m5.yaml <<'YAML'
-setup:
-  scripts: [greet]
-git:
-  install_with: manual
-YAML
-"$BIN" --repo repo --machine m5 run greet >/dev/null || fail "a fragment's script runs"
-grep -qx "hello from greet" repo/maintenance/greet/greeted.txt || fail "the script ran in its fragment's folder"
+# A file's paths are relative to its Dir, and its commands run there: the
+# script reads a sibling file with no $(dirname "$0").
+"$BIN" --repo repo --machine m5 run greet >/dev/null || fail "a Dir's script runs"
+grep -qx "hello from greet" repo/maintenance/greet/greeted.txt || fail "the script ran in its Dir"
 [ -e repo/greeted.txt ] && fail "nothing lands in the repo root" || true
 REPO_ABS=$(cd repo && pwd -P)
 grep -qx "$REPO_ABS|$REPO_ABS/maintenance/greet|m5|$(uname -s | sed 's/Darwin/macos/; s/Linux/linux/')" repo/maintenance/greet/env.txt ||
     fail "the script gets LOADOUT_REPO, LOADOUT_FRAGMENT_DIR, LOADOUT_MACHINE, LOADOUT_OS: $(cat repo/maintenance/greet/env.txt)"
 OUT=$("$BIN" --repo repo --machine m5 run greet)
-echo "$OUT" | grep -q "already done" || fail "the check runs in the fragment's folder too"
-ok "a fragment's script and check run in its folder, with the LOADOUT_* variables"
+echo "$OUT" | grep -q "already done" || fail "the check runs in the Dir too"
+ok "a Dir's script and check run in its folder, with the LOADOUT_* variables"

@@ -9,7 +9,6 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.versionOption
-import loadout.core.manifest.ManifestLoader
 import loadout.core.LoadoutException
 import loadout.core.exec.InterruptedByUser
 import loadout.core.platform.envVar
@@ -52,10 +51,6 @@ class RootCommand : CliktCommand(name = "loadout") {
         envvar = "LOADOUT_REPO",
         help = "Path to the config repo (default: \$LOADOUT_REPO, then the current directory)",
     ).default(".")
-    private val manifest by option(
-        "--manifest",
-        help = "Root file, relative to the repo root",
-    ).default(ManifestLoader.ROOT_FILE)
     private val machine by option(
         "--machine",
         envvar = "LOADOUT_MACHINE",
@@ -66,7 +61,6 @@ class RootCommand : CliktCommand(name = "loadout") {
     override fun run() {
         val app = AppContext(
             repoRoot = repo.toPath(),
-            manifestName = manifest,
             machineOverride = machine,
             verbose = verbose,
         )
@@ -173,7 +167,6 @@ class RootCommand : CliktCommand(name = "loadout") {
         val argv = buildList {
             add(self)
             add("--repo"); add(app.repoRoot.toString())
-            add("--manifest"); add(app.manifestName)
             app.machineOverride?.let { add("--machine"); add(it) }
             if (app.verbose) add("-v")
             add(subcommand)

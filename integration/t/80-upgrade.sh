@@ -1,33 +1,34 @@
 # upgrade: whole mechanisms only, deduped by command; converge never upgrades.
 
-mkdir -p uprepo/machines
-cat > uprepo/loadout.yaml <<'YAML'
-installers:
-  pm:
-    install: 'echo installing {pkg}'
-    upgrade: 'echo upgrading all pm'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9.]+)'
-  pm-extra:
-    install: 'echo installing {pkg}'
-    upgrade: 'echo upgrading all pm'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9.]+)'
-  byhand:
-    install: 'echo installing {pkg}'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9.]+)'
+kt_repo uprepo
+kt_file uprepo/programs/up.loadout.kt <<'KT'
+val pm = root.installer("pm") {
+    install = "echo installing {pkg}"
+    upgrade = "echo upgrading all pm"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9.]+)"
+}
 
-programs:
-  alpha:
-    via: [pm]
-  bravo:
-    via: [pm-extra]
-  charlie:
-    via: [byhand]
-YAML
-add_layout "uprepo"
-printf 'alpha:\n  install_with: pm\nbravo:\n  install_with: pm-extra\ncharlie:\n  install_with: byhand\n' > uprepo/machines/m1.yaml
+val pmExtra = root.installer("pm-extra") {
+    install = "echo installing {pkg}"
+    upgrade = "echo upgrading all pm"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9.]+)"
+}
+
+val byhand = root.installer("byhand") {
+    install = "echo installing {pkg}"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9.]+)"
+}
+
+val alpha = root.program("alpha") { installVia(pm) }
+val bravo = root.program("bravo") { installVia(pmExtra) }
+val charlie = root.program("charlie") { installVia(byhand) }
+
+val m1 = machine("m1") { install(alpha, bravo, charlie) }
+KT
+compile_repo uprepo
 OUT=$("$BIN" --repo uprepo --machine m1 upgrade --all --dry-run)
 # Mechanisms sharing a command are ONE transaction, not one per installer.
 [ "$(echo "$OUT" | grep -c "echo upgrading all pm")" = "1" ] || fail "mechanisms sharing a command run once"
@@ -42,31 +43,26 @@ OUT=$("$BIN" --repo uprepo --machine m1 install --all --dry-run)
 echo "$OUT" | grep -qi "upgrad" && fail "install must not mention upgrading" || true
 ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 
-# --item: one item of a custom outdated: source at a time — what the home
+# --item: one item of a custom outdated source at a time — what the home
 # screen hands off when you tick a tmux plugin or a pinned tool. Alone, or
 # beside whole mechanisms in the same run.
-mkdir -p irepo/machines irepo/state
-cat > irepo/loadout.yaml <<'YAML'
-installers:
-  pm:
-    install: 'echo installing {pkg}'
-    upgrade: 'echo swept > swept.txt'
-    check: 'echo {pkg} 1.0'
-    regex: '([0-9.]+)'
+kt_repo irepo
+kt_file irepo/programs/items.loadout.kt <<'KT'
+val pm = root.installer("pm") {
+    install = "echo installing {pkg}"
+    upgrade = "echo swept > swept.txt"
+    check = "echo {pkg} 1.0"
+    regex = "([0-9.]+)"
+}
 
-programs:
-  alpha:
-    via: [pm]
+val alpha = root.program("alpha") { installVia(pm) }
 
-outdated:
-  plugins:
-    command: 'echo ''tpack aaa bbb'''
-    upgrade: 'echo pulled > pulled-{item}.txt'
-  readonly:
-    command: 'echo ''x 1 2'''
-YAML
-add_layout "irepo"
-printf 'alpha:\n  install_with: pm\n' > irepo/machines/m1.yaml
+val plugins = root.outdated("plugins", "echo 'tpack aaa bbb'", upgrade = "echo pulled > pulled-{item}.txt")
+val readonly = root.outdated("readonly", "echo 'x 1 2'")
+
+val m1 = machine("m1") { install(alpha) }
+KT
+compile_repo irepo
 "$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null
 [ -f irepo/pulled-tpack.txt ] && [ -f irepo/pulled-other.txt ] || fail "--item upgrades each named item of its source"
 [ -f irepo/swept.txt ] && fail "--item alone must not sweep any mechanism" || true

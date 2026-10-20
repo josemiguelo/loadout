@@ -5,7 +5,6 @@ import loadout.core.diff.DiffEngine
 import loadout.core.model.ConfigState
 import loadout.core.model.ConfigStatus
 import loadout.core.diff.InstallState
-import loadout.core.manifest.ManifestLoader
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramState
 import loadout.core.model.ProgramStatus
@@ -15,7 +14,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DiffEngineTest {
-    private val manifest = ManifestLoader.parse(EXAMPLE_MANIFEST)
+    private val manifest = EXAMPLE_MANIFEST
 
     private fun state(machine: String, programs: Map<String, ProgramState>) = MachineState(
         machine = machine,

@@ -4,10 +4,10 @@ import loadout.core.exec.CommandFrame
 import loadout.core.exec.ShellCommand
 import loadout.core.LoadoutException
 import loadout.core.exec.ProcessRunner
-import loadout.core.manifest.ManifestLoader
+import loadout.core.manifest.ManifestAssembler
 import loadout.core.model.Manifest
 import loadout.core.model.ProgramState
-import loadout.core.model.expandFilePrefix
+import loadout.core.model.shellLine
 import loadout.core.model.ProgramStatus
 import okio.Path
 
@@ -52,7 +52,7 @@ class InstallEngine(
      * simply not part of this machine's loadout — converge skips it.
      *
      * Strict resolution — throws [ResolutionException] (before anything runs) when:
-     * - the manifest has no `<machines>/<machine>.yaml` config,
+     * - the manifest declares no such machine,
      * - an explicitly [requested] program has no mapping for this machine,
      * - a mapped program's dependency has no mapping for this machine,
      * - a program that needs installing resolves to a probe binary (the
@@ -66,15 +66,15 @@ class InstallEngine(
         currentStates: Map<String, ProgramState>,
         binaryAvailable: (String) -> Boolean,
     ): List<PlanItem> {
-        val machineFile = "${manifest.layout?.machines ?: "machines"}/$machine.yaml"
         val mapping = manifest.machines[machine]?.pm
             ?: throw ResolutionException(
-                "machine '$machine' has no config file ($machineFile) in the repo",
+                "machine '$machine' is not declared in the repo (add machine(\"$machine\") { … })",
             )
+        val where = "install it in machine '$machine' or a profile it extends"
 
-        // Membership: converge covers only mapped programs (declaration order).
+        // Membership: converge covers only mapped programs.
         val targets = requested.ifEmpty { manifest.programs.keys.filter { it in mapping } }
-        val ordered = ManifestLoader.installOrder(manifest, targets, mapping)
+        val ordered = ManifestAssembler.installOrder(manifest, targets, mapping)
 
         val errors = mutableListOf<String>()
         val items = mutableListOf<PlanItem>()
@@ -82,10 +82,10 @@ class InstallEngine(
             val installKey = mapping[name]
             if (installKey == null) {
                 errors += if (name in requested) {
-                    "program '$name' has no pm defined for machine '$machine' (add it to $machineFile)"
+                    "program '$name' isn't installed on machine '$machine' ($where)"
                 } else {
-                    "program '$name' is required as a dependency but has no pm defined for " +
-                        "machine '$machine' (add it to $machineFile)"
+                    "program '$name' is required as a dependency but isn't installed on " +
+                        "machine '$machine' ($where)"
                 }
                 continue
             }
@@ -96,7 +96,7 @@ class InstallEngine(
                 // Key existence and command resolvability are validated at
                 // manifest load, as is the existence of any file: script.
                 val resolved = manifest.resolveInstall(name, installKey)
-                val command = expandFilePrefix(resolved.command!!)
+                val command = shellLine(resolved.command!!, resolved.path)
                 items += PlanItem.Install(name, installKey, command, resolved.commandOrigin, resolved.sudo || commandNeedsSudo(command))
             }
         }

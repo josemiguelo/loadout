@@ -3,7 +3,6 @@ package loadout.core.engine
 import loadout.core.exec.CommandFrame
 import loadout.core.exec.ShellCommand
 import loadout.core.exec.ProcessRunner
-import loadout.core.model.OsFamily
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.ScriptStep
@@ -12,9 +11,6 @@ import loadout.core.platform.nowIso
 import okio.Path
 
 sealed interface ScriptOutcome {
-    /** The step's os filter excludes this machine. */
-    data object NotApplicable : ScriptOutcome
-
     /** The check command exited 0, so the step was already done. */
     data object AlreadyDone : ScriptOutcome
 
@@ -45,13 +41,13 @@ class ScriptRunner(
         step.sudo || commandNeedsSudo(commandFor(step, args))
 
     /**
-     * Whether [run] would execute [step] here: it applies to [os] and its
-     * `check` doesn't pass (or [force]). Asks the check, as [run] will again.
+     * Whether [run] would execute [step]: its `check` doesn't pass (or
+     * [force]). Asks the check, as [run] will again.
      */
-    fun pending(step: ScriptStep, os: OsFamily, force: Boolean = false, args: String = ""): Boolean {
-        if (!step.appliesTo(os)) return false
-        if (force || step.check == null) return true
-        return !runner.capture(frame.command(withArgs(step.check, args), step.origin)).success
+    fun pending(step: ScriptStep, force: Boolean = false, args: String = ""): Boolean {
+        val check = step.check
+        if (force || check == null) return true
+        return !runner.capture(frame.command(withArgs(check, args), step.origin)).success
     }
 
     /**
@@ -62,14 +58,12 @@ class ScriptRunner(
      */
     fun run(
         step: ScriptStep,
-        os: OsFamily,
         force: Boolean = false,
         args: String = "",
     ): ScriptOutcome {
-        if (!step.appliesTo(os)) return ScriptOutcome.NotApplicable
-
-        if (!force && step.check != null) {
-            if (runner.capture(frame.command(withArgs(step.check, args), step.origin)).success) {
+        val check = step.check
+        if (!force && check != null) {
+            if (runner.capture(frame.command(withArgs(check, args), step.origin)).success) {
                 return ScriptOutcome.AlreadyDone
             }
         }

@@ -7,6 +7,7 @@ import loadout.core.model.BatchOracle
 import loadout.core.model.OutdatedSource
 import loadout.core.model.VersionCheck
 import loadout.core.model.expandFilePrefix
+import loadout.core.model.shellLine
 import loadout.core.platform.blockingDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -28,9 +29,10 @@ class UpdateChecker(
 ) {
     /** The candidate version the remote offers, or null for up to date / no answer. */
     fun candidate(outdated: VersionCheck): String? {
-        val result = runner.capture(frame.command(expandFilePrefix(outdated.command), outdated.origin))
+        val regex = outdated.regex ?: return null
+        val result = runner.capture(frame.command(shellLine(outdated.command, outdated.path), outdated.origin))
         val output = result.stdout.ifBlank { result.stderr }
-        return Regex(outdated.regex).find(output)?.groupValues?.getOrNull(1)
+        return Regex(regex).find(output)?.groupValues?.getOrNull(1)
     }
 
     /** Check all [checks] (program name -> outdated command) concurrently. */

@@ -3,7 +3,15 @@ package loadout.core
 import loadout.core.engine.SourceRow
 import loadout.core.engine.UpdateChecker
 import loadout.core.manifest.ManifestException
-import loadout.core.manifest.ManifestLoader
+import loadout.core.manifest.ManifestAssembler
+import loadout.core.manifest.ManifestDraft
+import loadout.core.model.Installer
+import loadout.core.model.Manifest
+import loadout.core.model.OutdatedSource
+import loadout.core.model.RepoLayout
+import loadout.dsl.manifestOf
+import loadout.dsl.invoke
+import loadout.dsl.root
 import loadout.core.model.VersionCheck
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,35 +40,23 @@ class UpdateCheckerTest {
 
     @Test
     fun outdatedResolvesThroughInstallerWithPkgSubstitution() {
-        val manifest = ManifestLoader.parse(
-            """
-            installers:
-              dnf:
-                install: sudo dnf install -y {pkg}
-                check: rpm -q {pkg}
-                outdated: dnf -q check-update {pkg}
-                regex: ([0-9.]+)
-            programs:
-              zlib-devel:
-                install:
-                  dnf:
-                    pkg: zlib-ng
-            """.trimIndent(),
-        )
+        val manifest = manifestOf {
+            val dnf = root.installer("dnf") {
+                install = "sudo dnf install -y {pkg}"
+                check = "rpm -q {pkg}"
+                outdated = "dnf -q check-update {pkg}"
+                regex = "([0-9.]+)"
+            }
+            root.program("zlib-devel") { installVia(dnf("zlib-ng")) }
+        }
         val resolved = manifest.resolveInstall("zlib-devel", "dnf")
         assertEquals("dnf -q check-update zlib-ng", resolved.outdated?.command)
         assertEquals("([0-9.]+)", resolved.outdated?.regex)
 
         // No oracle declared -> null.
-        val bare = ManifestLoader.parse(
-            """
-            programs:
-              x:
-                install:
-                  manual:
-                    command: true
-            """.trimIndent(),
-        )
+        val bare = manifestOf {
+            root.program("x") { custom("manual") { command = "true" } }
+        }
         assertNull(bare.resolveInstall("x", "manual").outdated)
     }
 
@@ -80,26 +76,17 @@ class UpdateCheckerTest {
 
     @Test
     fun outdatedAllResolvesPerInstallerAndVariantOverrideWins() {
-        val manifest = ManifestLoader.parse(
-            """
-            installers:
-              dnf:
-                install: sudo dnf install -y {pkg}
-                check: rpm -q {pkg}
-                outdated: dnf -q check-update {pkg}
-                outdated-all: dnf -q check-update
-                regex: ([0-9.]+)
-            programs:
-              kitty:
-                install:
-                  dnf:
-                    pkg: kitty-terminal
-              special:
-                install:
-                  dnf:
-                    outdated: custom-oracle
-            """.trimIndent(),
-        )
+        val manifest = manifestOf {
+            val dnf = root.installer("dnf") {
+                install = "sudo dnf install -y {pkg}"
+                check = "rpm -q {pkg}"
+                outdated = "dnf -q check-update {pkg}"
+                outdatedAll = "dnf -q check-update"
+                regex = "([0-9.]+)"
+            }
+            root.program("kitty") { installVia(dnf("kitty-terminal")) }
+            root.program("special") { installVia(dnf { outdated = "custom-oracle" }) }
+        }
         // Batch oracle covers the plain variant; per-pkg pattern is not used.
         val batched = manifest.resolveInstall("kitty", "dnf")
         assertNull(batched.outdated)
@@ -134,21 +121,14 @@ class UpdateCheckerTest {
             rows[2],
         )
 
-        val manifest = ManifestLoader.parse(
-            """
-            outdated:
-              asdf-plugins:
-                command: sh sweep.sh
-            """.trimIndent(),
-        )
+        val manifest = manifestOf {
+            root.outdated("asdf-plugins", command = "sh sweep.sh")
+        }
         assertEquals("sh sweep.sh", manifest.outdated.getValue("asdf-plugins").command)
 
         val e = assertFailsWith<ManifestException> {
-            ManifestLoader.parse(
-                """
-                outdated:
-                  broken: {}
-                """.trimIndent(),
+            ManifestAssembler.assembleWithoutFiles(
+                ManifestDraft(Manifest(layout = RepoLayout(state = "state"), outdated = mapOf("broken" to OutdatedSource()))),
             )
         }
         assertTrue("outdated.broken needs a command" in e.message.orEmpty())
@@ -178,17 +158,15 @@ class UpdateCheckerTest {
         assertTrue(result.error.orEmpty().startsWith("exited 127"))
     }
 
+    // The DSL always gives an installer a regex; a lock written otherwise is still refused.
+    private fun installerOnly(installer: Installer) = ManifestAssembler.assembleWithoutFiles(
+        ManifestDraft(Manifest(layout = RepoLayout(state = "state"), installers = mapOf("bad" to installer))),
+    )
+
     @Test
     fun outdatedAllWithoutRegexIsRejected() {
         val e = assertFailsWith<ManifestException> {
-            ManifestLoader.parse(
-                """
-                installers:
-                  bad:
-                    install: install {pkg}
-                    outdated-all: query
-                """.trimIndent(),
-            )
+            installerOnly(Installer(install = "install {pkg}", outdatedAll = "query"))
         }
         assertTrue("outdated-all command but no regex" in e.message.orEmpty())
     }
@@ -196,15 +174,16 @@ class UpdateCheckerTest {
     @Test
     fun outdatedWithoutRegexIsRejected() {
         val e = assertFailsWith<ManifestException> {
-            ManifestLoader.parse(
-                """
-                installers:
-                  bad:
-                    install: install {pkg}
-                    outdated: query {pkg}
-                """.trimIndent(),
-            )
+            installerOnly(Installer(install = "install {pkg}", outdated = "query {pkg}"))
         }
         assertTrue("outdated command but no regex" in e.message.orEmpty())
+    }
+
+    @Test
+    fun aProgramsPathComesFirstForItsOutdatedCheck() {
+        val runner = FakeProcessRunner()
+        runner.onCommand("PATH=\"/opt/x:\$PATH\"; export PATH; x latest", stdout = "2.0.0")
+        val check = VersionCheck("x latest", "([0-9.]+)", path = listOf("/opt/x"))
+        assertEquals("2.0.0", UpdateChecker(runner).candidate(check))
     }
 }

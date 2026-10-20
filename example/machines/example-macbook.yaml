@@ -1,4 +1,0 @@
-# Per-machine config for "example-macbook" (the filename is the machine name).
-install_with:
-  brew: [git, ripgrep]
-  script: [rustup]

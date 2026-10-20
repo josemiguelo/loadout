@@ -7,6 +7,7 @@ import loadout.cli.ApplyCommand
 import loadout.cli.DiffCommand
 import loadout.cli.ExplainCommand
 import loadout.cli.InitCommand
+import loadout.cli.CompileCommand
 import loadout.cli.InstallCommand
 import loadout.cli.InstallersCommand
 import loadout.cli.OutdatedCommand
@@ -50,6 +51,7 @@ fun main(args: Array<String>) {
                 UpgradeCommand(),
                 SelfUpgradeCommand(),
                 InitCommand(),
+                CompileCommand(),
             )
             .main(args)
         // Every loadout refusal is a LoadoutException, so a new failure mode

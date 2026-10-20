@@ -1,15 +1,20 @@
 #!/bin/sh
-# Install the latest loadout release binary into ~/.local/bin. No sudo.
+# Install the latest loadout release into ~/.local: the binary in bin/, and
+# its share directory (the manifest DSL, its Gradle plugin and the Gradle
+# wrapper new repos get) in share/loadout/. No sudo.
 #
 #   curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
 #
 # Environment overrides:
-#   LOADOUT_VERSION=v0.2.0   pin a release (default: latest)
-#   LOADOUT_INSTALL_DIR=...  install somewhere else (default: ~/.local/bin)
+#   LOADOUT_VERSION=v3.0.0   pin a release (default: latest)
+#   LOADOUT_INSTALL_DIR=...  install the binary somewhere else (default: ~/.local/bin);
+#                            the share directory goes to <its parent>/share/loadout
 set -eu
 
 REPO="josemiguelo/loadout"
 INSTALL_DIR="${LOADOUT_INSTALL_DIR:-$HOME/.local/bin}"
+# Where the binary looks for it: <prefix>/bin/loadout -> <prefix>/share/loadout.
+SHARE_DIR="$(dirname "$INSTALL_DIR")/share/loadout"
 DOWNLOAD_BASE="${LOADOUT_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download}"
 
 case "$(uname -s)-$(uname -m)" in
@@ -57,10 +62,17 @@ tar -xzf "$tmp/loadout.tar.gz" -C "$tmp"
   echo "error: downloaded binary failed to run" >&2
   exit 1
 }
+[ -f "$tmp/share/loadout/VERSION" ] || {
+  echo "error: the download has no share/loadout directory" >&2
+  exit 1
+}
 
-mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR" "$(dirname "$SHARE_DIR")"
 mv "$tmp/loadout" "$INSTALL_DIR/loadout"
 chmod +x "$INSTALL_DIR/loadout"
+# Replaced whole: it holds one version, the binary's.
+rm -rf "$SHARE_DIR"
+mv "$tmp/share/loadout" "$SHARE_DIR"
 if [ -n "$previous" ]; then
   echo "Installed $INSTALL_DIR/loadout ($version, was v$previous)"
 else
@@ -78,7 +90,8 @@ if [ -z "$previous" ]; then
   echo "Next steps:"
   echo "  1. git clone <your config repo> <dir>, then export LOADOUT_REPO=<dir>"
   echo "     (no repo yet? loadout init <dir>)"
-  echo "  2. Write machines/\$(hostname).yaml — or just: extends: [<your-profile>]"
+  echo "  2. Add machine(\"\$(hostname)\") { … } to its machines file, and run"
+  echo "     loadout compile (needs a JDK; skip it on a machine that only reads the lock)"
   echo "  3. loadout setup-new-machine"
   echo "  4. loadout sync"
 fi

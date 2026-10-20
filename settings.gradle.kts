@@ -14,5 +14,8 @@ dependencyResolutionManagement {
 
 rootProject.name = "loadout"
 
+include(":model")
+include(":dsl")
+include(":gradle-plugin")
 include(":core")
 include(":app")

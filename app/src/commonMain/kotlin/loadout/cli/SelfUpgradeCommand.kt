@@ -6,7 +6,7 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import loadout.core.INSTALL_COMMAND
 import loadout.core.TOOL_VERSION
-import loadout.core.manifest.ManifestLoader
+import loadout.core.versionAtLeast
 
 class SelfUpgradeCommand : CliktCommand(name = "self-upgrade") {
     override fun help(context: Context) = commandHelp(
@@ -17,7 +17,7 @@ class SelfUpgradeCommand : CliktCommand(name = "self-upgrade") {
 
     override fun run() {
         val latest = SelfVersion.latest(app.runner, app.fs, cached = false)
-        if (latest != null && ManifestLoader.versionAtLeast(TOOL_VERSION, latest)) {
+        if (latest != null && versionAtLeast(TOOL_VERSION, latest)) {
             echo("already on the latest release (v$TOOL_VERSION)")
             return
         }

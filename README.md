@@ -6,8 +6,10 @@ loadout makes it explicit: **declared** once in a shared git repo,
 **converged** on every machine, **observed** continuously, and **compared**
 across the fleet.
 
-One native binary (Kotlin/Native, no JVM, no runtime dependencies) that
-shells out to your package managers and `git`. Linux and macOS.
+One native binary (Kotlin/Native, no runtime dependencies) that shells out
+to your package managers and `git`. Linux and macOS. You write the manifests
+in Kotlin; `loadout compile` turns them into a committed lock file, so only
+the machine you edit them on needs a JDK.
 
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
@@ -15,16 +17,17 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ## How it thinks
 
-- **You declare intent** in YAML: programs with their install mechanics,
-  scripts with idempotency checks, and an explicit per-machine mapping of
-  who carries what. Machines share small *profiles*
-  (`profiles/macos.yaml`, `profiles/work.yaml`); a standard machine is a
-  one-line file (`extends: [macos, work]`).
-- **One repo, laid out the way you choose.** `loadout.yaml`'s `layout`
-  names where fragments, machines, profiles and state live. A tool's
-  fragment can sit beside its dotfiles (`configs/.config/tmux/.loadout.yaml`
-  next to `tmux.conf`), and every path in it is relative to that file.
-- **Your dotfiles are part of the loadout.** With `layout.configs`, the
+- **You declare intent** in a small Kotlin DSL: programs with their install
+  mechanics, scripts with idempotency checks, and an explicit per-machine
+  list of what each one installs and runs. Your IDE completes it, and a typo
+  in a name doesn't compile. Machines share small *profiles*; a standard
+  machine is one line
+  (`machine(hostname = "laptop") { extends(macos, work) }`).
+- **One repo, laid out the way you choose.** The globs in
+  `build.gradle.kts` name the manifest files. A tool's file can sit beside
+  its dotfiles (`configs/.config/tmux/.tmux.loadout.kt` next to
+  `tmux.conf`), and every path in it is relative to its folder.
+- **Your dotfiles are part of the loadout.** With `repo(configs = …)`, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
@@ -39,9 +42,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
   pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
-  so `via: [dnf]` works in an empty repo. `loadout installers` shows them, your own
-  `installers` entry with the same name replaces one, and `--eject` copies
-  them all into your repo.
+  so `installVia(dnf)` works in an empty repo. `loadout installers` shows
+  them, and an installer of your own with the same name replaces one.
 
 ## Commands
 
@@ -50,7 +52,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | **start here** | `loadout` | The home screen: what needs work. `l` opens a row; enter runs what you ticked (missing programs, pending scripts, drifted configs, outdated mechanisms) full-window, then the screen comes back (`v` shows a command's whole output); quitting leaves your terminal as it was. r/S/U/C re-check, sync, self-upgrade, set up. A pipe gets help instead |
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Programs, scripts or configs exactly as the engine resolves them (default: every program and script) |
-| | `installers [name]` | The install mechanisms available here, built-in and your own (`--eject` copies the built-ins into your repo) |
+| | `installers [name]` | The install mechanisms available here, built-in and your own |
 | | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `outdated` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
@@ -60,25 +62,43 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
-| | `init` | Scaffold a new config repo |
+| | `compile` | Turn the repo's Kotlin manifests into `loadout.lock.json`, which every other command reads (needs a JDK) |
+| | `init` | Scaffold a new config repo (a small Gradle project); `--configs` holds your dotfiles too |
 
 ## Quickstart
 
 ```console
 $ loadout init ~/loadouts && cd ~/loadouts
-$ $EDITOR loadout.yaml programs/            # declare programs and scripts
-$ $EDITOR machines/$(hostname).yaml          # map what this machine carries
+$ $EDITOR programs/ machines.loadout.kt      # declare programs; say what this machine installs
+$ loadout compile                            # writes loadout.lock.json (commit it)
 $ loadout status                             # observe
 $ loadout setup-new-machine                  # converge
 $ loadout sync                               # publish (after adding a git remote)
+```
+
+```kotlin
+// programs/cli.loadout.kt
+val ripgrep = program(
+    name = "ripgrep",
+    description = "fast grep",
+) {
+    installVia(
+        dnf,
+        pacman,
+        brew,
+    )
+}
+
+// machines.loadout.kt
+val laptop = machine(hostname = "laptop") { install(dnf, ripgrep) }
 ```
 
 ## Learn more
 
 - **[Writing your manifest](../../wiki/Writing-Your-Manifest)**: from a
   three-line loadout to installers, variants, scripts and profiles.
-- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.yaml`, fragments
-  beside their dotfiles, machines, profiles and configs.
+- **[Repo layout](../../wiki/Repo-Layout)**: the Gradle project, manifest
+  files beside their dotfiles, machines, profiles, the lock and configs.
 - **[A day with loadout](../../wiki/A-Day-With-Loadout)**: the whole loop in
   practice: observing drift, maintaining, adding gear, new-machine day.
 - **[Concepts](../../wiki/Home)**: the three truths and the design stance.
@@ -94,17 +114,18 @@ Requires a JDK (21 works); the Gradle wrapper fetches the rest.
 $ ./gradlew :app:linkDebugExecutableLinuxX64
 $ ./app/build/bin/linuxX64/debugExecutable/loadout.kexe --help
 
-$ ./gradlew :core:linuxX64Test :app:linuxX64Test   # unit tests
+$ ./gradlew :model:linuxX64Test :dsl:jvmTest :core:linuxX64Test :app:linuxX64Test   # unit tests
+$ ./gradlew bundle                                  # the share directory: DSL, Gradle plugin, wrapper
 $ ./integration/run-tests.sh [pattern]             # black-box suite (real binary; pattern = only t/*pattern*.sh)
 ```
 
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (macs build on
 macs). A `v*` tag builds, strips and attaches release tarballs for
-linux-x64 / macos-arm64 / macos-x64, which the install one-liner and
-`loadout self-upgrade` download.
+linux-x64 / macos-arm64 / macos-x64 (the binary plus its `share/loadout`
+directory), which the install one-liner and `loadout self-upgrade`
+download.
 
-Stack: [Clikt](https://github.com/ajalt/clikt) ·
-[kaml](https://github.com/charleskorn/kaml) (YAML) · kotlinx-serialization ·
+Stack: [Clikt](https://github.com/ajalt/clikt) · kotlinx-serialization ·
 [kommand](https://github.com/kgit2/kommand) ·
 [Okio](https://square.github.io/okio/) ·
 [Mosaic](https://github.com/JakeWharton/mosaic) (the home screen).

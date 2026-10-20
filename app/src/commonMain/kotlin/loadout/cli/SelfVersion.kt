@@ -2,7 +2,7 @@ package loadout.cli
 
 import loadout.core.TOOL_VERSION
 import loadout.core.exec.ProcessRunner
-import loadout.core.manifest.ManifestLoader
+import loadout.core.versionAtLeast
 import loadout.core.platform.envVar
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -54,5 +54,5 @@ object SelfVersion {
 
     /** The latest release this binary is behind, or null when current/unknown. */
     fun behind(runner: ProcessRunner, fs: FileSystem, cached: Boolean = true): String? =
-        latest(runner, fs, cached)?.takeIf { !ManifestLoader.versionAtLeast(TOOL_VERSION, it) }
+        latest(runner, fs, cached)?.takeIf { !versionAtLeast(TOOL_VERSION, it) }
 }

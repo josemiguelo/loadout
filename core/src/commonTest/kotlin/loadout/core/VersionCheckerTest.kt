@@ -1,7 +1,9 @@
 package loadout.core
 
 import loadout.core.engine.VersionChecker
-import loadout.core.manifest.ManifestLoader
+import loadout.dsl.manifestOf
+import loadout.dsl.invoke
+import loadout.dsl.root
 import loadout.core.model.ProgramStatus
 import loadout.core.model.VersionCheck
 import kotlin.test.Test
@@ -48,27 +50,19 @@ class VersionCheckerTest {
 
     @Test
     fun resolvedChecksCarryTheirInstallersProbe() {
-        val manifest = ManifestLoader.parse(
-            """
-            installers:
-              pm:
-                probe: pm
-                install: pm install {pkg}
-                check: pm query {pkg}
-                regex: ([0-9.]+)
-
-            programs:
-              bat:
-                via: [pm]
-              rg:
-                version:
-                  command: rg --version
-                  regex: ([0-9.]+)
-                install:
-                  pm:
-                    check: rg --version
-            """.trimIndent(),
-        )
+        val manifest = manifestOf {
+            val pm = root.installer("pm") {
+                probe = "pm"
+                install = "pm install {pkg}"
+                check = "pm query {pkg}"
+                regex = "([0-9.]+)"
+            }
+            root.program("bat") { installVia(pm) }
+            root.program("rg") {
+                version("rg --version", "([0-9.]+)")
+                installVia(pm { version("rg --version", "([0-9.]+)") })
+            }
+        }
         // A check through the mechanism knows the tool it asks through...
         assertEquals("pm", manifest.checkFor("bat", "pm")!!.probe)
         // ...even when the variant overrides the command: it's still asked
@@ -111,7 +105,7 @@ class VersionCheckerTest {
 
     @Test
     fun checkAllChecksEveryProgram() = runTest {
-        val manifest = ManifestLoader.parse(EXAMPLE_MANIFEST)
+        val manifest = EXAMPLE_MANIFEST
         val runner = FakeProcessRunner()
         runner.onCommand("git --version", stdout = "git version 2.46.0")
         runner.onCommand("rg --version", stdout = "ripgrep 14.1.0")
@@ -122,5 +116,26 @@ class VersionCheckerTest {
         assertEquals("2.46.0", results.getValue("git").version)
         assertEquals(ProgramStatus.INSTALLED, results.getValue("ripgrep").status)
         assertEquals(ProgramStatus.MISSING, results.getValue("rustup").status)
+    }
+
+    @Test
+    fun aYesNoCheckRecordsInstalledWithNoVersion() {
+        val runner = FakeProcessRunner()
+        runner.onCommand("test -f /etc/dnf/dnf.conf", stdout = "anything 1.2.3")
+        val state = VersionChecker(runner).check(VersionCheck("test -f /etc/dnf/dnf.conf", regex = null))
+        assertEquals(ProgramStatus.INSTALLED, state.status)
+        assertNull(state.version)
+
+        // ...and a failing one is missing, as any check.
+        val missing = VersionChecker(FakeProcessRunner()).check(VersionCheck("test -f /nope", regex = null))
+        assertEquals(ProgramStatus.MISSING, missing.status)
+    }
+
+    @Test
+    fun aProgramsPathComesFirstForItsCheck() {
+        val runner = FakeProcessRunner()
+        runner.onCommand("PATH=\"\$HOME/.local/bin:\$PATH\"; export PATH; ngrok version", stdout = "ngrok version 3.4.0")
+        val check = VersionCheck("ngrok version", "([0-9.]+)", path = listOf("\$HOME/.local/bin"))
+        assertEquals("3.4.0", VersionChecker(runner).check(check).version)
     }
 }

@@ -8,7 +8,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import loadout.core.engine.ScriptOutcome
 import loadout.core.engine.ScriptRunner
-import loadout.core.manifest.ManifestLoader
+import loadout.core.manifest.ManifestAssembler
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 
@@ -35,12 +35,8 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
         val scriptRunner = ScriptRunner(app.runner, app.frame(system))
         val enabledScripts = manifest.machines[system.machine]?.scriptArgs().orEmpty()
         val scriptNames = if (!skipScripts) {
-            ManifestLoader.scriptOrder(manifest, enabledScripts.keys)
-                .filter {
-                    it in enabledScripts &&
-                        manifest.scripts.getValue(it).appliesTo(system.os) &&
-                        manifest.scripts.getValue(it).runsIn("setup")
-                }
+            ManifestAssembler.scriptOrder(manifest, enabledScripts.keys)
+                .filter { it in enabledScripts && manifest.scripts.getValue(it).runsIn("setup") }
         } else {
             emptyList()
         }
@@ -58,7 +54,7 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
             plan.installs.any { it.sudo } || scriptNames.any { name ->
                 val step = manifest.scripts.getValue(name)
                 val args = enabledScripts.getValue(name)
-                scriptRunner.needsSudo(step, args) && scriptRunner.pending(step, system.os, args = args)
+                scriptRunner.needsSudo(step, args) && scriptRunner.pending(step, args = args)
             },
         )
 
@@ -67,9 +63,8 @@ class SetupCommand : CliktCommand(name = "setup-new-machine") {
         val scriptResults = mutableMapOf<String, ScriptState>()
         for (name in scriptNames) {
             val step = manifest.scripts.getValue(name)
-            when (val outcome = scriptRunner.run(step, system.os, args = enabledScripts.getValue(name))) {
+            when (val outcome = scriptRunner.run(step, args = enabledScripts.getValue(name))) {
                 is ScriptOutcome.AlreadyDone -> echo("\n" + Style.accent("==> script $name:") + " already done " + Style.dim("(check passed)"))
-                is ScriptOutcome.NotApplicable -> {}
                 is ScriptOutcome.Ran -> {
                     echo("\n" + Style.accent("==> ran script $name") + " (exit ${outcome.state.exitCode})")
                     scriptResults[name] = outcome.state

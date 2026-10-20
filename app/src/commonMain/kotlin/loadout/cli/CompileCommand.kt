@@ -1,0 +1,45 @@
+package loadout.cli
+
+import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
+import com.github.ajalt.clikt.core.requireObject
+import loadout.core.exec.ShellCommand
+import loadout.core.manifest.LockFile
+
+/**
+ * Builds the repo's Kotlin manifests into loadout.lock.json, the one thing
+ * every other command reads. The repo is a small Gradle project, so this
+ * needs a JDK; a machine that only reads the committed lock doesn't.
+ */
+class CompileCommand : CliktCommand(name = "compile") {
+    override fun help(context: Context) = commandHelp(
+        "Compile the repo's Kotlin manifests into ${LockFile.NAME} (needs a JDK).",
+    )
+
+    private val app by requireObject<AppContext>()
+
+    override fun run() {
+        val home = LoadoutHome.find(app.fs)
+        val root = app.fs.canonicalize(app.repoRoot)
+        if (!app.fs.exists(root / "gradlew")) {
+            echo("error: $root has no gradlew — a config repo is a Gradle project (see: loadout init)")
+            throw ProgramResult(1)
+        }
+        // Gradle's output only matters when it fails, so it's held until then.
+        val result = spinning("compiling manifests…") {
+            app.runner.capture(
+                ShellCommand(
+                    "sh ./gradlew -q --console=plain loadoutCompile",
+                    cwd = root.toString(),
+                    env = mapOf("LOADOUT_HOME" to home.toString()),
+                ),
+            )
+        }
+        if (!result.success) {
+            listOf(result.stdout, result.stderr).filter { it.isNotBlank() }.forEach { echo(it.trimEnd(), err = true) }
+            throw ProgramResult(result.exitCode)
+        }
+        echo(" " + Style.ok("✔") + "  wrote ${LockFile.NAME}")
+    }
+}

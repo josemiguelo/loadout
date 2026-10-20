@@ -48,6 +48,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            // Fixtures are built the way repos are.
+            implementation(project(":dsl"))
         }
     }
 }

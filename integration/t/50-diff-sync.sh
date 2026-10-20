@@ -7,18 +7,24 @@ basic_repo repo
 "$BIN" --repo repo diff >/dev/null || fail "diff exits 0 when in sync"
 ok "diff exits 0 when machines agree"
 
-# A program file of its own: the layout's programs/**/*.yaml glob picks it
-# up, and its top-level keys are the program's fields.
-cat > repo/programs/definitely-not-installed-xyz.yaml <<'YAML'
-version:
-  command: 'definitely-not-installed-xyz --version'
-  regex: '([0-9.]+)'
-install:
-  manual:
-    command: 'false'
-YAML
-printf 'definitely-not-installed-xyz:\n  install_with: manual\n' >> repo/machines/m1.yaml
-printf 'definitely-not-installed-xyz:\n  install_with: manual\n' >> repo/machines/m2.yaml
+# A program in a file of its own, installed on both machines.
+kt_file repo/programs/missing.loadout.kt <<'KT'
+val notInstalled = root.program("definitely-not-installed-xyz") {
+    version("definitely-not-installed-xyz --version", "([0-9.]+)")
+    custom("manual") { command = "false" }
+}
+
+val m1 = machine("m1") {
+    install(git.variant("manual"), notInstalled)
+    run(marker)
+}
+
+val m2 = machine("m2") { install(git.variant("manual"), notInstalled) }
+KT
+cat > repo/machines.loadout.kt <<'KT'
+package repo
+KT
+compile_repo repo
 "$BIN" --repo repo --machine m1 status >/dev/null
 "$BIN" --repo repo --machine m2 status >/dev/null
 "$BIN" --repo repo diff >/dev/null 2>&1 && fail "diff should exit 1 on missing" || true

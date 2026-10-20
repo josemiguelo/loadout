@@ -40,7 +40,7 @@ class StatusEngine(
 
     /**
      * What each failing script check printed during the last [refresh] —
-     * the "missing: ..." detail two-mode checks emit. Same surfacing pattern
+     * the "missing: ..." detail managing scripts' checks emit. Same surfacing pattern
      * as StateStore.lastWarnings: read it right after the call.
      */
     var lastScriptDetail: Map<String, String> = emptyMap()
@@ -85,11 +85,11 @@ class StatusEngine(
             val semaphore = Semaphore(8)
             val scripts = enabled.mapNotNull { (name, args) ->
                 val step = manifest.scripts[name] ?: return@mapNotNull null
-                if (!step.appliesTo(system.os)) return@mapNotNull null
+                val stepCheck = step.check
                 val history = scriptRuns[name] ?: previous?.scripts?.get(name)
                 when {
-                    step.check != null -> {
-                        val check = ScriptRunner.withArgs(step.check, args)
+                    stepCheck != null -> {
+                        val check = ScriptRunner.withArgs(stepCheck, args)
                         name to async {
                             semaphore.withPermit {
                                 val result = runner.capture(frame.command(check, step.origin))

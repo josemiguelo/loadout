@@ -21,18 +21,18 @@ import okio.Path
 /** Shared services and resolved global options, built once by the root command. */
 class AppContext(
     val repoRoot: Path,
-    val manifestName: String,
     val machineOverride: String?,
     val verbose: Boolean,
 ) {
     val fs: FileSystem = FileSystem.SYSTEM
     val runner: ProcessRunner = KommandProcessRunner()
-    /** The root file's validated layout, read alone, without loading the repo. */
-    val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot, manifestName) }
+    /** The lock's layout, read without the checks a full load makes. */
+    val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot) }
     val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
     val detection: Detection by lazy { Detection(runner, fs) }
 
-    fun loadManifest(): Manifest = ManifestLoader.loadRepo(fs, repoRoot, manifestName)
+    /** The repo's manifest as this machine sees it (its script variants picked). */
+    fun loadManifest(): Manifest = ManifestLoader.loadRepo(fs, repoRoot).forMachine(detectSystem().machine)
 
     fun detectSystem(): SystemInfo = detection.detectSystem(machineOverride)
 

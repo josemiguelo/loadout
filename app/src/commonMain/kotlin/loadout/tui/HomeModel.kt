@@ -9,7 +9,7 @@ import loadout.cli.UpdateRow
 import loadout.cli.outdatedReport
 import loadout.core.TOOL_VERSION
 import loadout.core.diff.DiffEngine
-import loadout.core.manifest.ManifestLoader
+import loadout.core.manifest.ManifestAssembler
 import loadout.core.model.ConfigStatus
 import loadout.core.model.MachineState
 import loadout.core.model.Manifest
@@ -1185,12 +1185,8 @@ internal fun upgradeItem(step: UpgradeStep, answered: RemoteStatus.Answered): Pa
 internal fun scriptRowsOf(manifest: Manifest, system: SystemInfo, observed: MachineState?): List<ScriptRow> {
     val enabled = manifest.machines[system.machine]?.scriptArgs().orEmpty()
     val verdicts = observed?.scripts.orEmpty()
-    return ManifestLoader.scriptOrder(manifest, enabled.keys)
-        .filter { name ->
-            name in enabled &&
-                manifest.scripts.getValue(name).appliesTo(system.os) &&
-                manifest.scripts.getValue(name).runsIn("maintain")
-        }
+    return ManifestAssembler.scriptOrder(manifest, enabled.keys)
+        .filter { name -> name in enabled && manifest.scripts.getValue(name).runsIn("maintain") }
         .map { name ->
             val step = manifest.scripts.getValue(name)
             val args = enabled.getValue(name)

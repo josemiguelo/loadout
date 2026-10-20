@@ -35,8 +35,35 @@ printf '.config/zsh/.zshrc\n.config/zsh/conf.d/a.zsh\n.config/tmux/tmux.conf\n.z
 printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
 
 basic_repo repo
-printf '  configs: configs\n' >> repo/loadout.yaml
+sed -i.bak 's/state = "state",/state = "state", configs = "configs",/' repo/loadout.kt && rm repo/loadout.kt.bak
+grep -q 'configs = "configs"' repo/loadout.kt || fail "the fixture declares configs"
 mkdir -p repo/configs
+compile_repo repo
+
+# --- the templates' data ------------------------------------------------------
+DATA=repo/configs/.chezmoidata/loadout.json
+[ -f "$DATA" ] || fail "compile writes the chezmoi data beside the configs"
+grep -q '"machines"' "$DATA" && grep -q '"m1"' "$DATA" && grep -q '"defaults"' "$DATA" ||
+    fail "the data holds the defaults and every machine's table: $(cat "$DATA")"
+cp "$DATA" data.bak
+printf '{"loadout": {}}\n' > "$DATA"
+OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "edited chezmoi data must be refused"
+echo "$OUT" | grep -q "configs/.chezmoidata/loadout.json doesn't match loadout.lock.json — run: loadout compile" ||
+    fail "the edited data is named: $OUT"
+rm "$DATA"
+OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "missing chezmoi data must be refused"
+echo "$OUT" | grep -q "configs/.chezmoidata/loadout.json is missing" || fail "the missing data is named: $OUT"
+cp data.bak "$DATA"
+PARTIAL=repo/configs/.chezmoitemplates/loadout/machine
+grep -q 'get .loadout.machines .chezmoi.hostname | default .loadout.defaults' "$PARTIAL" ||
+    fail "compile writes the loadout/machine partial: $(cat "$PARTIAL" 2>&1)"
+cp "$PARTIAL" partial.bak
+printf '{{ .chezmoi.hostname }}\n' > "$PARTIAL"
+OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "an edited partial must be refused"
+echo "$OUT" | grep -q "configs/.chezmoitemplates/loadout/machine doesn't match loadout.lock.json — run: loadout compile" ||
+    fail "the edited partial is named: $OUT"
+cp partial.bak "$PARTIAL"
+ok "compile writes the templates' data and partial, and a status refuses them edited or missing"
 
 # --- status ---------------------------------------------------------------
 OUT=$(cz_loadout --repo repo --machine m1 status) || fail "status exits 0 with configs"

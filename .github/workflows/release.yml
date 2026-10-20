@@ -23,13 +23,14 @@ jobs:
           path: ~/.konan
           key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Build
-        run: ./gradlew :app:linkReleaseExecutableLinuxX64
+        run: ./gradlew :app:linkReleaseExecutableLinuxX64 bundle
       - name: Package
         run: |
-          mkdir dist
+          mkdir -p dist/share
           cp app/build/bin/linuxX64/releaseExecutable/loadout.kexe dist/loadout
           strip dist/loadout
-          tar -C dist -czf "loadout-${GITHUB_REF_NAME}-linux-x64.tar.gz" loadout
+          cp -R build/bundle dist/share/loadout
+          tar -C dist -czf "loadout-${GITHUB_REF_NAME}-linux-x64.tar.gz" loadout share
       - uses: softprops/action-gh-release@v2
         with:
           files: loadout-*.tar.gz
@@ -49,15 +50,16 @@ jobs:
           path: ~/.konan
           key: konan-macos-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Build
-        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64
+        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64 bundle
       - name: Package
         run: |
           for target in macosArm64:macos-arm64 macosX64:macos-x64; do
             gradle_name="${target%%:*}"; release_name="${target##*:}"
-            mkdir -p "dist-$release_name"
+            mkdir -p "dist-$release_name/share"
             cp "app/build/bin/$gradle_name/releaseExecutable/loadout.kexe" "dist-$release_name/loadout"
             strip "dist-$release_name/loadout"
-            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout
+            cp -R build/bundle "dist-$release_name/share/loadout"
+            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout share
           done
       - uses: softprops/action-gh-release@v2
         with:

@@ -8,10 +8,50 @@ fail() { echo "FAIL - $1"; exit 1; }
 # A fresh working directory for one test file: nothing leaks between files.
 new_work() { mktemp -d -p "$WORK"; }
 
-# Append the layout every fixture shares to <dir>/loadout.yaml. A top-level
-# key of its own, so it can follow the fixture's sections and precede appended ones.
-add_layout() {
-    printf "\nlayout:\n  fragments: ['programs/**/*.yaml', 'maintenance/**/*.yaml']\n  machines: machines\n  profiles: profiles\n  state: state\n" >> "$1/loadout.yaml"
+# A config repo is Kotlin compiled to loadout.lock.json. KT_TEMPLATE (made
+# once by run-tests.sh with `loadout init`) holds the Gradle skeleton every
+# fixture copies, so fixtures build exactly like a scaffolded repo.
+
+# The Gradle skeleton and a minimal loadout.kt in <dir>: a repo named test
+# with its state in state/. Fixtures add manifests with kt_file.
+kt_repo() {
+    mkdir -p "$1/state" "$1/gradle"
+    cp "$KT_TEMPLATE/settings.gradle.kts" "$KT_TEMPLATE/build.gradle.kts" "$KT_TEMPLATE/gradlew" "$KT_TEMPLATE/.gitignore" "$1/"
+    cp -R "$KT_TEMPLATE/gradle/wrapper" "$1/gradle/"
+    printf 'val repo = repo(name = "test", state = "state")\n' | kt_file "$1/loadout.kt"
+}
+
+# stdin as the Kotlin manifest file <path>, in the repo package with the
+# DSL imported (both are what every file needs).
+kt_file() {
+    mkdir -p "$(dirname "$1")"
+    { printf 'package repo\n\nimport loadout.dsl.*\n\n'; cat; } > "$1"
+}
+
+# A key over every Kotlin source and build file of repo <dir>, paths
+# included: identical fixtures compile once per run.
+kt_key() {
+    (cd "$1" && find . \( -path ./build -o -path ./.gradle -o -path ./.kotlin \) -prune -o \
+        \( -name '*.kt' -o -name '*.kts' \) -type f -print | LC_ALL=C sort | while read -r f; do
+        printf '%s\n' "$f"; cat "$f"; done) | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+}
+
+# `loadout compile` repo <dir>, through the lock cache: what compile writes
+# (the lock, and with configs the chezmoi data beside them) is a pure
+# function of the sources, and Gradle is the slow part of every fixture.
+compile_repo() {
+    key=$(kt_key "$1")
+    if [ -d "$LOCK_CACHE/$key" ]; then
+        cp -R "$LOCK_CACHE/$key/." "$1/"
+        return 0
+    fi
+    out=$("$BIN" --repo "$1" compile 2>&1) || { echo "$out"; fail "fixture $1 compiles"; }
+    mkdir -p "$LOCK_CACHE/$key"
+    (cd "$1" && find . -path ./build -prune -o \( -name loadout.lock.json -o -path '*/.chezmoidata/loadout.json' -o -path '*/.chezmoitemplates/loadout/machine' \) -type f -print) |
+        while read -r f; do
+            mkdir -p "$LOCK_CACHE/$key/$(dirname "$f")"
+            cp "$1/$f" "$LOCK_CACHE/$key/$f"
+        done
 }
 
 # `loadout init` scaffold with a git identity so sync/commit tests can run.
@@ -22,39 +62,44 @@ scaffold_repo() {
 }
 
 # The workhorse fixture: git (installed everywhere) plus a marker script.
-# "manual" is a custom install key so the tests don't depend on which
-# package manager the host actually has. m1 opts into the marker script;
-# m2 deliberately does NOT.
+# "manual" is a variant of git's own so the tests don't depend on which
+# package manager the host actually has. m1 runs the marker script; m2
+# deliberately does NOT.
 basic_repo() {
     scaffold_repo "$1"
-    cat > "$1/loadout.yaml" <<'YAML'
-programs:
-  git:
-    version:
-      command: 'git --version'
-      regex: 'git version ([0-9.]+)'
-    install:
-      dnf:
-        command: 'sudo dnf install -y git'
-      manual:
-        command: 'echo install git yourself && false'
+    rm -f "$1/programs/cli.loadout.kt"
+    kt_file "$1/programs/git.loadout.kt" <<'KT'
+val git = root.program("git") {
+    version("git --version", "git version ([0-9.]+)")
+    installVia(Builtin.dnf { command = "sudo dnf install -y git" })
+    custom("manual") { command = "echo install git yourself && false" }
+}
 
-scripts:
-  marker:
-    file: scripts/marker.sh
-    check: 'test -f marker.txt'
-YAML
-    add_layout "$1"
-    printf 'setup:\n  scripts: [marker]\n\ngit:\n  install_with: manual\n' > "$1/machines/m1.yaml"
-    printf 'git:\n  install_with: manual\n' > "$1/machines/m2.yaml"
+val marker = root.script("marker") {
+    file("scripts/marker.sh")
+    check("test -f marker.txt")
+}
+KT
+    kt_file "$1/machines.loadout.kt" <<'KT'
+val m1 = machine("m1") {
+    install(git.variant("manual"))
+    run(marker)
+}
+
+val m2 = machine("m2") {
+    install(git.variant("manual"))
+}
+KT
     mkdir -p "$1/scripts"
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
+    compile_repo "$1"
 }
 
 # basic_repo, but laid out as a bare repo ($1) plus one linked worktree
 # ($2) checked out from it (`git worktree add`, not a plain clone) — the
 # bare-repo-plus-worktree shape `workmux` uses. Same manifest/machines as
-# basic_repo, so the same assertions apply once pointed at $2.
+# basic_repo (its lock committed), so the same assertions apply once
+# pointed at $2.
 worktree_repo() {
     # Absolute: git -C changes into $seed before resolving its arguments, so
     # a relative bare/worktree path would land inside $seed instead of here.
@@ -76,33 +121,40 @@ worktree_repo() {
 # package manager involved) and whose scripts cover every verdict: one
 # passing, one whose check keeps failing, one setup-only.
 scripts_repo() {
-    mkdir -p "$1/state" "$1/machines"
-    cat > "$1/loadout.yaml" <<'YAML'
-installers:
-  fake:
-    probe: sh
-    install: 'echo installed-{pkg} > fake-install.txt'
-    check: 'test -f fake-install.txt && echo mytool 1.0'
-    regex: 'mytool ([0-9.]+)'
+    kt_repo "$1"
+    kt_file "$1/programs/scripts.loadout.kt" <<'KT'
+val fake = root.installer("fake") {
+    probe = "sh"
+    install = "echo installed-{pkg} > fake-install.txt"
+    check = "test -f fake-install.txt && echo mytool 1.0"
+    regex = "mytool ([0-9.]+)"
+}
 
-programs:
-  mytool:
-    via: [fake]
+val mytool = root.program("mytool") { installVia(fake) }
 
-scripts:
-  healthy:
-    run: 'true'
-    check: 'true'
-  drifted:
-    run: 'true'
-    check: 'echo missing: nodejs 16 npm firebase-tools; false'
-  bootstrap-only:
-    run: 'echo bootstrapped > bootstrap-marker.txt'
-    check: 'test -f bootstrap-marker.txt'
-    modes: [setup]
-YAML
-    add_layout "$1"
-    printf 'setup:\n  scripts: [healthy, drifted, bootstrap-only]\n\nmytool:\n  install_with: fake\n' > "$1/machines/m1.yaml"
+val healthy = root.script("healthy") {
+    run("true")
+    check("true")
+}
+
+val drifted = root.script("drifted") {
+    run("true")
+    check("echo missing: nodejs 16 npm firebase-tools; false")
+}
+
+val bootstrapOnly = root.script("bootstrap-only") {
+    run("echo bootstrapped > bootstrap-marker.txt")
+    check("test -f bootstrap-marker.txt")
+    setupOnly()
+}
+KT
+    kt_file "$1/machines.loadout.kt" <<'KT'
+val m1 = machine("m1") {
+    install(mytool)
+    run(healthy, drifted, bootstrapOnly)
+}
+KT
+    compile_repo "$1"
 }
 
 # A stand-in sudo on PATH that asks like the real one: `-n` succeeds only

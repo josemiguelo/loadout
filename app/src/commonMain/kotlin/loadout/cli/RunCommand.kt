@@ -11,7 +11,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import loadout.core.engine.ScriptOutcome
 import loadout.core.engine.ScriptRunner
-import loadout.core.manifest.ManifestLoader
+import loadout.core.manifest.ManifestAssembler
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 
@@ -45,8 +45,8 @@ class RunCommand : CliktCommand(name = "run") {
         names.filterNot { it in enabled }.let { disabled ->
             if (disabled.isNotEmpty()) {
                 for (name in disabled) {
-                    echo("error: script '$name' is not enabled for machine '${system.machine}' " +
-                        "(add it to a program's scripts in ${app.layout.machines}/${system.machine}.yaml)")
+                    echo("error: script '$name' is not run on machine '${system.machine}' " +
+                        "(run it in machine '${system.machine}' or a profile it extends)")
                 }
                 throw ProgramResult(1)
             }
@@ -63,20 +63,19 @@ class RunCommand : CliktCommand(name = "run") {
         }
 
         val runner = ScriptRunner(app.runner, app.frame(system))
-        val ordered = ManifestLoader.scriptOrder(manifest, targets).filter { it in targets }
+        val ordered = ManifestAssembler.scriptOrder(manifest, targets).filter { it in targets }
         askForSudoUpfront(
             app.runner,
             ordered.any { name ->
                 val step = manifest.scripts.getValue(name)
                 val args = enabled.getValue(name)
-                runner.needsSudo(step, args) && runner.pending(step, system.os, force, args)
+                runner.needsSudo(step, args) && runner.pending(step, force, args)
             },
         )
         val results = mutableMapOf<String, ScriptState>()
         for (name in ordered) {
             val step = manifest.scripts.getValue(name)
-            when (val outcome = runner.run(step, system.os, force, args = enabled.getValue(name))) {
-                is ScriptOutcome.NotApplicable -> echo(" " + Style.dim("\u00b7") + "  skipped $name " + Style.dim("(not for ${system.os.id})"))
+            when (val outcome = runner.run(step, force, args = enabled.getValue(name))) {
                 is ScriptOutcome.AlreadyDone -> echo(" " + Style.ok("\u2714") + "  skipped $name " + Style.dim("(already done; use --force to run anyway)"))
                 is ScriptOutcome.Ran -> {
                     echo(" " + (if (outcome.state.exitCode == 0) Style.ok("\u2714") else Style.error("\u2718")) + "  ran $name (exit ${outcome.state.exitCode})")

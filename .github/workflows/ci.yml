@@ -21,9 +21,9 @@ jobs:
           path: ~/.konan
           key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Unit tests
-        run: ./gradlew :core:linuxX64Test :app:linuxX64Test
-      - name: Build debug binary
-        run: ./gradlew :app:linkDebugExecutableLinuxX64
+        run: ./gradlew checkVersion :model:linuxX64Test :model:jvmTest :dsl:linuxX64Test :dsl:jvmTest :core:linuxX64Test :app:linuxX64Test
+      - name: Build debug binary and share directory
+        run: ./gradlew :app:linkDebugExecutableLinuxX64 bundle
       - name: Integration tests
         run: ./integration/run-tests.sh
       - name: Build release binary
@@ -44,8 +44,8 @@ jobs:
           path: ~/.konan
           key: konan-macos-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Unit tests (arm64 host)
-        run: ./gradlew :core:macosArm64Test :app:macosArm64Test
-      - name: Build release binaries (arm64 + x64)
-        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64
+        run: ./gradlew :model:macosArm64Test :dsl:macosArm64Test :core:macosArm64Test :app:macosArm64Test
+      - name: Build release binaries (arm64 + x64) and share directory
+        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64 bundle
       - name: Integration tests
         run: ./integration/run-tests.sh app/build/bin/macosArm64/releaseExecutable/loadout.kexe

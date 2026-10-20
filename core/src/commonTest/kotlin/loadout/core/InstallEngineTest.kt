@@ -5,7 +5,11 @@ import loadout.core.engine.InstallEngine
 import loadout.core.engine.PlanItem
 import loadout.core.engine.ResolutionException
 import loadout.core.engine.VersionChecker
-import loadout.core.manifest.ManifestLoader
+import loadout.dsl.Builtin
+import loadout.dsl.invoke
+import loadout.dsl.machine
+import loadout.dsl.manifestOf
+import loadout.dsl.root
 import loadout.core.model.ProgramState
 import loadout.core.model.ProgramStatus
 import kotlin.test.Test
@@ -15,7 +19,7 @@ import kotlin.test.assertTrue
 import okio.Path.Companion.toPath
 
 class InstallEngineTest {
-    private val manifest = ManifestLoader.parse(EXAMPLE_MANIFEST)
+    private val manifest = EXAMPLE_MANIFEST
 
     private fun engine(runner: FakeProcessRunner = FakeProcessRunner()) =
         InstallEngine(runner, VersionChecker(runner), CommandFrame("/repo"))
@@ -59,30 +63,21 @@ class InstallEngineTest {
     fun aVariantsDependenciesOnlyComeWithThatVariant() {
         // kitty from a COPR needs dnf-plugins-core first; kitty from pacman
         // needs nothing — and must not drag a dnf package into the plan.
-        val m = ManifestLoader.parse(
-            """
-            programs:
-              dnf-plugins-core:
-                install:
-                  dnf:
-                    command: dnf install dnf-plugins-core
-              kitty:
-                install:
-                  copr:
-                    command: dnf copr enable kitty
-                    depends-on: [dnf-plugins-core]
-                  pacman:
-                    command: pacman -S kitty
-            machines:
-              fedora:
-                pm:
-                  kitty: copr
-                  dnf-plugins-core: dnf
-              arch:
-                pm:
-                  kitty: pacman
-            """.trimIndent(),
-        )
+        val m = manifestOf {
+            val plugins = root.program("dnf-plugins-core") { installVia(Builtin.dnf { command = "dnf install dnf-plugins-core" }) }
+            val kitty = root.program("kitty") {
+                custom("copr") {
+                    command = "dnf copr enable kitty"
+                    dependsOn(plugins)
+                }
+                custom("pacman") { command = "pacman -S kitty" }
+            }
+            machine("fedora") {
+                install(kitty.variant("copr"))
+                install(Builtin.dnf, plugins)
+            }
+            machine("arch") { install(kitty.variant("pacman")) }
+        }
         val fedora = engine().plan(m, "fedora", listOf("kitty"), emptyMap()) { true }
         assertEquals(listOf("dnf-plugins-core", "kitty"), fedora.map { it.program })
         val arch = engine().plan(m, "arch", listOf("kitty"), emptyMap()) { true }
@@ -90,55 +85,30 @@ class InstallEngineTest {
     }
 
     @Test
-    fun anObsoleteSudoDeclarationStillLoadsAndChangesNothing() {
-        // `sudo = true` (installer or variant) is obsolete: it must parse
-        // and plan exactly as without it.
-        val m = ManifestLoader.parse(
-            """
-            installers:
-              omarchy-pkg:
-                install: omarchy pkg add {pkg}
-                sudo: true
-            programs:
-              zsh:
-                via: [omarchy-pkg]
-              quiet:
-                install:
-                  omarchy-pkg:
-                    command: true
-                    sudo: false
-              plain:
-                install:
-                  script:
-                    command: true
-            machines:
-              m:
-                pm:
-                  zsh: omarchy-pkg
-                  quiet: omarchy-pkg
-                  plain: script
-            """.trimIndent(),
-        )
-        val plan = engine().plan(m, "m", listOf("zsh", "quiet", "plain"), emptyMap()) { true }
-            .filterIsInstance<PlanItem.Install>().associate { it.program to it.command }
-        assertEquals(mapOf("zsh" to "omarchy pkg add zsh", "quiet" to "true", "plain" to "true"), plan)
+    fun sudoDeclarationsReachThePlan() {
+        // `sudo` on an installer marks its installs; a variant's replaces it.
+        val m = manifestOf {
+            val pkg = root.installer("omarchy-pkg") {
+                install = "omarchy pkg add {pkg}"
+                needsSudo()
+            }
+            val zsh = root.program("zsh") { installVia(pkg) }
+            val plain = root.program("plain") { custom { command = "true" } }
+            machine("m") {
+                install(zsh, plain)
+            }
+        }
+        val plan = engine().plan(m, "m", listOf("zsh", "plain"), emptyMap()) { true }
+            .filterIsInstance<PlanItem.Install>().associate { it.program to it.sudo }
+        assertEquals(mapOf("zsh" to true, "plain" to false), plan)
     }
 
     @Test
     fun fileInstallValuesRunAsRepoScripts() {
-        val withFile = ManifestLoader.parse(
-            """
-            programs:
-              tool:
-                install:
-                  script:
-                    command: file:scripts/install-tool.sh
-            machines:
-              m:
-                pm:
-                  tool: script
-            """.trimIndent(),
-        )
+        val withFile = manifestOf {
+            val tool = root.program("tool") { custom("script") { command = "file:scripts/install-tool.sh" } }
+            machine("m") { install(tool) }
+        }
         val plan = engine().plan(withFile, "m", emptyList(), emptyMap()) { true }
         assertEquals(
             PlanItem.Install("tool", "script", "sh 'scripts/install-tool.sh'"),
@@ -148,24 +118,59 @@ class InstallEngineTest {
 
     @Test
     fun fileInstallValuesPassArgumentsThrough() {
-        val withArgs = ManifestLoader.parse(
-            """
-            programs:
-              tool:
-                install:
-                  script:
-                    command: file:scripts/tool.sh install --verbose
-            machines:
-              m:
-                pm:
-                  tool: script
-            """.trimIndent(),
-        )
+        val withArgs = manifestOf {
+            val tool = root.program("tool") { custom("script") { command = "file:scripts/tool.sh install --verbose" } }
+            machine("m") { install(tool) }
+        }
         val plan = engine().plan(withArgs, "m", emptyList(), emptyMap()) { true }
         assertEquals(
             PlanItem.Install("tool", "script", "sh 'scripts/tool.sh' install --verbose"),
             plan.single(),
         )
+    }
+
+    @Test
+    fun aProgramsPathComesFirstOnTheInstallCommandsPath() {
+        val m = manifestOf {
+            val tool = root.program("tool") {
+                path("\$HOME/.local/bin")
+                custom { command = "file:install.sh" }
+            }
+            machine("m") { install(tool) }
+        }
+        val item = engine().plan(m, "m", emptyList(), emptyMap()) { true }.single() as PlanItem.Install
+        assertEquals("PATH=\"\$HOME/.local/bin:\$PATH\"; export PATH; sh 'install.sh'", item.command)
+    }
+
+    @Test
+    fun anInstallersRequirementIsPlannedFirst() {
+        val m = manifestOf {
+            val setup = root.program("setup-brew") { custom { command = "setup" } }
+            val brew = root.installer("brew") { install = "brew install {pkg}" }
+            brew.requires(setup)
+            val jq = root.program("jq") { installVia(brew) }
+            machine("m") { install(setup, jq) }
+            machine("bare") { install(jq) }
+        }
+        val plan = engine().plan(m, "m", listOf("jq"), emptyMap()) { true }
+        assertEquals(listOf("setup-brew", "jq"), plan.map { it.program })
+
+        // The requirement is a dependency: a machine that doesn't install it can't install jq.
+        val e = assertFailsWith<ResolutionException> {
+            engine().plan(m, "bare", emptyList(), emptyMap()) { true }
+        }
+        assertTrue("'setup-brew' is required as a dependency" in e.message.orEmpty(), e.message)
+    }
+
+    @Test
+    fun tiesBreakByName() {
+        val m = manifestOf {
+            val zeta = root.program("zeta") { custom { command = "z" } }
+            val alpha = root.program("alpha") { custom { command = "a" } }
+            machine("m") { install(zeta, alpha) }
+        }
+        val plan = engine().plan(m, "m", listOf("zeta", "alpha"), emptyMap()) { true }
+        assertEquals(listOf("alpha", "zeta"), plan.map { it.program })
     }
 
     @Test
@@ -175,32 +180,20 @@ class InstallEngineTest {
     }
 
     @Test
-    fun failsWhenMachineHasNoMapping() {
+    fun failsWhenMachineIsNotDeclared() {
         val e = assertFailsWith<ResolutionException> {
             engine().plan(manifest, "unknown-box", emptyList(), emptyMap()) { true }
         }
-        assertTrue("machines/unknown-box.yaml" in e.message.orEmpty())
+        assertTrue("machine 'unknown-box' is not declared in the repo" in e.message.orEmpty(), e.message)
     }
 
     @Test
     fun convergeSkipsUnmappedPrograms() {
-        val partial = ManifestLoader.parse(
-            """
-            programs:
-              a:
-                install:
-                  dnf:
-                    command: sudo dnf install -y a
-              b:
-                install:
-                  dnf:
-                    command: sudo dnf install -y b
-            machines:
-              m:
-                pm:
-                  a: dnf
-            """.trimIndent(),
-        )
+        val partial = manifestOf {
+            val a = root.program("a") { installVia(Builtin.dnf { command = "sudo dnf install -y a" }) }
+            root.program("b") { installVia(Builtin.dnf { command = "sudo dnf install -y b" }) }
+            machine("m") { install(a) }
+        }
         // b is not part of m's loadout: converge plans only a, no error.
         val plan = engine().plan(partial, "m", emptyList(), emptyMap()) { true }
         assertEquals(listOf("a"), plan.map { it.program })
@@ -209,29 +202,19 @@ class InstallEngineTest {
         val e = assertFailsWith<ResolutionException> {
             engine().plan(partial, "m", listOf("b"), emptyMap()) { true }
         }
-        assertTrue("program 'b' has no pm defined for machine 'm'" in e.message.orEmpty())
+        assertTrue("program 'b' isn't installed on machine 'm'" in e.message.orEmpty(), e.message)
     }
 
     @Test
     fun unmappedDependencyOfMappedProgramFails() {
-        val partial = ManifestLoader.parse(
-            """
-            programs:
-              base:
-                install:
-                  dnf:
-                    command: sudo dnf install -y base
-              tool:
-                depends-on: [base]
-                install:
-                  dnf:
-                    command: sudo dnf install -y tool
-            machines:
-              m:
-                pm:
-                  tool: dnf
-            """.trimIndent(),
-        )
+        val partial = manifestOf {
+            val base = root.program("base") { installVia(Builtin.dnf { command = "sudo dnf install -y base" }) }
+            val tool = root.program("tool") {
+                dependsOn(base)
+                installVia(Builtin.dnf { command = "sudo dnf install -y tool" })
+            }
+            machine("m") { install(tool) }
+        }
         val e = assertFailsWith<ResolutionException> {
             engine().plan(partial, "m", emptyList(), emptyMap()) { true }
         }
@@ -266,28 +249,16 @@ class InstallEngineTest {
 
     @Test
     fun installerMechanicsResolveByMappedKey() {
-        val m = ManifestLoader.parse(
-            """
-            installers:
-              brew-cask:
-                probe: brew
-                install: brew install --cask {pkg}
-                check: brew list --cask --versions {pkg}
-                regex: ([0-9.]+)
-            programs:
-              toolbox:
-                install:
-                  brew-linux:
-                    installer: brew-cask
-                    pkg: toolbox-linux
-                  brew-macos:
-                    installer: brew-cask
-            machines:
-              m:
-                pm:
-                  toolbox: brew-linux
-            """.trimIndent(),
-        )
+        val m = manifestOf {
+            val cask = root.installer("brew-cask") {
+                probe = "brew"
+                install = "brew install --cask {pkg}"
+                check = "brew list --cask --versions {pkg}"
+                regex = "([0-9.]+)"
+            }
+            val toolbox = root.program("toolbox") { installVia(cask("toolbox-linux")) }
+            machine("m") { install(toolbox) }
+        }
         // Probe: the variant inherits its installer's probe binary.
         val probed = mutableListOf<String>()
         engine().plan(m, "m", emptyList(), emptyMap()) { probed += it; true }
