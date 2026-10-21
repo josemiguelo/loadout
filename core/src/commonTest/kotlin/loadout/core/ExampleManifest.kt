@@ -39,11 +39,15 @@ val EXAMPLE_MANIFEST = manifestOf {
         runAfter(git)
     }
     machine("laptop") {
-        install(dnf, git, ripgrep)
+        via(dnf) {
+            install(git, ripgrep)
+        }
         install(rustup)
     }
     machine("macbook") {
-        install(brew, git, ripgrep)
+        via(brew) {
+            install(git, ripgrep)
+        }
         install(rustup)
     }
 }

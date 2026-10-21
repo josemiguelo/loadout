@@ -608,9 +608,18 @@ fun machine(hostname: String, block: MachineScope.() -> Unit): Machine {
 }
 
 /**
- * The body of a machine or a profile: two verbs, `install` and `run`. Merge
- * rules are contract 2's.
+ * Keeps a `via(installer) { … }` block to its own verb: without it, Kotlin
+ * would let the block call the machine's `run` or its other `install`.
  */
+@DslMarker
+annotation class MachineDsl
+
+/**
+ * The body of a machine or a profile: two verbs, `install` and `run`, and
+ * `via(installer) { install(…) }` for programs with several ways to install.
+ * Merge rules are contract 2's.
+ */
+@MachineDsl
 class MachineScope internal constructor(
     private val label: String,
     /** The profile being declared; null for a machine. */
@@ -655,12 +664,13 @@ class MachineScope internal constructor(
 
     fun install(programs: List<Installable>) = install(*programs.toTypedArray())
 
-    /** Each program through its [installer] variant. */
-    fun install(installer: Installer, vararg programs: Program) {
-        declared(programs, label).forEach { map(it.name, installer.name) }
+    /**
+     * Every program the block installs goes through [installer]'s variant:
+     * `via(omarchy) { install(curl, git) }`.
+     */
+    fun via(installer: Installer, block: ViaScope.() -> Unit) {
+        ViaScope { programs -> declared(programs, label).forEach { map(it.name, installer.name) } }.block()
     }
-
-    fun install(installer: Installer, programs: List<Program>) = install(installer, *programs.toTypedArray())
 
     fun run(vararg scripts: Runnable) {
         declared(scripts, label).forEach { add(it, emptyList()) }
@@ -704,4 +714,12 @@ class MachineScope internal constructor(
         data = data,
         label = label,
     )
+}
+
+/** The body of `via(installer) { … }`: programs, each installed through that installer. */
+@MachineDsl
+class ViaScope internal constructor(private val add: (Array<out Program>) -> Unit) {
+    fun install(vararg programs: Program) = add(programs)
+
+    fun install(programs: List<Program>) = add(programs.toTypedArray())
 }

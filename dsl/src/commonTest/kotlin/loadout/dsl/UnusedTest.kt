@@ -63,6 +63,11 @@ class UnusedTest {
                     Builtin.brew,
                 )
             }
+            val jq = program(name = "jq") {
+                installVia(
+                    Builtin.brew,
+                )
+            }
             script(name = "idle") { run("true") }
             val keyboard = script(name = "keyboard") {
                 variant(name = "arch") { run("true") }
@@ -70,7 +75,10 @@ class UnusedTest {
             }
             profile(name = "lonely") {}
             machine(hostname = "m1") {
-                install(Builtin.dnf, tool)
+                via(Builtin.dnf) {
+                    install(tool)
+                }
+                install(jq)
                 run(keyboard.variant(name = "arch"))
             }
         }
@@ -79,12 +87,68 @@ class UnusedTest {
                 "installer 'fake' installs nothing a machine uses",
                 "profile 'lonely' isn't extended by any machine",
                 "program 'orphan' isn't installed on any machine",
-                "program 'tool': no machine installs it via 'brew'",
+                "program 'tool': machine 'm1' installs other programs via 'brew', but not tool",
                 "script 'idle' isn't run on any machine",
                 "script 'keyboard': no machine runs it as 'fedora'",
             ),
             out,
         )
+    }
+
+    @Test
+    fun aWayToInstallThroughAnInstallerNoMachineUsesIsNotAWarning() {
+        val out = warnings {
+            val ripgrep = program(name = "ripgrep") {
+                installVia(
+                    Builtin.dnf,
+                    Builtin.apt,
+                    Builtin.pacman,
+                    Builtin.brew,
+                )
+            }
+            machine(hostname = "laptop") {
+                via(Builtin.dnf) {
+                    install(ripgrep)
+                }
+            }
+        }
+        assertEquals(emptyList(), out)
+    }
+
+    @Test
+    fun aSpareMarkOnAPickedWayToInstallIsAWarning() {
+        val out = warnings {
+            val tool = program(name = "tool") {
+                installVia(
+                    Builtin.dnf {
+                        spare(reason = "for Fedora")
+                    },
+                    Builtin.brew,
+                )
+            }
+            machine(hostname = "m1") {
+                via(Builtin.dnf) {
+                    install(tool)
+                }
+            }
+        }
+        assertEquals(listOf("program 'tool' via 'dnf' is marked spare, but a machine uses it"), out)
+    }
+
+    @Test
+    fun aSpareMarkOnAScriptVariantAMachineRunsIsAWarning() {
+        val out = warnings {
+            val keyboard = script(name = "keyboard") {
+                variant(name = "arch") {
+                    spare(reason = "no Arch machine")
+                    run("true")
+                }
+                variant(name = "fedora") { run("true") }
+            }
+            machine(hostname = "m1") { run(keyboard.variant(name = "arch")) }
+            machine(hostname = "m2") { run(keyboard.variant(name = "fedora")) }
+        }
+        assertEquals(listOf("script 'keyboard' as 'arch' is marked spare, but a machine uses it"), out)
     }
 
     @Test
@@ -121,7 +185,9 @@ class UnusedTest {
                 install(fedoraOnly)
             }
             machine(hostname = "m1") {
-                install(Builtin.dnf, tool)
+                via(Builtin.dnf) {
+                    install(tool)
+                }
                 run(keyboard.variant(name = "arch"))
             }
         }

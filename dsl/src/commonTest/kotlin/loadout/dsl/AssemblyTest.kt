@@ -122,12 +122,43 @@ class AssemblyTest {
     }
 
     @Test
+    fun viaInstallsEveryProgramInItsBlockThroughThatInstaller() {
+        val manifest = repo {
+            val git = root.program(name = "git") {
+                installVia(
+                    Builtin.dnf,
+                    Builtin.brew,
+                )
+            }
+            val jq = root.program(name = "jq") {
+                installVia(
+                    Builtin.brew,
+                )
+            }
+            val vim = root.program(name = "vim") {
+                installVia(
+                    Builtin.dnf,
+                    Builtin.brew,
+                )
+            }
+            val cli = listOf(git, vim)
+            machine(hostname = "m") {
+                via(Builtin.brew) {
+                    install(cli)
+                    install(jq)
+                }
+            }
+        }
+        assertEquals(mapOf("git" to "brew", "jq" to "brew", "vim" to "brew"), manifest.machines.getValue("m").pm)
+    }
+
+    @Test
     fun aMachineInstallingThroughAVariantTheProgramLacksIsNamed() {
         val message = refusal {
             val git = root.program("git") { installVia(Builtin.dnf) }
-            machine("m") { install(Builtin.brew, git) }
+            machine("m") { via(Builtin.brew) { install(git) } }
         }
-        assertTrue("machine 'm' installs 'git' through 'brew', but it has no such variant (has: dnf)" in message, message)
+        assertTrue("machine 'm' installs 'git' via 'brew', but it can't be installed that way (it can via: dnf)" in message, message)
     }
 
     @Test
@@ -337,14 +368,18 @@ class AssemblyTest {
             val dotfiles = root.script("dotfiles") { file("dotfiles.sh") }
             val ssh = root.script("setup-ssh") { file("ssh.sh") }
             val base = profile("base") {
-                install(Builtin.dnf, git, kitty)
+                via(Builtin.dnf) {
+                    install(git, kitty)
+                }
                 run(dotfiles)
                 run(ssh, "basekey")
             }
             val linux = profile("linux") { extends(base) }
             machine("laptop") {
                 extends(linux)
-                install(Builtin.brew, git)
+                via(Builtin.brew) {
+                    install(git)
+                }
                 run(ssh, "laptopkey")
             }
         }
@@ -362,9 +397,9 @@ class AssemblyTest {
         val agree = repo("ssh.sh") {
             val git = root.program("git") { installVia(Builtin.dnf, Builtin.brew) }
             val ssh = root.script("ssh") { file("ssh.sh") }
-            val a = profile("a") { install(Builtin.dnf, git); run(ssh, "one") }
-            val b = profile("b") { install(Builtin.dnf, git); run(ssh, "one") }
-            machine("m") { extends(a, b); install(Builtin.brew, git) }
+            val a = profile("a") { via(Builtin.dnf) { install(git) }; run(ssh, "one") }
+            val b = profile("b") { via(Builtin.dnf) { install(git) }; run(ssh, "one") }
+            machine("m") { extends(a, b); via(Builtin.brew) { install(git) } }
         }
         assertEquals("brew", agree.machines.getValue("m").pm["git"])
         assertEquals(mapOf("ssh" to "one"), agree.machines.getValue("m").scriptArgs())
@@ -378,13 +413,17 @@ class AssemblyTest {
                 variant("two") { file("k2.sh") }
             }
             val a = profile("a") {
-                install(Builtin.dnf, git)
+                via(Builtin.dnf) {
+                    install(git)
+                }
                 run(ssh, "one")
                 run(keyboard.variant("one"))
                 data(::Flags) { omarchy = true }
             }
             val b = profile("b") {
-                install(Builtin.brew, git)
+                via(Builtin.brew) {
+                    install(git)
+                }
                 run(ssh, "two")
                 run(keyboard.variant("two"))
                 data(::Flags) { omarchy = false }

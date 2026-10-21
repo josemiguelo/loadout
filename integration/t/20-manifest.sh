@@ -118,7 +118,7 @@ ok "machines extend profiles, which are never machines themselves"
 
 kt_file repo/programs/profiles.loadout.kt <<'KT'
 val a = profile(name = "a") { install(git.variant(name = "manual")) }
-val b = profile(name = "b") { install(Builtin.dnf, git) }
+val b = profile(name = "b") { via(Builtin.dnf) { install(git) } }
 val m9 = machine(hostname = "m9") { extends(a, b) }
 KT
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "two profiles mapping a program differently must fail"
@@ -128,7 +128,9 @@ ok "two profiles of one machine that disagree are a compile error"
 kt_file repo/programs/profiles.loadout.kt <<'KT'
 val m9 = machine(hostname = "m9") {
     install(git.variant(name = "manual"))
-    install(Builtin.dnf, git)
+    via(Builtin.dnf) {
+        install(git)
+    }
 }
 KT
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a program installed twice must be refused"
@@ -213,10 +215,10 @@ val tool = root.program(name = "tool") {
     )
 }
 
-val m1 = machine(hostname = "m1") { install(Builtin.brew, tool) }
+val m1 = machine(hostname = "m1") { via(Builtin.brew) { install(tool) } }
 KT
 OUT=$("$BIN" --repo badmap compile 2>&1) && fail "a variant the program lacks must fail the compile"
-echo "$OUT" | grep -q "machine 'm1' installs 'tool' through 'brew', but it has no such variant (has: dnf)" || fail "bad-mapping message: $OUT"
+echo "$OUT" | grep -q "machine 'm1' installs 'tool' via 'brew', but it can't be installed that way (it can via: dnf)" || fail "bad-mapping message: $OUT"
 ok "a machine can't install a program through a variant it doesn't have"
 
 # --- file: install values run as repo scripts, repo-root cwd, from anywhere
@@ -428,12 +430,23 @@ val orphan = root.program(name = "orphan") {
     )
 }
 
-val m1 = machine(hostname = "m1") { install(Builtin.dnf, tool) }
+val jq = root.program(name = "jq") {
+    installVia(
+        Builtin.brew,
+    )
+}
+
+val m1 = machine(hostname = "m1") {
+    via(Builtin.dnf) {
+        install(tool)
+    }
+    install(jq)
+}
 KT
 OUT=$("$BIN" --repo unused compile 2>&1) || fail "warnings don't fail the compile: $OUT"
 echo "$OUT" | grep -q "wrote loadout.lock.json" || fail "the lock is written anyway: $OUT"
 echo "$OUT" | grep -q "program 'orphan' isn't installed on any machine" || fail "an unused program is named: $OUT"
-echo "$OUT" | grep -q "program 'tool': no machine installs it via 'brew'" || fail "an unpicked variant is named: $OUT"
+echo "$OUT" | grep -q "program 'tool': machine 'm1' installs other programs via 'brew', but not tool" || fail "an unpicked way through an installer in use is named: $OUT"
 kt_file unused/programs/tools.loadout.kt <<'KT'
 val tool = root.program(name = "tool") {
     installVia(
@@ -451,7 +464,18 @@ val orphan = root.program(name = "orphan") {
     )
 }
 
-val m1 = machine(hostname = "m1") { install(Builtin.dnf, tool, orphan) }
+val jq = root.program(name = "jq") {
+    installVia(
+        Builtin.brew,
+    )
+}
+
+val m1 = machine(hostname = "m1") {
+    via(Builtin.dnf) {
+        install(tool, orphan)
+    }
+    install(jq)
+}
 KT
 OUT=$("$BIN" --repo unused compile 2>&1) || fail "spare marks compile: $OUT"
 echo "$OUT" | grep -q "tool" && fail "a spare variant isn't warned about: $OUT"

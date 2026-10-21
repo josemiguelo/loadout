@@ -74,7 +74,9 @@ class InstallEngineTest {
             }
             machine("fedora") {
                 install(kitty.variant("copr"))
-                install(Builtin.dnf, plugins)
+                via(Builtin.dnf) {
+                    install(plugins)
+                }
             }
             machine("arch") { install(kitty.variant("pacman")) }
         }

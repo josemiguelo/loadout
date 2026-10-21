@@ -90,7 +90,11 @@ val ripgrep = program(
 }
 
 // machines.loadout.kt
-val laptop = machine(hostname = "laptop") { install(dnf, ripgrep) }
+val laptop = machine(hostname = "laptop") {
+    via(dnf) {
+        install(ripgrep)
+    }
+}
 ```
 
 ## Learn more

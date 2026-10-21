@@ -106,7 +106,10 @@ private fun machines(hostname: String) = """
     import loadout.dsl.*
 
     val thisMachine = machine(hostname = "$hostname") {
-        // install(dnf, ripgrep)
+        // Pick how this machine installs ripgrep, then uncomment:
+        // via(dnf) {
+        //     install(ripgrep)
+        // }
     }
 """.trimIndent() + "\n"
 

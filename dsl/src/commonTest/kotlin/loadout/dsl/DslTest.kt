@@ -50,7 +50,9 @@ class DslTest {
                 val fd = root.program("fd") { installVia(Builtin.brew, Builtin.omarchy) }
                 machine("m") {
                     install(jq)
-                    install(Builtin.omarchy, fd)
+                    via(Builtin.omarchy) {
+                        install(fd)
+                    }
                 }
             },
         )
@@ -75,7 +77,7 @@ class DslTest {
                 val setupDnf = root.program("setup-dnf") { installVia(Builtin.dnf { present("true") ; command = "true" }) }
                 val curl = root.program("curl") { installVia(Builtin.dnf) }
                 Builtin.dnf.requires(setupDnf)
-                machine("m") { install(Builtin.dnf, setupDnf, curl) }
+                machine("m") { via(Builtin.dnf) { install(setupDnf, curl) } }
             },
         )
         assertEquals(listOf("setup-dnf"), manifest.dependenciesOf("curl", "dnf"))

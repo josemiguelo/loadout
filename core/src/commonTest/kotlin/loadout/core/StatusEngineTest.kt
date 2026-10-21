@@ -35,7 +35,9 @@ class StatusEngineTest {
             check("true")
         }
         machine("laptop") {
-            install(Builtin.dnf, git)
+            via(Builtin.dnf) {
+                install(git)
+            }
             run(dotfiles, uncheckable)
         }
     }

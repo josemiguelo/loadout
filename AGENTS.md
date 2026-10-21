@@ -174,15 +174,18 @@ Explicit user decisions; don't "improve" them away.
 
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
    The only source of variant choice is the machine and the profiles it
-   extends (`install(dnf, curl)` names a program's variant key).
+   extends (`via(dnf) { install(curl) }` names a program's variant key).
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't install is not in its loadout: converge skips it, status
    doesn't observe it, diff shows "-".
    - **Declarations** (a `machines/` folder, a file per machine and per
      profile, or one `machines.loadout.kt`): `profile(name = …) { … }` and
      `machine(hostname = …) { … }`, each with two verbs.
-     `install(installer, programs…)` maps each program to that installer's
-     variant; `install(programs…)` takes programs with exactly ONE variant
+     `via(installer) { install(programs…) }` maps each program to that
+     installer's variant (the block's only verb: a `@DslMarker` keeps the
+     machine's `run` and its other `install` out of it, so a line inside
+     always installs through the block's installer); `install(programs…)`
+     outside a block takes programs with exactly ONE variant
      (more is a compile error naming them: no choosing for you) and named
      variants (`setupBrew.variant(name = "linux")`), mixed. `run(scripts…)` and
      `run(script, args…)` opt scripts in; `run(script.variant(name = "arch"))`
@@ -407,8 +410,10 @@ Explicit user decisions; don't "improve" them away.
     for free: each runs one of these subcommands.
 14. **Versioning contract.** The deliberate breaks: 0.2.0 (string install
     values became variant mappings), 0.9.0 (`templates` removed), 2.0.0
-    (TOML to YAML) and 3.0.0 (YAML removed: manifests are the Kotlin DSL,
-    compiled into the lock). A removal is decided once, loudly, in the
+    (TOML to YAML), 3.0.0 (YAML removed: manifests are the Kotlin DSL,
+    compiled into the lock) and 3.1.0 (`install(installer, programs…)`
+    removed for `via(installer) { install(…) }`; kept a minor release
+    because the lock format didn't change). A removal is decided once, loudly, in the
     release notes, never silently. The DSL and the binary are one version
     (the DSL ships in the binary's share dir, so a repo compiles against
     exactly the installed binary's). The lock carries `format` (bumped only
@@ -810,9 +815,13 @@ Explicit user decisions; don't "improve" them away.
   failure is a `NoWhenBranchMatchedException` deep in the DSL.
 - **Compile warns about what no machine uses** (`dsl/Unused.kt`): a
   profile no machine extends, a program none installs (dependencies
-  count), a way to install one none picks (programs with several), a
-  script or script variant none runs, a repo installer nothing in use goes
-  through. Warnings, never refusals: the lock is written either way.
+  count), a script or script variant none runs, a repo installer nothing
+  in use goes through. A way to install a program that no machine picks
+  is reported only when some machine uses that installer for OTHER
+  programs ("machine 'm' installs other programs via 'dnf', but not fzf"):
+  `installVia` lists every true claim, so a variant through an installer
+  nobody uses (a scaffold's ripgrep via apt, a COPR for a future Fedora
+  machine) is the recipe, not a mistake. Warnings, never refusals: the lock is written either way.
   `spare(reason = …)` marks one kept on purpose (on the profile, program,
   variant, script variant, installer); a spare profile's contents count as
   used, and a spare mark on something used is itself a warning, so marks

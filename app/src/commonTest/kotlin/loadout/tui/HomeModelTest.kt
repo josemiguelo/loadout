@@ -44,7 +44,9 @@ private val MANIFEST = manifestOf {
         setupOnly()
     }
     machine("m1") {
-        install(Builtin.dnf, git, kitty)
+        via(Builtin.dnf) {
+            install(git, kitty)
+        }
         run(dotfiles, bootstrap)
     }
 }

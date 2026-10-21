@@ -484,8 +484,8 @@ object ManifestAssembler {
                 if (program == null) {
                     errors += "$label installs unknown program '$programName'"
                 } else if (installKey !in program.install) {
-                    errors += "$label installs '$programName' through '$installKey', but it has no such " +
-                        "variant (has: ${program.install.keys.sorted().joinToString()})"
+                    errors += "$label installs '$programName' via '$installKey', but it can't be installed " +
+                        "that way (it can via: ${program.install.keys.sorted().joinToString()})"
                 }
             }
         }
