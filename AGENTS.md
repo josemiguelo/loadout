@@ -121,7 +121,8 @@ dsl/    loadout.dsl
                data and partial)
 gradle-plugin/  loadout.gradle.LoadoutPlugin — Kotlin/JVM over exactly the
                files `loadout { sources(…) }` globs match (our Glob), the DSL
-               at the plugin's version, `loadoutCompile`
+               at the plugin's version, `loadoutCompile`, the build outside
+               the repo
 core/  loadout.core
   manifest/    ManifestLoader — reads the lock: missing/newer/stale/floor
                refusals, file: paths re-checked; readLayout reads it alone
@@ -459,7 +460,15 @@ Explicit user decisions; don't "improve" them away.
     `state` is required, with no default. The lock records the globs and
     a sha256 of the files they match (path + content); a binary that finds
     them changed refuses with "run: loadout compile", so a lock never
-    silently lags its sources.
+    silently lags its sources. The source root is the repo itself (narrowed
+    by includes), and an editor's Gradle import (kotlin-lsp's) drops the
+    includes and indexes everything under it: a build/ in the repo is a
+    second copy of every declaration. So the plugin builds in
+    `${XDG_CACHE_HOME:-~/.cache}/loadout/build/<folder>-<path hash>` (set
+    before the build script runs, so a repo's own setting wins), and
+    `compile` names a leftover `build/classes` for deletion. The suite runs
+    with its own XDG_CACHE_HOME (seeded with a release, so `status` doesn't
+    ask GitHub), so its compiles never land in the developer's cache.
 17. **Configs are chezmoi's, observed like everything else.** `repo(configs = …)`
     names chezmoi's source directory inside the repo; unset, there
     is no configs concept and chezmoi is never called. Every chezmoi call is

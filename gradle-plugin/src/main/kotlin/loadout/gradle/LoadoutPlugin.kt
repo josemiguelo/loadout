@@ -8,6 +8,8 @@ import org.gradle.api.Project
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSetContainer
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
+import java.io.File
+import java.security.MessageDigest
 
 /** `loadout { sources(…) }`: the manifest globs, in compile order. */
 open class LoadoutExtension {
@@ -23,7 +25,8 @@ open class LoadoutExtension {
  * files `loadout { sources(…) }` matches (loadout's own glob rules, so the
  * compiled set is the hashed set), puts the DSL on the classpath at this
  * plugin's version, and registers `loadoutCompile`, which runs the
- * manifests and writes loadout.lock.json.
+ * manifests and writes loadout.lock.json. Builds outside the repo (see
+ * [buildDirFor]).
  */
 class LoadoutPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -32,6 +35,8 @@ class LoadoutPlugin : Plugin<Project> {
         val home = System.getenv("LOADOUT_HOME") ?: "${System.getProperty("user.home")}/.local/share/loadout"
         val extension = project.extensions.create("loadout", LoadoutExtension::class.java)
 
+        // Before the build script runs, so a repo that sets its own still wins.
+        project.layout.buildDirectory.set(buildDirFor(project))
         project.pluginManager.apply("org.jetbrains.kotlin.jvm")
         project.repositories.maven { it.setUrl(project.uri("$home/maven")) }
         project.repositories.mavenCentral()
@@ -62,4 +67,20 @@ class LoadoutPlugin : Plugin<Project> {
             }
         }
     }
+}
+
+/**
+ * `${XDG_CACHE_HOME:-~/.cache}/loadout/build/<folder>-<hash of its path>`:
+ * one per checkout, worktrees included. The source root is the repo itself
+ * (narrowed by includes), and an editor's Gradle import (kotlin-lsp's)
+ * drops the includes: compiled manifests in the repo's build/ would be a
+ * second copy of every declaration.
+ */
+private fun buildDirFor(project: Project): File {
+    val cache = project.providers.environmentVariable("XDG_CACHE_HOME").orNull?.takeIf { it.isNotEmpty() }
+        ?: "${System.getProperty("user.home")}/.cache"
+    val path = project.projectDir.canonicalPath
+    val hash = MessageDigest.getInstance("SHA-256").digest(path.toByteArray())
+        .take(6).joinToString("") { "%02x".format(it) }
+    return File("$cache/loadout/build/${project.projectDir.name}-$hash")
 }

@@ -38,6 +38,22 @@ echo "$OUT" | grep -q "wrote loadout.lock.json" || fail "compile says what it wr
 "$BIN" --repo repo --machine m1 status >/dev/null || fail "status reads the compiled scaffold"
 ok "init's scaffold compiles and status reads it"
 
+# The build lives in loadout's cache, one folder per checkout: an editor's
+# Gradle import indexes the whole repo, so a build/ there is a second copy
+# of every declaration.
+[ -e repo/build ] && fail "compile must not build inside the repo" || true
+ls -d "$XDG_CACHE_HOME"/loadout/build/repo-*/classes >/dev/null 2>&1 || fail "compile builds in loadout's cache"
+ok "compile builds outside the repo, in loadout's cache"
+
+# An older loadout's build/ is named for deletion, until it's gone.
+mkdir -p repo/build/classes
+OUT=$("$BIN" --repo repo compile 2>&1) || fail "compile with a leftover build/ exits 0: $OUT"
+echo "$OUT" | grep -q "delete build/: it's left from an older loadout" || fail "a leftover build/ is named: $OUT"
+rm -rf repo/build
+OUT=$("$BIN" --repo repo compile 2>&1) || fail "compile exits 0: $OUT"
+echo "$OUT" | grep -q "delete build/" && fail "no build/, no notice: $OUT" || true
+ok "compile names an older loadout's build/ for deletion"
+
 # Unchanged sources: the lock is left as it was (no new write, nothing in git).
 touch -t 200001010000 repo/loadout.lock.json lock-ref
 "$BIN" --repo repo compile >/dev/null || fail "a second compile exits 0"

@@ -30,7 +30,13 @@ unset FORCE_COLOR CLICOLOR_FORCE LOADOUT_REPO
 KT_TEMPLATE=$WORK/kt-template
 LOCK_CACHE=$WORK/lock-cache
 mkdir -p "$LOCK_CACHE"
-export BIN INSTALL_SH WORK LOADOUT_HOME KT_TEMPLATE LOCK_CACHE
+# The run's own cache: compiles build there (the Gradle plugin), never in
+# the developer's. Seeded like fake_release_cache, so a status doesn't ask
+# GitHub for loadout's latest release.
+XDG_CACHE_HOME=$WORK/cache
+mkdir -p "$XDG_CACHE_HOME/loadout"
+echo 0.0.1 > "$XDG_CACHE_HOME/loadout/latest-release"
+export BIN INSTALL_SH WORK LOADOUT_HOME KT_TEMPLATE LOCK_CACHE XDG_CACHE_HOME
 "$BIN" init "$KT_TEMPLATE" >/dev/null || { echo "loadout init failed: can't build fixtures" >&2; exit 1; }
 
 . "$HERE/lib.sh"

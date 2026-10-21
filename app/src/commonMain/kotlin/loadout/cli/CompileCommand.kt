@@ -45,5 +45,10 @@ class CompileCommand : CliktCommand(name = "compile") {
         for (line in result.stdout.lines().filter { it.startsWith("warning: ") }) {
             echo(" " + Style.warn("!") + "  " + line.removePrefix("warning: "))
         }
+        // Loadout builds outside the repo now (the Gradle plugin); an older
+        // version's build/ stays, and an editor indexes its classes.
+        if (app.fs.exists(root / "build" / "classes")) {
+            echo(" " + Style.warn("!") + "  delete build/: it's left from an older loadout, and editors would show every declaration twice")
+        }
     }
 }
