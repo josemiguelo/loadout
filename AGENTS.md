@@ -847,6 +847,18 @@ Explicit user decisions; don't "improve" them away.
   variant, script variant, installer); a spare profile's contents count as
   used, and a spare mark on something used is itself a warning, so marks
   can't go stale. A machine can't be spare.
+- **Transitional scripts end themselves through compile**
+  (`dsl/Transitional.kt`): `transitional()` marks a script that only
+  exists until every machine has done it (a cleanup after a change). It is
+  a compile-time mark like `spare`, kept in the Registry and never in the
+  lock, so binaries are untouched. Compile reads `<state>/<machine>.json`
+  for every machine that runs it and warns "delete it" once all of them
+  report it `done`; a machine without a state file hasn't done it. Done
+  means its check passes (contract 7), so a transitional script needs a
+  check (on itself, or on every variant), and the mark goes on the script,
+  never a variant. This is loadout's answer to migrations: no ledger of
+  what ran, since a fresh machine's check already passes; history-only
+  steps (nothing on disk can tell) stay manual instructions.
 - **A profile's long block can live beside its scripts**: `fun
   MachineScope.omarchyBar() { run(…) }` in the scripts' file, called from
   the profile. The calls record only references, so where the function

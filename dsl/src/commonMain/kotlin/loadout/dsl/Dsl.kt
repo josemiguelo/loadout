@@ -90,7 +90,13 @@ class Dir(val path: String) {
 
     fun script(name: String, description: String = "", block: ScriptScope.() -> Unit): Script {
         val scope = ScriptScope(this, name).apply(block)
-        registry.add("script", name, registry.scripts, scope.build(description))
+        val step = scope.build(description)
+        registry.add("script", name, registry.scripts, step)
+        if (scope.transitional) {
+            registry.transitional += name
+            val checkless = step.check == null && (step.variants.isEmpty() || step.variants.values.any { it.check == null })
+            if (checkless) registry.errors += "script '$name' is transitional, so it needs a check: it's done when the check passes"
+        }
         for ((source, outdated) in scope.outdatedSources) {
             registry.add("outdated source", source ?: name, registry.outdated, outdated)
         }
@@ -537,6 +543,21 @@ class ScriptScope internal constructor(
     /** Runs only from the home screen's scripts list. */
     fun maintainOnly() {
         modes = listOf("maintain")
+    }
+
+    internal var transitional = false
+        private set
+
+    /**
+     * Only here until every machine has done it (a cleanup after a change):
+     * `loadout compile` says when every machine that runs it reports it done,
+     * so it can be deleted. Needs a check, since that's what "done" means.
+     */
+    fun transitional() {
+        if (variantName != null) {
+            registry.errors += "script '$name': transitional() goes on the script, not on its '$variantName' variant"
+        }
+        transitional = true
     }
 
     /** One step, several ways, picked by the machine: `run(t2HidAppleKeyboard.variant(name = "arch"))`. */

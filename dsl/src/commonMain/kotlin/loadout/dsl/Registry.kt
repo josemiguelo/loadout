@@ -36,6 +36,9 @@ class Registry {
     /** What `spare(reason)` marked, keyed as warnings name it ("program 'x'"), with the reason. */
     internal val spares = linkedMapOf<String, String>()
 
+    /** Scripts marked `transitional()`: `loadout compile` says when every machine has done one. */
+    internal val transitional = linkedSetOf<String>()
+
     internal fun <V> add(kind: String, name: String, map: MutableMap<String, V>, value: V) {
         if (map.put(name, value) != null) errors += "duplicate $kind '$name'"
     }

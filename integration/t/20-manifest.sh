@@ -481,3 +481,33 @@ OUT=$("$BIN" --repo unused compile 2>&1) || fail "spare marks compile: $OUT"
 echo "$OUT" | grep -q "tool" && fail "a spare variant isn't warned about: $OUT"
 echo "$OUT" | grep -q "program 'orphan' is marked spare, but machine 'm1' uses it" || fail "a stale spare mark is named: $OUT"
 ok "compile warns about what no machine uses, unless it's marked spare"
+
+# A transitional script is named for deletion once every machine that runs
+# it reports it done, read from their state files.
+kt_repo transit
+kt_file transit/machines.loadout.kt <<'KT'
+val cleanup = root.script(name = "cleanup") {
+    run("rm -f old.txt")
+    check("test ! -e old.txt")
+    transitional()
+}
+
+val m1 = machine(hostname = "m1") { run(cleanup) }
+
+val m2 = machine(hostname = "m2") { run(cleanup) }
+KT
+touch transit/old.txt
+OUT=$("$BIN" --repo transit compile 2>&1) || fail "a transitional script compiles: $OUT"
+OUT=$("$BIN" --repo transit --machine m1 status 2>&1 || true)
+echo "$OUT" | grep -q "cleanup" || fail "m1 runs the transitional script: $OUT"
+OUT=$("$BIN" --repo transit compile 2>&1)
+echo "$OUT" | grep -q "transitional" && fail "not done anywhere yet, nothing is said: $OUT"
+rm transit/old.txt
+"$BIN" --repo transit --machine m1 status >/dev/null
+OUT=$("$BIN" --repo transit compile 2>&1)
+echo "$OUT" | grep -q "transitional" && fail "m2 has no state yet, so it hasn't done it: $OUT"
+"$BIN" --repo transit --machine m2 status >/dev/null
+OUT=$("$BIN" --repo transit compile 2>&1)
+echo "$OUT" | grep -q "script 'cleanup' is done on every machine that runs it (m1, m2): it's transitional, so delete it" ||
+    fail "done everywhere, it's named for deletion: $OUT"
+ok "compile names a transitional script every machine has done"

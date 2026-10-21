@@ -7,6 +7,9 @@ import loadout.core.manifest.Glob
 import loadout.core.manifest.Lock
 import loadout.core.manifest.LockFile
 import loadout.core.manifest.ManifestAssembler
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import java.io.File
@@ -58,6 +61,11 @@ fun main(args: Array<String>) {
         writeIfChanged(repoRoot / LockFile.NAME, LockFile.encode(lock))
         // Warnings, not refusals: the lock is written either way.
         for (warning in unusedWarnings(draft, manifest, Registry.current.spares)) println("warning: $warning")
+        val transitional = Registry.current.transitional
+        if (transitional.isNotEmpty()) {
+            val done = doneScripts(repoRoot / manifest.layout.state, manifest.machines.keys)
+            for (warning in transitionalWarnings(manifest, transitional, done)) println("warning: $warning")
+        }
         // A repo with dotfiles gets their templates' data and partial beside them.
         manifest.layout.configs?.let { configs ->
             for ((path, text) in ChezmoiData.files(manifest, configs)) {
@@ -71,6 +79,20 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
 }
+
+/**
+ * Each machine's scripts its state file says are done. A missing or
+ * unreadable file is a machine that has done nothing: never a reason to
+ * call a script finished.
+ */
+private fun doneScripts(stateDir: okio.Path, machines: Set<String>): Map<String, Set<String>> =
+    machines.associateWith { machine ->
+        val file = stateDir / "$machine.json"
+        runCatching {
+            val scripts = Json.parseToJsonElement(FileSystem.SYSTEM.read(file) { readUtf8() }).jsonObject["scripts"]?.jsonObject
+            scripts.orEmpty().filterValues { it.jsonObject["status"]?.jsonPrimitive?.content == "done" }.keys
+        }.getOrDefault(emptySet())
+    }
 
 /** Unchanged content leaves the file alone: a compile that changed nothing shows nothing in git. */
 private fun writeIfChanged(target: okio.Path, text: String) {
