@@ -2,16 +2,28 @@ package loadout.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
+import loadout.core.INSTALL_COMMAND
+import loadout.core.LoadoutException
+import loadout.core.TOOL_VERSION
 import loadout.core.engine.ConfigException
 import loadout.core.git.GitClient
 import loadout.core.git.GitException
+import loadout.core.manifest.ToolTooOldException
+import loadout.core.model.MachineState
+import loadout.core.model.ProgramStatus
+import loadout.core.model.ScriptStatus
+import loadout.core.platform.envVar
+import loadout.core.platform.selfExecutable
+import loadout.core.versionAtLeast
 
 class SyncCommand : CliktCommand(name = "sync") {
     override fun help(context: Context) = commandHelp(
-        "Pull the config repo, apply its configs, refresh this machine's state, commit only its state file, push.",
+        "Pull the config repo, apply its configs, refresh this machine's state, commit only its state file, push. " +
+            "When the pulled repo needs a newer loadout, upgrade loadout first and carry on with it.",
         "--no-push       commit locally, don't push",
         "-m, --message   override the commit message",
     )
@@ -35,7 +47,12 @@ class SyncCommand : CliktCommand(name = "sync") {
         }
 
         // Load after pulling so we see the latest manifest.
-        val manifest = app.loadManifest()
+        val manifest = try {
+            app.loadManifest()
+        } catch (e: ToolTooOldException) {
+            upgradeAndSyncAgain(e)
+            return
+        }
         val system = app.detectSystem()
         // Configs land before the refresh, so the state committed is what
         // this machine has after the pull. A file edited here stops the sync
@@ -49,9 +66,10 @@ class SyncCommand : CliktCommand(name = "sync") {
             }
             echo(" " + Style.ok("✔") + "  configs applied")
         }
-        spinning(Style.dim("refreshing state for ") + Style.machine(system.machine)) {
+        val state = spinning(Style.dim("refreshing state for ") + Style.machine(system.machine)) {
             app.refreshAndWriteState(manifest, system)
         }
+        leftToDo(state)?.let { echo(" " + Style.warn("⚠") + "  " + Style.warn(it) + Style.dim("  (run: loadout)")) }
 
         val statePath = "${app.layout.state}/${system.machine}.json"
         val committed = git.addCommit(statePath, message ?: "${system.machine}: update state")
@@ -70,4 +88,61 @@ class SyncCommand : CliktCommand(name = "sync") {
             }
         }
     }
+
+    /**
+     * The pulled repo needs a newer loadout: install the latest release, then
+     * run this same sync with it. The second run pulls again (nothing new)
+     * and carries on; [UPGRADED] keeps it from upgrading a second time when
+     * the binary it runs is still too old (one self-upgrade didn't replace).
+     */
+    private fun upgradeAndSyncAgain(refusal: ToolTooOldException) {
+        if (envVar(UPGRADED) != null) {
+            throw SyncException(
+                "loadout was upgraded, but ${selfExecutable() ?: "this binary"} is still $TOOL_VERSION; " +
+                    "this config repo requires loadout >= ${refusal.required}",
+            )
+        }
+        val latest = SelfVersion.latest(app.runner, app.fs, cached = false)
+        if (latest != null && !versionAtLeast(latest, refusal.required)) {
+            throw SyncException(
+                "this config repo requires loadout >= ${refusal.required}, but the latest release is $latest",
+            )
+        }
+        // Read before the install replaces the file: Linux then names it "(deleted)".
+        val self = selfExecutable() ?: throw SyncException("can't find loadout's own binary to run the sync again")
+        echo(" " + Style.warn("↑") + "  this config repo now needs loadout >= ${refusal.required} (you have $TOOL_VERSION): upgrading")
+        val installed = app.runner.inherit(INSTALL_COMMAND)
+        if (installed != 0) throw ProgramResult(installed)
+        echo(" " + Style.ok("✔") + "  loadout upgraded; syncing with it")
+        val argv = buildList {
+            add(self)
+            add("--repo"); add(app.repoRoot.toString())
+            app.machineOverride?.let { add("--machine"); add(it) }
+            if (app.verbose) add("-v")
+            add(commandName)
+            if (noPush) add("--no-push")
+            message?.let { add("--message"); add(it) }
+        }
+        val exit = app.runner.inherit("$UPGRADED=1 " + argv.joinToString(" ") { shQuote(it) })
+        if (exit != 0) throw ProgramResult(exit)
+    }
+
+    /** What this machine still lacks after the sync, or null when nothing. */
+    private fun leftToDo(state: MachineState): String? {
+        val missing = state.programs.values.count { it.status == ProgramStatus.MISSING }
+        val scripts = state.scripts.values.count { it.status != ScriptStatus.DONE }
+        val parts = listOfNotNull(
+            missing.takeIf { it > 0 }?.let { "$it ${if (it == 1) "program" else "programs"} missing" },
+            scripts.takeIf { it > 0 }?.let { "$it ${if (it == 1) "script" else "scripts"} not done" },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
+
+    private companion object {
+        /** Set on the sync an upgrade starts. */
+        const val UPGRADED = "LOADOUT_SYNC_UPGRADED"
+    }
 }
+
+/** A sync that couldn't carry on after the pulled repo needed a newer loadout. */
+class SyncException(message: String) : LoadoutException(message)

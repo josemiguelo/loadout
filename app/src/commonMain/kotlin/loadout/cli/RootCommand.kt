@@ -11,6 +11,7 @@ import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.versionOption
 import loadout.core.LoadoutException
 import loadout.core.exec.InterruptedByUser
+import loadout.core.manifest.ManifestLoader
 import loadout.core.platform.envVar
 import loadout.core.platform.isStdoutTty
 import loadout.core.platform.readKey
@@ -122,8 +123,12 @@ class RootCommand : CliktCommand(name = "loadout") {
                         else -> rule("✘ exit $code", Style::error)
                     },
                 )
-                // Self-upgrade ends loadout: the binary on disk is now another version.
-                val back = if (closed.action == HomeAction.UPGRADE) "enter quits" else "enter returns to loadout"
+                // Self-upgrade ends loadout: the binary on disk is now another
+                // version. So does a sync that pulled a repo this one can't
+                // read (it upgraded loadout to carry on).
+                val upgraded = closed.action == HomeAction.UPGRADE ||
+                    (closed.action == HomeAction.SYNC && ManifestLoader.toolTooOld(app.fs, app.repoRoot))
+                val back = if (upgraded) "enter quits" else "enter returns to loadout"
                 val keys = Style.dim("$back · v views the full output · q quits")
                 // One key, no Enter: Enter goes back, v views, q (or Ctrl-C,
                 // or no terminal) quits; anything else is ignored.
@@ -139,7 +144,7 @@ class RootCommand : CliktCommand(name = "loadout") {
                     quit = key == null || key == 'q' || key == 'Q' || key == '\u0003'
                     if (quit || key == '\r' || key == '\n') break
                 }
-                if (quit || closed.action == HomeAction.UPGRADE) {
+                if (quit || upgraded) {
                     if (code != 0) throw ProgramResult(code)
                     return
                 }

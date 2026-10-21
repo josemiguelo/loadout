@@ -9,6 +9,7 @@ import loadout.core.manifest.Lock
 import loadout.core.manifest.LockFile
 import loadout.core.manifest.ManifestException
 import loadout.core.manifest.ManifestLoader
+import loadout.core.manifest.ToolTooOldException
 import loadout.core.model.Manifest
 import loadout.core.model.RepoLayout
 import loadout.dsl.DslException
@@ -20,6 +21,7 @@ import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
@@ -146,6 +148,18 @@ class ManifestLoaderTest {
         assertTrue("requires loadout >= 999.0.0" in message, message)
         assertTrue("run: loadout self-upgrade" in message, message)
         ManifestLoader.loadRepo(fs(manifest(minToolVersion = TOOL_VERSION)), repo)
+    }
+
+    @Test
+    fun aTooOldBinaryIsItsOwnRefusalNamingTheVersionNeeded() {
+        val (major, minor) = TOOL_VERSION.split('.').map { it.toInt() }
+        val floor = assertFailsWith<ToolTooOldException> { ManifestLoader.loadRepo(fs(manifest(minToolVersion = "999.0.0")), repo) }
+        assertEquals("999.0.0", floor.required)
+        val newer = assertFailsWith<ToolTooOldException> { ManifestLoader.loadRepo(fs(toolVersion = "$major.${minor + 1}.3"), repo) }
+        assertEquals("$major.${minor + 1}.0", newer.required)
+        assertTrue(ManifestLoader.toolTooOld(fs(manifest(minToolVersion = "999.0.0")), repo))
+        assertFalse(ManifestLoader.toolTooOld(fs(), repo))
+        assertFalse(ManifestLoader.toolTooOld(fs(files = emptyList()), repo))
     }
 
     @Test

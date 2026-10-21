@@ -56,3 +56,41 @@ git -C origin.git log --oneline | grep -q "m1: test sync" && ok "sync commits an
 OUT=$("$BIN" --repo repo --machine m1 sync)
 echo "$OUT" | grep -q "nothing to commit" || fail "unchanged sync is a no-op"
 ok "sync with unchanged state commits nothing"
+echo "$OUT" | grep -q "1 program missing" || fail "sync names what's left to do: $OUT"
+ok "sync ends naming what this machine still lacks"
+
+# --- sync upgrades loadout when the pulled repo needs a newer one --------
+# Offline: a fake curl answers the release check and the install script.
+# The install replaces a copy of the binary with a stub that says how it
+# was run, which is how the second sync is seen.
+grep -q 'minToolVersion' repo/loadout.kt && fail "fixture already declares a floor"
+sed -i.bak 's/repo(name = \([^,]*\),/repo(name = \1, minToolVersion = "999.0.0",/' repo/loadout.kt && rm repo/loadout.kt.bak
+grep -q 'minToolVersion = "999.0.0"' repo/loadout.kt || fail "fixture floor not set"
+compile_repo repo
+git -C repo add -A && git -C repo commit -qm "floor" && git -C repo push -q 2>/dev/null
+mkdir -p self fakecurl
+cp "$BIN" self/loadout
+cat > fakecurl/curl <<EOF2
+#!/bin/sh
+case "\$*" in
+    *api.github.com*) printf '"tag_name": "v%s"\n' "\$(cat "$PWD/fakecurl/latest")" ;;
+    *install.sh*) printf '%s\n' 'printf "#!/bin/sh\necho \\"new loadout: \\\$LOADOUT_SYNC_UPGRADED \\\$*\\"\n" > "$PWD/self/new" && chmod +x "$PWD/self/new" && mv "$PWD/self/new" "$PWD/self/loadout"' ;;
+    *) exit 22 ;;
+esac
+EOF2
+chmod +x fakecurl/curl
+echo 998.0.0 > fakecurl/latest
+OUT=$(PATH="$PWD/fakecurl:$PATH" self/loadout --repo repo --machine m1 sync -m "after floor" 2>&1) && fail "an unreleased floor can't be upgraded to"
+echo "$OUT" | grep -q "requires loadout >= 999.0.0, but the latest release is 998.0.0" || fail "names the floor and the latest release: $OUT"
+cmp -s self/loadout "$BIN" || fail "nothing is installed when no release is new enough"
+ok "sync refuses a floor no release meets, installing nothing"
+
+echo 999.0.0 > fakecurl/latest
+OUT=$(PATH="$PWD/fakecurl:$PATH" self/loadout --repo repo --machine m1 sync -m "after floor" 2>&1) || fail "sync upgrades and carries on: $OUT"
+echo "$OUT" | grep -q "needs loadout >= 999.0.0" || fail "says why it upgrades: $OUT"
+echo "$OUT" | grep -q "new loadout: 1 --repo repo --machine m1 sync --message after floor" || fail "the new loadout runs the same sync: $OUT"
+ok "sync upgrades loadout when the pulled repo needs it, then syncs with the new one"
+
+OUT=$(LOADOUT_SYNC_UPGRADED=1 "$BIN" --repo repo --machine m1 sync 2>&1) && fail "a second upgrade must not start"
+echo "$OUT" | grep -q "loadout was upgraded, but .* is still" || fail "says the upgrade didn't take: $OUT"
+ok "a sync started by an upgrade never upgrades again"

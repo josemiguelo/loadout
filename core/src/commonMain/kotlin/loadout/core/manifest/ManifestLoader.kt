@@ -55,21 +55,30 @@ object ManifestLoader {
         // A newer minor's DSL may write what this binary would misread; a
         // patch release never changes what a lock means.
         if (!versionAtLeast(minor(TOOL_VERSION), minor(lock.toolVersion))) {
-            throw ManifestException(
+            throw ToolTooOldException(
                 "${LockFile.NAME} was compiled by loadout ${lock.toolVersion} (you have $TOOL_VERSION) — " +
                     "run: loadout self-upgrade",
+                required = minor(lock.toolVersion) + ".0",
             )
         }
         lock.manifest.meta.minToolVersion?.let { required ->
             if (!versionAtLeast(TOOL_VERSION, required)) {
-                throw ManifestException(
+                throw ToolTooOldException(
                     "this config repo requires loadout >= $required (you have $TOOL_VERSION) — " +
                         "run: loadout self-upgrade",
+                    required = required,
                 )
             }
         }
         return lock
     }
 
+    /** Whether this binary is too old for the repo's lock; read alone, like [readLayout]. */
+    fun toolTooOld(fs: FileSystem, repoRoot: Path): Boolean =
+        runCatching { readLock(fs, repoRoot) }.exceptionOrNull() is ToolTooOldException
+
     private fun minor(version: String): String = version.split('.').take(2).joinToString(".")
 }
+
+/** The lock needs a newer loadout: at least [required]. `sync` upgrades on it. */
+class ToolTooOldException(message: String, val required: String) : ManifestException(message)

@@ -446,7 +446,17 @@ Explicit user decisions; don't "improve" them away.
     EVERY mapped program is re-checked, since the transaction can move
     packages loadout doesn't declare. The binary's own update is
     `self-upgrade`, which needs no repo, so it survives a version-floor
-    refusal.
+    refusal. Both refusals of a too-old binary (floor, newer minor) are
+    `ToolTooOldException`, carrying the version needed. `sync` catches it
+    after its pull: it refuses when the latest release is still below it,
+    else runs the install and then the same sync with the binary it was
+    started from (its path read BEFORE the install: Linux names a replaced
+    `/proc/self/exe` "(deleted)"), under `LOADOUT_SYNC_UPGRADED=1`, which
+    turns a second refusal into an error instead of another upgrade. The
+    home screen ends after an S whose repo now refuses its binary
+    (`ManifestLoader.toolTooOld`), like after U. Only `sync` upgrades by
+    itself: it is the command that pulls, so it's the one that meets a
+    repo moved ahead of the binary.
 16. **The repo's shape is declared, never assumed.** A config repo is a
     Gradle project (settings.gradle.kts + build.gradle.kts as `init`
     scaffolds them, plus the wrapper); `loadout { sources(…) }` in
@@ -495,8 +505,10 @@ Explicit user decisions; don't "improve" them away.
       (it would ask), so both refuse first when a file they'd replace is
       edited AND drifted (`refuseEdited`), naming the files: keep them with
       `chezmoi re-add`, or replace them with `apply --force`. `sync` =
-      pull → refuse edited → apply → refresh → commit → push; nothing is
-      committed after a refusal or a failed apply.
+      pull → (upgrade loadout, contract 15) → refuse edited → apply →
+      refresh → name what's left (missing programs, scripts not done) →
+      commit → push; nothing is committed after a refusal or a failed
+      apply. It never installs or runs scripts itself.
     - **State**: `MachineState.configs`, left out of the file when empty
       (`@EncodeDefault(NEVER)`), so repos without configs write what they
       always did and older readers ignore it (schema stays 1). `diff`
@@ -738,8 +750,8 @@ Explicit user decisions; don't "improve" them away.
     file the command wrote; an upgrade also re-asks the remotes, sync/setup
     reload everything, a failure re-checks the machine. Upgrade ticks clear
     on success only.
-  - S and C hand off the same way. U (self-upgrade) ends the loop: the
-    binary on disk is then a different version.
+  - S and C hand off the same way. U (self-upgrade) ends the loop, and so
+    does an S that upgraded: the binary on disk is then a different version.
   - Ctrl-C: `trapInterrupts` installs the C SIGINT handler. A caught signal
     resets to default in children at exec (an ignored one wouldn't), so the
     command's processes stop; loadout survives, and the runner throws

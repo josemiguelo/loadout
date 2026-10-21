@@ -60,7 +60,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
 | | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
-| **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push |
+| **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
 | | `compile` | Turn the repo's Kotlin manifests into `loadout.lock.json`, which every other command reads (needs a JDK); warns about what no machine uses |
 | | `init` | Scaffold a new config repo (a small Gradle project); `--configs` holds your dotfiles too |

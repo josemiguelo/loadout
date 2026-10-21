@@ -9,7 +9,7 @@ import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
 
-class ManifestException(message: String) : LoadoutException(message)
+open class ManifestException(message: String) : LoadoutException(message)
 
 /**
  * What a config repo declares, before it becomes a [Manifest]: the repo's
