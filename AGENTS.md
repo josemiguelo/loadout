@@ -931,7 +931,7 @@ Explicit user decisions; don't "improve" them away.
 ## CI / release
 
 `.github/workflows/ci.yml`: ubuntu (unit tests of every
-module, debug binary + bundle, integration, release link) and macos
+module, debug binary + bundle, integration, both linux release links) and macos
 (arm64 unit tests, both mac release links + bundle, integration against
 the release binary). It runs on pushes to `master` and on pull requests.
 Runners differ from a desktop: Ubuntu's `/bin/sh` is dash ("not found", not
@@ -941,15 +941,17 @@ Reproduce the Linux job locally in an `ubuntu:24.04` container as a non-root use
 `release.yml` on `v*` tags: strip + tar.gz of the binary AND
 `share/loadout` (the `bundle` output: `maven/` with the DSL, model and
 plugin JVM artifacts, `gradle/` with the wrapper `init` copies, `VERSION`)
-→ `loadout-<tag>-{linux-x64,macos-arm64,macos-x64}.tar.gz` attached to the
-GitHub Release. It packages without testing: let CI pass before tagging.
-linuxArm64 builds but isn't released. **The version lives in ONE place**,
-`gradle.properties`' `version`: the DSL and plugin publish at it, `bundle`
-writes it to VERSION, and model's `generateVersion` writes `TOOL_VERSION`
-from it (build/generated/version; the IDE sees it after a Gradle sync).
-Each of those tasks declares the version as an input, or a bump leaves
-its output stale. release.yml's first job refuses a tag that isn't
-`v<version>`. A release = bump that line, commit, tag.
+→ `loadout-<tag>-{linux-x64,linux-arm64,macos-arm64,macos-x64}.tar.gz`
+attached to the GitHub Release. linux-arm64 cross-compiles on the x64
+runner (stripped with `binutils-aarch64-linux-gnu`); nothing runs it
+before release. It packages without testing: let CI pass before tagging.
+**The version lives in ONE place**, `gradle.properties`' `version`: the
+DSL and plugin publish at it, `bundle` writes it to VERSION, and model's
+`generateVersion` writes `TOOL_VERSION` from it (build/generated/version;
+the IDE sees it after a Gradle sync). Each of those tasks declares the
+version as an input, or a bump leaves its output stale. release.yml's
+first job refuses a tag that isn't `v<version>`. A release = bump that
+line, commit, tag.
 
 `install.sh` (repo root) is the curl|sh bootstrap over those releases: it
 resolves latest via the GitHub API (pin: LOADOUT_VERSION) and installs the

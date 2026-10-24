@@ -26,8 +26,8 @@ jobs:
         run: ./gradlew :app:linkDebugExecutableLinuxX64 bundle
       - name: Integration tests
         run: ./integration/run-tests.sh
-      - name: Build release binary
-        run: ./gradlew :app:linkReleaseExecutableLinuxX64
+      - name: Build release binaries (x64 + arm64)
+        run: ./gradlew :app:linkReleaseExecutableLinuxX64 :app:linkReleaseExecutableLinuxArm64
 
   macos:
     runs-on: macos-latest

@@ -62,7 +62,7 @@ mkdir -p rel/v9.9.9 relbuild/share/loadout/maven prefix/bin
 printf '#!/bin/sh\ncase "$1" in --version) echo "loadout version 9.9.9";; *) echo help;; esac\n' > relbuild/loadout
 chmod +x relbuild/loadout
 echo 9.9.9 > relbuild/share/loadout/VERSION
-for target in linux-x64 macos-arm64 macos-x64; do
+for target in linux-x64 linux-arm64 macos-arm64 macos-x64; do
     tar -czf "rel/v9.9.9/loadout-v9.9.9-$target.tar.gz" -C relbuild loadout share
 done
 OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH")
@@ -79,7 +79,7 @@ ok "install.sh installs the binary and its share dir, and tells a first install 
 # A release without its share dir is refused before anything is replaced.
 mkdir -p rel/v9.9.8 relbare
 cp relbuild/loadout relbare/loadout
-for target in linux-x64 macos-arm64 macos-x64; do
+for target in linux-x64 linux-arm64 macos-arm64 macos-x64; do
     tar -czf "rel/v9.9.8/loadout-v9.9.8-$target.tar.gz" -C relbare loadout
 done
 OUT=$(LOADOUT_VERSION=v9.9.8 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) &&

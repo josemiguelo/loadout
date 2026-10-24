@@ -19,6 +19,7 @@ DOWNLOAD_BASE="${LOADOUT_DOWNLOAD_BASE:-https://github.com/$REPO/releases/downlo
 
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) target="linux-x64" ;;
+  Linux-aarch64 | Linux-arm64) target="linux-arm64" ;;
   Darwin-arm64) target="macos-arm64" ;;
   Darwin-x86_64)
     # uname lies under Rosetta; the real hardware is arm64.
@@ -29,7 +30,7 @@ case "$(uname -s)-$(uname -m)" in
     fi
     ;;
   *)
-    echo "error: no release for $(uname -s)/$(uname -m) (available: linux-x64, macos-arm64, macos-x64)" >&2
+    echo "error: no release for $(uname -s)/$(uname -m) (available: linux-x64, linux-arm64, macos-arm64, macos-x64)" >&2
     exit 1
     ;;
 esac

@@ -125,9 +125,8 @@ $ ./integration/run-tests.sh [pattern]             # black-box suite (real binar
 
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (macs build on
 macs). A `v*` tag builds, strips and attaches release tarballs for
-linux-x64 / macos-arm64 / macos-x64 (the binary plus its `share/loadout`
-directory), which the install one-liner and `loadout self-upgrade`
-download.
+all four (the binary plus its `share/loadout` directory), which the
+install one-liner and `loadout self-upgrade` download.
 
 Stack: [Clikt](https://github.com/ajalt/clikt) · kotlinx-serialization ·
 [kommand](https://github.com/kgit2/kommand) ·
@@ -135,4 +134,4 @@ Stack: [Clikt](https://github.com/ajalt/clikt) · kotlinx-serialization ·
 [Mosaic](https://github.com/JakeWharton/mosaic) (the home screen).
 
 Known limits: unix-like only · dependency edges have no version
-constraints · linux-arm64 builds but isn't released.
+constraints.

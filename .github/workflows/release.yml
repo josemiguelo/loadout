@@ -34,15 +34,22 @@ jobs:
         with:
           path: ~/.konan
           key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
+      # arm64 cross-compiles here: Kotlin/Native links it from an x64 host;
+      # only its strip comes from the cross binutils.
+      - name: Install arm64 binutils
+        run: sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu
       - name: Build
-        run: ./gradlew :app:linkReleaseExecutableLinuxX64 bundle
+        run: ./gradlew :app:linkReleaseExecutableLinuxX64 :app:linkReleaseExecutableLinuxArm64 bundle
       - name: Package
         run: |
-          mkdir -p dist/share
-          cp app/build/bin/linuxX64/releaseExecutable/loadout.kexe dist/loadout
-          strip dist/loadout
-          cp -R build/bundle dist/share/loadout
-          tar -C dist -czf "loadout-${GITHUB_REF_NAME}-linux-x64.tar.gz" loadout share
+          for target in linuxX64:linux-x64:strip linuxArm64:linux-arm64:aarch64-linux-gnu-strip; do
+            gradle_name="${target%%:*}"; rest="${target#*:}"; release_name="${rest%%:*}"; strip_cmd="${rest#*:}"
+            mkdir -p "dist-$release_name/share"
+            cp "app/build/bin/$gradle_name/releaseExecutable/loadout.kexe" "dist-$release_name/loadout"
+            "$strip_cmd" "dist-$release_name/loadout"
+            cp -R build/bundle "dist-$release_name/share/loadout"
+            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout share
+          done
       - uses: softprops/action-gh-release@v2
         with:
           files: loadout-*.tar.gz
