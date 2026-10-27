@@ -106,6 +106,35 @@ class ScriptRunnerTest {
     }
 
     @Test
+    fun inAChildAParentsScriptRunsInTheParentWithTheParentsRepoAndAChildsInTheChild() {
+        val fake = FakeProcessRunner()
+        fake.onCommand("sh 'helper.sh'")
+        fake.onCommand("sh 'mine.sh'")
+        val system = loadout.core.model.SystemInfo("work", OsFamily.MACOS, null, "arm64")
+        val frame = CommandFrame.of("/child", system, configs = "configs", parentRoot = "/parent", parentConfigs = "dots")
+
+        ScriptRunner(fake, frame).run(ScriptStep(file = "helper.sh", origin = "parent:maintenance/lib"))
+        ScriptRunner(fake, frame).run(ScriptStep(file = "mine.sh", origin = "scripts"))
+        val (parents, childs) = fake.received
+        assertEquals("/parent/maintenance/lib", parents.cwd)
+        assertEquals(
+            mapOf(
+                "LOADOUT_REPO" to "/parent",
+                "LOADOUT_PARENT" to "/parent",
+                "LOADOUT_MACHINE" to "work",
+                "LOADOUT_OS" to "macos",
+                "LOADOUT_CONFIGS" to "/parent/dots",
+                "LOADOUT_FRAGMENT_DIR" to "/parent/maintenance/lib",
+            ),
+            parents.env,
+        )
+        assertEquals("/child/scripts", childs.cwd)
+        assertEquals("/child", childs.env["LOADOUT_REPO"])
+        assertEquals("/parent", childs.env["LOADOUT_PARENT"])
+        assertEquals("/child/configs", childs.env["LOADOUT_CONFIGS"])
+    }
+
+    @Test
     fun aRootDeclaredScriptRunsInTheRepoRoot() {
         val fake = FakeProcessRunner()
         fake.onCommand("true")
