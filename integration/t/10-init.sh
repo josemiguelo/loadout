@@ -94,3 +94,17 @@ OUT=$("$BIN" --repo repo explain ripgrep)
 echo "$OUT" | grep -q "sudo dnf install -y ripgrep" || fail "via resolves to a built-in installer"
 echo "$OUT" | grep -q "installer: dnf (built-in)" || fail "explain marks a built-in installer"
 ok "installers ship with loadout and resolve without being declared"
+
+# --- init --parent: a child repo (contract 18) --------------------------------
+"$BIN" init dad >/dev/null || fail "a parent scaffolds"
+OUT=$("$BIN" init --parent "$PWD/dad" --name dad kid 2>&1) && fail "a parent without a lock must be refused"
+echo "$OUT" | grep -q "has no loadout.lock.json — compile it first" || fail "the uncompiled parent is named: $OUT"
+"$BIN" --repo dad compile >/dev/null 2>&1 || fail "the parent scaffold compiles"
+"$BIN" --machine kidbox init --parent "$PWD/dad" --name dad kid >/dev/null || fail "init --parent scaffolds a child"
+[ -f kid/child.kt ] && [ ! -e kid/loadout.kt ] || fail "the child's root file is child.kt (the parent has loadout.kt)"
+grep -q "parent(name = \"dad\", path = \"$PWD/dad\")" kid/build.gradle.kts || fail "the child's build names its parent: $(cat kid/build.gradle.kts)"
+grep -q '^package repo$' kid/child.kt || fail "the child shares the parent's package"
+[ -f kid/machines/kidbox.loadout.kt ] || fail "the child's machine is in machines/"
+OUT=$("$BIN" --repo kid compile 2>&1) || fail "the child scaffold compiles against its parent: $OUT"
+grep -q '"parent": {' kid/loadout.lock.json || fail "and its lock names the parent"
+ok "init --parent scaffolds a child repo that compiles against its parent"

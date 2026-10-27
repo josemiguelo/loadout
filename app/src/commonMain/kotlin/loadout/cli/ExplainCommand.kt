@@ -9,6 +9,7 @@ import com.github.ajalt.clikt.parameters.arguments.multiple
 import loadout.core.manifest.MachineData
 import loadout.core.model.ConfigStatus
 import loadout.core.model.scriptEntry
+import loadout.core.model.Origin
 import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptStatus
 
@@ -37,6 +38,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
             echo(Style.header("machine ") + Style.bold(system.machine))
             if (machine == null) echo("  " + Style.warn("! not declared in the repo — showing the data defaults"))
             val rows = mutableListOf<Pair<String, String>>()
+            app.layout.parent?.let { rows += "parent" to "${it.name} (${it.path})" }
             if (machine != null && machine.extends.isNotEmpty()) rows += "extends" to machine.extends.joinToString()
             // What it installs, grouped by the variant each program uses.
             val byVariant = machine?.pm.orEmpty().entries.groupBy({ it.value }, { it.key })
@@ -77,6 +79,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
             when {
                 program != null -> {
                     echo(Style.header("program ") + Style.bold(name) + program.description.ifEmpty { null }?.let { Style.dim("  — $it") }.orEmpty())
+                    fromParent(program.origin)?.let { rows += "from" to it }
                     rows += "version" to (
                         program.version?.let(::describe)
                             ?: "(none — status will always be 'unknown')"
@@ -91,7 +94,11 @@ class ExplainCommand : CliktCommand(name = "explain") {
                             ?: key.takeIf { it in manifest.installers && variant.installer == null }
                         // Where the mechanics came from: loadout's library or this repo.
                         val via = installerName?.let {
-                            val origin = if (it in manifest.builtinInstallers) "built-in" else "repo"
+                            val origin = when {
+                                it in manifest.builtinInstallers -> "built-in"
+                                Origin.isParent(manifest.installers[it]?.origin.orEmpty()) -> "parent ${app.layout.parent?.name}"
+                                else -> "repo"
+                            }
                             "  [installer: $it ($origin)]"
                         }.orEmpty()
                         val marker = if (key == mapping[name]) Style.machine("   <- ${system.machine}") else ""
@@ -118,6 +125,7 @@ class ExplainCommand : CliktCommand(name = "explain") {
                 }
                 script != null -> {
                     echo(Style.header("script ") + Style.bold(name) + script.description.ifEmpty { null }?.let { Style.dim("  — $it") }.orEmpty())
+                    fromParent(script.origin)?.let { rows += "from" to it }
                     script.file?.let { rows += "file" to it }
                     script.run?.let { rows += "run" to it }
                     script.check?.let { rows += "check" to it }
@@ -165,6 +173,10 @@ class ExplainCommand : CliktCommand(name = "explain") {
             }
         }
     }
+
+    /** "parent <name> (<folder>)" for a child repo's parent's declaration (contract 18), else null. */
+    private fun fromParent(origin: String): String? =
+        if (Origin.isParent(origin)) "parent ${app.layout.parent?.name} (${Origin.folder(origin).ifEmpty { "its root" }})" else null
 }
 
 /** A check as explain shows it: its command and what reads the version, or that it only says yes or no. */

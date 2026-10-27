@@ -85,6 +85,10 @@ OUT=$("$BIN" --repo work --machine work run where-parent where-child 2>&1) || fa
     fail "a child's script runs in the child, and sees LOADOUT_PARENT: $(cat where/child.txt)"
 OUT=$("$BIN" --repo work --machine work status 2>&1) || fail "status runs in a child: $OUT"
 echo "$OUT" | grep -q "worktool" && echo "$OUT" | grep -q "git" || fail "status shows both repos' programs: $OUT"
+OUT=$("$BIN" --repo work --machine work explain where-parent 2>&1) || fail "explain names a parent's script: $OUT"
+echo "$OUT" | grep -qE "from +parent dots \(its root\)" || fail "explain says the script is the parent's: $OUT"
+OUT=$("$BIN" --repo work --machine work explain 2>&1)
+echo "$OUT" | grep -qE "parent +dots \($PARENT\)" || fail "explain's machine block names the parent: $OUT"
 [ -f work/state/work.json ] || fail "the child machine's state is in the child"
 [ -e dots/state/work.json ] && fail "and never in the parent"
 ok "a parent's command runs in the parent's checkout with its LOADOUT_REPO; a child's in the child"
