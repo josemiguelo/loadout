@@ -102,6 +102,18 @@ object ManifestLoader {
         return lock
     }
 
+    /**
+     * Whether a child repo's parent's manifests changed since the child's lock
+     * was written: `sync` recompiles the child then. False for a repo without
+     * a parent.
+     */
+    fun parentChanged(fs: FileSystem, repoRoot: Path, home: String? = envVar("HOME")): Boolean {
+        val layout = readLayout(fs, repoRoot)
+        val parent = layout.parent ?: return false
+        val root = parentRoot(fs, repoRoot, layout, home) ?: return false
+        return LockFile.sourcesHash(fs, root, parent.sources) != parent.hash
+    }
+
     /** Whether this binary is too old for the repo's lock; read alone, like [readLayout]. */
     fun toolTooOld(fs: FileSystem, repoRoot: Path): Boolean =
         runCatching { readLock(fs, repoRoot) }.exceptionOrNull() is ToolTooOldException

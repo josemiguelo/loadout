@@ -195,3 +195,35 @@ for args in "status" "explain" "explain git" "run where-child" "apply" "diff" "o
 done
 [ "$(snapshot)" = "$BEFORE" ] || fail "no command run on the child writes into the parent: $(diff <(echo "$BEFORE") <(snapshot))"
 ok "compile, status, explain, run, apply, diff and outdated on a child leave every file of the parent as it was"
+
+# --- sync: pull the parent, recompile on its change, push the child only ------
+gitid() { git -C "$1" config user.email test@example.com && git -C "$1" config user.name "Integration Test"; }
+for repo in dots work; do
+    git -C "$repo" init -q
+    gitid "$repo"
+    git -C "$repo" add -A
+    git -C "$repo" commit -qm "initial" >/dev/null
+    git init -q --bare "$repo.git"
+    git -C "$repo" remote add origin "$PWD/$repo.git"
+    git -C "$repo" push -q -u origin HEAD 2>/dev/null
+done
+# Someone changes the parent elsewhere: a new script, compiled and pushed.
+git clone -q dots.git dots-elsewhere
+gitid dots-elsewhere
+kt_file dots-elsewhere/programs/later.loadout.kt <<'KT'
+val later = root.script(name = "later") {
+    run("true")
+    check("true")
+}
+KT
+"$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's change compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "a later script" && git -C dots-elsewhere push -q 2>/dev/null
+PARENT_HEAD=$(git -C dots.git rev-parse HEAD)
+OUT=$(cz_loadout --repo work --machine work sync 2>&1) || fail "sync pulls the parent and recompiles the child: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" || fail "sync says it recompiles: $OUT"
+grep -q '"later"' work/loadout.lock.json || fail "the child's lock has the parent's new script"
+git -C work.git log -1 --name-only --format=%s | grep -q "loadout.lock.json" || fail "the lock is committed and pushed with the state: $(git -C work.git log -1 --name-only)"
+[ "$(git -C dots.git rev-parse HEAD)" = "$PARENT_HEAD" ] || fail "the child never pushes the parent"
+[ -z "$(git -C dots status --porcelain)" ] || fail "nor leaves anything in the parent's checkout: $(git -C dots status --porcelain)"
+[ "$(git -C dots rev-parse HEAD)" = "$PARENT_HEAD" ] || fail "the parent's checkout is at what was pulled"
+ok "a child's sync pulls its parent, recompiles when the parent changed, and commits and pushes only itself"

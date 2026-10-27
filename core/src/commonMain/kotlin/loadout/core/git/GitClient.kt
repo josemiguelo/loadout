@@ -36,8 +36,11 @@ class GitClient(
     }
 
     /** Stage [path] and commit; returns false if there was nothing to commit. */
-    fun addCommit(path: String, message: String): Boolean {
-        require(git("add '$path'"), "add")
+    fun addCommit(path: String, message: String): Boolean = addCommit(listOf(path), message)
+
+    /** Stage [paths] and commit them; false when nothing changed. */
+    fun addCommit(paths: List<String>, message: String): Boolean {
+        for (path in paths) require(git("add '$path'"), "add")
         if (git("diff --cached --quiet").success) return false
         require(git("commit -m '${message.replace("'", "'\\''")}'"), "commit")
         return true

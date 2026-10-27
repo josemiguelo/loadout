@@ -12,6 +12,9 @@ import loadout.core.TOOL_VERSION
 import loadout.core.engine.ConfigException
 import loadout.core.git.GitClient
 import loadout.core.git.GitException
+import loadout.core.manifest.ChezmoiData
+import loadout.core.manifest.LockFile
+import loadout.core.manifest.ManifestLoader
 import loadout.core.manifest.ToolTooOldException
 import loadout.core.model.MachineState
 import loadout.core.model.ProgramStatus
@@ -23,7 +26,9 @@ import loadout.core.versionAtLeast
 class SyncCommand : CliktCommand(name = "sync") {
     override fun help(context: Context) = commandHelp(
         "Pull the config repo, apply its configs, refresh this machine's state, commit only its state file, push. " +
-            "When the pulled repo needs a newer loadout, upgrade loadout first and carry on with it.",
+            "When the pulled repo needs a newer loadout, upgrade loadout first and carry on with it. " +
+            "A child repo pulls its parent first (never commits or pushes it), and recompiles itself when the " +
+            "parent's manifests changed, committing the lock with the state.",
         "--no-push       commit locally, don't push",
         "-m, --message   override the commit message",
     )
@@ -39,11 +44,27 @@ class SyncCommand : CliktCommand(name = "sync") {
             throw GitException("${app.repoRoot} is not a git repository (run `loadout init` or `git init` first)")
         }
 
+        // A child repo (contract 18): the parent is pulled, nothing more.
+        app.parentRoot?.let { root ->
+            val parent = GitClient(app.runner, root)
+            if (parent.isRepo() && parent.hasUpstream()) {
+                spinning("pulling parent ${app.layout.parent?.name}…") { parent.pullRebase() }
+            }
+        }
+
         val hasUpstream = git.hasUpstream()
         if (hasUpstream) {
             spinning("pulling latest changes…") { git.pullRebase() }
         } else {
             echo(Style.dim("No upstream configured; skipping pull."))
+        }
+
+        // A parent whose manifests moved needs the child compiled against them;
+        // a compile that fails stops here with what Gradle said.
+        val recompiled = ManifestLoader.parentChanged(app.fs, app.repoRoot)
+        if (recompiled) {
+            echo(" " + Style.warn("↻") + "  parent ${app.layout.parent?.name} changed: compiling")
+            compileRepo(app)
         }
 
         // Load after pulling so we see the latest manifest.
@@ -72,12 +93,23 @@ class SyncCommand : CliktCommand(name = "sync") {
         leftToDo(state)?.let { echo(" " + Style.warn("⚠") + "  " + Style.warn(it) + Style.dim("  (run: loadout)")) }
 
         val statePath = "${app.layout.state}/${system.machine}.json"
-        val committed = git.addCommit(statePath, message ?: "${system.machine}: update state")
+        // A recompile's lock (and the templates' data beside the configs) goes with the state.
+        val compiled = if (recompiled) {
+            listOf(LockFile.NAME) + manifest.layout.configs?.let { ChezmoiData.files(manifest, it).keys }.orEmpty()
+        } else {
+            emptyList()
+        }
+        val defaultMessage = if (recompiled) {
+            "${system.machine}: compile against parent ${app.layout.parent?.name}, update state"
+        } else {
+            "${system.machine}: update state"
+        }
+        val committed = git.addCommit(compiled + statePath, message ?: defaultMessage)
         if (!committed) {
             echo(" " + Style.ok("\u2714") + "  state unchanged; nothing to commit")
             return
         }
-        echo(" " + Style.ok("\u2714") + "  committed $statePath")
+        echo(" " + Style.ok("\u2714") + "  committed " + (compiled + statePath).joinToString(", "))
 
         when {
             noPush -> echo(Style.dim("Skipping push (--no-push)."))
