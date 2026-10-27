@@ -44,8 +44,15 @@ class SyncCommand : CliktCommand(name = "sync") {
             throw GitException("${app.repoRoot} is not a git repository (run `loadout init` or `git init` first)")
         }
 
-        // A child repo (contract 18): the parent is pulled, nothing more.
-        app.parentRoot?.let { root ->
+        // A child repo (contract 18): the parent is pulled, nothing more. A
+        // lock this loadout can't read yet waits for the upgrade below, whose
+        // sync pulls it.
+        val parentRoot = try {
+            app.parentRoot
+        } catch (e: ToolTooOldException) {
+            null
+        }
+        parentRoot?.let { root ->
             val parent = GitClient(app.runner, root)
             if (parent.isRepo() && parent.hasUpstream()) {
                 spinning("pulling parent ${app.layout.parent?.name}…") { parent.pullRebase() }
@@ -61,7 +68,13 @@ class SyncCommand : CliktCommand(name = "sync") {
 
         // A parent whose manifests moved needs the child compiled against them;
         // a compile that fails stops here with what Gradle said.
-        val recompiled = ManifestLoader.parentChanged(app.fs, app.repoRoot)
+        // It reads the lock, so a repo that now needs a newer loadout says so here first.
+        val recompiled = try {
+            ManifestLoader.parentChanged(app.fs, app.repoRoot)
+        } catch (e: ToolTooOldException) {
+            upgradeAndSyncAgain(e)
+            return
+        }
         if (recompiled) {
             echo(" " + Style.warn("↻") + "  parent ${app.layout.parent?.name} changed: compiling")
             compileRepo(app)
