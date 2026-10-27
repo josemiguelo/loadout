@@ -177,3 +177,21 @@ echo "$OUT" | grep -q ".config/git/config is managed by parent dots and this rep
 OUT=$(cz_loadout --repo work --machine work apply git 2>&1) && fail "applying a file both repos manage must be refused"
 echo "$OUT" | grep -q "a file belongs to one repo" || fail "and apply says why: $OUT"
 ok "a file both repos manage is reported and refused, naming both"
+
+# --- the fleet, and the parent left alone -------------------------------------
+sed -i.bak '/^\.config\/git\/config$/d' work/configs/.stub-managed && rm work/configs/.stub-managed.bak
+OUT=$(cz_loadout --repo dots --machine m1 status 2>&1); [ -f dots/state/m1.json ] || fail "the parent records its own machine: $OUT"
+OUT=$(cz_loadout --repo work --machine work diff 2>&1) || fail "diff runs in a child: $OUT"
+echo "$OUT" | grep -q "work" && echo "$OUT" | grep -q "m1" || fail "the fleet is the parent's machines and the child's: $OUT"
+ok "a child's diff shows its machines beside the parent's"
+
+# Every file under the parent, as it is now (the stub's bookkeeping aside).
+snapshot() { (cd dots && find . -type f ! -name '.stub-*' | LC_ALL=C sort | while read -r f; do printf '%s ' "$f"; cksum < "$f"; done); }
+BEFORE=$(snapshot)
+"$BIN" --repo work compile >/dev/null 2>&1 || fail "the child compiles"
+for args in "status" "explain" "explain git" "run where-child" "apply" "diff" "outdated"; do
+    # shellcheck disable=SC2086
+    cz_loadout --repo work --machine work $args >/dev/null 2>&1 || true
+done
+[ "$(snapshot)" = "$BEFORE" ] || fail "no command run on the child writes into the parent: $(diff <(echo "$BEFORE") <(snapshot))"
+ok "compile, status, explain, run, apply, diff and outdated on a child leave every file of the parent as it was"

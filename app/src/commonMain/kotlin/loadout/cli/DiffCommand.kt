@@ -34,10 +34,10 @@ class DiffCommand : CliktCommand(name = "diff") {
     override fun run() {
         val manifest = app.loadManifest()
         val filter = machines?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
-        val states = app.stateStore.readAll()
+        val states = app.fleetStates()
             .filterKeys { filter == null || it in filter }
             .values
-        app.stateStore.lastWarnings.forEach { echo("warning: $it", err = true) }
+        app.fleetWarnings.forEach { echo("warning: $it", err = true) }
 
         if (states.isEmpty()) {
             echo("No machine state files found in ${app.repoRoot / app.layout.state}. Run `status` or `sync` on your machines first.")

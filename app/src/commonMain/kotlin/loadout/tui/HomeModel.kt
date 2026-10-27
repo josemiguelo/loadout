@@ -548,7 +548,7 @@ class HomeModel(private val app: AppContext) {
     }
 
     private fun fleet() = manifest?.let { m ->
-        val states = app.stateStore.readAll().values
+        val states = app.fleetStates().values
         if (states.isEmpty()) null else DiffEngine.diff(m, states)
     }
 

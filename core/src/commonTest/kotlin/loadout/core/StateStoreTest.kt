@@ -43,6 +43,16 @@ class StateStoreTest {
     }
 
     @Test
+    fun aParentsStoreIsReadNeverWritten() {
+        val fs = FakeFileSystem()
+        StateStore(fs, "/dots".toPath(), "state").write(sampleState("laptop", "14.1.0"))
+        val parent = StateStore(fs, "/dots".toPath(), "state", readOnly = true)
+        assertEquals(setOf("laptop"), parent.readAll().keys)
+        kotlin.test.assertFailsWith<IllegalStateException> { parent.write(sampleState("work", "14.1.0")) }
+        assertEquals(setOf("laptop.json"), fs.list("/dots/state".toPath()).map { it.name }.toSet())
+    }
+
+    @Test
     fun readAllReturnsAllMachines() {
         val fs = FakeFileSystem()
         val store = StateStore(fs, "/repo".toPath(), "state")

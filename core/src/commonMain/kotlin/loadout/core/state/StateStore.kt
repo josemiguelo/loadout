@@ -8,12 +8,14 @@ import okio.Path
 /**
  * Reads and writes `<state>/<machine>.json` files inside the config repo,
  * where [stateDirName] is the `layout state` directory. Each machine only
- * ever writes its own file; all files are read for diffing.
+ * ever writes its own file; all files are read for diffing. A child repo's
+ * parent's store is [readOnly] (contract 18): a write to it is a bug.
  */
 class StateStore(
     private val fs: FileSystem,
     repoRoot: Path,
     private val stateDirName: String,
+    private val readOnly: Boolean = false,
 ) {
     companion object {
         /** Highest state-file schema this build understands. */
@@ -89,6 +91,7 @@ class StateStore(
     }
 
     fun write(state: MachineState) {
+        check(!readOnly) { "a child repo never writes its parent's state ($stateDir)" }
         fs.createDirectories(stateDir)
         val text = json.encodeToString(MachineState.serializer(), state) + "\n"
         fs.write(pathFor(state.machine)) { writeUtf8(text) }

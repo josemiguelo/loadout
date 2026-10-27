@@ -29,6 +29,21 @@ class AppContext(
     /** The lock's layout, read without the checks a full load makes. */
     val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot) }
     val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
+
+    /** A child repo's parent's state, read for the fleet view only. */
+    private val parentStateStore: StateStore? by lazy {
+        layout.parent?.let { parent -> parentRoot?.let { StateStore(fs, it, parent.state, readOnly = true) } }
+    }
+
+    /**
+     * Every machine's state the fleet view shows: this repo's, and for a child
+     * its parent's machines too (a name in both is this repo's).
+     */
+    fun fleetStates(): Map<String, MachineState> = parentStateStore?.readAll().orEmpty() + stateStore.readAll()
+
+    /** Warnings from the last [fleetStates] (or [stateStore]) read. */
+    val fleetWarnings: List<String>
+        get() = parentStateStore?.lastWarnings.orEmpty() + stateStore.lastWarnings
     val detection: Detection by lazy { Detection(runner, fs) }
 
     /** The repo's manifest as this machine sees it (its script variants picked). */
