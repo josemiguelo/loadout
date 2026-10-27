@@ -26,28 +26,55 @@ data class ConfigEntry(val target: String, val edited: Boolean, val drifted: Boo
  * (`.zshenv`, `.local`). Units come from chezmoi's own list, so
  * `.chezmoiignore` decides what exists; nothing is opted in. Only the
  * command [applyCommand] builds changes anything.
+ *
+ * A child repo (contract 18) has two sources, its parent's and its own, in
+ * that order: a unit may span both, and a target both manage is refused
+ * (one file, one repo). chezmoi runs with [env] (`LOADOUT_REPO`,
+ * `LOADOUT_MACHINE`), so templates see the machine loadout runs as.
  */
-class ConfigEngine(private val runner: ProcessRunner, sourceDir: String) {
-    private val chezmoi = "chezmoi --source ${shellQuote(sourceDir)} --no-pager"
+class ConfigEngine(
+    private val runner: ProcessRunner,
+    private val sources: List<Source>,
+    private val env: Map<String, String> = emptyMap(),
+) {
+    /** One chezmoi source directory; [label] is what a refusal calls its repo ("this repo", "parent dotfiles"). */
+    class Source(val dir: String, val label: String = "this repo")
+
+    constructor(runner: ProcessRunner, sourceDir: String) : this(runner, listOf(Source(sourceDir)))
+
+    private fun chezmoi(source: Source) = "chezmoi --source ${shellQuote(source.dir)} --no-pager"
 
     /** Why chezmoi couldn't answer during the last [observe], or null. */
     var lastReason: String? = null
         private set
 
-    /** The units chezmoi manages, sorted by name. */
+    /** Each source's managed targets, in source order. */
+    private fun managed(): List<Pair<Source, List<String>>> =
+        sources.map { source ->
+            source to ask(source, "managed --include files,symlinks").lineSequence().filter { it.isNotBlank() }.toList()
+        }
+
+    /** Targets more than one source manages, with the sources' labels. */
+    private fun overlaps(managed: List<Pair<Source, List<String>>>): Map<String, List<String>> =
+        managed.flatMap { (source, targets) -> targets.map { it to source.label } }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { it.size > 1 }
+
+    /** The units chezmoi manages, sorted by name; a unit spanning sources is one unit. */
     fun units(): List<ConfigUnit> =
-        ask("managed --include files,symlinks").lineSequence()
-            .filter { it.isNotBlank() }
+        managed().flatMap { it.second }.distinct()
             .groupBy(::unitOf)
             .map { (name, targets) -> ConfigUnit(name, targets.sorted()) }
             .sortedBy { it.name }
 
-    /** Every target `chezmoi status` reports. */
+    /** Every target `chezmoi status` reports, over every source. */
     fun entries(): List<ConfigEntry> =
-        ask("status --include files,symlinks").lineSequence()
-            .filter { it.length > 3 }
-            .map { ConfigEntry(it.substring(3), edited = it[0] != ' ', drifted = it[1] != ' ') }
-            .toList()
+        sources.flatMap { source ->
+            ask(source, "status --include files,symlinks").lineSequence()
+                .filter { it.length > 3 }
+                .map { ConfigEntry(it.substring(3), edited = it[0] != ' ', drifted = it[1] != ' ') }
+                .toList()
+        }
 
     /**
      * Targets apply would change that also changed since chezmoi last wrote
@@ -66,19 +93,26 @@ class ConfigEngine(private val runner: ProcessRunner, sourceDir: String) {
      */
     fun observe(previous: Map<String, ConfigState>): Map<String, ConfigState> {
         lastReason = null
-        val units: List<ConfigUnit>
+        val managed: List<Pair<Source, List<String>>>
         val entries: List<ConfigEntry>
         try {
-            units = units()
+            managed = managed()
             entries = entries()
         } catch (e: ConfigException) {
             lastReason = e.message
             return previous.keys.sorted().associateWith { ConfigState(ConfigStatus.UNKNOWN, reason = e.message) }
         }
+        val units = managed.flatMap { it.second }.map(::unitOf)
+        val overlapping = overlaps(managed).entries.groupBy({ unitOf(it.key) }, { it })
         val drifted = entries.filter { it.drifted }.groupBy({ unitOf(it.target) }, { it.target })
-        return (units.map { it.name } + drifted.keys).distinct().sorted().associateWith { name ->
-            val files = drifted[name].orEmpty().sorted()
-            if (files.isEmpty()) ConfigState(ConfigStatus.APPLIED) else ConfigState(ConfigStatus.DRIFTED, files)
+        return (units + drifted.keys).distinct().sorted().associateWith { name ->
+            val files = drifted[name].orEmpty().distinct().sorted()
+            val clash = overlapping[name]?.minByOrNull { it.key }
+            when {
+                clash != null -> ConfigState(ConfigStatus.UNKNOWN, reason = clashMessage(clash.key, clash.value))
+                files.isEmpty() -> ConfigState(ConfigStatus.APPLIED)
+                else -> ConfigState(ConfigStatus.DRIFTED, files)
+            }
         }
     }
 
@@ -87,15 +121,34 @@ class ConfigEngine(private val runner: ProcessRunner, sourceDir: String) {
      * it fails instead of asking. [force] overwrites files edited in place.
      */
     fun applyCommand(targets: List<String>?, force: Boolean): ShellCommand {
-        val paths = targets?.let { list ->
-            val destination = ask("target-path").trim()
-            list.joinToString("") { " " + shellQuote("$destination/$it") }
-        }.orEmpty()
-        return ShellCommand("$chezmoi apply --no-tty" + (if (force) " --force" else "") + paths)
+        val flags = " apply --no-tty" + (if (force) " --force" else "")
+        if (sources.size == 1) {
+            val paths = targets?.let { list -> paths(sources.single(), list) }.orEmpty()
+            return ShellCommand(chezmoi(sources.single()) + flags + paths, env = env)
+        }
+        // Each source applies its own targets, the parent's first.
+        val managed = managed()
+        val clashes = overlaps(managed).filterKeys { targets == null || it in targets }
+        clashes.entries.minByOrNull { it.key }?.let { throw ConfigException(clashMessage(it.key, it.value)) }
+        val lines = managed.mapNotNull { (source, mine) ->
+            when {
+                targets == null -> chezmoi(source) + flags
+                else -> targets.filter { it in mine }.takeIf { it.isNotEmpty() }?.let { chezmoi(source) + flags + paths(source, it) }
+            }
+        }
+        return ShellCommand(lines.ifEmpty { listOf("true") }.joinToString(" && "), env = env)
     }
 
-    private fun ask(args: String): String {
-        val result = runner.capture("$chezmoi $args")
+    private fun paths(source: Source, targets: List<String>): String {
+        val destination = ask(source, "target-path").trim()
+        return targets.joinToString("") { " " + shellQuote("$destination/$it") }
+    }
+
+    private fun clashMessage(target: String, labels: List<String>) =
+        "$target is managed by ${labels.joinToString(" and ")} — a file belongs to one repo"
+
+    private fun ask(source: Source, args: String): String {
+        val result = runner.capture(ShellCommand("${chezmoi(source)} $args", env = env))
         if (result.success) return result.stdout
         if (result.exitCode == 127) throw ConfigException("chezmoi is not on PATH")
         val line = (result.stderr.lineSequence() + result.stdout.lineSequence())

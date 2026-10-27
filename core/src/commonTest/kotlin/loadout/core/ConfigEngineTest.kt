@@ -103,4 +103,68 @@ class ConfigEngineTest {
     fun aChezmoiThatCantAnswerIsARefusal() {
         assertFailsWith<ConfigException> { engine(FakeProcessRunner()).units() }
     }
+
+    // ─── a child repo: its parent's source and its own (contract 18) ──
+
+    private val parentCz = "chezmoi --source '/dots/configs' --no-pager"
+    private val childCz = "chezmoi --source '/work/configs' --no-pager"
+    private val loadoutEnv = mapOf("LOADOUT_REPO" to "/work", "LOADOUT_MACHINE" to "work")
+
+    private fun both(runner: FakeProcessRunner) = ConfigEngine(
+        runner,
+        listOf(ConfigEngine.Source("/dots/configs", "parent dots"), ConfigEngine.Source("/work/configs")),
+        loadoutEnv,
+    )
+
+    private fun twoSources(parentManaged: String, childManaged: String, parentStatus: String = "", childStatus: String = "") =
+        FakeProcessRunner().apply {
+            onCommand("$parentCz managed --include files,symlinks", stdout = parentManaged)
+            onCommand("$childCz managed --include files,symlinks", stdout = childManaged)
+            onCommand("$parentCz status --include files,symlinks", stdout = parentStatus)
+            onCommand("$childCz status --include files,symlinks", stdout = childStatus)
+            onCommand("$parentCz target-path", stdout = "/home/u\n")
+            onCommand("$childCz target-path", stdout = "/home/u\n")
+        }
+
+    @Test
+    fun aUnitSpansBothSourcesAndDriftsWhenEitherWould() {
+        val runner = twoSources(
+            parentManaged = ".config/zsh/.zshrc\n.zshenv\n",
+            childManaged = ".config/zsh/conf.d/zz-work.zsh\n",
+            childStatus = " M .config/zsh/conf.d/zz-work.zsh\n",
+        )
+        val engine = both(runner)
+        assertEquals(listOf(".config/zsh/.zshrc", ".config/zsh/conf.d/zz-work.zsh"), engine.units().first { it.name == "zsh" }.targets)
+        val observed = engine.observe(emptyMap())
+        assertEquals(ConfigState(ConfigStatus.DRIFTED, listOf(".config/zsh/conf.d/zz-work.zsh")), observed["zsh"])
+        assertEquals(ConfigStatus.APPLIED, observed.getValue(".zshenv").status)
+        // chezmoi sees the repo and machine loadout runs as.
+        assertTrue(runner.received.all { it.env == loadoutEnv })
+    }
+
+    @Test
+    fun aFileBothSourcesManageIsUnknownAndApplyRefusesIt() {
+        val runner = twoSources(parentManaged = ".config/git/config\n.zshenv\n", childManaged = ".config/git/config\n")
+        val engine = both(runner)
+        val git = engine.observe(emptyMap()).getValue("git")
+        assertEquals(ConfigStatus.UNKNOWN, git.status)
+        assertEquals(".config/git/config is managed by parent dots and this repo — a file belongs to one repo", git.reason)
+        val refusal = assertFailsWith<ConfigException> { engine.applyCommand(listOf(".config/git/config"), force = false) }
+        assertTrue("a file belongs to one repo" in refusal.message.orEmpty())
+        assertFailsWith<ConfigException> { engine.applyCommand(null, force = false) }
+        // A target only one repo manages still applies.
+        assertEquals("$parentCz apply --no-tty '/home/u/.zshenv'", engine.applyCommand(listOf(".zshenv"), force = false).line)
+    }
+
+    @Test
+    fun applyRunsEachSourceOnItsOwnTargetsTheParentsFirst() {
+        val runner = twoSources(parentManaged = ".zshenv\n", childManaged = ".config/work/x\n")
+        val engine = both(runner)
+        assertEquals("$parentCz apply --no-tty && $childCz apply --no-tty", engine.applyCommand(null, force = false).line)
+        assertEquals(
+            "$parentCz apply --no-tty --force '/home/u/.zshenv' && $childCz apply --no-tty --force '/home/u/.config/work/x'",
+            engine.applyCommand(listOf(".config/work/x", ".zshenv"), force = true).line,
+        )
+        assertEquals(loadoutEnv, engine.applyCommand(null, force = false).env)
+    }
 }

@@ -49,9 +49,23 @@ class AppContext(
             layout.parent?.configs,
         )
 
-    /** chezmoi over the `layout configs` directory; null when the repo has none. */
+    /**
+     * chezmoi over the `layout configs` directory, and for a child repo its
+     * parent's too (the parent's first); null when neither has one. chezmoi
+     * sees the repo and machine loadout runs as, so the templates' partial
+     * agrees with `--repo` and `--machine`.
+     */
     val configs: ConfigEngine? by lazy {
-        layout.configs?.let { ConfigEngine(runner, "${fs.canonicalize(repoRoot)}/$it") }
+        val root = fs.canonicalize(repoRoot)
+        val sources = listOfNotNull(
+            layout.parent?.configs?.let { parentConfigs ->
+                parentRoot?.let { ConfigEngine.Source("$it/$parentConfigs", "parent ${layout.parent?.name}") }
+            },
+            layout.configs?.let { ConfigEngine.Source("$root/$it") },
+        )
+        if (sources.isEmpty()) return@lazy null
+        val env = mapOf("LOADOUT_REPO" to root.toString(), "LOADOUT_MACHINE" to detectSystem().machine)
+        ConfigEngine(runner, sources, env)
     }
 
     /** The observer every refresh uses: programs, scripts and configs. */

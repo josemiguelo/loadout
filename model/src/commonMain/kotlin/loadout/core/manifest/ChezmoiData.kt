@@ -25,14 +25,28 @@ object ChezmoiData {
     fun partialPath(configs: String): String = "$configs/.chezmoitemplates/loadout/machine"
 
     /**
-     * This machine's table, or the defaults on a machine the repo doesn't declare. The machine is the one
-     * loadout runs as: `LOADOUT_MACHINE` (`--machine`'s variable) when set, else the hostname.
+     * This machine's table, or the defaults on a machine nothing declares. The machine is the one
+     * loadout runs as: `LOADOUT_MACHINE` (`--machine`'s variable) when set, else the hostname. A
+     * machine this repo's data lacks may be a child repo's (contract 18): its table then comes from
+     * the lock of the repo loadout runs on, `LOADOUT_REPO`, so a parent's templates render for it
+     * under a plain `chezmoi apply` too. The partial reads loadout's own lock layout, which no user
+     * template may: compile writes both, and every load checks the partial is this one.
      */
     const val PARTIAL: String =
         "{{- /* Written by loadout compile; don't edit. This machine's settings (.chezmoidata/loadout.json): " +
-            "LOADOUT_MACHINE's, else the hostname's, or the defaults on a machine the repo doesn't declare. " +
+            "LOADOUT_MACHINE's, else the hostname's; for a machine this repo doesn't declare, the table in the lock " +
+            "of LOADOUT_REPO (a child repo declaring it), else the defaults. " +
             "Use: includeTemplate \"loadout/machine\" . | fromJson */ -}}\n" +
-            "{{- get .loadout.machines (env \"LOADOUT_MACHINE\" | default .chezmoi.hostname) | default .loadout.defaults | toJson -}}\n"
+            "{{- \$name := env \"LOADOUT_MACHINE\" | default .chezmoi.hostname -}}\n" +
+            "{{- \$table := get .loadout.machines \$name -}}\n" +
+            "{{- \$repo := env \"LOADOUT_REPO\" -}}\n" +
+            "{{- if and (not \$table) \$repo -}}\n" +
+            "{{-   \$lock := joinPath \$repo \"loadout.lock.json\" -}}\n" +
+            "{{-   if stat \$lock -}}\n" +
+            "{{-     \$table = get (get (include \$lock | fromJson).manifest.machines \$name | default dict) \"data\" -}}\n" +
+            "{{-   end -}}\n" +
+            "{{- end -}}\n" +
+            "{{- \$table | default .loadout.defaults | toJson -}}\n"
 
     /** Each file compile writes for a repo with [configs], with its content. */
     fun files(manifest: Manifest, configs: String): Map<String, String> =

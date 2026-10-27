@@ -22,7 +22,7 @@ grep -q 'configs = "configs"' dots/loadout.kt || fail "init --configs declares c
 [ ! -e repo/.chezmoiroot ] && ! grep -q 'configs =' repo/loadout.kt || fail "plain init has no configs"
 "$BIN" --repo dots compile >/dev/null 2>&1 || fail "init --configs compiles"
 [ -f dots/configs/.chezmoidata/loadout.json ] || fail "compile writes the templates' data"
-grep -qF 'get .loadout.machines (env "LOADOUT_MACHINE" | default .chezmoi.hostname)' dots/configs/.chezmoitemplates/loadout/machine ||
+grep -qF '$table := get .loadout.machines $name' dots/configs/.chezmoitemplates/loadout/machine ||
     fail "compile writes the loadout/machine partial"
 "$BIN" --repo dots explain >/dev/null || fail "the configs scaffold loads"
 ok "init --configs scaffolds a dotfiles repo whose compile writes the templates' data and partial"

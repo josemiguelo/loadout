@@ -118,3 +118,62 @@ KT
 OUT=$("$BIN" --repo work compile 2>&1) && fail "a name both repos declare must be refused"
 echo "$OUT" | grep -q "program 'git' is declared by parent dots too" || fail "the clash names the parent: $OUT"
 ok "a program both repos declare is refused, naming the parent"
+
+# --- configs: the parent's source and the child's ---------------------------
+# A stub chezmoi that answers per source (the --source folder's own files),
+# logs every call with the LOADOUT_REPO and LOADOUT_MACHINE it saw.
+sed -i.bak '/^val git2 = /,$d' work/machines/work.loadout.kt && rm -f work/machines/work.loadout.kt.bak
+CZ=$PWD/cz
+mkdir -p "$CZ/bin"
+cat > "$CZ/bin/chezmoi" <<'SH'
+#!/bin/sh
+src=
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --source) src=$2; shift 2 ;;
+    --no-pager) shift ;;
+    *) break ;;
+    esac
+done
+echo "$(basename "$(dirname "$src")") $* repo=$LOADOUT_REPO machine=$LOADOUT_MACHINE" >> "$CZ/log"
+case "$1" in
+managed) cat "$src/.stub-managed" 2>/dev/null || true ;;
+status) cat "$src/.stub-status" 2>/dev/null || true ;;
+target-path) echo "$CZ/home" ;;
+apply) : > "$src/.stub-status" ;;
+*) echo "stub chezmoi: unexpected $*" >&2; exit 2 ;;
+esac
+SH
+chmod +x "$CZ/bin/chezmoi"
+export CZ
+cz_loadout() { PATH="$CZ/bin:$PATH" "$BIN" "$@"; }
+
+sed -i.bak 's/state = "state",/state = "state", configs = "configs",/' dots/loadout.kt && rm dots/loadout.kt.bak
+grep -q 'configs = "configs"' dots/loadout.kt || fail "the parent fixture declares configs"
+mkdir -p dots/configs
+"$BIN" --repo dots compile >/dev/null 2>&1 || fail "the parent compiles with configs"
+sed -i.bak 's/repo(name = "work", state = "state")/repo(name = "work", state = "state", configs = "configs")/' work/child.kt && rm work/child.kt.bak
+mkdir -p work/configs
+OUT=$("$BIN" --repo work compile 2>&1) || fail "the child compiles with configs: $OUT"
+[ "$(grep -c '"configs": "configs"' work/loadout.lock.json)" = 2 ] || fail "the child's lock records its configs and the parent's"
+printf '.config/zsh/.zshrc\n.zshenv\n' > dots/configs/.stub-managed
+printf '.config/zsh/conf.d/zz-work.zsh\n' > work/configs/.stub-managed
+printf ' M .config/zsh/conf.d/zz-work.zsh\n' > work/configs/.stub-status
+OUT=$(cz_loadout --repo work --machine work status 2>&1) || fail "status reads both sources: $OUT"
+echo "$OUT" | grep -qE "zsh +drifted" || fail "a unit spanning both repos drifts when the child's file would change: $OUT"
+echo "$OUT" | grep -qE "\.zshenv +applied" || fail "the parent's unit is there too: $OUT"
+grep -q "dots managed .* repo=$CHILD machine=work" "$CZ/log" || fail "chezmoi sees the child as LOADOUT_REPO and the machine: $(cat "$CZ/log")"
+: > "$CZ/log"
+cz_loadout --repo work --machine work apply >/dev/null 2>&1 || fail "apply runs over both sources"
+grep -n ' apply ' "$CZ/log" | head -1 | grep -q '^[0-9]*:dots apply' || fail "the parent's source applies first: $(cat "$CZ/log")"
+grep -q '^work apply' "$CZ/log" || fail "then the child's: $(cat "$CZ/log")"
+ok "a child's configs are its parent's and its own: units span both, chezmoi sees the child, the parent applies first"
+
+printf '.config/git/config\n' >> work/configs/.stub-managed
+printf '.config/git/config\n' >> dots/configs/.stub-managed
+OUT=$(cz_loadout --repo work --machine work status 2>&1)
+echo "$OUT" | grep -q ".config/git/config is managed by parent dots and this repo — a file belongs to one repo" ||
+    fail "a file both repos manage is named in status: $OUT"
+OUT=$(cz_loadout --repo work --machine work apply git 2>&1) && fail "applying a file both repos manage must be refused"
+echo "$OUT" | grep -q "a file belongs to one repo" || fail "and apply says why: $OUT"
+ok "a file both repos manage is reported and refused, naming both"
