@@ -4,6 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
+import okio.Path.Companion.toPath
 
 /**
  * A config repo, resolved: what the DSL compiles to, what loadout.lock.json
@@ -372,7 +373,17 @@ data class ParentLayout(
     val sources: List<String> = emptyList(),
     /** sha256 of the files [sources] match ([loadout.core.manifest.LockFile.sourcesHash]): a change is refused until the child recompiles. */
     val hash: String = "",
-)
+) {
+    /** [path] as a directory: `~/…` under [home], an absolute path as written, anything else under [childRoot]. */
+    fun root(home: String?, childRoot: okio.Path): okio.Path = when {
+        path == "~" || path.startsWith("~/") -> {
+            requireNotNull(home) { "HOME is unset: can't place parent $name at $path" }
+            (home.trimEnd('/') + path.removePrefix("~")).toPath()
+        }
+        path.startsWith("/") -> path.toPath()
+        else -> childRoot / path
+    }.normalized()
+}
 
 /**
  * A declaration's origin, as the lock records it: the repo-relative folder

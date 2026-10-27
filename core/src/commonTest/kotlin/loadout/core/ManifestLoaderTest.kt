@@ -152,6 +152,63 @@ class ManifestLoaderTest {
         assertTrue("was compiled by loadout $major.${minor + 1}.0" in message && "run: loadout self-upgrade" in message, message)
     }
 
+    // ─── a child repo's parent (contract 18) ─────────────────────────
+
+    private val parentRoot = "/home/u/dots".toPath()
+    private val parentSources = listOf("loadout.kt")
+
+    /** A child repo at [repo] whose parent, at ~/dots, declares a script whose file is there. */
+    private fun childFs(): FakeFileSystem {
+        val fs = FakeFileSystem()
+        fs.createDirectories(parentRoot / "lib")
+        fs.write(parentRoot / "loadout.kt") { writeUtf8("package parent\n") }
+        fs.write(parentRoot / "lib" / "helper.sh") { writeUtf8("#!/bin/sh\n") }
+        val parent = loadout.core.model.ParentLayout(
+            name = "dotfiles", path = "~/dots", state = "state",
+            sources = parentSources, hash = LockFile.sourcesHash(fs, parentRoot, parentSources),
+        )
+        val manifest = manifestOf {
+            meta(name = "child")
+            val helper = loadout.dsl.Dir("parent:lib").script("helper") { managedBy("helper.sh") }
+            machine("work") { run(helper) }
+        }.let { it.copy(layout = RepoLayout(state = "state", sources = sources, parent = parent)) }
+        fs.createDirectories(repo / "programs")
+        fs.write(repo / "loadout.kt") { writeUtf8("package repo\n") }
+        val lock = Lock(toolVersion = TOOL_VERSION, sources = LockFile.sourcesHash(fs, repo, sources), manifest = manifest)
+        fs.write(repo / LockFile.NAME) { writeUtf8(LockFile.encode(lock)) }
+        return fs
+    }
+
+    private fun childRefusal(fs: FakeFileSystem): String =
+        assertFailsWith<ManifestException> { ManifestLoader.loadRepo(fs, repo, home = "/home/u") }.message.orEmpty()
+
+    @Test
+    fun aChildLoadsWithItsParentAtItsPath() {
+        val fs = childFs()
+        assertEquals("parent:lib", ManifestLoader.loadRepo(fs, repo, home = "/home/u").scripts.getValue("helper").origin)
+        assertEquals(parentRoot, ManifestLoader.parentRoot(fs, repo, ManifestLoader.readLayout(fs, repo), home = "/home/u"))
+    }
+
+    @Test
+    fun aParentEditTheChildHasntCompiledIsRefused() {
+        val fs = childFs()
+        fs.write(parentRoot / "loadout.kt") { writeUtf8("package parent // edited\n") }
+        val message = childRefusal(fs)
+        assertTrue("parent dotfiles: the manifests changed since loadout.lock.json was written — run: loadout compile" in message, message)
+    }
+
+    @Test
+    fun aMissingParentOrParentFileIsNamed() {
+        val gone = childFs()
+        gone.deleteRecursively(parentRoot)
+        val message = childRefusal(gone)
+        assertTrue("parent dotfiles is not at ~/dots — clone it there" in message, message)
+        val noFile = childFs()
+        noFile.delete(parentRoot / "lib" / "helper.sh")
+        val missing = childRefusal(noFile)
+        assertTrue("scripts.helper: file 'helper.sh' not found (relative to parent:lib/)" in missing, missing)
+    }
+
     @Test
     fun theReposVersionFloorIsEnforced() {
         val message = refusal(fs(manifest(minToolVersion = "999.0.0")))

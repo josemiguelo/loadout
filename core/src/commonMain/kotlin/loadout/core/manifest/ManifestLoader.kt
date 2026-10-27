@@ -3,6 +3,7 @@ package loadout.core.manifest
 import loadout.core.TOOL_VERSION
 import loadout.core.model.Manifest
 import loadout.core.model.RepoLayout
+import loadout.core.platform.envVar
 import loadout.core.versionAtLeast
 import okio.FileSystem
 import okio.Path
@@ -23,12 +24,22 @@ object ManifestLoader {
      * every `file:` path it names exists. Machines see their own script
      * variants through [Manifest.forMachine].
      */
-    fun loadRepo(fs: FileSystem, repoRoot: Path): Manifest {
+    fun loadRepo(fs: FileSystem, repoRoot: Path, home: String? = envVar("HOME")): Manifest {
         val lock = readLock(fs, repoRoot)
         val manifest = lock.manifest
         val hash = LockFile.sourcesHash(fs, repoRoot, manifest.layout.sources)
         if (hash != lock.sources) {
             throw ManifestException("the manifests changed since ${LockFile.NAME} was written — run: loadout compile")
+        }
+        // A child's lock holds its parent's declarations as they were: a
+        // parent edit it hasn't seen is refused the same way (contract 18).
+        val parentRoot = parentRoot(fs, repoRoot, manifest.layout, home)
+        manifest.layout.parent?.let { parent ->
+            if (LockFile.sourcesHash(fs, parentRoot!!, parent.sources) != parent.hash) {
+                throw ManifestException(
+                    "parent ${parent.name}: the manifests changed since ${LockFile.NAME} was written — run: loadout compile",
+                )
+            }
         }
         manifest.layout.configs?.let { configs ->
             for ((path, expected) in ChezmoiData.files(manifest, configs)) {
@@ -39,11 +50,27 @@ object ManifestLoader {
                 }
             }
         }
-        val missing = ManifestAssembler.checkFiles(manifest, fs, repoRoot)
+        val missing = ManifestAssembler.checkFiles(manifest, fs, repoRoot, parentRoot)
         if (missing.isNotEmpty()) {
             throw ManifestException("Invalid manifest:\n" + missing.joinToString("\n") { "  - $it" })
         }
         return manifest
+    }
+
+    /**
+     * A child repo's parent checkout, canonical; null for a repo without a
+     * parent. One that isn't there is refused by name and path.
+     */
+    fun parentRoot(fs: FileSystem, repoRoot: Path, layout: RepoLayout, home: String? = envVar("HOME")): Path? {
+        val parent = layout.parent ?: return null
+        val root = parent.root(home, repoRoot)
+        if (!fs.exists(root)) {
+            throw ManifestException(
+                "parent ${parent.name} is not at ${parent.path} — clone it there, or change parent(path = …) " +
+                    "in build.gradle.kts and compile",
+            )
+        }
+        return fs.canonicalize(root)
     }
 
     private fun readLock(fs: FileSystem, repoRoot: Path): Lock {

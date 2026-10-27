@@ -36,9 +36,18 @@ class AppContext(
 
     fun detectSystem(): SystemInfo = detection.detectSystem(machineOverride)
 
-    /** How manifest commands run on [system]: declaring file's directory, LOADOUT_* env. */
+    /** A child repo's parent checkout (contract 18), or null. */
+    val parentRoot: Path? by lazy { ManifestLoader.parentRoot(fs, repoRoot, layout) }
+
+    /** How manifest commands run on [system]: declaring file's directory (a parent's in the parent), LOADOUT_* env. */
     fun frame(system: SystemInfo): CommandFrame =
-        CommandFrame.of(fs.canonicalize(repoRoot).toString(), system, layout.configs)
+        CommandFrame.of(
+            fs.canonicalize(repoRoot).toString(),
+            system,
+            layout.configs,
+            parentRoot?.toString(),
+            layout.parent?.configs,
+        )
 
     /** chezmoi over the `layout configs` directory; null when the repo has none. */
     val configs: ConfigEngine? by lazy {
