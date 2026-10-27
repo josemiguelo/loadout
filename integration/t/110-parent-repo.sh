@@ -191,13 +191,14 @@ ok "a child's diff shows its machines beside the parent's"
 
 # Every file under the parent, as it is now (the stub's bookkeeping aside).
 snapshot() { (cd dots && find . -type f ! -name '.stub-*' | LC_ALL=C sort | while read -r f; do printf '%s ' "$f"; cksum < "$f"; done); }
-BEFORE=$(snapshot)
+snapshot > parent.before
 "$BIN" --repo work compile >/dev/null 2>&1 || fail "the child compiles"
 for args in "status" "explain" "explain git" "run where-child" "apply" "diff" "outdated"; do
     # shellcheck disable=SC2086
     cz_loadout --repo work --machine work $args >/dev/null 2>&1 || true
 done
-[ "$(snapshot)" = "$BEFORE" ] || fail "no command run on the child writes into the parent: $(diff <(echo "$BEFORE") <(snapshot))"
+snapshot > parent.after
+cmp -s parent.before parent.after || fail "no command run on the child writes into the parent: $(diff parent.before parent.after)"
 ok "compile, status, explain, run, apply, diff and outdated on a child leave every file of the parent as it was"
 
 # --- sync: pull the parent, recompile on its change, push the child only ------
