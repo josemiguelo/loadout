@@ -18,7 +18,13 @@ import loadout.core.model.scriptEntry
  * reported, and a spare mark on something that is used is reported too, so
  * the marks stay true.
  */
-fun unusedWarnings(draft: ManifestDraft, manifest: Manifest, spares: Map<String, String>): List<String> {
+fun unusedWarnings(
+    draft: ManifestDraft,
+    manifest: Manifest,
+    spares: Map<String, String>,
+    /** A child repo's parent's declarations ([Registry.declaredNames]): their use is the parent's compile's business. */
+    inherited: Set<String> = emptySet(),
+): List<String> {
     val profiles = draft.profiles
 
     // Profiles some machine reaches, through extends chains.
@@ -68,11 +74,12 @@ fun unusedWarnings(draft: ManifestDraft, manifest: Manifest, spares: Map<String,
     val usedInstallers = installerUsers.keys
 
     val warnings = mutableListOf<String>()
+    fun isInherited(key: String) = inherited.any { key == it || key.startsWith("$it ") }
     fun unused(key: String, message: String) {
-        if (key !in spares) warnings += "$message — if it's kept on purpose, mark it spare(reason = \"…\")"
+        if (key !in spares && !isInherited(key)) warnings += "$message — if it's kept on purpose, mark it spare(reason = \"…\")"
     }
     fun staleSpare(key: String, by: String) {
-        if (key in spares) warnings += "$key is marked spare, but $by uses it"
+        if (key in spares && !isInherited(key)) warnings += "$key is marked spare, but $by uses it"
     }
 
     for (name in profiles.keys) {

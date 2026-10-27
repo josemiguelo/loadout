@@ -33,4 +33,36 @@ class CompileTest {
         val message = assertFailsWith<DslException> { manifestFolders(fs, root, sources) }.message.orEmpty()
         assertTrue("manifest file names must be unique: apps.loadout.kt in programs/a and programs/b" in message, message)
     }
+
+    private val parentRoot = "/parent".toPath()
+
+    private fun parentArgs() = ParentArgs("dotfiles", "~/dots", parentRoot, emptyList(), listOf("loadout.kt", "programs/**/*.loadout.kt"))
+
+    @Test
+    fun aParentsFilesMapToParentFolders() {
+        val fs = fs("child.kt", "programs/work.loadout.kt").apply {
+            createDirectories(parentRoot / "programs" / "cli")
+            write(parentRoot / "loadout.kt") { writeUtf8("package p\n") }
+            write(parentRoot / "programs" / "cli" / "cli.loadout.kt") { writeUtf8("package p\n") }
+        }
+        assertEquals(
+            mapOf(
+                "child.kt" to "",
+                "work.loadout.kt" to "programs",
+                "loadout.kt" to "parent:",
+                "cli.loadout.kt" to "parent:programs/cli",
+            ),
+            manifestFolders(fs, root, listOf("child.kt", "programs/**/*.loadout.kt"), parentArgs()),
+        )
+    }
+
+    @Test
+    fun aNameInBothReposIsRefusedNamingBoth() {
+        val fs = fs("loadout.kt").apply {
+            createDirectories(parentRoot)
+            write(parentRoot / "loadout.kt") { writeUtf8("package p\n") }
+        }
+        val message = assertFailsWith<DslException> { manifestFolders(fs, root, sources, parentArgs()) }.message.orEmpty()
+        assertTrue("manifest file names must be unique: loadout.kt in its root (parent dotfiles) and the repo root (this repo)" in message, message)
+    }
 }

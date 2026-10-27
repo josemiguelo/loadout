@@ -2,6 +2,7 @@ package loadout.dsl
 
 import kotlinx.serialization.json.JsonObject
 import loadout.core.LoadoutException
+import loadout.core.versionAtLeast
 import loadout.core.manifest.ManifestDraft
 import loadout.core.model.Installer as InstallerModel
 import loadout.core.model.MachineConfig
@@ -20,7 +21,10 @@ class DslException(message: String) : LoadoutException(message)
  * repo's files land in [current] as their file is first used; tests build
  * one of their own with [buildManifest].
  */
-class Registry {
+class Registry(
+    /** A child's compile's registry for its parent's declarations: their origins are the parent's ([loadout.core.model.Origin]). */
+    internal val isParent: Boolean = false,
+) {
     internal var meta = Meta()
     internal var layout = RepoLayout()
     internal var data = JsonObject(emptyMap())
@@ -64,10 +68,68 @@ class Registry {
         )
     }
 
+    /**
+     * A child repo's draft (contract 18): this registry's declarations over
+     * [parent]'s. The parent's installers, programs, scripts, outdated
+     * sources, profiles and data schema join the child's; its machines don't,
+     * and nor do its meta and layout. A name both repos declare is an error
+     * naming the parent, as is a child data schema. The repo floor is the
+     * higher of the two.
+     */
+    fun draftOver(parent: Registry, parentName: String): ManifestDraft {
+        val label = "parent $parentName"
+        errors += parent.errors.map { "$label: $it" }
+        if (data.isNotEmpty()) errors += "a child repo's data schema is its parent's — drop data = … from repo(…)"
+        fun clash(kind: String, mine: Map<String, *>, theirs: Map<String, *>) {
+            for (name in mine.keys intersect theirs.keys) errors += "$kind '$name' is declared by $label too"
+        }
+        clash("installer", installers, parent.installers)
+        clash("program", programs, parent.programs)
+        clash("script", scripts, parent.scripts)
+        clash("outdated source", outdated, parent.outdated)
+        clash("profile", profiles, parent.profiles)
+        for (name in machines.keys intersect parent.machines.keys) {
+            errors += "machine '$name' is declared by $label too — a machine belongs to one repo"
+        }
+        val own = draft()
+        val floors = listOfNotNull(meta.minToolVersion, parent.meta.minToolVersion)
+        val floor = floors.reduceOrNull { a, b -> if (versionAtLeast(a, b)) a else b }
+        return own.copy(
+            manifest = own.manifest.copy(
+                meta = own.manifest.meta.copy(minToolVersion = floor),
+                installers = parent.installers + installers,
+                programs = parent.programs + programs,
+                scripts = parent.scripts + scripts,
+                outdated = parent.outdated + outdated,
+                data = parent.data,
+            ),
+            profiles = parent.profiles + profiles,
+            requires = (parent.requires.keys + requires.keys).associateWith { name ->
+                (parent.requires[name].orEmpty() + requires[name].orEmpty()).distinct()
+            },
+        )
+    }
+
+    /** What the parent declared, as warnings name it ("program 'x'"): a child's compile doesn't warn about them. */
+    fun declaredNames(): Set<String> =
+        installers.keys.map { "installer '$it'" }.toSet() + programs.keys.map { "program '$it'" } +
+            scripts.keys.map { "script '$it'" } + profiles.keys.map { "profile '$it'" }
+
     companion object {
         /** Where declarations land. */
         var current: Registry = Registry()
             internal set
+
+        /** Runs [block] with declarations landing in [registry]: how a child's compile keeps its parent's apart. */
+        internal fun <T> into(registry: Registry, block: () -> T): T {
+            val previous = current
+            current = registry
+            try {
+                return block()
+            } finally {
+                current = previous
+            }
+        }
     }
 }
 

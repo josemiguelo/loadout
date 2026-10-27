@@ -5,6 +5,7 @@ import loadout.core.model.InstallVariant
 import loadout.core.model.Installer as InstallerModel
 import loadout.core.model.MachineConfig
 import loadout.core.model.Meta
+import loadout.core.model.Origin
 import loadout.core.model.OutdatedSource
 import loadout.core.model.Program as ProgramModel
 import loadout.core.model.ProgramOutdated
@@ -74,8 +75,16 @@ fun <D : MachineData> machineData(schema: () -> D) {
  * runs its commands there (contracts 4 and 5). The top-level [program],
  * [script], [installer] and [outdated] declare in the directory of the file
  * they're written in; `Dir("x").program(…)` declares for another one.
+ * Declared while a child's compile loads its parent, the folder is the
+ * parent's ([Registry.isParent]), however it was named.
  */
-class Dir(val path: String) {
+class Dir(path: String) {
+    private val folder = path
+
+    /** The folder as the declaration's origin. */
+    val path: String
+        get() = if (registry.isParent && !Origin.isParent(folder)) Origin.ofParent(folder) else folder
+
     fun installer(name: String, block: InstallerScope.() -> Unit): Installer {
         val scope = InstallerScope(name).apply(block)
         registry.add("installer", name, registry.installers, scope.build(path))
