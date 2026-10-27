@@ -31,6 +31,11 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
+- **A private repo can build on a public one.** A child repo names its
+  parent in its build (`parent(name, path)`) and uses the parent's
+  programs, scripts and profiles by name, adding its own machines,
+  programs and dotfiles; nothing of it is ever written into the parent. A
+  work laptop's employer-specific setup stays out of your public dotfiles.
 - **Checks are the truth.** Every piece of a loadout has a re-askable check
   (`rpm -q kitty`, `chezmoi verify`, your own script). Converging means
   making the checks pass; observing means asking them again.
@@ -63,7 +68,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
 | | `compile` | Turn the repo's Kotlin manifests into `loadout.lock.json`, which every other command reads (needs a JDK); warns about what no machine uses, and about `transitional()` scripts every machine has done |
-| | `init` | Scaffold a new config repo (a small Gradle project); `--configs` holds your dotfiles too |
+| | `init` | Scaffold a new config repo (a small Gradle project); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
 
 ## Quickstart
 

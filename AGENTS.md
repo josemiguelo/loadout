@@ -109,6 +109,7 @@ model/  loadout.core (the binary's and the DSL's common ground)
                Lock/LockFile — loadout.lock.json codec, format check, sources hash
                InstallerLibrary — the built-in installers, as Kotlin values
                ChezmoiData — the templates' data file and partial
+               (Origin, ParentLayout: a child repo's parent, contract 18)
                MachineData — data merged, validated, compared; Glob
 dsl/    loadout.dsl
   Dsl.kt       repo/program/script/installer/profile/machine builders;
@@ -272,6 +273,9 @@ Explicit user decisions; don't "improve" them away.
    `AppContext.frame`). A command takes the origin of the file that WROTE
    it: an installer pattern runs in the installer's directory, a variant's
    own `command`/`check`/`outdated` in the program's (`resolveInstall`).
+   In a child repo (contract 18) a parent's declaration runs in the
+   parent's checkout with the parent's `LOADOUT_REPO`/`LOADOUT_CONFIGS`,
+   and every command sees `LOADOUT_PARENT` (the parent's root).
 6. **Execution order**: all programs before all scripts; programs
    topologically by dependencies, ties broken by NAME (installOrder sorts;
    a Kotlin repo has no natural declaration order across files: a file's
@@ -524,10 +528,13 @@ Explicit user decisions; don't "improve" them away.
       shape is the contract with templates; the lock's layout stays
       loadout's own (templates reading the lock broke on any change to it).
       Compile also writes the partial that picks this host's table,
-      `<configs>/.chezmoitemplates/loadout/machine` (`ChezmoiData.PARTIAL`:
-      `get .loadout.machines (env "LOADOUT_MACHINE" | default
-      .chezmoi.hostname) | default .loadout.defaults`: the machine loadout
-      runs as, so a plain `chezmoi apply` agrees with `--machine`), so a repo's templates read their machine with
+      `<configs>/.chezmoitemplates/loadout/machine` (`ChezmoiData.PARTIAL`):
+      the machine loadout runs as (`LOADOUT_MACHINE`, else the hostname, so
+      a plain `chezmoi apply` agrees with `--machine`); for a machine this
+      repo's data lacks, its table from the lock of `LOADOUT_REPO` (a child
+      repo declaring it, contract 18), else the defaults. The partial reads
+      loadout's lock because compile writes both and every load checks the
+      partial; no user template may. So a repo's templates read their machine with
       `includeTemplate "loadout/machine" . | fromJson` and the partial
       always matches the data's shape. The `loadout/` folder keeps it apart
       from the repo's own templates. Every load re-renders both from the
@@ -535,6 +542,45 @@ Explicit user decisions; don't "improve" them away.
       compile"), so dotfiles never render from data the manifests don't
       say. `init --configs` scaffolds such a repo (`repo(configs =
       "configs")`, a `.chezmoiroot`, `configs/`).
+
+18. **A child repo inherits a parent; nothing flows back.** A private repo
+    names a public one in its build, `loadout { parent(name, path) }`
+    (`~/…`, absolute, or relative to the child), and its manifests use the
+    parent's installers, programs, scripts, outdated sources, profiles and
+    data schema by name, type-checked. One level, one parent; any number of
+    children, none of which the parent knows.
+    - **Compile**: the plugin reads the parent's lock for its globs and
+      compiles those files as a `parent` source set the child's compile
+      against. `Compile.kt` refuses a parent whose own lock is stale or that
+      is itself a child, loads the parent's classes into their own
+      `Registry(isParent = true)` (so every declaration there, `root.` and
+      `Dir("x")` too, gets a `parent:` origin), then the child's, and merges
+      them (`Registry.draftOver`): the parent's machines, meta and layout
+      stay out; a name both declare, a machine in both and a child data
+      schema are errors; the floor is the higher `minToolVersion`; file
+      names are unique across both repos. Unused and transitional warnings
+      are the child's own declarations' only.
+    - **Lock**: `layout.parent` (name, path as written, state, configs,
+      globs, hash of the parent's manifests); a parent declaration's origin
+      is `parent:<folder>` (`Origin`), its `file` values `$LOADOUT_PARENT/…`
+      (a built-in installer that takes them runs in the child). A repo
+      without a parent writes exactly what it did. A parent edit the child
+      hasn't compiled is refused at load like a stale lock, and a missing
+      parent by name and path.
+    - **Runtime**: commands as in contract 5; configs are two chezmoi
+      sources, the parent's then the child's (`ConfigEngine`): units span
+      both, a target both manage is `unknown` and refused by `apply`, and
+      chezmoi runs with `LOADOUT_REPO` (the child) and `LOADOUT_MACHINE` so
+      the parent's partial finds the child's machine. `diff` and the fleet
+      row are the parent's machines and the child's (the parent's state
+      read-only). `sync` pulls the parent, never commits or pushes it, and
+      when the parent's manifests changed compiles the child and commits its
+      lock with the state.
+    - **Privacy**: nothing a command run on a child does writes under the
+      parent (`writeIfChanged` asserts the child root; the parent's
+      `StateStore` is read-only; its git only pulls).
+      `integration/t/110-parent-repo.sh` checksums the parent around every
+      command. `init --parent <path> [--name n]` scaffolds a child.
 
 ## Toolchain facts — don't rediscover
 
