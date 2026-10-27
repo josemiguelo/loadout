@@ -348,7 +348,48 @@ data class RepoLayout(
      * the files they match, so an edit the lock hasn't seen is refused.
      */
     val sources: List<String> = emptyList(),
+    /** The repo this one builds on, for a child repo (contract 18); null for any other. */
+    val parent: ParentLayout? = null,
 )
+
+/**
+ * A child repo's parent, as its lock records it: the public repo whose
+ * programs, scripts, installers, profiles and data schema the child's
+ * manifests use by name. Its declarations in the child's lock carry
+ * [Origin.PARENT] origins and run in [path].
+ */
+@Serializable
+data class ParentLayout(
+    /** What messages call it: "parent dotfiles". */
+    val name: String,
+    /** Its checkout, as `parent(path = …)` wrote it: `~/…`, absolute, or relative to the child's root. */
+    val path: String,
+    /** Its state directory, read (never written) for the fleet view. */
+    val state: String,
+    /** Its chezmoi source, applied beside the child's. */
+    val configs: String? = null,
+    /** Its manifest globs, from its own lock. */
+    val sources: List<String> = emptyList(),
+    /** sha256 of the files [sources] match ([loadout.core.manifest.LockFile.sourcesHash]): a change is refused until the child recompiles. */
+    val hash: String = "",
+)
+
+/**
+ * A declaration's origin, as the lock records it: the repo-relative folder
+ * of the file that wrote it, where its commands run and its `file:` paths
+ * resolve. In a child repo's lock, a declaration of its parent's is that
+ * folder in the parent, prefixed [PARENT].
+ */
+object Origin {
+    const val PARENT: String = "parent:"
+
+    fun isParent(origin: String): Boolean = origin.startsWith(PARENT)
+
+    /** The folder, relative to its repo's root. */
+    fun folder(origin: String): String = origin.removePrefix(PARENT)
+
+    fun ofParent(folder: String): String = PARENT + folder
+}
 
 /**
  * Commands starting with this prefix (install variant `command`s, installer

@@ -576,6 +576,66 @@ class AssemblyTest {
         assertTrue("programs.code.install.dnf-repo.with.repofile: file 'repos/code.repo' not found (relative to programs/apps/)" in missing, missing)
     }
 
+    // ─── a child repo's parent (contract 18) ───────────────────────────
+
+    private val parentRoot = "/parent".toPath()
+
+    /** A child's draft with files under the child's root and the parent's (`parent:` paths). */
+    private fun inChild(draft: ManifestDraft, vararg files: String): Manifest {
+        val fs = FakeFileSystem()
+        fs.createDirectories(repoRoot)
+        fs.createDirectories(parentRoot)
+        for (file in files) {
+            val path = if (file.startsWith("parent:")) parentRoot / file.removePrefix("parent:") else repoRoot / file
+            path.parent?.let(fs::createDirectories)
+            fs.write(path) { writeUtf8("#!/bin/sh\n") }
+        }
+        return ManifestAssembler.assemble(draft, fs, repoRoot, parentRoot)
+    }
+
+    @Test
+    fun aParentsFilesResolveInItsCheckout() {
+        val draft = buildManifest {
+            layout(state = "state")
+            Dir("parent:maintenance/lib").script("helper") { managedBy("helper.sh") }
+            Dir("scripts").script("mine") { managedBy("mine.sh") }
+        }
+        val manifest = inChild(draft, "parent:maintenance/lib/helper.sh", "scripts/mine.sh")
+        assertEquals("parent:maintenance/lib", manifest.scripts.getValue("helper").origin)
+        // The same file in the child's root is not the parent's.
+        val missing = assertFailsWith<LoadoutException> { inChild(draft, "maintenance/lib/helper.sh", "scripts/mine.sh") }.message.orEmpty()
+        assertTrue("scripts.helper: file 'helper.sh' not found (relative to parent:maintenance/lib/)" in missing, missing)
+    }
+
+    @Test
+    fun aParentsFileWithValueIsUnderLoadoutParent() {
+        val draft = buildManifest {
+            layout(state = "state")
+            val here = Dir("parent:programs/apps")
+            here.program("code") { installVia(dnfRepo(repofile = here.file("repos/code.repo"))) }
+        }
+        val manifest = inChild(draft, "parent:programs/apps/repos/code.repo")
+        // The built-in dnf-repo runs in the child: the path can't lean on LOADOUT_REPO.
+        assertTrue(
+            "--from-repofile=\$LOADOUT_PARENT/programs/apps/repos/code.repo" in manifest.resolveInstall("code", "dnf-repo").command.orEmpty(),
+        )
+        val missing = assertFailsWith<LoadoutException> { inChild(draft, "programs/apps/repos/code.repo") }.message.orEmpty()
+        assertTrue("programs.code.install.dnf-repo.with.repofile: file 'repos/code.repo' not found (relative to parent:programs/apps/)" in missing, missing)
+    }
+
+    @Test
+    fun aLockWithoutAParentSaysNothingOfOne() {
+        val lock = loadout.core.manifest.Lock(toolVersion = "1.0.0", sources = "x", manifest = repo { })
+        val text = loadout.core.manifest.LockFile.encode(lock)
+        assertTrue("parent" !in text, text)
+        val parent = loadout.core.model.ParentLayout(
+            name = "dotfiles", path = "~/.local/share/chezmoi", state = "state", configs = "configs",
+            sources = listOf("loadout.kt"), hash = "abc",
+        )
+        val child = lock.copy(manifest = lock.manifest.copy(layout = lock.manifest.layout.copy(parent = parent)))
+        assertEquals(parent, loadout.core.manifest.LockFile.decode(loadout.core.manifest.LockFile.encode(child)).manifest.layout.parent)
+    }
+
     // ─── built-ins (contract 13) ───────────────────────────────────────
 
     @Test

@@ -4,6 +4,7 @@ import loadout.core.LoadoutException
 import loadout.core.model.INSTALL_FILE_PREFIX
 import loadout.core.model.MachineConfig
 import loadout.core.model.Manifest
+import loadout.core.model.Origin
 import loadout.core.model.scriptEntry
 import okio.FileSystem
 import okio.Path
@@ -36,7 +37,10 @@ data class ManifestDraft(
  * re-checks files when it reads one), so both say the same thing.
  */
 object ManifestAssembler {
-    fun assemble(draft: ManifestDraft, fs: FileSystem, repoRoot: Path): Manifest = assemble(draft, fs to repoRoot)
+    fun assemble(draft: ManifestDraft, fs: FileSystem, repoRoot: Path, parentRoot: Path? = null): Manifest =
+        assemble(draft, Files(fs, repoRoot, parentRoot))
+
+    private class Files(val fs: FileSystem, val repoRoot: Path, val parentRoot: Path?)
 
     /**
      * [assemble] without the `file:` checks. TEST-ONLY: everything else —
@@ -44,7 +48,7 @@ object ManifestAssembler {
      */
     fun assembleWithoutFiles(draft: ManifestDraft): Manifest = assemble(draft, null)
 
-    private fun assemble(draft: ManifestDraft, repo: Pair<FileSystem, Path>?): Manifest {
+    private fun assemble(draft: ManifestDraft, repo: Files?): Manifest {
         val errors = mutableListOf<String>()
         val merged = withBuiltinInstallers(draft.manifest)
         val manifest = merged.copy(
@@ -69,7 +73,7 @@ object ManifestAssembler {
             machines = machines.mapValues { (_, config) -> config.copy(data = MachineData.merge(manifest.data, config.data)) },
         )
         validate(flat)
-        val missing = repo?.let { (fs, repoRoot) -> checkFiles(flat, fs, repoRoot) }.orEmpty()
+        val missing = repo?.let { checkFiles(flat, it.fs, it.repoRoot, it.parentRoot) }.orEmpty()
         if (missing.isNotEmpty()) throw invalid(missing)
         return sorted(withFileValues(flat))
     }
@@ -79,15 +83,19 @@ object ManifestAssembler {
      * relative to its declaring file's directory and must exist without
      * leaving the repo. Returns the problems.
      */
-    fun checkFiles(manifest: Manifest, fs: FileSystem, repoRoot: Path): List<String> {
+    fun checkFiles(manifest: Manifest, fs: FileSystem, repoRoot: Path, parentRoot: Path? = null): List<String> {
         val problems = mutableListOf<String>()
         fun requirePath(file: String, origin: String, label: String) {
-            val where = if (origin.isEmpty()) "the repo root" else "$origin/"
-            val relative = (if (origin.isEmpty()) file else "$origin/$file").toPath().normalized()
+            // A parent's declaration resolves in the parent's checkout.
+            val root = if (Origin.isParent(origin)) parentRoot ?: return else repoRoot
+            val folder = Origin.folder(origin)
+            val repo = if (Origin.isParent(origin)) "the parent's" else "the repo"
+            val where = if (folder.isEmpty()) "$repo root" else "$origin/"
+            val relative = (if (folder.isEmpty()) file else "$folder/$file").toPath().normalized()
             when {
                 relative.isAbsolute || relative.segments.firstOrNull() == ".." ->
                     problems += "$label: file '$file' leaves the repo (paths are relative to $where)"
-                !fs.exists(repoRoot / relative) ->
+                !fs.exists(root / relative) ->
                     problems += "$label: file '$file' not found (relative to $where)"
             }
         }
@@ -131,6 +139,7 @@ object ManifestAssembler {
                             requirePath(value.removePrefix(INSTALL_FILE_PREFIX), program.origin, label)
                         // In a lock it's already a repo path (see withFileValues).
                         value.startsWith(REPO_PATH) -> requirePath(value.removePrefix(REPO_PATH), "", label)
+                        value.startsWith(PARENT_PATH) -> requirePath(value.removePrefix(PARENT_PATH), Origin.ofParent(""), label)
                     }
                 }
             }
@@ -191,6 +200,13 @@ object ManifestAssembler {
     /** How a `file:` `with` value reads once assembled: a path under the repo. */
     private const val REPO_PATH = "\$LOADOUT_REPO/"
 
+    /**
+     * A parent's file in a child's lock: under `LOADOUT_PARENT`, which every
+     * command of a child repo sees, so it resolves whichever repo's installer
+     * (a built-in's runs in the child) the value is substituted into.
+     */
+    private const val PARENT_PATH = "\$LOADOUT_PARENT/"
+
     private fun invalid(errors: List<String>) =
         ManifestException("Invalid manifest:\n" + errors.joinToString("\n") { "  - $it" })
 
@@ -220,9 +236,9 @@ object ManifestAssembler {
                         with = variant.with.mapValues { (_, value) ->
                             if (!value.startsWith(INSTALL_FILE_PREFIX)) return@mapValues value
                             val file = value.removePrefix(INSTALL_FILE_PREFIX)
-                            val relative = (if (program.origin.isEmpty()) file else "${program.origin}/$file")
-                                .toPath().normalized()
-                            "$REPO_PATH$relative"
+                            val folder = Origin.folder(program.origin)
+                            val relative = (if (folder.isEmpty()) file else "$folder/$file").toPath().normalized()
+                            if (Origin.isParent(program.origin)) "$PARENT_PATH$relative" else "$REPO_PATH$relative"
                         },
                     )
                 },
