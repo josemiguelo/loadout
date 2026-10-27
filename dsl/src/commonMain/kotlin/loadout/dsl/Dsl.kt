@@ -621,7 +621,7 @@ fun profile(name: String, block: MachineScope.() -> Unit): Profile {
     return Profile(name)
 }
 
-/** A machine, named by its hostname. */
+/** A machine, named by its hostname (or by `LOADOUT_MACHINE` on a host that sets it). */
 fun machine(hostname: String, block: MachineScope.() -> Unit): Machine {
     val label = "machine '$hostname'"
     registry.add("machine", hostname, registry.machines, MachineScope(label).apply(block).build())

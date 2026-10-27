@@ -24,11 +24,15 @@ object ChezmoiData {
     /** The partial, relative to the repo root, for a repo with [configs]. */
     fun partialPath(configs: String): String = "$configs/.chezmoitemplates/loadout/machine"
 
-    /** This host's table, or the defaults on a host the repo doesn't declare. */
+    /**
+     * This machine's table, or the defaults on a machine the repo doesn't declare. The machine is the one
+     * loadout runs as: `LOADOUT_MACHINE` (`--machine`'s variable) when set, else the hostname.
+     */
     const val PARTIAL: String =
-        "{{- /* Written by loadout compile; don't edit. This host's settings (.chezmoidata/loadout.json), " +
-            "or the defaults on a host the repo doesn't declare. Use: includeTemplate \"loadout/machine\" . | fromJson */ -}}\n" +
-            "{{- get .loadout.machines .chezmoi.hostname | default .loadout.defaults | toJson -}}\n"
+        "{{- /* Written by loadout compile; don't edit. This machine's settings (.chezmoidata/loadout.json): " +
+            "LOADOUT_MACHINE's, else the hostname's, or the defaults on a machine the repo doesn't declare. " +
+            "Use: includeTemplate \"loadout/machine\" . | fromJson */ -}}\n" +
+            "{{- get .loadout.machines (env \"LOADOUT_MACHINE\" | default .chezmoi.hostname) | default .loadout.defaults | toJson -}}\n"
 
     /** Each file compile writes for a repo with [configs], with its content. */
     fun files(manifest: Manifest, configs: String): Map<String, String> =

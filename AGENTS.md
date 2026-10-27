@@ -82,7 +82,7 @@ signal-killed child as the signal number (2), so don't rely on a child being
 killed by SIGINT. `70-home-screen` checks Ctrl-C on both platforms.
 
 Manual testing target: the user's live config repo (`$LOADOUT_REPO`: chezmoi's
-source, `~/.local/share/chezmoi`; machine name = hostname; the user's machines run Omarchy/Arch and macOS).
+source, `~/.local/share/chezmoi`; machine name = hostname, or `LOADOUT_MACHINE`; the user's machines run Omarchy/Arch and macOS).
 `status`/`diff`/`--dry-run` against it are fine; installing/removing
 packages or pushing git needs the user's OK. Opening the home screen
 writes the machine's state file there.
@@ -192,7 +192,10 @@ Explicit user decisions; don't "improve" them away.
      `run(script, args…)` opt scripts in; `run(script.variant(name = "arch"))`
      picks a script variant. A program installed twice or a script run
      twice in one machine is an error. A machine is named by its hostname,
-     so the lock (and chezmoi templates reading it) find it.
+     so the lock (and chezmoi templates reading it) find it; a host whose
+     hostname can't or shouldn't be the name (proot's `localhost`, a work
+     laptop's asset tag) sets `LOADOUT_MACHINE`, which both `--machine` and
+     the partial read first.
    - **Profiles**: `extends(…)` names profiles only (a machine is never
      extended); profiles may extend profiles (cycles are errors). A
      machine's profiles are combined first: two of one `extends` list
@@ -522,8 +525,9 @@ Explicit user decisions; don't "improve" them away.
       loadout's own (templates reading the lock broke on any change to it).
       Compile also writes the partial that picks this host's table,
       `<configs>/.chezmoitemplates/loadout/machine` (`ChezmoiData.PARTIAL`:
-      `get .loadout.machines .chezmoi.hostname | default
-      .loadout.defaults`), so a repo's templates read their machine with
+      `get .loadout.machines (env "LOADOUT_MACHINE" | default
+      .chezmoi.hostname) | default .loadout.defaults`: the machine loadout
+      runs as, so a plain `chezmoi apply` agrees with `--machine`), so a repo's templates read their machine with
       `includeTemplate "loadout/machine" . | fromJson` and the partial
       always matches the data's shape. The `loadout/` folder keeps it apart
       from the repo's own templates. Every load re-renders both from the

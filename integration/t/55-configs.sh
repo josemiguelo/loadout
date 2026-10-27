@@ -55,7 +55,7 @@ OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "missing chezmoi 
 echo "$OUT" | grep -q "configs/.chezmoidata/loadout.json is missing" || fail "the missing data is named: $OUT"
 cp data.bak "$DATA"
 PARTIAL=repo/configs/.chezmoitemplates/loadout/machine
-grep -q 'get .loadout.machines .chezmoi.hostname | default .loadout.defaults' "$PARTIAL" ||
+grep -qF 'get .loadout.machines (env "LOADOUT_MACHINE" | default .chezmoi.hostname) | default .loadout.defaults' "$PARTIAL" ||
     fail "compile writes the loadout/machine partial: $(cat "$PARTIAL" 2>&1)"
 cp "$PARTIAL" partial.bak
 printf '{{ .chezmoi.hostname }}\n' > "$PARTIAL"
