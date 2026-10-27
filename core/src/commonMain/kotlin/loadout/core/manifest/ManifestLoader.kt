@@ -51,15 +51,17 @@ object ManifestLoader {
         if (!fs.exists(path)) {
             throw ManifestException("no ${LockFile.NAME} in $repoRoot — run: loadout compile")
         }
-        val lock = LockFile.decode(fs.read(path) { readUtf8() })
-        // A newer minor's DSL may write what this binary would misread; a
-        // patch release never changes what a lock means.
-        if (!versionAtLeast(minor(TOOL_VERSION), minor(lock.toolVersion))) {
-            throw ToolTooOldException(
-                "${LockFile.NAME} was compiled by loadout ${lock.toolVersion} (you have $TOOL_VERSION) — " +
-                    "run: loadout self-upgrade",
-                required = minor(lock.toolVersion) + ".0",
-            )
+        // A newer minor's DSL may write what this binary would misread (a field
+        // it doesn't know), so its version is checked before the body is read;
+        // a patch release never changes what a lock means.
+        val lock = LockFile.decode(fs.read(path) { readUtf8() }) { toolVersion ->
+            if (!versionAtLeast(minor(TOOL_VERSION), minor(toolVersion))) {
+                throw ToolTooOldException(
+                    "${LockFile.NAME} was compiled by loadout $toolVersion (you have $TOOL_VERSION) — " +
+                        "run: loadout self-upgrade",
+                    required = minor(toolVersion) + ".0",
+                )
+            }
         }
         lock.manifest.meta.minToolVersion?.let { required ->
             if (!versionAtLeast(TOOL_VERSION, required)) {

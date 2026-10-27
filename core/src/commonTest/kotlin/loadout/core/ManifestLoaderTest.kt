@@ -143,6 +143,16 @@ class ManifestLoaderTest {
     }
 
     @Test
+    fun aNewerMinorsFieldIsRefusedByVersionNotByTheField() {
+        val (major, minor) = TOOL_VERSION.split('.').map { it.toInt() }
+        val fs = fs(toolVersion = "$major.${minor + 1}.0")
+        val text = fs.read(repo / LockFile.NAME) { readUtf8() }.replace("\"manifest\": {", "\"manifest\": {\n    \"fromTheFuture\": true,")
+        fs.write(repo / LockFile.NAME) { writeUtf8(text) }
+        val message = refusal(fs)
+        assertTrue("was compiled by loadout $major.${minor + 1}.0" in message && "run: loadout self-upgrade" in message, message)
+    }
+
+    @Test
     fun theReposVersionFloorIsEnforced() {
         val message = refusal(fs(manifest(minToolVersion = "999.0.0")))
         assertTrue("requires loadout >= 999.0.0" in message, message)

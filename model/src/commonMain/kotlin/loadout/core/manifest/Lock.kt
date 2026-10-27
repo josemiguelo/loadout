@@ -7,6 +7,8 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import loadout.core.model.Manifest
 import okio.ByteString.Companion.encodeUtf8
@@ -52,10 +54,22 @@ object LockFile {
 
     /**
      * The lock in [text]. A newer format is refused by name before anything
-     * else is read, so an old binary says "upgrade" instead of failing on a
-     * field it doesn't know.
+     * else is read, and [checkToolVersion] sees the writer's version before the
+     * body is decoded, so an old binary says "upgrade" instead of failing on a
+     * field a newer minor added.
      */
-    fun decode(text: String, label: String = NAME): Lock {
+    fun decode(text: String, label: String = NAME, checkToolVersion: (String) -> Unit = {}): Lock {
+        val tree = header(text, label)
+        tree["toolVersion"]?.jsonPrimitive?.contentOrNull?.let(checkToolVersion)
+        return try {
+            json.decodeFromJsonElement(Lock.serializer(), tree)
+        } catch (e: SerializationException) {
+            throw ManifestException("$label can't be read (${e.message}) — run: loadout compile")
+        }
+    }
+
+    /** [text] as a JSON object whose format this binary reads. */
+    private fun header(text: String, label: String): JsonObject {
         val tree = try {
             json.parseToJsonElement(text).jsonObject
         } catch (e: SerializationException) {
@@ -67,11 +81,7 @@ object LockFile {
         if (format > FORMAT) {
             throw ManifestException("$label was written by a newer loadout (lock format $format) — run: loadout self-upgrade")
         }
-        return try {
-            json.decodeFromJsonElement(Lock.serializer(), tree)
-        } catch (e: SerializationException) {
-            throw ManifestException("$label can't be read (${e.message}) — run: loadout compile")
-        }
+        return tree
     }
 
     /**

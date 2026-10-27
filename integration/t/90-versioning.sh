@@ -39,8 +39,12 @@ sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/' lock.good > verrepo/loa
 OUT=$("$BIN" --repo verrepo status 2>&1) && fail "a lock from a newer loadout must be refused"
 echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "the newer lock is named: $OUT"
 echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "and points at self-upgrade: $OUT"
+# A field the newer minor added is never reached: the version is read first.
+sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/; s/"manifest": {/"manifest": { "fromTheFuture": true,/' lock.good > verrepo/loadout.lock.json
+OUT=$("$BIN" --repo verrepo status 2>&1) && fail "a newer lock with a field this binary lacks must be refused"
+echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "it is refused by version, not by the field: $OUT"
 cp lock.good verrepo/loadout.lock.json
-ok "a lock compiled by a newer loadout is refused with recovery hint"
+ok "a lock compiled by a newer loadout is refused with recovery hint, before its body is read"
 
 cat > verrepo/state/future.json <<'JSON'
 {"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
