@@ -10,7 +10,7 @@ import kotlin.reflect.KProperty
 
 /**
  * A repo's data schema: a class whose keys are delegated properties with
- * their defaults, so `data { zscaler = true }` is type-checked. Each
+ * their defaults, so `data { work = true }` is type-checked. Each
  * instance records what was set on it, which is what lets two profiles that
  * disagree still be an error (contract 2). Keys keep the property's name.
  *
