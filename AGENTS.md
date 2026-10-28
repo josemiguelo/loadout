@@ -541,7 +541,15 @@ Explicit user decisions; don't "improve" them away.
       lock and refuses a missing or different file ("run: loadout
       compile"), so dotfiles never render from data the manifests don't
       say. `init --configs` scaffolds such a repo (`repo(configs =
-      "configs")`, a `.chezmoiroot`, `configs/`).
+      "configs")`, a `.chezmoiroot`, `configs/`), laid out where files
+      land: a tool's manifest sits at its destination in `configs/` (beside
+      its dotfiles; with none, a dot-file, or a dot-folder for one with
+      scripts, since chezmoi deploys no dot entry and a plain folder
+      holding only a manifest would land empty in `$HOME`), and `system/`
+      holds what belongs to no tool (system packages, hardware). `**`
+      never enters a dot folder, so the scaffold's globs spell it
+      (`configs/**/.*/.*.loadout.kt`) beside `configs/**/.*.loadout.kt`. Plain `init` keeps `programs/` and
+      `maintenance/`.
 
 18. **A child repo inherits a parent; nothing flows back.** A private repo
     names a public one in its build, `loadout { parent(name, path) }`

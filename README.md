@@ -26,7 +26,9 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 - **One repo, laid out the way you choose.** The globs in
   `build.gradle.kts` name the manifest files. A tool's file can sit beside
   its dotfiles (`configs/.config/tmux/.tmux.loadout.kt` next to
-  `tmux.conf`), and every path in it is relative to its folder.
+  `tmux.conf`), and every path in it is relative to its folder. `init
+  --configs` lays a repo out that way: each tool where its files land,
+  `system/` for what belongs to no tool.
 - **Your dotfiles are part of the loadout.** With `repo(configs = …)`, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and

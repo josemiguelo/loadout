@@ -27,6 +27,36 @@ grep -qF '$table := get .loadout.machines $name' dots/configs/.chezmoitemplates/
 "$BIN" --repo dots explain >/dev/null || fail "the configs scaffold loads"
 ok "init --configs scaffolds a dotfiles repo whose compile writes the templates' data and partial"
 
+# Its layout: a tool's file where its files land, system/ for the rest.
+[ -f dots/configs/private_dot_config/.ripgrep.loadout.kt ] || fail "init --configs puts ripgrep where its files land"
+[ -d dots/system ] && [ ! -e dots/programs ] && [ ! -e dots/maintenance ] || fail "init --configs has system/, not programs/ or maintenance/"
+for g in 'system/**/*.loadout.kt' 'configs/**/.*.loadout.kt' 'configs/**/.*/.*.loadout.kt'; do
+    grep -qF "\"$g\"," dots/build.gradle.kts || fail "init --configs globs $g: $(cat dots/build.gradle.kts)"
+done
+"$BIN" --repo dots explain ripgrep | grep -q "sudo dnf install -y ripgrep" || fail "the dot-file manifest compiles"
+[ -d repo/programs ] && [ -d repo/maintenance ] && [ ! -e repo/system ] || fail "plain init keeps programs/ and maintenance/"
+ok "init --configs lays manifests out where their files land, with system/ for the rest"
+
+# A tool with scripts and no dotfiles: a dot-folder (chezmoi deploys none of
+# it), whose own glob finds it, its script running from its folder.
+kt_file dots/configs/private_dot_config/.tool/.tool.loadout.kt <<'KT'
+val tool = script(
+    name = "tool",
+    description = "sets the tool up",
+) {
+    file(".loadout/setup.sh")
+    check("test -f setup-ran.txt")
+}
+
+val m1 = machine(hostname = "m1") { run(tool) }
+KT
+mkdir -p dots/configs/private_dot_config/.tool/.loadout
+printf '#!/bin/sh\ntouch setup-ran.txt\n' > dots/configs/private_dot_config/.tool/.loadout/setup.sh
+OUT=$("$BIN" --repo dots compile 2>&1) || fail "a dot-folder manifest compiles: $OUT"
+"$BIN" --repo dots --machine m1 run tool >/dev/null || fail "the dot-folder's script runs"
+[ -f dots/configs/private_dot_config/.tool/setup-ran.txt ] || fail "the dot-folder's script ran in its file's folder"
+ok "a tool's dot-folder compiles, and its script runs from that folder"
+
 # --- compile: the lock every other command reads ----------------------------
 OUT=$("$BIN" --repo repo status 2>&1) && fail "a repo never compiled has no lock to read"
 echo "$OUT" | grep -q "no loadout.lock.json in repo — run: loadout compile" || fail "the missing lock is named: $OUT"
@@ -108,3 +138,9 @@ grep -q '^package repo$' kid/child.kt || fail "the child shares the parent's pac
 OUT=$("$BIN" --repo kid compile 2>&1) || fail "the child scaffold compiles against its parent: $OUT"
 grep -q '"parent": {' kid/loadout.lock.json || fail "and its lock names the parent"
 ok "init --parent scaffolds a child repo that compiles against its parent"
+
+"$BIN" --machine kidbox init --parent "$PWD/dad" --name dad --configs kiddots >/dev/null || fail "init --parent --configs scaffolds"
+[ "$(cat kiddots/.chezmoiroot)" = configs ] && [ -d kiddots/system ] && [ ! -e kiddots/programs ] || fail "a configs child has configs/ and system/"
+grep -qF '"configs/**/.*/.*.loadout.kt",' kiddots/build.gradle.kts || fail "a configs child globs dot-folders: $(cat kiddots/build.gradle.kts)"
+OUT=$("$BIN" --repo kiddots compile 2>&1) || fail "the configs child compiles: $OUT"
+ok "init --parent --configs scaffolds a child laid out where files land"

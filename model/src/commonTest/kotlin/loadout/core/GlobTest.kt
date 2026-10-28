@@ -21,6 +21,12 @@ class GlobTest {
         assertTrue(!Glob.matches("configs/**/*.loadout.kt", "configs/tmux/.loadout.kt"))
         assertTrue(Glob.matches("configs/**/.loadout.kt", "configs/private_dot_config/tmux/.loadout.kt"))
         assertTrue(!Glob.matches("**/*.kt", ".git/x.kt"))
+        // ** never enters a dot folder; a manifest in one needs a glob that spells it.
+        assertTrue(!Glob.matches("configs/**/.*.loadout.kt", "configs/a/.t/.t.loadout.kt"))
+        assertTrue(Glob.matches("configs/**/.*/.*.loadout.kt", "configs/a/.t/.t.loadout.kt"))
+        assertTrue(Glob.matches("configs/**/.*/.*.loadout.kt", "configs/.t/.t.loadout.kt"))
+        assertTrue(!Glob.matches("configs/**/.*/.*.loadout.kt", "configs/a/.t/.loadout/.x.loadout.kt"))
+        assertTrue(!Glob.matches("configs/**/.*/.*.loadout.kt", "configs/a/.t/.loadout/x.loadout.kt"))
     }
 
     @Test
