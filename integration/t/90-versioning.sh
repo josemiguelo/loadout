@@ -3,7 +3,7 @@
 
 kt_repo verrepo
 kt_file verrepo/loadout.kt <<'KT'
-val repo = repo(name = "test", state = "state", minToolVersion = "999.0.0")
+val repo = repo(name = "test", state = "machines/state", minToolVersion = "999.0.0")
 
 val git = root.program(name = "git") {
     version(command = "git --version", regex = "git version ([0-9.]+)")
@@ -22,7 +22,7 @@ ok "a repo's min-tool-version blocks an outdated binary with recovery hint"
 # A lock compiled by a newer minor's DSL is refused the same way: it may
 # say what this binary would misread.
 kt_file verrepo/loadout.kt <<'KT'
-val repo = repo(name = "test", state = "state")
+val repo = repo(name = "test", state = "machines/state")
 
 val git = root.program(name = "git") {
     version(command = "git --version", regex = "git version ([0-9.]+)")
@@ -46,7 +46,7 @@ echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "it is refused b
 cp lock.good verrepo/loadout.lock.json
 ok "a lock compiled by a newer loadout is refused with recovery hint, before its body is read"
 
-cat > verrepo/state/future.json <<'JSON'
+cat > verrepo/machines/state/future.json <<'JSON'
 {"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
  "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}
 JSON

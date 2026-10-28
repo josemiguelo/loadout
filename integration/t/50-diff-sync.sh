@@ -23,7 +23,7 @@ val m1 = machine(hostname = "m1") {
 
 val m2 = machine(hostname = "m2") { install(git.variant(name = "manual"), notInstalled) }
 KT
-cat > repo/machines.loadout.kt <<'KT'
+cat > repo/machines/machines.loadout.kt <<'KT'
 package repo
 KT
 compile_repo repo
@@ -47,7 +47,7 @@ git -C repo push -qu origin HEAD 2>/dev/null
 "$BIN" --repo repo --machine m1 sync -m "m1: test sync" >/dev/null || fail "sync exits 0"
 git -C origin.git log --oneline | grep -q "m1: test sync" && ok "sync commits and pushes state" || {
     # State may have been unchanged; force a change and retry.
-    rm repo/state/m1.json
+    rm repo/machines/state/m1.json
     "$BIN" --repo repo --machine m1 sync -m "m1: test sync 2" >/dev/null || fail "sync exits 0 (retry)"
     git -C origin.git log --oneline | grep -q "m1: test sync 2" || fail "sync pushed to remote"
     ok "sync commits and pushes state"

@@ -1,10 +1,10 @@
 # init scaffolding, compile, and what a scaffolded repo already knows.
 
 "$BIN" init repo >/dev/null || fail "init exits 0"
-for f in settings.gradle.kts build.gradle.kts loadout.kt machines.loadout.kt programs/cli.loadout.kt gradlew gradle/wrapper/gradle-wrapper.jar .gitignore; do
+for f in settings.gradle.kts build.gradle.kts loadout.kt machines/machines.loadout.kt programs/cli.loadout.kt gradlew gradle/wrapper/gradle-wrapper.jar .gitignore; do
     [ -f "repo/$f" ] || fail "init creates $f"
 done
-[ -d repo/maintenance ] && [ -d repo/state ] || fail "init creates dirs"
+[ -d repo/maintenance ] && [ -d repo/machines/state ] || fail "init creates dirs"
 [ -x repo/gradlew ] || fail "init's gradlew is executable"
 grep -q 'id("io.github.josemiguelo.loadout")' repo/build.gradle.kts || fail "init's build applies the loadout plugin"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -16,30 +16,30 @@ ok "init refuses to overwrite an existing repo"
 # --configs: a repo that holds dotfiles; compile gives its templates data
 # and the partial that picks this machine's.
 "$BIN" init --configs dots >/dev/null || fail "init --configs exits 0"
-[ "$(cat dots/.chezmoiroot)" = configs ] || fail "init --configs points chezmoi at configs/"
-[ -d dots/configs ] || fail "init --configs creates configs/"
-grep -q 'configs = "configs"' dots/loadout.kt || fail "init --configs declares configs in loadout.kt"
+[ "$(cat dots/.chezmoiroot)" = loadouts ] || fail "init --configs points chezmoi at loadouts/"
+[ -d dots/loadouts ] || fail "init --configs creates loadouts/"
+grep -q 'configs = "loadouts"' dots/loadout.kt || fail "init --configs declares configs in loadout.kt"
 [ ! -e repo/.chezmoiroot ] && ! grep -q 'configs =' repo/loadout.kt || fail "plain init has no configs"
 "$BIN" --repo dots compile >/dev/null 2>&1 || fail "init --configs compiles"
-[ -f dots/configs/.chezmoidata/loadout.json ] || fail "compile writes the templates' data"
-grep -qF '$table := get .loadout.machines $name' dots/configs/.chezmoitemplates/loadout/machine ||
+[ -f dots/loadouts/.chezmoidata/loadout.json ] || fail "compile writes the templates' data"
+grep -qF '$table := get .loadout.machines $name' dots/loadouts/.chezmoitemplates/loadout/machine ||
     fail "compile writes the loadout/machine partial"
 "$BIN" --repo dots explain >/dev/null || fail "the configs scaffold loads"
 ok "init --configs scaffolds a dotfiles repo whose compile writes the templates' data and partial"
 
-# Its layout: a tool's file where its files land, system/ for the rest.
-[ -f dots/configs/private_dot_config/.ripgrep.loadout.kt ] || fail "init --configs puts ripgrep where its files land"
-[ -d dots/system ] && [ ! -e dots/programs ] && [ ! -e dots/maintenance ] || fail "init --configs has system/, not programs/ or maintenance/"
-for g in 'system/**/*.loadout.kt' 'configs/**/.*.loadout.kt' 'configs/**/.*/.*.loadout.kt'; do
+# Its layout: everything in loadouts/, a tool's file where its files land.
+[ -f dots/loadouts/private_dot_config/.ripgrep.loadout.kt ] || fail "init --configs puts ripgrep where its files land"
+[ ! -e dots/system ] && [ ! -e dots/programs ] && [ ! -e dots/maintenance ] || fail "init --configs has only loadouts/, not system/, programs/ or maintenance/"
+for g in 'loadouts/**/.*.loadout.kt' 'loadouts/**/.*/.*.loadout.kt' 'loadouts/.etc/*/.*.loadout.kt'; do
     grep -qF "\"$g\"," dots/build.gradle.kts || fail "init --configs globs $g: $(cat dots/build.gradle.kts)"
 done
 "$BIN" --repo dots explain ripgrep | grep -q "sudo dnf install -y ripgrep" || fail "the dot-file manifest compiles"
 [ -d repo/programs ] && [ -d repo/maintenance ] && [ ! -e repo/system ] || fail "plain init keeps programs/ and maintenance/"
-ok "init --configs lays manifests out where their files land, with system/ for the rest"
+ok "init --configs lays manifests out in loadouts/, where their files land"
 
 # A tool with scripts and no dotfiles: a dot-folder (chezmoi deploys none of
 # it), whose own glob finds it, its script running from its folder.
-kt_file dots/configs/private_dot_config/.tool/.tool.loadout.kt <<'KT'
+kt_file dots/loadouts/private_dot_config/.tool/.tool.loadout.kt <<'KT'
 val tool = script(
     name = "tool",
     description = "sets the tool up",
@@ -50,11 +50,11 @@ val tool = script(
 
 val m1 = machine(hostname = "m1") { run(tool) }
 KT
-mkdir -p dots/configs/private_dot_config/.tool/.loadout
-printf '#!/bin/sh\ntouch setup-ran.txt\n' > dots/configs/private_dot_config/.tool/.loadout/setup.sh
+mkdir -p dots/loadouts/private_dot_config/.tool/.loadout
+printf '#!/bin/sh\ntouch setup-ran.txt\n' > dots/loadouts/private_dot_config/.tool/.loadout/setup.sh
 OUT=$("$BIN" --repo dots compile 2>&1) || fail "a dot-folder manifest compiles: $OUT"
 "$BIN" --repo dots --machine m1 run tool >/dev/null || fail "the dot-folder's script runs"
-[ -f dots/configs/private_dot_config/.tool/setup-ran.txt ] || fail "the dot-folder's script ran in its file's folder"
+[ -f dots/loadouts/private_dot_config/.tool/setup-ran.txt ] || fail "the dot-folder's script ran in its file's folder"
 ok "a tool's dot-folder compiles, and its script runs from that folder"
 
 # --- compile: the lock every other command reads ----------------------------
@@ -99,13 +99,13 @@ echo "$OUT" | grep -q "the manifests changed since loadout.lock.json was written
 ok "a lock older than its sources is refused until compiled again"
 
 # --- an unreadable state file is a warning, not a crash ------------------
-printf '{ this is not json' > repo/state/m1.json
+printf '{ this is not json' > repo/machines/state/m1.json
 OUT=$("$BIN" --repo repo --machine m1 status --no-write 2>&1) || fail "status survives a corrupt state file"
 echo "$OUT" | grep -q "not readable state" || fail "a corrupt state file warns"
 echo "$OUT" | grep -qi "Uncaught Kotlin exception" && fail "a corrupt state file must not crash" || true
 OUT=$("$BIN" --repo repo --machine m1 diff 2>&1 || true)
 echo "$OUT" | grep -q "not readable state" || fail "diff warns about a corrupt state file instead of hiding it"
-rm -f repo/state/m1.json
+rm -f repo/machines/state/m1.json
 "$BIN" --repo repo --machine m1 status >/dev/null || fail "status rewrites the state file"
 ok "an unreadable state file warns and is skipped, never a stack trace"
 
@@ -140,7 +140,7 @@ grep -q '"parent": {' kid/loadout.lock.json || fail "and its lock names the pare
 ok "init --parent scaffolds a child repo that compiles against its parent"
 
 "$BIN" --machine kidbox init --parent "$PWD/dad" --name dad --configs kiddots >/dev/null || fail "init --parent --configs scaffolds"
-[ "$(cat kiddots/.chezmoiroot)" = configs ] && [ -d kiddots/system ] && [ ! -e kiddots/programs ] || fail "a configs child has configs/ and system/"
-grep -qF '"configs/**/.*/.*.loadout.kt",' kiddots/build.gradle.kts || fail "a configs child globs dot-folders: $(cat kiddots/build.gradle.kts)"
+[ "$(cat kiddots/.chezmoiroot)" = loadouts ] && [ -d kiddots/loadouts ] && [ ! -e kiddots/system ] && [ ! -e kiddots/programs ] || fail "a configs child has loadouts/ only"
+grep -qF '"loadouts/**/.*/.*.loadout.kt",' kiddots/build.gradle.kts || fail "a configs child globs dot-folders: $(cat kiddots/build.gradle.kts)"
 OUT=$("$BIN" --repo kiddots compile 2>&1) || fail "the configs child compiles: $OUT"
 ok "init --parent --configs scaffolds a child laid out where files land"

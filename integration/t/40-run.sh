@@ -4,8 +4,8 @@ basic_repo repo
 
 "$BIN" --repo repo --machine m1 run marker >/dev/null || fail "run exits 0"
 [ -f repo/marker.txt ] || fail "script created marker.txt"
-grep -q '"marker"' repo/state/m1.json || fail "script state recorded"
-grep -q '"status": "done"' repo/state/m1.json || fail "script marked done"
+grep -q '"marker"' repo/machines/state/m1.json || fail "script state recorded"
+grep -q '"status": "done"' repo/machines/state/m1.json || fail "script marked done"
 ok "run executes a script and records state"
 
 OUT=$("$BIN" --repo repo --machine m1 run marker)
@@ -29,7 +29,7 @@ ok "run --all covers this machine's opted-in scripts, and rejects names alongsid
 OUT=$("$BIN" --repo repo --machine m2 run marker 2>&1 || true)
 echo "$OUT" | grep -q "is not run on machine 'm2'" || fail "not-enabled error message: $OUT"
 "$BIN" --repo repo --machine m2 status >/dev/null
-grep -q '"marker"' repo/state/m2.json && fail "m2 must not observe un-opted script" || true
+grep -q '"marker"' repo/machines/state/m2.json && fail "m2 must not observe un-opted script" || true
 ok "scripts are opt-in per machine"
 
 # Arguments flow to file scripts and their checks as positional params. The

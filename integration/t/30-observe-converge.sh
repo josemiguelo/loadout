@@ -4,12 +4,12 @@ basic_repo repo
 
 # --- status -------------------------------------------------------------
 "$BIN" --repo repo --machine m1 status >/dev/null || fail "status exits 0"
-[ -f repo/state/m1.json ] || fail "status writes state file"
-grep -q '"status": "installed"' repo/state/m1.json || fail "git detected as installed"
-grep -q '"machine": "m1"' repo/state/m1.json || fail "machine name recorded"
+[ -f repo/machines/state/m1.json ] || fail "status writes state file"
+grep -q '"status": "installed"' repo/machines/state/m1.json || fail "git detected as installed"
+grep -q '"machine": "m1"' repo/machines/state/m1.json || fail "machine name recorded"
 # The marker script never ran, but its check is observed -> pending.
-grep -q '"marker"' repo/state/m1.json || fail "script check observed on status"
-grep -q '"status": "pending"' repo/state/m1.json || fail "unrun script recorded as pending"
+grep -q '"marker"' repo/machines/state/m1.json || fail "script check observed on status"
+grep -q '"status": "pending"' repo/machines/state/m1.json || fail "unrun script recorded as pending"
 ok "status detects git, observes script checks, and writes state"
 
 "$BIN" --repo repo --machine m1 status --json | grep -q '"schemaVersion": 1' || fail "status --json"
@@ -61,7 +61,7 @@ echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped progra
 OUT=$("$BIN" --repo repo --machine m1 install never-mapped --dry-run 2>&1 || true)
 echo "$OUT" | grep -q "program 'never-mapped' isn't installed on machine 'm1'" || fail "unmapped-program error message: $OUT"
 "$BIN" --repo repo --machine m1 status >/dev/null
-grep -q '"never-mapped"' repo/state/m1.json && fail "unmapped program must not be observed" || true
+grep -q '"never-mapped"' repo/machines/state/m1.json && fail "unmapped program must not be observed" || true
 ok "unmapped programs are not part of the machine's loadout"
 
 # --- a machine the repo doesn't declare -----------------------------------
@@ -142,7 +142,7 @@ echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absen
 # The shell's own words: bash says "command not found", dash (Ubuntu's sh) "not found".
 echo "$OUT" | grep -qE "ghostpm-definitely-not-here: (command )?not found" || fail "status says what wasn't there"
 echo "$OUT" | grep -qE "byitself +missing" || fail "a program's own check not found means missing"
-grep -q '"reason"' probed/state/m1.json || fail "the reason is recorded in state"
+grep -q '"reason"' probed/machines/state/m1.json || fail "the reason is recorded in state"
 echo "$OUT" | grep -q "ghostpm-definitely-not-here is not on PATH — 1 program(s) not checked" || fail "status says, once and in words, which tool was missing"
 ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'"
 

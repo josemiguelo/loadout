@@ -5,8 +5,8 @@ worktree_repo bare.git wt
 
 # --- status/run/diff behave the same as a plain clone --------------------
 "$BIN" --repo wt --machine m1 status >/dev/null || fail "status exits 0 against a worktree path"
-grep -q '"status": "installed"' wt/state/m1.json || fail "status observes git from inside the worktree"
-grep -q '"status": "pending"' wt/state/m1.json || fail "the unrun script is observed from inside the worktree"
+grep -q '"status": "installed"' wt/machines/state/m1.json || fail "status observes git from inside the worktree"
+grep -q '"status": "pending"' wt/machines/state/m1.json || fail "the unrun script is observed from inside the worktree"
 ok "status works against a worktree path"
 
 "$BIN" --repo wt --machine m1 run marker >/dev/null || fail "run exits 0 against a worktree path"
@@ -28,7 +28,7 @@ git -C wt push -qu origin "$branch"
 "$BIN" --repo wt --machine m1 sync -m "m1: worktree sync" >/dev/null || fail "sync exits 0 against a worktree path"
 git -C origin.git log --oneline "$branch" | grep -q "m1: worktree sync" || {
     # State may have been unchanged; force a change and retry.
-    rm -f wt/state/m1.json
+    rm -f wt/machines/state/m1.json
     "$BIN" --repo wt --machine m1 sync -m "m1: worktree sync 2" >/dev/null || fail "sync exits 0 (retry)"
     git -C origin.git log --oneline "$branch" | grep -q "m1: worktree sync 2" || fail "sync pushed to the remote"
 }

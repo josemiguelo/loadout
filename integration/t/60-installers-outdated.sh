@@ -24,7 +24,7 @@ OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
 echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
 "$BIN" --repo instrepo --machine m1 setup-new-machine --yes >/dev/null || fail "installer-backed install exits 0"
 grep -q "installed-mytool" instrepo/fake-install.txt || fail "installer command ran"
-grep -q '"version": "1.0"' instrepo/state/m1.json || fail "installer check observed the version"
+grep -q '"version": "1.0"' instrepo/machines/state/m1.json || fail "installer check observed the version"
 ok "installers supply install/check/probe mechanics via {pkg}"
 
 # --- outdated: each installer's oracle reports the remote candidate ------
@@ -125,7 +125,7 @@ val m1 = machine(hostname = "m1") { install(fooapp, barapp) }
 KT
 compile_repo pacrepo
 PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
-grep -q '"version": "1.2.0"' pacrepo/state/m1.json || fail "pacman -Q's version is observed past the epoch"
+grep -q '"version": "1.2.0"' pacrepo/machines/state/m1.json || fail "pacman -Q's version is observed past the epoch"
 OUT=$(PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 outdated) || fail "outdated through the built-in pacman"
 echo "$OUT" | grep -qE "fooapp +1.2.0 +-> 1.3.0" || fail "checkupdates' candidate is reported"
 echo "$OUT" | grep -q "barapp" && fail "a package checkupdates doesn't list is up to date" || true

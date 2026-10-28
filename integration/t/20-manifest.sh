@@ -89,9 +89,9 @@ val m3 = machine(hostname = "m3") {
 KT
 compile_repo repo
 "$BIN" --repo repo --machine m3 status >/dev/null || fail "status with programs in another file"
-grep -q '"splitprog"' repo/state/m3.json || fail "the other file's program is checked"
+grep -q '"splitprog"' repo/machines/state/m3.json || fail "the other file's program is checked"
 "$BIN" --repo repo --machine m3 setup-new-machine --dry-run >/dev/null || fail "its machine plans"
-rm repo/programs/split.loadout.kt repo/state/m3.json
+rm repo/programs/split.loadout.kt repo/machines/state/m3.json
 compile_repo repo
 ok "every file the sources globs match compiles into one manifest"
 
@@ -147,7 +147,7 @@ ok "a program installed twice, or one that doesn't exist, doesn't compile"
 # --- data: declared once, overridden per profile and machine --------------
 kt_repo datarepo
 kt_file datarepo/loadout.kt <<'KT'
-val repo = repo(name = "test", state = "state", data = ::Data)
+val repo = repo(name = "test", state = "machines/state", data = ::Data)
 
 class Data : MachineData() {
     var omarchy by flag(false)
@@ -167,7 +167,7 @@ val git = root.program(name = "git") {
     }
 }
 KT
-kt_file datarepo/machines.loadout.kt <<'KT'
+kt_file datarepo/machines/machines.loadout.kt <<'KT'
 val omarchyProfile = profile(name = "omarchy") { data { omarchy = true } }
 
 val m9 = machine(hostname = "m9") {
@@ -185,7 +185,7 @@ echo "$OUT" | grep -qE "data.omarchy +true" || fail "the profile's value comes t
 OUT=$("$BIN" --repo datarepo --machine m2 explain)
 echo "$OUT" | grep -qE "data.omarchy +false" || fail "a machine without data gets the defaults: $OUT"
 grep -q '"opacity": 0.99' datarepo/loadout.lock.json || fail "the lock carries each machine's merged data"
-kt_file datarepo/machines.loadout.kt <<'KT'
+kt_file datarepo/machines/machines.loadout.kt <<'KT'
 val m9 = machine(hostname = "m9") {
     install(git)
     data { kitty.opacty = 0.5 }
@@ -263,7 +263,7 @@ KT
 printf '#!/bin/sh\necho done\n' > filerepo/scripts/check-filetool.sh
 compile_repo filerepo
 "$BIN" --repo filerepo --machine m1 status >/dev/null || fail "file: check runs"
-grep -q '"version": "done"' filerepo/state/m1.json || fail "file: check observed"
+grep -q '"version": "done"' filerepo/machines/state/m1.json || fail "file: check observed"
 ok "file: works in check commands"
 
 # --- a yes/no check: installed, no version ----------------------------------
@@ -385,7 +385,7 @@ echo "$OUT" | grep -qE "file +fedora.sh" || fail "explain shows the machine's va
 "$BIN" --repo variants --machine m1 run keyboard >/dev/null || fail "the variant runs"
 [ -f variants/maintenance/fedora-ran.txt ] || fail "the machine's variant's file ran"
 [ -f variants/maintenance/arch-ran.txt ] && fail "the other variant must not run" || true
-grep -q '"status": "done"' variants/state/m1.json || fail "the variant's own check observed it done"
+grep -q '"status": "done"' variants/machines/state/m1.json || fail "the variant's own check observed it done"
 ok "a machine runs the script variant it picked, checked by that variant's check"
 
 # --- no lock, and a custom state directory ----------------------------------
@@ -485,7 +485,7 @@ ok "compile warns about what no machine uses, unless it's marked spare"
 # A transitional script is named for deletion once every machine that runs
 # it reports it done, read from their state files.
 kt_repo transit
-kt_file transit/machines.loadout.kt <<'KT'
+kt_file transit/machines/machines.loadout.kt <<'KT'
 val cleanup = root.script(name = "cleanup") {
     run("rm -f old.txt")
     check("test ! -e old.txt")

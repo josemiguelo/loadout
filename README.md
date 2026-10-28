@@ -25,10 +25,11 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   (`machine(hostname = "laptop") { extends(macos, work) }`).
 - **One repo, laid out the way you choose.** The globs in
   `build.gradle.kts` name the manifest files. A tool's file can sit beside
-  its dotfiles (`configs/.config/tmux/.tmux.loadout.kt` next to
+  its dotfiles (`loadouts/.config/tmux/.tmux.loadout.kt` next to
   `tmux.conf`), and every path in it is relative to its folder. `init
-  --configs` lays a repo out that way: each tool where its files land,
-  `system/` for what belongs to no tool.
+  --configs` lays a repo out that way: everything in `loadouts/`, each
+  tool where its files land, and what lands outside your home (system
+  packages, hardware) in `loadouts/.etc/<concern>/`.
 - **Your dotfiles are part of the loadout.** With `repo(configs = …)`, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
@@ -42,7 +43,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   (`rpm -q kitty`, `chezmoi verify`, your own script). Converging means
   making the checks pass; observing means asking them again.
 - **Intent and observation never mix.** You author the manifest; each
-  machine writes only its own `state/<machine>.json`. Machines share state
+  machine writes only its own `machines/state/<machine>.json`. Machines share state
   through plain git: no server, works offline.
 - **Explicit over implicit.** No package-manager auto-detection, no
   fallbacks, no heuristics. Errors beat guesses, and the error carries the
@@ -76,7 +77,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ```console
 $ loadout init ~/loadouts && cd ~/loadouts
-$ $EDITOR programs/ machines.loadout.kt      # declare programs; say what this machine installs
+$ $EDITOR programs/ machines/               # declare programs; say what this machine installs
 $ loadout compile                            # writes loadout.lock.json (commit it)
 $ loadout status                             # observe
 $ loadout setup-new-machine                  # converge
@@ -96,7 +97,7 @@ val ripgrep = program(
     )
 }
 
-// machines.loadout.kt
+// machines/machines.loadout.kt
 val laptop = machine(hostname = "laptop") {
     via(dnf) {
         install(ripgrep)

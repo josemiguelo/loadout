@@ -35,7 +35,7 @@ printf '.config/zsh/.zshrc\n.config/zsh/conf.d/a.zsh\n.config/tmux/tmux.conf\n.z
 printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
 
 basic_repo repo
-sed -i.bak 's/state = "state",/state = "state", configs = "configs",/' repo/loadout.kt && rm repo/loadout.kt.bak
+sed -i.bak 's|state = "machines/state",|state = "machines/state", configs = "configs",|' repo/loadout.kt && rm repo/loadout.kt.bak
 grep -q 'configs = "configs"' repo/loadout.kt || fail "the fixture declares configs"
 mkdir -p repo/configs
 compile_repo repo
@@ -72,13 +72,13 @@ echo "$OUT" | grep -qE "zsh +drifted" || fail "a unit with a file apply would ch
 echo "$OUT" | grep -q "\.config/zsh/\.zshrc" || fail "the drifted file is named: $OUT"
 echo "$OUT" | grep -qE "tmux +applied" || fail "a unit with nothing to apply is applied: $OUT"
 echo "$OUT" | grep -qE "\.zshenv +applied" || fail "a home-level file is its own unit: $OUT"
-grep -q '"drifted"' repo/state/m1.json || fail "configs are written to the state file"
+grep -q '"drifted"' repo/machines/state/m1.json || fail "configs are written to the state file"
 grep -q -- "--source $(cd repo && pwd -P)/configs" "$CZ/log" || fail "chezmoi reads the layout's configs as its source"
 ok "status observes each config unit through chezmoi and writes it to state"
 
 basic_repo plain
 "$BIN" --repo plain --machine m1 status | grep -q "CONFIG" && fail "no configs section without the layout's configs" || true
-grep -q '"configs"' plain/state/m1.json && fail "no configs key without the layout's configs" || true
+grep -q '"configs"' plain/machines/state/m1.json && fail "no configs key without the layout's configs" || true
 ok "a repo without configs never asks chezmoi and writes no configs"
 
 OUT=$(cz_loadout --repo repo --machine m1 explain zsh) || fail "explain a config exits 0"
@@ -118,7 +118,7 @@ OUT=$(cz_loadout --repo repo --machine m1 apply --force zsh) || fail "apply --fo
 grep -q "apply --no-tty --force $CZ/home/.config/zsh/.zshrc $CZ/home/.config/zsh/conf.d/a.zsh$" "$CZ/log" ||
     fail "apply hands chezmoi the unit's targets: $(cat "$CZ/log")"
 echo "$OUT" | grep -q "applied zsh" || fail "apply says what it applied: $OUT"
-grep -q '"drifted"' repo/state/m1.json && fail "state is refreshed after apply"
+grep -q '"drifted"' repo/machines/state/m1.json && fail "state is refreshed after apply"
 ok "apply --force writes the named configs and refreshes state"
 
 printf ' M .zshenv\n' > "$CZ/status"
@@ -144,7 +144,7 @@ cz_loadout --repo repo --machine m1 sync -m "m1: synced" >/dev/null || fail "syn
 sed -nE 's/^--source [^ ]+ --no-pager ([a-z-]+).*/\1/p' "$CZ/log" | tr '\n' ' ' | grep -q "^status apply managed status" ||
     fail "sync checks, applies, then observes: $(cat "$CZ/log")"
 git -C repo log --oneline | grep -q "m1: synced" || fail "sync commits the state"
-grep -q '"drifted"' repo/state/m1.json && fail "the committed state is after the apply"
+grep -q '"drifted"' repo/machines/state/m1.json && fail "the committed state is after the apply"
 ok "sync applies configs before refreshing and committing state"
 
 # --- the home screen's configs row ----------------------------------------

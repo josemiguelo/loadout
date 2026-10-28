@@ -33,7 +33,7 @@ loadout {
 }
 KTS
     kt_file "$1/child.kt" <<'KT'
-val child = repo(name = "work", state = "state")
+val child = repo(name = "work", state = "machines/state")
 KT
     kt_file "$1/machines/work.loadout.kt" <<'KT'
 val worktool = root.program(name = "worktool") {
@@ -89,8 +89,8 @@ OUT=$("$BIN" --repo work --machine work explain where-parent 2>&1) || fail "expl
 echo "$OUT" | grep -qE "from +parent dots \(its root\)" || fail "explain says the script is the parent's: $OUT"
 OUT=$("$BIN" --repo work --machine work explain 2>&1)
 echo "$OUT" | grep -qE "parent +dots \($PARENT\)" || fail "explain's machine block names the parent: $OUT"
-[ -f work/state/work.json ] || fail "the child machine's state is in the child"
-[ -e dots/state/work.json ] && fail "and never in the parent"
+[ -f work/machines/state/work.json ] || fail "the child machine's state is in the child"
+[ -e dots/machines/state/work.json ] && fail "and never in the parent"
 ok "a parent's command runs in the parent's checkout with its LOADOUT_REPO; a child's in the child"
 
 # --- staleness and a missing parent -----------------------------------------
@@ -152,11 +152,11 @@ chmod +x "$CZ/bin/chezmoi"
 export CZ
 cz_loadout() { PATH="$CZ/bin:$PATH" "$BIN" "$@"; }
 
-sed -i.bak 's/state = "state",/state = "state", configs = "configs",/' dots/loadout.kt && rm dots/loadout.kt.bak
+sed -i.bak 's|state = "machines/state",|state = "machines/state", configs = "configs",|' dots/loadout.kt && rm dots/loadout.kt.bak
 grep -q 'configs = "configs"' dots/loadout.kt || fail "the parent fixture declares configs"
 mkdir -p dots/configs
 "$BIN" --repo dots compile >/dev/null 2>&1 || fail "the parent compiles with configs"
-sed -i.bak 's/repo(name = "work", state = "state")/repo(name = "work", state = "state", configs = "configs")/' work/child.kt && rm work/child.kt.bak
+sed -i.bak 's|repo(name = "work", state = "machines/state")|repo(name = "work", state = "machines/state", configs = "configs")|' work/child.kt && rm work/child.kt.bak
 mkdir -p work/configs
 OUT=$("$BIN" --repo work compile 2>&1) || fail "the child compiles with configs: $OUT"
 [ "$(grep -c '"configs": "configs"' work/loadout.lock.json)" = 2 ] || fail "the child's lock records its configs and the parent's"
@@ -184,7 +184,7 @@ ok "a file both repos manage is reported and refused, naming both"
 
 # --- the fleet, and the parent left alone -------------------------------------
 sed -i.bak '/^\.config\/git\/config$/d' work/configs/.stub-managed && rm work/configs/.stub-managed.bak
-OUT=$(cz_loadout --repo dots --machine m1 status 2>&1); [ -f dots/state/m1.json ] || fail "the parent records its own machine: $OUT"
+OUT=$(cz_loadout --repo dots --machine m1 status 2>&1); [ -f dots/machines/state/m1.json ] || fail "the parent records its own machine: $OUT"
 OUT=$(cz_loadout --repo work --machine work diff 2>&1) || fail "diff runs in a child: $OUT"
 echo "$OUT" | grep -q "work" && echo "$OUT" | grep -q "m1" || fail "the fleet is the parent's machines and the child's: $OUT"
 ok "a child's diff shows its machines beside the parent's"

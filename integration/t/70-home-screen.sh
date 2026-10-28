@@ -58,9 +58,9 @@ if has_pty; then
     seen tui-scripts.log "Run .* Cancel" || fail "the question shows its two buttons"
     grep -qa "still not done: drifted (missing: nodejs 16" tui-scripts.log \
         || fail "run re-checks and names what is still not done, with what its check printed"
-    grep -q '"drifted"' srepo/state/m1.json || fail "the run records the scripts in the state file"
-    grep -q '"status": "pending"' srepo/state/m1.json || fail "the recorded status comes from the rerun check"
-    grep -q '"exitCode": 0' srepo/state/m1.json || fail "the recorded exit code is the script's own"
+    grep -q '"drifted"' srepo/machines/state/m1.json || fail "the run records the scripts in the state file"
+    grep -q '"status": "pending"' srepo/machines/state/m1.json || fail "the recorded status comes from the rerun check"
+    grep -q '"exitCode": 0' srepo/machines/state/m1.json || fail "the recorded exit code is the script's own"
     seen_after_back tui-scripts.log 'space tick' || fail "the screen comes back with the picker still open"
     grep -qai "Tty already bound" tui-scripts.log && fail "the screen must reopen in the same process" || true
     # The command ran on the alternate screen too: it is left once, on quit,
@@ -106,12 +106,12 @@ KT
     # happened, nothing recorded them. A read-only state FILE forces it — a
     # read-only directory would not: rewriting an existing file needs no
     # directory permission. q at the way-back prompt quits from there.
-    chmod 400 srepo/state/m1.json
+    chmod 400 srepo/machines/state/m1.json
     { wait_settled tui-nowrite.log; printf 'j'; sleep 0.4; printf 'l'; wait_screen tui-nowrite.log 'space tick'
       printf 'a'; sleep 0.4; printf '\r'; wait_screen tui-nowrite.log 'These scripts will run'
       printf '\r'; wait_back tui-nowrite.log; printf 'q\r'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE pty_run tui-nowrite.log --repo srepo --machine m1
-    chmod 600 srepo/state/m1.json
+    chmod 600 srepo/machines/state/m1.json
     seen tui-nowrite.log "error: " || fail "a failed state write is said, not swallowed"
     seen tui-nowrite.log "━━ ✘ exit 1 ━" || fail "and the closing rule says the command failed"
     ok "the terminal says so when the state file can't be written"
@@ -313,7 +313,7 @@ if has_pty; then
     grep -qa "nope" tui-install.log && fail "the password must never be echoed" || true
     grep -qa "2/2 programs installed" tui-install.log || fail "the right password runs the installs"
     [ -f irepo/fake-alpha.txt ] && [ -f irepo/fake-beta.txt ] || fail "both ticked programs were installed"
-    grep -c '"status": "installed"' irepo/state/m1.json | grep -qx 2 || fail "the re-check recorded both as installed"
+    grep -c '"status": "installed"' irepo/machines/state/m1.json | grep -qx 2 || fail "the re-check recorded both as installed"
     seen_after_back tui-install.log 'nothing miss' || fail "the screen comes back with the programs row settled"
     ok "the programs row installs in the terminal, where sudo asks for its own password"
 fi

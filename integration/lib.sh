@@ -13,12 +13,12 @@ new_work() { mktemp -d -p "$WORK"; }
 # fixture copies, so fixtures build exactly like a scaffolded repo.
 
 # The Gradle skeleton and a minimal loadout.kt in <dir>: a repo named test
-# with its state in state/. Fixtures add manifests with kt_file.
+# with its state in machines/state/. Fixtures add manifests with kt_file.
 kt_repo() {
-    mkdir -p "$1/state" "$1/gradle"
+    mkdir -p "$1/machines/state" "$1/gradle"
     cp "$KT_TEMPLATE/settings.gradle.kts" "$KT_TEMPLATE/build.gradle.kts" "$KT_TEMPLATE/gradlew" "$KT_TEMPLATE/.gitignore" "$1/"
     cp -R "$KT_TEMPLATE/gradle/wrapper" "$1/gradle/"
-    printf 'val repo = repo(name = "test", state = "state")\n' | kt_file "$1/loadout.kt"
+    printf 'val repo = repo(name = "test", state = "machines/state")\n' | kt_file "$1/loadout.kt"
 }
 
 # stdin as the Kotlin manifest file <path>, in the repo package with the
@@ -86,7 +86,7 @@ val marker = root.script(name = "marker") {
     check("test -f marker.txt")
 }
 KT
-    kt_file "$1/machines.loadout.kt" <<'KT'
+    kt_file "$1/machines/machines.loadout.kt" <<'KT'
 val m1 = machine(hostname = "m1") {
     install(git.variant(name = "manual"))
     run(marker)
@@ -158,7 +158,7 @@ val bootstrapOnly = root.script(name = "bootstrap-only") {
     setupOnly()
 }
 KT
-    kt_file "$1/machines.loadout.kt" <<'KT'
+    kt_file "$1/machines/machines.loadout.kt" <<'KT'
 val m1 = machine(hostname = "m1") {
     install(mytool)
     run(healthy, drifted, bootstrapOnly)

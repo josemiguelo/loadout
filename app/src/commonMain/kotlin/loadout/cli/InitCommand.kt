@@ -46,23 +46,24 @@ private fun build(configs: Boolean) = """
         sources(
             "loadout.kt",
 ${sourceGlobs(configs).joinToString("\n") { "            \"$it\"," }}
-            "machines.loadout.kt",
+            "machines/**/*.loadout.kt",
         )
     }
 """.trimIndent() + "\n"
 
 /**
  * Where a repo's manifests live, between its root file and its machines.
- * With configs, a tool's file sits where its files land in your home:
- * beside its dotfiles, or as a dot entry (a file, or a folder for one with
- * scripts) that chezmoi never deploys, even when its work happens outside
- * your home; what belongs to no tool (system packages, hardware) is in
- * system/. `**` never enters a dot folder, so a manifest in one has its own
- * glob.
+ * With configs, everything is in loadouts/: a tool's file sits where its
+ * files land in your home, beside its dotfiles, or as a dot entry (a file,
+ * or a folder for one with scripts) that chezmoi never deploys, even when its
+ * work happens outside your home; what lands outside it and belongs to no
+ * tool (system packages, hardware) is a folder per concern in loadouts/.etc/
+ * (.etc/dnf/, .etc/t2/). `**` never enters a dot folder, so a manifest in
+ * one has its own glob, and .etc/ one that names it.
  */
 private fun sourceGlobs(configs: Boolean) =
     if (configs) {
-        listOf("system/**/*.loadout.kt", "configs/**/.*.loadout.kt", "configs/**/.*/.*.loadout.kt")
+        listOf("loadouts/**/.*.loadout.kt", "loadouts/**/.*/.*.loadout.kt", "loadouts/.etc/*/.*.loadout.kt")
     } else {
         listOf("programs/**/*.loadout.kt", "maintenance/**/*.loadout.kt")
     }
@@ -74,7 +75,7 @@ private fun rootFile(configs: Boolean) = """
 
     import loadout.dsl.*
 
-    val loadout = repo(name = "my machines", state = "state",${if (configs) " configs = \"configs\"," else ""} data = ::Data)
+    val loadout = repo(name = "my machines", state = "machines/state",${if (configs) " configs = \"loadouts\"," else ""} data = ::Data)
 
     /** Every per-machine setting, with its default. */
     class Data : MachineData() {
@@ -171,7 +172,7 @@ private fun childRootFile(pkg: String, name: String, configs: Boolean) = """
 
     import loadout.dsl.*
 
-    val child = repo(name = "my machines", state = "state"${if (configs) ", configs = \"configs\"" else ""})
+    val child = repo(name = "my machines", state = "machines/state"${if (configs) ", configs = \"loadouts\"" else ""})
 """.trimIndent() + "\n"
 
 private fun childMachine(pkg: String, name: String, hostname: String) = """
@@ -194,15 +195,15 @@ private val GITIGNORE = """
 
 class InitCommand : CliktCommand(name = "init") {
     override fun help(context: Context) = commandHelp(
-        "Scaffold a new config repo (Kotlin manifests, a Gradle wrapper, state/) and git init it.",
+        "Scaffold a new config repo (Kotlin manifests, a Gradle wrapper, machines/state/) and git init it.",
         "[path]     where to scaffold (default: current directory)",
-        "--configs  hold your dotfiles too: chezmoi's source in configs/, each tool's manifest where its files land; system/ for the rest",
+        "--configs  hold your dotfiles too: chezmoi's source in loadouts/, each tool's manifest where its files land",
         "--parent   a child repo of the compiled repo at this path (contract 18): uses its declarations by name",
         "--name     what the child calls its parent (default: parent)",
     )
 
     private val path by argument(name = "path").help("Where to create the repo").default(".")
-    private val configs by option("--configs", help = "Hold dotfiles too (chezmoi's source in configs/, each tool's manifest where its files land)").flag()
+    private val configs by option("--configs", help = "Hold dotfiles too (chezmoi's source in loadouts/, each tool's manifest where its files land)").flag()
     private val parent by option("--parent", help = "Scaffold a child repo of the compiled repo at this path")
     private val parentName by option("--name", help = "What the child calls its parent").default("parent")
 
@@ -221,26 +222,26 @@ class InitCommand : CliktCommand(name = "init") {
         val home = LoadoutHome.find(fs)
         val hostname = app.detectSystem().machine
 
-        for (dir in listOf("state", "gradle/wrapper")) fs.createDirectories(root / dir)
+        for (dir in listOf("machines/state", "gradle/wrapper")) fs.createDirectories(root / dir)
         fs.write(root / "settings.gradle.kts") { writeUtf8(SETTINGS) }
         fs.write(root / "build.gradle.kts") { writeUtf8(build(configs)) }
         fs.write(root / "loadout.kt") { writeUtf8(rootFile(configs)) }
-        fs.write(root / "machines.loadout.kt") { writeUtf8(machines(hostname)) }
+        fs.write(root / "machines" / "machines.loadout.kt") { writeUtf8(machines(hostname)) }
         fs.write(root / ".gitignore") { writeUtf8(GITIGNORE) }
-        fs.write(root / "state" / ".gitkeep") { }
+        fs.write(root / "machines" / "state" / ".gitkeep") { }
         copyWrapper(home, root)
-        val example = if (configs) "configs/private_dot_config/.ripgrep.loadout.kt" else "programs/cli.loadout.kt"
+        val example = if (configs) "loadouts/private_dot_config/.ripgrep.loadout.kt" else "programs/cli.loadout.kt"
         if (configs) {
-            // chezmoi reads only configs/; the compile writes its data and
+            // chezmoi reads only loadouts/; the compile writes its data and
             // the loadout/machine partial there.
-            fs.write(root / ".chezmoiroot") { writeUtf8("configs\n") }
+            fs.write(root / ".chezmoiroot") { writeUtf8("loadouts\n") }
         }
         for (dir in folders(configs)) fs.createDirectories(root / dir)
         (root / example).parent?.let(fs::createDirectories)
         fs.write(root / example) { writeUtf8(programs(configs)) }
         for (dir in folders(configs).filter { !example.startsWith("$it/") }) fs.write(root / dir / ".gitkeep") { }
-        val parts = listOf("loadout.kt") + folders(configs).map { if (it == "configs") "configs/ (chezmoi's source)" else "$it/" } +
-            listOf("machines.loadout.kt", "state/")
+        val parts = listOf("loadout.kt") + folders(configs).map { if (it == "loadouts") "loadouts/ (chezmoi's source)" else "$it/" } +
+            listOf("machines/ (machines.loadout.kt, state/)")
         echo("Created $root: ${parts.joinToString()} and a Gradle wrapper")
 
         val git = GitClient(app.runner, root)
@@ -255,12 +256,13 @@ class InitCommand : CliktCommand(name = "init") {
         echo(Style.header("Next steps:"))
         echo("  1. Open $root in your IDE (it's a Gradle project) and add programs and scripts")
         if (configs) {
-            echo("     (a tool's file sits where its files land: $example; system/ for the rest)")
+            echo("     (a tool's file sits where its files land: $example;")
+            echo("     what lands outside your home in loadouts/.etc/<concern>/, like loadouts/.etc/dnf/)")
         }
-        echo("  2. Say what this machine installs in machines.loadout.kt")
+        echo("  2. Say what this machine installs in machines/machines.loadout.kt")
         echo("  3. loadout --repo $root compile   # writes ${LockFile.NAME}; needs a JDK")
         if (configs) {
-            echo("     (and configs/.chezmoidata/loadout.json + .chezmoitemplates/loadout/machine:")
+            echo("     (and loadouts/.chezmoidata/loadout.json + .chezmoitemplates/loadout/machine:")
             echo("     templates read this machine's data with includeTemplate \"loadout/machine\" . | fromJson)")
         }
         echo("  4. loadout --repo $root status")
@@ -296,15 +298,15 @@ class InitCommand : CliktCommand(name = "init") {
         val home = LoadoutHome.find(fs)
         val hostname = app.detectSystem().machine
 
-        for (dir in listOf("machines", "state", "gradle/wrapper") + folders(configs)) fs.createDirectories(root / dir)
+        for (dir in listOf("machines/state", "gradle/wrapper") + folders(configs)) fs.createDirectories(root / dir)
         fs.write(root / "settings.gradle.kts") { writeUtf8(SETTINGS) }
         fs.write(root / "build.gradle.kts") { writeUtf8(childBuild(parentName, parentPath, configs)) }
         fs.write(root / "child.kt") { writeUtf8(childRootFile(pkg, parentName, configs)) }
         fs.write(root / "machines" / "$hostname.loadout.kt") { writeUtf8(childMachine(pkg, parentName, hostname)) }
         fs.write(root / ".gitignore") { writeUtf8(GITIGNORE) }
-        for (dir in listOf("state") + folders(configs)) fs.write(root / dir / ".gitkeep") { }
+        for (dir in listOf("machines/state") + folders(configs)) fs.write(root / dir / ".gitkeep") { }
         copyWrapper(home, root)
-        if (configs) fs.write(root / ".chezmoiroot") { writeUtf8("configs\n") }
+        if (configs) fs.write(root / ".chezmoiroot") { writeUtf8("loadouts\n") }
         echo("Created $root: a child repo of $parentName ($parentPath)")
         val git = GitClient(app.runner, root)
         if (!git.isRepo()) git.init()
@@ -315,8 +317,8 @@ class InitCommand : CliktCommand(name = "init") {
         echo("  3. Point LOADOUT_REPO at $root on this machine, then: loadout status")
     }
 
-    /** The folders manifests go in: programs and scripts, or configs/ and system/. */
-    private fun folders(configs: Boolean) = if (configs) listOf("configs", "system") else listOf("programs", "maintenance")
+    /** The folders manifests go in: programs and scripts, or loadouts/. */
+    private fun folders(configs: Boolean) = if (configs) listOf("loadouts") else listOf("programs", "maintenance")
 
     /** The Gradle wrapper loadout ships, so the repo builds with a known Gradle. */
     private fun copyWrapper(home: Path, root: Path) {

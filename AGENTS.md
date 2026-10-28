@@ -541,14 +541,18 @@ Explicit user decisions; don't "improve" them away.
       lock and refuses a missing or different file ("run: loadout
       compile"), so dotfiles never render from data the manifests don't
       say. `init --configs` scaffolds such a repo (`repo(configs =
-      "configs")`, a `.chezmoiroot`, `configs/`), laid out where files
-      land: a tool's manifest sits at its destination in `configs/` (beside
-      its dotfiles; with none, a dot-file, or a dot-folder for one with
-      scripts, since chezmoi deploys no dot entry and a plain folder
-      holding only a manifest would land empty in `$HOME`), and `system/`
-      holds what belongs to no tool (system packages, hardware). `**`
+      "loadouts")`, a `.chezmoiroot`, `loadouts/`), every manifest in
+      `loadouts/`, laid out where files land: a tool's manifest sits at its
+      destination (beside its dotfiles; with none, a dot-file, or a
+      dot-folder for one with scripts, since chezmoi deploys no dot entry
+      and a plain folder holding only a manifest would land empty in
+      `$HOME`), and what lands outside `$HOME` and belongs to no tool
+      (system packages, hardware) is a folder per concern in `.etc/`
+      (`.etc/dnf/`).
+      No `system/` beside it: one folder holds the whole loadout. `**`
       never enters a dot folder, so the scaffold's globs spell it
-      (`configs/**/.*/.*.loadout.kt`) beside `configs/**/.*.loadout.kt`. Plain `init` keeps `programs/` and
+      (`loadouts/**/.*/.*.loadout.kt`) beside `loadouts/**/.*.loadout.kt`,
+      and `.etc/`'s folders get `loadouts/.etc/*/.*.loadout.kt`. Plain `init` keeps `programs/` and
       `maintenance/`.
 
 18. **A child repo inherits a parent; nothing flows back.** A private repo
@@ -841,7 +845,7 @@ Explicit user decisions; don't "improve" them away.
   `finally`, which is what lets the hand-off loop reopen the screen in the
   same process. Keep it.
 - **The picker opens on the LAST OBSERVED verdicts**: `load()` reads
-  `state/<machine>.json`; the refresh that follows re-asks and updates the
+  `<state>/<machine>.json`; the refresh that follows re-asks and updates the
   rows in place. A script's verdict is always its check.
 - **Manifests are Kotlin, compiled on the JVM; the binary reads JSON.**
   `loadout compile` runs `./gradlew -q loadoutCompile` in the repo with
@@ -882,7 +886,7 @@ Explicit user decisions; don't "improve" them away.
   compiles each file's top-level code into a class named after the file,
   and a declaration finds its folder by its file's name. A manifest beside
   a config is `.<unit>.loadout.kt` (the leading dot keeps chezmoi from
-  deploying it; the glob `configs/**/.*.loadout.kt` spells the dot).
+  deploying it; the glob `loadouts/**/.*.loadout.kt` spells the dot).
 - **References go one way between a file and its object**: Kotlin
   initialises a file's top-level values when any is first read, and an
   `object`'s members when it's first read. A member that reads a top-level
