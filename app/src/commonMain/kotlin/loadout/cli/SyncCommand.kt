@@ -80,7 +80,9 @@ class SyncCommand : CliktCommand(name = "sync") {
             compileRepo(app)
         }
 
-        // Load after pulling so we see the latest manifest.
+        // Load after pulling so we see the latest manifest, and read the
+        // layout again: the pull or the compile can rename its folders.
+        app.reloadLayout()
         val manifest = try {
             app.loadManifest()
         } catch (e: ToolTooOldException) {

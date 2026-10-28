@@ -7,12 +7,13 @@ mkdir -p "$CZ/bin" "$CZ/home"
 cat > "$CZ/bin/chezmoi" <<'SH'
 #!/bin/sh
 # Stub: logs every call; answers managed/status/target-path from $CZ files;
-# `apply` empties the status (everything applied) unless told to fail.
+# `apply` empties the status (everything applied) unless told to fail. A
+# source folder that isn't there fails, as chezmoi's stat does.
 echo "$*" >> "$CZ/log"
 [ -f "$CZ/absent" ] && { echo "sh: chezmoi: not found" >&2; exit 127; }
 while [ $# -gt 0 ]; do
     case "$1" in
-    --source) shift 2 ;;
+    --source) [ -d "$2" ] || { echo "chezmoi: stat $2: no such file or directory" >&2; exit 1; }; shift 2 ;;
     --no-pager) shift ;;
     *) break ;;
     esac
@@ -146,6 +147,24 @@ sed -nE 's/^--source [^ ]+ --no-pager ([a-z-]+).*/\1/p' "$CZ/log" | tr '\n' ' ' 
 git -C repo log --oneline | grep -q "m1: synced" || fail "sync commits the state"
 grep -q '"drifted"' repo/machines/state/m1.json && fail "the committed state is after the apply"
 ok "sync applies configs before refreshing and committing state"
+
+# A pull that renames the configs folder: sync applies from the new one, not
+# from the folder the lock named before the pull.
+git init -q --bare origin.git
+git -C repo remote add origin "$PWD/origin.git"
+git -C repo push -qu origin HEAD 2>/dev/null
+git clone -q origin.git elsewhere
+git -C elsewhere config user.email test@example.com && git -C elsewhere config user.name "Integration Test"
+git -C elsewhere mv configs dots
+sed -i.bak 's|configs = "configs"|configs = "dots"|' elsewhere/loadout.kt && rm elsewhere/loadout.kt.bak
+compile_repo elsewhere
+git -C elsewhere add -A && git -C elsewhere commit -qm "configs is dots now" && git -C elsewhere push -q 2>/dev/null
+printf ' M .zshenv\n' > "$CZ/status"
+: > "$CZ/log"
+OUT=$(cz_loadout --repo repo --machine m1 sync 2>&1) || fail "sync applies from the folder its pull renamed: $OUT"
+grep -q "^--source [^ ]*/repo/dots --no-pager apply" "$CZ/log" || fail "the apply's source is the renamed folder: $(cat "$CZ/log")"
+grep -q "/repo/configs " "$CZ/log" && fail "nothing reads the old folder: $(cat "$CZ/log")"
+ok "sync applies from a configs folder its own pull renamed"
 
 # --- the home screen's configs row ----------------------------------------
 # The stub goes on PATH in a subshell: an assignment in front of a shell

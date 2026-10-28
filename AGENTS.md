@@ -515,7 +515,12 @@ Explicit user decisions; don't "improve" them away.
       pull → (upgrade loadout, contract 15) → refuse edited → apply →
       refresh → name what's left (missing programs, scripts not done) →
       commit → push; nothing is committed after a refusal or a failed
-      apply. It never installs or runs scripts itself.
+      apply. It never installs or runs scripts itself. Its pull (or a
+      parent's, through the child's compile) can rename the repo's
+      folders, so `sync` calls `AppContext.reloadLayout()` after them:
+      everything read from the layout (configs and state folders, the
+      parent, chezmoi's sources) is read again, never kept from before
+      the pull.
     - **State**: `MachineState.configs`, left out of the file when empty
       (`@EncodeDefault(NEVER)`), so repos without configs write what they
       always did and older readers ignore it (schema stays 1). `diff`

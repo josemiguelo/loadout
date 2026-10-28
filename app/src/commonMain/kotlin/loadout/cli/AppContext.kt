@@ -26,14 +26,47 @@ class AppContext(
 ) {
     val fs: FileSystem = FileSystem.SYSTEM
     val runner: ProcessRunner = KommandProcessRunner()
+    /**
+     * What the lock's layout decides (folders, the parent, chezmoi's sources),
+     * read once. [reloadLayout] reads it again: a pull or a compile can move
+     * them (a repo that renames its configs folder), and everything after
+     * must use the new names.
+     */
+    private inner class FromLayout {
+        /** The lock's layout, read without the checks a full load makes. */
+        val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot) }
+        val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
+        val parentRoot: Path? by lazy { ManifestLoader.parentRoot(fs, repoRoot, layout) }
+        val parentStateStore: StateStore? by lazy {
+            layout.parent?.let { parent -> parentRoot?.let { StateStore(fs, it, parent.state, readOnly = true) } }
+        }
+        val configs: ConfigEngine? by lazy {
+            val root = fs.canonicalize(repoRoot)
+            val sources = listOfNotNull(
+                layout.parent?.configs?.let { parentConfigs ->
+                    parentRoot?.let { ConfigEngine.Source("$it/$parentConfigs", "parent ${layout.parent?.name}") }
+                },
+                layout.configs?.let { ConfigEngine.Source("$root/$it") },
+            )
+            if (sources.isEmpty()) return@lazy null
+            val env = mapOf("LOADOUT_REPO" to root.toString(), "LOADOUT_MACHINE" to detectSystem().machine)
+            ConfigEngine(runner, sources, env)
+        }
+    }
+
+    private var fromLayout = FromLayout()
+
+    /** Forget the layout read so far; the next use reads the lock again (sync, after its pulls and compile). */
+    fun reloadLayout() {
+        fromLayout = FromLayout()
+    }
+
     /** The lock's layout, read without the checks a full load makes. */
-    val layout: RepoLayout by lazy { ManifestLoader.readLayout(fs, repoRoot) }
-    val stateStore: StateStore by lazy { StateStore(fs, repoRoot, layout.state) }
+    val layout: RepoLayout get() = fromLayout.layout
+    val stateStore: StateStore get() = fromLayout.stateStore
 
     /** A child repo's parent's state, read for the fleet view only. */
-    private val parentStateStore: StateStore? by lazy {
-        layout.parent?.let { parent -> parentRoot?.let { StateStore(fs, it, parent.state, readOnly = true) } }
-    }
+    private val parentStateStore: StateStore? get() = fromLayout.parentStateStore
 
     /**
      * Every machine's state the fleet view shows: this repo's, and for a child
@@ -52,7 +85,7 @@ class AppContext(
     fun detectSystem(): SystemInfo = detection.detectSystem(machineOverride)
 
     /** A child repo's parent checkout (contract 18), or null. */
-    val parentRoot: Path? by lazy { ManifestLoader.parentRoot(fs, repoRoot, layout) }
+    val parentRoot: Path? get() = fromLayout.parentRoot
 
     /** How manifest commands run on [system]: declaring file's directory (a parent's in the parent), LOADOUT_* env. */
     fun frame(system: SystemInfo): CommandFrame =
@@ -70,18 +103,7 @@ class AppContext(
      * sees the repo and machine loadout runs as, so the templates' partial
      * agrees with `--repo` and `--machine`.
      */
-    val configs: ConfigEngine? by lazy {
-        val root = fs.canonicalize(repoRoot)
-        val sources = listOfNotNull(
-            layout.parent?.configs?.let { parentConfigs ->
-                parentRoot?.let { ConfigEngine.Source("$it/$parentConfigs", "parent ${layout.parent?.name}") }
-            },
-            layout.configs?.let { ConfigEngine.Source("$root/$it") },
-        )
-        if (sources.isEmpty()) return@lazy null
-        val env = mapOf("LOADOUT_REPO" to root.toString(), "LOADOUT_MACHINE" to detectSystem().machine)
-        ConfigEngine(runner, sources, env)
-    }
+    val configs: ConfigEngine? get() = fromLayout.configs
 
     /** The observer every refresh uses: programs, scripts and configs. */
     fun statusEngine(system: SystemInfo): StatusEngine {

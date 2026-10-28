@@ -139,6 +139,8 @@ while [ $# -gt 0 ]; do
     *) break ;;
     esac
 done
+# A source folder that isn't there fails, as chezmoi's stat does.
+[ -z "$src" ] || [ -d "$src" ] || { echo "chezmoi: stat $src: no such file or directory" >&2; exit 1; }
 echo "$(basename "$(dirname "$src")") $* repo=$LOADOUT_REPO machine=$LOADOUT_MACHINE" >> "$CZ/log"
 case "$1" in
 managed) cat "$src/.stub-managed" 2>/dev/null || true ;;
@@ -232,3 +234,16 @@ git -C work.git log -1 --name-only --format=%s | grep -q "loadout.lock.json" || 
 [ -z "$(git -C dots status --porcelain)" ] || fail "nor leaves anything in the parent's checkout: $(git -C dots status --porcelain)"
 [ "$(git -C dots rev-parse HEAD)" = "$PARENT_HEAD" ] || fail "the parent's checkout is at what was pulled"
 ok "a child's sync pulls its parent, recompiles when the parent changed, and commits and pushes only itself"
+
+# The parent renames its configs folder: the child's sync recompiles and
+# applies from the new folder, not the one its lock named before the pull.
+git -C dots-elsewhere pull -q
+git -C dots-elsewhere mv configs dotfiles
+sed -i.bak 's|configs = "configs"|configs = "dotfiles"|' dots-elsewhere/loadout.kt && rm dots-elsewhere/loadout.kt.bak
+"$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's rename compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "configs is dotfiles now" && git -C dots-elsewhere push -q 2>/dev/null
+: > "$CZ/log"
+OUT=$(cz_loadout --repo work --machine work sync 2>&1) || fail "a child's sync applies from the folder its parent renamed: $OUT"
+grep -q '"configs": "dotfiles"' work/loadout.lock.json || fail "the child's lock names the parent's new folder"
+grep -q '^dots apply' "$CZ/log" || fail "the parent's source is applied: $(cat "$CZ/log")"
+ok "a child's sync applies from a configs folder its parent renamed"
