@@ -69,16 +69,19 @@ class SyncCommand : CliktCommand(name = "sync") {
         // A parent whose manifests moved needs the child compiled against them;
         // a compile that fails stops here with what Gradle said.
         // It reads the lock, so a repo that now needs a newer loadout says so here first.
-        val recompiled = try {
+        val compiledNow = try {
             ManifestLoader.parentChanged(app.fs, app.repoRoot)
         } catch (e: ToolTooOldException) {
-            upgradeAndSyncAgain(e)
+            upgradeAndSyncAgain(e, recompiled = false)
             return
         }
-        if (recompiled) {
+        if (compiledNow) {
             echo(" " + Style.warn("↻") + "  parent ${app.layout.parent?.name} changed: compiling")
             compileRepo(app)
         }
+        // A sync an upgrade started finds the lock already compiled by the
+        // sync before it, and still commits it.
+        val recompiled = compiledNow || envVar(RECOMPILED) != null
 
         // Load after pulling so we see the latest manifest, and read the
         // layout again: the pull or the compile can rename its folders.
@@ -86,7 +89,7 @@ class SyncCommand : CliktCommand(name = "sync") {
         val manifest = try {
             app.loadManifest()
         } catch (e: ToolTooOldException) {
-            upgradeAndSyncAgain(e)
+            upgradeAndSyncAgain(e, recompiled)
             return
         }
         val system = app.detectSystem()
@@ -142,7 +145,8 @@ class SyncCommand : CliktCommand(name = "sync") {
      * and carries on; [UPGRADED] keeps it from upgrading a second time when
      * the binary it runs is still too old (one self-upgrade didn't replace).
      */
-    private fun upgradeAndSyncAgain(refusal: ToolTooOldException) {
+    /** [recompiled]: this sync compiled the lock, so the one it starts commits it. */
+    private fun upgradeAndSyncAgain(refusal: ToolTooOldException, recompiled: Boolean) {
         if (envVar(UPGRADED) != null) {
             throw SyncException(
                 "loadout was upgraded, but ${selfExecutable() ?: "this binary"} is still $TOOL_VERSION; " +
@@ -170,7 +174,8 @@ class SyncCommand : CliktCommand(name = "sync") {
             if (noPush) add("--no-push")
             message?.let { add("--message"); add(it) }
         }
-        val exit = app.runner.inherit("$UPGRADED=1 " + argv.joinToString(" ") { shQuote(it) })
+        val env = "$UPGRADED=1 " + if (recompiled) "$RECOMPILED=1 " else ""
+        val exit = app.runner.inherit(env + argv.joinToString(" ") { shQuote(it) })
         if (exit != 0) throw ProgramResult(exit)
     }
 
@@ -188,6 +193,9 @@ class SyncCommand : CliktCommand(name = "sync") {
     private companion object {
         /** Set on the sync an upgrade starts. */
         const val UPGRADED = "LOADOUT_SYNC_UPGRADED"
+
+        /** Set on the sync an upgrade starts when the sync before it compiled the lock. */
+        const val RECOMPILED = "LOADOUT_SYNC_RECOMPILED"
     }
 }
 

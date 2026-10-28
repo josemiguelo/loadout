@@ -459,7 +459,10 @@ Explicit user decisions; don't "improve" them away.
     else runs the install and then the same sync with the binary it was
     started from (its path read BEFORE the install: Linux names a replaced
     `/proc/self/exe` "(deleted)"), under `LOADOUT_SYNC_UPGRADED=1`, which
-    turns a second refusal into an error instead of another upgrade. The
+    turns a second refusal into an error instead of another upgrade. A
+    child's sync that compiled before the refusal also passes
+    `LOADOUT_SYNC_RECOMPILED=1`: the sync it starts finds the lock already
+    compiled (the parent unchanged since) and must still commit it. The
     home screen ends after an S whose repo now refuses its binary
     (`ManifestLoader.toolTooOld`), like after U. Only `sync` upgrades by
     itself: it is the command that pulls, so it's the one that meets a

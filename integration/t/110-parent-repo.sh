@@ -247,3 +247,41 @@ OUT=$(cz_loadout --repo work --machine work sync 2>&1) || fail "a child's sync a
 grep -q '"configs": "dotfiles"' work/loadout.lock.json || fail "the child's lock names the parent's new folder"
 grep -q '^dots apply' "$CZ/log" || fail "the parent's source is applied: $(cat "$CZ/log")"
 ok "a child's sync applies from a configs folder its parent renamed"
+
+# The parent raises the floor: the child's sync compiles against it, then
+# upgrades, and the sync the upgrade starts is told the lock was compiled.
+# Offline, as in 50-diff-sync: a fake curl answers the release check and an
+# install that swaps a copy of the binary for a stub saying how it was run.
+git -C dots-elsewhere pull -q
+sed -i.bak 's/repo(name = \([^,]*\),/repo(name = \1, minToolVersion = "999.0.0",/' dots-elsewhere/loadout.kt && rm dots-elsewhere/loadout.kt.bak
+"$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's floor compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "floor" && git -C dots-elsewhere push -q 2>/dev/null
+mkdir -p self fakecurl
+cp "$BIN" self/loadout
+cat > fakecurl/curl <<EOF2
+#!/bin/sh
+case "\$*" in
+    *api.github.com*) echo '"tag_name": "v999.0.0"' ;;
+    *install.sh*) printf '%s\n' 'printf "#!/bin/sh\necho \\"new loadout: \\\$LOADOUT_SYNC_UPGRADED \\\$LOADOUT_SYNC_RECOMPILED\\"\n" > "$PWD/self/new" && chmod +x "$PWD/self/new" && mv "$PWD/self/new" "$PWD/self/loadout"' ;;
+    *) exit 22 ;;
+esac
+EOF2
+chmod +x fakecurl/curl
+OUT=$(PATH="$CZ/bin:$PWD/fakecurl:$PATH" self/loadout --repo work --machine work sync 2>&1) || fail "the child's sync compiles, then upgrades: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" || fail "it compiles first: $OUT"
+echo "$OUT" | grep -q "new loadout: 1 1" || fail "the upgraded sync is told the lock was compiled: $OUT"
+ok "a child's sync that compiles and then upgrades tells the next sync it compiled"
+
+# That next sync finds the lock compiled (parent unchanged since) and commits
+# it with the state.
+git -C dots-elsewhere pull -q
+sed -i.bak 's/ minToolVersion = "999.0.0",//' dots-elsewhere/loadout.kt && rm dots-elsewhere/loadout.kt.bak
+"$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent drops its floor"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "no floor" && git -C dots-elsewhere push -q 2>/dev/null
+git -C dots pull -q
+"$BIN" --repo work compile >/dev/null 2>&1 || fail "the child compiles against it, as the sync before the upgrade did"
+OUT=$(LOADOUT_SYNC_UPGRADED=1 LOADOUT_SYNC_RECOMPILED=1 cz_loadout --repo work --machine work sync 2>&1) || fail "the upgraded sync runs: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" && fail "nothing is compiled again: $OUT"
+git -C work.git log -1 --name-only --format=%s | grep -q "loadout.lock.json" || fail "the lock is committed and pushed with the state: $(git -C work.git log -1 --name-only)"
+[ -z "$(git -C work status --porcelain -- loadout.lock.json)" ] || fail "and nothing of it is left behind: $(git -C work status --porcelain)"
+ok "the sync an upgrade starts commits the lock the sync before it compiled"
