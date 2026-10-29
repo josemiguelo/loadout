@@ -3,6 +3,7 @@ package loadout.core.engine
 import loadout.core.LoadoutException
 import loadout.core.model.Manifest
 import loadout.core.model.expandFilePrefix
+import loadout.core.model.shellLine
 
 /**
  * One upgrade command and every mechanism it covers. dnf, dnf-repo and
@@ -150,14 +151,20 @@ object UpgradeEngine {
                     }
                     null
                 }
-                else -> name to (expandFilePrefix(command) to manifest.installers.getValue(name).origin)
+                else -> {
+                    // Only a repo script depends on where it runs: the same
+                    // plain command from two files is still one transaction.
+                    val runsAnywhere = expandFilePrefix(command) == command
+                    val origin = if (runsAnywhere) "" else manifest.installers.getValue(name).origin
+                    name to (shellLine(command, manifest.toolPathOf(name)) to origin)
+                }
             }
         }
         if (errors.isNotEmpty()) {
             throw UpgradeException("cannot upgrade:\n" + errors.joinToString("\n") { "  - $it" })
         }
-        // Same command (from the same directory) = same transaction: run it
-        // once, name every mechanism it covers.
+        // Same command (from the same directory, for a repo script) = same
+        // transaction: run it once, name every mechanism it covers.
         return steps.groupBy({ it.second }, { it.first }).map { (located, mechanisms) ->
             val (command, origin) = located
             val probes = mechanisms.map { manifest.installers[it]?.probe }.distinct()

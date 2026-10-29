@@ -10,6 +10,7 @@ import loadout.core.model.ProgramStatus
 import loadout.core.model.ScriptState
 import loadout.core.model.ScriptStatus
 import loadout.core.model.SystemInfo
+import loadout.core.model.shellLine
 import loadout.core.platform.blockingDispatcher
 import loadout.core.platform.nowIso
 import kotlinx.coroutines.CompletableDeferred
@@ -125,7 +126,8 @@ class StatusEngine(
                 .groupBy { name -> observedChecks[name]?.probe ?: "" }
                 .filterKeys { it.isNotEmpty() }
                 .map { (tool, names) ->
-                    ToolDown(tool, names.sorted(), onPath = runner.capture("command -v $tool").success)
+                    val found = runner.capture(shellLine("command -v $tool", manifest.toolPaths[tool].orEmpty()))
+                    ToolDown(tool, names.sorted(), onPath = found.success)
                 }
                 .sortedBy { it.tool }
             MachineState(

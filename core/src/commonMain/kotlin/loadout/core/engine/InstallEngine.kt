@@ -57,7 +57,9 @@ class InstallEngine(
      * - a mapped program's dependency has no mapping for this machine,
      * - a program that needs installing resolves to a probe binary (the
      *   variant's `probe`, or its installer's) that is not present on this
-     *   machine ([binaryAvailable]).
+     *   machine ([binaryAvailable], on PATH or where the variant providing it
+     *   says it lands), unless a program installed before it in this plan
+     *   `provides` that binary.
      */
     fun plan(
         manifest: Manifest,
@@ -101,16 +103,30 @@ class InstallEngine(
             }
         }
 
-        // Verify that every probe binary the plan actually needs exists here.
-        items.filterIsInstance<PlanItem.Install>()
+        // Verify that every probe binary the plan actually needs exists here,
+        // or is provided by a program the plan installs before it.
+        val installs = items.filterIsInstance<PlanItem.Install>()
+        installs
             .mapNotNull { item ->
                 manifest.resolveInstall(item.program, item.installKey).probe?.let { it to item.program }
             }
             .groupBy({ it.first }, { it.second })
             .forEach { (binary, programs) ->
-                if (!binaryAvailable(binary)) {
-                    errors += "required binary '$binary' (needed to install ${programs.joinToString()}) " +
+                val landed = manifest.toolPaths[binary].orEmpty().any { binaryAvailable("$it/$binary") }
+                if (landed || binaryAvailable(binary)) return@forEach
+                val first = installs.indexOfFirst { item ->
+                    manifest.programs[item.program]?.install?.get(item.installKey)?.provides.orEmpty().any { it.binary == binary }
+                }
+                // Only what installs after the first provider can count on it.
+                val early = if (first < 0) programs else installs.take(first + 1).map { it.program }.filter { it in programs }
+                if (early.isEmpty()) return@forEach
+                errors += if (first < 0) {
+                    "required binary '$binary' (needed to install ${early.joinToString()}) " +
                         "is not installed on machine '$machine'"
+                } else {
+                    "required binary '$binary' (needed to install ${early.joinToString()}) comes from " +
+                        "'${installs[first].program}', which would install after them " +
+                        "(make them depend on it, or have their installer require it)"
                 }
             }
 

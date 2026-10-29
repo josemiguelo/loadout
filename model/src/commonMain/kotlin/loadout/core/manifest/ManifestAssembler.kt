@@ -401,6 +401,16 @@ object ManifestAssembler {
                 }
             }
             for ((key, variant) in program.install) {
+                for (provided in variant.provides) {
+                    if (provided.binary.isBlank() || provided.binary.any { it.isWhitespace() || it == '/' }) {
+                        errors += "programs.$name.install.$key provides '${provided.binary}': name a binary, not a path " +
+                            "(where it lands goes in `at`)"
+                    }
+                    if (provided.at != null && (provided.at.isBlank() || ':' in provided.at)) {
+                        errors += "programs.$name.install.$key provides '${provided.binary}' at '${provided.at}': " +
+                            "one folder, no ':'"
+                    }
+                }
                 for (dep in variant.dependsOn) {
                     if (dep !in manifest.programs) {
                         errors += "programs.$name.install.$key depends-on unknown program '$dep'"

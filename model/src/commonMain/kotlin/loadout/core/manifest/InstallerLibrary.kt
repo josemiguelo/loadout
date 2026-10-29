@@ -43,9 +43,11 @@ object InstallerLibrary {
             outdatedAll = DNF_OUTDATED,
             regex = VERSION,
         ),
+        // HOMEBREW_NO_ASK: Homebrew asks before an install that pulls in
+        // dependencies; a converge runs unattended.
         "brew" to Installer(
             probe = "brew",
-            install = "brew install {pkg}",
+            install = "HOMEBREW_NO_ASK=1 brew install {pkg}",
             upgrade = "brew upgrade",
             check = "brew list --versions {pkg}",
             outdatedAll = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | $BREW_AWK",
@@ -53,7 +55,7 @@ object InstallerLibrary {
         ),
         "brew-cask" to Installer(
             probe = "brew",
-            install = "brew install --cask {pkg}",
+            install = "HOMEBREW_NO_ASK=1 brew install --cask {pkg}",
             upgrade = "brew upgrade --cask",
             check = "brew list --cask --versions {pkg}",
             outdatedAll = "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | $BREW_AWK",

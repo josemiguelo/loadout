@@ -219,7 +219,18 @@ Explicit user decisions; don't "improve" them away.
    executing anything if the machine isn't declared, an EXPLICITLY
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
-   `script` fallback.
+   `script` fallback. A variant that `provides("flatpak")` vouches for
+   that binary to whatever installs AFTER it in the same plan (flatpak
+   before every flatpak on Omarchy); one ordered after its dependents is
+   refused, naming the fix. `provides("brew", at = "/opt/homebrew/bin")`
+   also says where it lands when a fresh shell doesn't have it on PATH:
+   the probe counts as present there, and `forMachine` records the mapped
+   variants' folders in `Manifest.toolPaths`, which `resolveInstall` (install,
+   check, outdated, batch oracle), `UpgradeEngine` (`toolPathOf`) and the
+   status's tool question put first on PATH for every command probed
+   through that binary. On the variant, not the program: where a tool lands
+   depends on how it was installed. Declared, never inferred from a
+   program's name or searched for.
 3. **Intent and observation never mix.** The Kotlin manifests are authored;
    `loadout.lock.json` is generated from them and committed (`loadout
    compile` writes it, and only when its content changed); the
@@ -1057,7 +1068,10 @@ top-down, first fit wins:
    never `&&`-chained into another program's command; on the variant when
    only that mechanism needs it. When EVERY program of a mechanism needs it
    (a pm's config, the flathub remote, a COPR's dnf-plugins-core), the
-   installer `requires` it.
+   installer `requires` it. When that step installs the installer's own
+   tool (flatpak on a distro without it, Homebrew), its variant also
+   `provides("flatpak")` (plus `at = …` when it lands off PATH), or the
+   plan refuses the missing probe before anything runs.
 5. Repo-script install that lands in a pm's database → that pm's variant
    with `installedBy("…")`; check/probe derive; override `regex` for odd
    version formats. When several programs need the SAME shaped script (rpm

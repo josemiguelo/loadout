@@ -234,6 +234,94 @@ class InstallEngineTest {
     }
 
     @Test
+    fun probeProvidedByAnEarlierProgramInThePlan() {
+        val m = manifestOf {
+            val pkg = root.installer("pkg") {
+                probe = "pkg"
+                install = "pkg add {pkg}"
+                check = "pkg info {pkg}"
+            }
+            val flat = root.installer("flat") {
+                probe = "flat"
+                install = "flat install {pkg}"
+                check = "flat info {pkg}"
+            }
+            val runtime = root.program("flat-runtime") {
+                installVia(pkg { provides("flat") })
+            }
+            flat.requires(runtime)
+            val app = root.program("app") { installVia(flat) }
+            machine("m") { install(runtime, app) }
+        }
+        val onlyPkg: (String) -> Boolean = { it == "pkg" }
+
+        // flat is missing, but flat-runtime installs it first.
+        val plan = engine().plan(m, "m", listOf("app"), emptyMap(), onlyPkg)
+        assertEquals(listOf("flat-runtime", "app"), plan.map { it.program })
+
+        // Already installed and still no binary: nothing in the plan provides it.
+        val installed = mapOf("flat-runtime" to ProgramState(ProgramStatus.INSTALLED, "1.0"))
+        val e = assertFailsWith<ResolutionException> {
+            engine().plan(m, "m", listOf("app"), installed, onlyPkg)
+        }
+        assertTrue("required binary 'flat' (needed to install app) is not installed" in e.message.orEmpty())
+
+        // A provider later in the plan doesn't count, and the error says how to order it.
+        val m2 = manifestOf {
+            val pkg = root.installer("pkg") { probe = "pkg"; install = "pkg add {pkg}"; check = "pkg info {pkg}" }
+            val first = root.program("first") { installVia(pkg { probe = "flat" }) }
+            val runtime = root.program("flat-runtime") {
+                dependsOn(first)
+                installVia(pkg { provides("flat") })
+            }
+            machine("m") { install(first, runtime) }
+        }
+        val late = assertFailsWith<ResolutionException> {
+            engine().plan(m2, "m", emptyList(), emptyMap(), onlyPkg)
+        }
+        assertTrue("comes from 'flat-runtime', which would install after them" in late.message.orEmpty())
+        assertTrue("needed to install first)" in late.message.orEmpty())
+    }
+
+    @Test
+    fun aProvidedToolOffPathIsFoundWhereItLandsAndRunsFromThere() {
+        val m = manifestOf {
+            val pkg = root.installer("pkg") { probe = "pkg"; install = "pkg add {pkg}"; check = "pkg info {pkg}" }
+            val brewish = root.installer("brewish") {
+                probe = "brewish"
+                install = "brewish install {pkg}"
+                check = "brewish list {pkg}"
+            }
+            val setup = root.program("setup-brewish") {
+                custom(name = "linux") {
+                    command = "install-brewish"
+                    provides("brewish", at = "/opt/brewish/bin")
+                }
+                custom(name = "macos") {
+                    command = "install-brewish"
+                    provides("brewish", at = "/opt/other/bin")
+                }
+            }
+            brewish.requires(setup)
+            val tool = root.program("tool") { installVia(brewish) }
+            machine("m") { install(setup.variant(name = "linux"), tool) }
+        }.forMachine("m")
+
+        // Only the mapped variant's folder counts.
+        assertEquals(mapOf("brewish" to listOf("/opt/brewish/bin")), m.toolPaths)
+
+        // Installed already, off PATH: found where it lands, and the install runs with it first on PATH.
+        val installed = mapOf("setup-brewish" to ProgramState(ProgramStatus.INSTALLED, null))
+        val plan = engine().plan(m, "m", listOf("tool"), installed) { it == "/opt/brewish/bin/brewish" }
+        val step = plan.filterIsInstance<PlanItem.Install>().single()
+        assertEquals("""PATH="/opt/brewish/bin:${'$'}PATH"; export PATH; brewish install tool""", step.command)
+
+        // The check goes through it from there too.
+        assertEquals(listOf("/opt/brewish/bin"), m.checkFor("tool", "brewish")?.path)
+        assertEquals(listOf("/opt/brewish/bin"), m.toolPathOf("brewish"))
+    }
+
+    @Test
     fun pmCheckSkippedForInstalledProgramsAndCustomKeys() {
         // Everything installed -> no Install items -> pm availability never consulted.
         val states = mapOf(

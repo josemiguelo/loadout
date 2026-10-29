@@ -9,6 +9,7 @@ import loadout.core.model.Origin
 import loadout.core.model.OutdatedSource
 import loadout.core.model.Program as ProgramModel
 import loadout.core.model.ProgramOutdated
+import loadout.core.model.Provides
 import loadout.core.model.RepoLayout
 import loadout.core.model.ScriptStep
 import loadout.core.model.VersionCheck
@@ -405,6 +406,7 @@ class VariantScope internal constructor(var pkg: String?) {
     private var sudo: Boolean? = null
     private val dependsOn = mutableListOf<String>()
     private val with = linkedMapOf<String, String>()
+    private val provides = mutableListOf<Provides>()
 
     /** The check reports a version. */
     fun version(command: String, regex: String = VERSION) {
@@ -448,6 +450,18 @@ class VariantScope internal constructor(var pkg: String?) {
         dependsOn += declared(programs, "an install variant").map { it.name }
     }
 
+    /**
+     * This way of installing puts [binary] on the machine: an installer
+     * probing for it may install, in the same run and after this program,
+     * though it isn't there yet (`provides("flatpak")`). [at] is the folder
+     * it lands in when a fresh shell doesn't have it on PATH
+     * (`provides("brew", at = "/opt/homebrew/bin")`): every command that
+     * goes through it gets that folder first on PATH.
+     */
+    fun provides(binary: String, at: String? = null) {
+        provides += Provides(binary, at)
+    }
+
     /** An installer param by name, for installers without a typed wrapper. */
     fun param(name: String, value: String) {
         with[name] = value
@@ -465,6 +479,7 @@ class VariantScope internal constructor(var pkg: String?) {
         with = with,
         sudo = sudo,
         dependsOn = dependsOn.distinct(),
+        provides = provides.toList(),
     )
 }
 

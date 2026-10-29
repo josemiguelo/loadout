@@ -56,8 +56,8 @@ class UpdateChecker(
      * package id, the rest is the text the per-program regex extracts the
      * version from. Exit code ignored, like [candidate].
      */
-    fun batchCandidates(command: String, origin: String = ""): Map<String, String> {
-        val result = runner.capture(frame.command(expandFilePrefix(command), origin))
+    fun batchCandidates(command: String, origin: String = "", path: List<String> = emptyList()): Map<String, String> {
+        val result = runner.capture(frame.command(shellLine(command, path), origin))
         // stdout ONLY: an empty stdout is "nothing outdated", and a tool's
         // stderr is warnings — `brew outdated --cask` once turned a
         // deprecation notice into packages named "Warning:" and "Please".
@@ -75,7 +75,7 @@ class UpdateChecker(
         withContext(blockingDispatcher) {
             coroutineScope {
                 oracles.map { (installer, oracle) ->
-                    async { installer to batchCandidates(oracle.command, oracle.origin) }
+                    async { installer to batchCandidates(oracle.command, oracle.origin, oracle.path) }
                 }.awaitAll().toMap()
             }
         }

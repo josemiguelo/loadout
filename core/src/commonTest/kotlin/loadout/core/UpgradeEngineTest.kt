@@ -2,6 +2,7 @@ package loadout.core
 
 import loadout.core.engine.UpgradeEngine
 import loadout.core.engine.UpgradeException
+import loadout.dsl.Dir
 import loadout.dsl.machine
 import loadout.dsl.invoke
 import loadout.dsl.manifestOf
@@ -48,6 +49,33 @@ class UpgradeEngineTest {
         assertEquals(1, plan.size)
         assertEquals("pm upgrade -y", plan.single().command)
         assertEquals(listOf("alpha", "bravo"), plan.single().covers)
+    }
+
+    @Test
+    fun aProvidedToolsFolderLeadsAndOnePlainCommandFromTwoFilesRunsOnce() {
+        val m = manifestOf {
+            val brewish = root.installer("brewish") {
+                probe = "brewish"
+                install = "brewish install {pkg}"
+                upgrade = "brewish upgrade"
+                check = "brewish list {pkg}"
+            }
+            val tapped = Dir("programs/brewish").installer("brewish-tap") {
+                probe = "brewish"
+                install = "brewish install tap/{pkg}"
+                upgrade = "brewish upgrade"
+                check = "brewish list {pkg}"
+            }
+            val setup = root.program("setup-brewish") {
+                custom { command = "install-brewish"; provides("brewish", at = "/opt/brewish/bin") }
+            }
+            val alpha = root.program("alpha") { installVia(brewish) }
+            val bravo = root.program("bravo") { installVia(tapped) }
+            machine("m") { install(setup, alpha, bravo) }
+        }.forMachine("m")
+        val plan = engine().plan(m, "m", listOf("brewish", "brewish-tap"))
+        assertEquals(listOf("brewish", "brewish-tap"), plan.single().installers)
+        assertEquals("""PATH="/opt/brewish/bin:${'$'}PATH"; export PATH; brewish upgrade""", plan.single().command)
     }
 
     @Test

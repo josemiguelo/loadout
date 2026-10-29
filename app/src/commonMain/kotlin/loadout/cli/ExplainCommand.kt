@@ -109,6 +109,9 @@ class ExplainCommand : CliktCommand(name = "explain") {
                         resolved.probe?.let { rows += "probe.$key" to it }
                         if (resolved.sudo) rows += "sudo.$key" to "yes — a run that installs it asks for the password first"
                         if (variant.dependsOn.isNotEmpty()) rows += "depends-on.$key" to variant.dependsOn.joinToString()
+                        if (variant.provides.isNotEmpty()) {
+                            rows += "provides.$key" to variant.provides.joinToString { p -> p.at?.let { "${p.binary} (in $it)" } ?: p.binary }
+                        }
                     }
                     if (name !in mapping) {
                         notes += "! not installed on ${system.machine} (install it in machine '${system.machine}' or a profile it extends)"

@@ -41,6 +41,13 @@ data class Manifest(
     val builtinInstallers: Set<String> = emptySet(),
     /** Every per-machine data key with its default. */
     val data: JsonObject = JsonObject(emptyMap()),
+    /**
+     * Where each binary the machine in view provides lands, for the
+     * binaries whose variant says `at` ([forMachine]; empty before it). Put
+     * first on PATH for every command that goes through that binary.
+     */
+    @Transient
+    val toolPaths: Map<String, List<String>> = emptyMap(),
 ) {
     /**
      * Everything the [key] variant of program [programName] resolves to.
@@ -71,6 +78,9 @@ data class Manifest(
         val outdatedCommand = explicitOutdated ?: if (batch == null) installer?.outdated else null
         val installerName = variant.installer ?: key.takeIf { installers.containsKey(it) }
         val probe = variant.probe ?: installer?.probe
+        // Through a provided tool, its folder comes first: on a fresh machine
+        // it isn't on PATH yet (Homebrew).
+        val reach = probe?.let(toolPaths::get).orEmpty() + program.path
         // Each command runs where the file that wrote it lives: a variant's
         // own override in the program's directory, a pattern in its installer's.
         val installerOrigin = installer?.origin.orEmpty()
@@ -82,25 +92,25 @@ data class Manifest(
             // A check through the mechanism carries its probe; the program's
             // own `version` fallback is the program itself and carries none.
             check = if (checkCommand != null && (regex != null || variant.present)) {
-                VersionCheck(sub(checkCommand), regex, probe = probe, origin = originOf(variant.check), path = program.path)
+                VersionCheck(sub(checkCommand), regex, probe = probe, origin = originOf(variant.check), path = reach)
             } else {
                 program.version
             },
             probe = probe,
             outdated = if (outdatedCommand != null && outdatedRegex != null) {
-                VersionCheck(sub(outdatedCommand), outdatedRegex, origin = originOf(explicitOutdated), path = program.path)
+                VersionCheck(sub(outdatedCommand), outdatedRegex, origin = originOf(explicitOutdated), path = reach)
             } else {
                 null
             },
             outdatedAll = if (batch != null && regex != null && installerName != null) {
-                BatchOracle(installerName, batch, pkg, regex, installerOrigin)
+                BatchOracle(installerName, batch, pkg, regex, installerOrigin, probe?.let(toolPaths::get).orEmpty())
             } else {
                 null
             },
             upgradeWith = installer?.upgrade?.let {
                 UpgradeMechanism(installerName ?: return@let null, it, installerOrigin)
             },
-            path = program.path,
+            path = reach,
         )
     }
 
@@ -130,12 +140,21 @@ data class Manifest(
      * which variant a machine picked.
      */
     fun forMachine(machine: String): Manifest {
-        val picks = machines[machine]?.scriptVariants.orEmpty()
-        if (picks.isEmpty()) return this
+        val config = machines[machine] ?: return this
+        val picks = config.scriptVariants
         return copy(
-            scripts = scripts.mapValues { (name, step) -> picks[name]?.let(step::variant) ?: step },
+            scripts = if (picks.isEmpty()) scripts else scripts.mapValues { (name, step) -> picks[name]?.let(step::variant) ?: step },
+            toolPaths = config.pm.entries
+                .flatMap { (name, key) -> programs[name]?.install?.get(key)?.provides.orEmpty() }
+                .filter { it.at != null }
+                .groupBy({ it.binary }, { it.at!! })
+                .mapValues { (_, dirs) -> dirs.distinct() },
         )
     }
+
+    /** The folders put first on PATH for [installer]'s own commands (its upgrade), from [toolPaths]. */
+    fun toolPathOf(installer: String): List<String> =
+        installers[installer]?.probe?.let(toolPaths::get).orEmpty()
 }
 
 /** A program's install variant with all installer defaults applied. */
@@ -185,6 +204,8 @@ data class BatchOracle(
     val regex: String,
     /** The installer file's repo-relative directory, where [command] runs. */
     val origin: String = "",
+    /** Put first on PATH for [command]: where its tool lands ([Manifest.toolPaths]). */
+    val path: List<String> = emptyList(),
 )
 
 @Serializable
@@ -281,7 +302,17 @@ data class InstallVariant(
      */
     @SerialName("depends-on")
     val dependsOn: List<String> = emptyList(),
+    /**
+     * Binaries this variant puts on the machine (`flatpak`, `brew`), so a
+     * plan that installs it may install, after it, what goes through them:
+     * their probe needn't be there before the run.
+     */
+    val provides: List<Provides> = emptyList(),
 )
+
+/** A binary a variant provides, and the folder it lands in when that isn't on PATH yet. */
+@Serializable
+data class Provides(val binary: String, val at: String? = null)
 
 /**
  * A machine as the engines see it: its profiles merged in (contract 2), one

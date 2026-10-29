@@ -96,6 +96,88 @@ else
     ok "skipped pm-not-installed check (pacman present on host)"
 fi
 
+# --- a probe binary the plan installs first ---------------------------------
+kt_repo providesrepo
+kt_file providesrepo/programs/tool.loadout.kt <<'KT'
+val flat = root.installer(name = "flat") {
+    probe = "loadout-test-flat"
+    install = "loadout-test-flat install {pkg}"
+    check = "loadout-test-flat info {pkg}"
+}
+
+val runtime = root.program(name = "flat-runtime") {
+    custom {
+        command = "false"
+        provides("loadout-test-flat")
+    }
+}
+
+val setup = flat.requires(runtime)
+
+val app = root.program(name = "app") {
+    installVia(
+        flat,
+    )
+}
+
+val m1 = machine(hostname = "m1") { install(runtime, app) }
+KT
+compile_repo providesrepo
+OUT=$("$BIN" --repo providesrepo --machine m1 install app --dry-run 2>&1) || fail "provided probe refused: $OUT"
+echo "$OUT" | grep -q "flat-runtime" || fail "provider not planned: $OUT"
+echo "$OUT" | grep -q "loadout-test-flat install app" || fail "app not planned: $OUT"
+OUT=$("$BIN" --repo providesrepo --machine m1 explain flat-runtime)
+echo "$OUT" | grep -q "provides.custom.*loadout-test-flat" || fail "explain shows provides: $OUT"
+ok "a probe binary a program earlier in the plan provides isn't required up front"
+
+# --- a provided tool off PATH, where its variant says it lands -------------
+LANDED="$PWD/landed/bin"
+mkdir -p "$LANDED"
+cat >"$LANDED/loadout-test-brewish" <<'SH'
+#!/bin/sh
+[ "$1" = list ] && [ "$2" = app ] && echo "app 1.2.3"
+SH
+chmod +x "$LANDED/loadout-test-brewish"
+kt_repo landedrepo
+kt_file landedrepo/programs/tool.loadout.kt <<KT
+val brewish = root.installer(name = "brewish") {
+    probe = "loadout-test-brewish"
+    install = "loadout-test-brewish install {pkg}"
+    check = "loadout-test-brewish list {pkg}"
+}
+
+val setup = root.program(name = "setup-brewish") {
+    custom {
+        command = "false"
+        present("test -x $LANDED/loadout-test-brewish")
+        provides("loadout-test-brewish", at = "$LANDED")
+    }
+}
+
+val setupFirst = brewish.requires(setup)
+
+val app = root.program(name = "app") {
+    installVia(
+        brewish,
+    )
+}
+
+val other = root.program(name = "other") {
+    installVia(
+        brewish,
+    )
+}
+
+val m1 = machine(hostname = "m1") { install(setup, app) }
+val m2 = machine(hostname = "m2") { install(setup, app, other) }
+KT
+compile_repo landedrepo
+OUT=$("$BIN" --repo landedrepo --machine m1 status 2>&1) || fail "status: $OUT"
+echo "$OUT" | grep -E "app .*1\.2\.3" >/dev/null || fail "check didn't run from where the tool lands: $OUT"
+OUT=$("$BIN" --repo landedrepo --machine m2 install other --dry-run 2>&1) || fail "tool off PATH refused: $OUT"
+echo "$OUT" | grep -qF "PATH=\"$LANDED:" || fail "install doesn't put where it lands first on PATH: $OUT"
+ok "a provided tool off PATH is found, checked and run where its variant says it lands"
+
 # --- explain ------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 explain git marker)
 echo "$OUT" | grep -q "program git" || fail "explain prints the program"
