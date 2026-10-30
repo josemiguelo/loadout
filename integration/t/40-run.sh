@@ -39,36 +39,37 @@ printf '#!/bin/sh\necho "$1" > arg-marker.txt\n' > repo/maintenance/args/argscri
 printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/maintenance/args/argcount.sh
 printf 'hello from greet\n' > repo/maintenance/greet/message.txt
 printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$LOADOUT_REPO" "$LOADOUT_FRAGMENT_DIR" "$LOADOUT_MACHINE" "$LOADOUT_OS" > env.txt\n' > repo/maintenance/greet/greet.sh
-kt_file repo/maintenance/args/args.loadout.kt <<'KT'
-private val args = Dir("maintenance/args")
-
-val argscript = args.script(name = "argscript") {
-    file("argscript.sh")
-    check("test -f arg-marker.txt && grep -qx \$1 arg-marker.txt")
+hcl_file repo/maintenance/args/args.loadout.hcl <<'HCL'
+script "argscript" {
+  file  = "argscript.sh"
+  check = "test -f arg-marker.txt && grep -qx $1 arg-marker.txt"
 }
 
-val argcount = args.script(name = "argcount") { file("argcount.sh") }
-
-private val greetDir = Dir("maintenance/greet")
-
-val greet = greetDir.script(name = "greet") {
-    file("greet.sh")
-    check("test -f greeted.txt")
+script "argcount" {
+  file = "argcount.sh"
 }
 
-val m3 = machine(hostname = "m3") {
-    install(git.variant(name = "manual"))
-    run(argscript, "fedora")
-    // A long entry may span lines: its lines are arguments, never commands.
-    // If the newline reached the shell, `touch pwned.txt` would run.
-    run(argcount, "one\ntouch pwned.txt")
+machine "m3" {
+  install = [variant(program.git, "manual")]
+  run = [
+    args(script.argscript, "fedora"),
+    # A long entry may span lines: its lines are arguments, never commands.
+    # If the newline reached the shell, `touch pwned.txt` would run.
+    args(script.argcount, "one\ntouch pwned.txt"),
+  ]
 }
 
-val m5 = machine(hostname = "m5") {
-    install(git.variant(name = "manual"))
-    run(greet)
+machine "m5" {
+  install = [variant(program.git, "manual")]
+  run     = [script.greet]
 }
-KT
+HCL
+hcl_file repo/maintenance/greet/greet.loadout.hcl <<'HCL'
+script "greet" {
+  file  = "greet.sh"
+  check = "test -f greeted.txt"
+}
+HCL
 compile_repo repo
 "$BIN" --repo repo --machine m3 run argscript >/dev/null || fail "run with args exits 0"
 grep -qx "fedora" repo/maintenance/args/arg-marker.txt || fail "argument reached the script"
@@ -81,14 +82,14 @@ grep -qx "3:one touch pwned.txt" repo/maintenance/args/argcount.txt || fail "a m
 [ -e repo/maintenance/args/pwned.txt ] && fail "a multi-line argument's line must never run as a command" || true
 ok "a multi-line script argument passes its lines as arguments"
 
-# A file's paths are relative to its Dir, and its commands run there: the
-# script reads a sibling file with no $(dirname "$0").
-"$BIN" --repo repo --machine m5 run greet >/dev/null || fail "a Dir's script runs"
-grep -qx "hello from greet" repo/maintenance/greet/greeted.txt || fail "the script ran in its Dir"
+# A file's paths are relative to its folder, and its commands run there:
+# the script reads a sibling file with no $(dirname "$0").
+"$BIN" --repo repo --machine m5 run greet >/dev/null || fail "a folder's script runs"
+grep -qx "hello from greet" repo/maintenance/greet/greeted.txt || fail "the script ran in its folder"
 [ -e repo/greeted.txt ] && fail "nothing lands in the repo root" || true
 REPO_ABS=$(cd repo && pwd -P)
 grep -qx "$REPO_ABS|$REPO_ABS/maintenance/greet|m5|$(uname -s | sed 's/Darwin/macos/; s/Linux/linux/')" repo/maintenance/greet/env.txt ||
     fail "the script gets LOADOUT_REPO, LOADOUT_FRAGMENT_DIR, LOADOUT_MACHINE, LOADOUT_OS: $(cat repo/maintenance/greet/env.txt)"
 OUT=$("$BIN" --repo repo --machine m5 run greet)
-echo "$OUT" | grep -q "already done" || fail "the check runs in the Dir too"
-ok "a Dir's script and check run in its folder, with the LOADOUT_* variables"
+echo "$OUT" | grep -q "already done" || fail "the check runs in the folder too"
+ok "a file's script and check run in its folder, with the LOADOUT_* variables"

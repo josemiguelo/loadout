@@ -1,0 +1,2292 @@
+{
+  "format": 1,
+  "toolVersion": "3.4.0",
+  "sources": "c7f0ff84dac596c8a985ab8d8c7f14586a35c6d2381437efe3155bf2625b91ba",
+  "manifest": {
+    "meta": {
+      "name": "jm's machines",
+      "min-tool-version": "3.4.0"
+    },
+    "layout": {
+      "state": "machines/state",
+      "configs": "loadouts",
+      "sources": [
+        "loadout.kt",
+        "loadouts/**/.*.loadout.kt",
+        "loadouts/**/.*/.*.loadout.kt",
+        "loadouts/.etc/*/.*.loadout.kt",
+        "machines/**/*.loadout.kt"
+      ]
+    },
+    "installers": {
+      "apt": {
+        "probe": "apt-get",
+        "install": "sudo apt-get install -y {pkg}",
+        "check": "dpkg-query -W {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "upgrade": "sudo apt-get upgrade -y"
+      },
+      "brew": {
+        "probe": "brew",
+        "install": "HOMEBREW_NO_ASK=1 brew install {pkg}",
+        "check": "brew list --versions {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=$NF; gsub(/[()]/, \"\", v); print n, v}'",
+        "upgrade": "brew upgrade",
+        "requires": [
+          "setup-brew"
+        ]
+      },
+      "brew-cask": {
+        "probe": "brew",
+        "install": "HOMEBREW_NO_ASK=1 brew install --cask {pkg}",
+        "check": "brew list --cask --versions {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=$NF; gsub(/[()]/, \"\", v); print n, v}'",
+        "upgrade": "brew upgrade --cask",
+        "requires": [
+          "setup-brew"
+        ]
+      },
+      "brew-tap": {
+        "probe": "brew",
+        "params": [
+          "tap"
+        ],
+        "install": "file:.loadout/brew-taps.sh install {tap} {tap}/{pkg}",
+        "check": "brew list --versions {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=$NF; gsub(/[()]/, \"\", v); print n, v}'",
+        "upgrade": "brew upgrade",
+        "requires": [
+          "setup-brew"
+        ],
+        "origin": "loadouts/private_dot_config/.homebrew"
+      },
+      "brew-tap-cask": {
+        "probe": "brew",
+        "params": [
+          "tap"
+        ],
+        "install": "file:.loadout/brew-taps.sh install {tap} {tap}/{pkg} --cask",
+        "check": "brew list --cask --versions {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --cask --verbose | awk '{n=$1; sub(/.*[/]/, \"\", n); v=$NF; gsub(/[()]/, \"\", v); print n, v}'",
+        "upgrade": "brew upgrade --cask",
+        "requires": [
+          "setup-brew"
+        ],
+        "origin": "loadouts/private_dot_config/.homebrew"
+      },
+      "dnf": {
+        "probe": "dnf",
+        "install": "sudo dnf install -y {pkg}",
+        "check": "rpm -q {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'",
+        "upgrade": "sudo dnf upgrade --refresh -y",
+        "requires": [
+          "setup-dnf"
+        ]
+      },
+      "dnf-copr": {
+        "probe": "dnf",
+        "params": [
+          "copr"
+        ],
+        "install": "sudo dnf copr enable -y {copr} && sudo dnf install -y {pkg}",
+        "check": "rpm -q {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'",
+        "upgrade": "sudo dnf upgrade --refresh -y",
+        "requires": [
+          "setup-dnf",
+          "dnf-plugins-core"
+        ]
+      },
+      "dnf-repo": {
+        "probe": "dnf",
+        "params": [
+          "repofile"
+        ],
+        "install": "sudo dnf config-manager addrepo --overwrite --from-repofile={repofile} && sudo dnf install -y {pkg}",
+        "check": "rpm -q {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "dnf -q --cacheonly check-update | awk 'NF>=3 && $2 ~ /^[0-9]/ {name=$1; sub(/[.][^.]*$/, \"\", name); print name, $2}'",
+        "upgrade": "sudo dnf upgrade --refresh -y",
+        "requires": [
+          "setup-dnf"
+        ]
+      },
+      "flatpak": {
+        "probe": "flatpak",
+        "install": "flatpak --user install -y flathub {pkg}",
+        "check": "flatpak --user info {pkg}",
+        "regex": "Version: ([0-9][0-9.]*)",
+        "outdated-all": "flatpak --user remote-ls --updates --cached --columns=application,version flathub | awk '{print $1, \"Version:\", $2}'",
+        "upgrade": "flatpak --user update -y",
+        "requires": [
+          "flatpak",
+          "flathub-remote"
+        ]
+      },
+      "omarchy": {
+        "probe": "omarchy",
+        "install": "omarchy pkg add {pkg}",
+        "check": "pacman -Q {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'",
+        "upgrade": "omarchy update -y",
+        "sudo": true
+      },
+      "omarchy-aur": {
+        "probe": "omarchy",
+        "install": "omarchy pkg aur add {pkg}",
+        "check": "pacman -Q {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "yay -Qua 2>/dev/null | awk '$3 == \"->\" {print $1, $4}'",
+        "upgrade": "omarchy update -y",
+        "sudo": true
+      },
+      "pacman": {
+        "probe": "pacman",
+        "install": "sudo pacman -S --noconfirm {pkg}",
+        "check": "pacman -Q {pkg}",
+        "regex": "([0-9]+\\.[0-9][0-9.]*)",
+        "outdated-all": "checkupdates --nocolor | awk '$3 == \"->\" {print $1, $4}'",
+        "upgrade": "sudo pacman -Syu --noconfirm",
+        "requires": [
+          "sudo"
+        ]
+      }
+    },
+    "programs": {
+      "1password": {
+        "description": "1Password desktop app",
+        "install": {
+          "dnf-repo": {
+            "with": {
+              "repofile": "$LOADOUT_REPO/loadouts/private_dot_config/.1password/.loadout/1password.repo"
+            }
+          },
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.1password"
+      },
+      "1password-cli": {
+        "description": "1Password CLI (op)",
+        "install": {
+          "omarchy": {},
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config/.1password"
+      },
+      "antigravity": {
+        "description": "Antigravity IDE",
+        "install": {
+          "dnf-repo": {
+            "with": {
+              "repofile": "$LOADOUT_REPO/loadouts/private_dot_config/.antigravity/.loadout/antigravity.repo"
+            }
+          },
+          "omarchy-aur": {
+            "pkg": "antigravity-ide"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.antigravity"
+      },
+      "anydesk": {
+        "description": "AnyDesk remote desktop",
+        "install": {
+          "dnf": {
+            "command": "file:.loadout/install-anydesk.sh",
+            "sudo": true
+          },
+          "omarchy-aur": {
+            "pkg": "anydesk-bin"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.anydesk"
+      },
+      "atuin": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "autoconf": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "awscli": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "azure-cli": {
+        "description": "Azure CLI",
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "bat": {
+        "install": {
+          "brew": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "brave": {
+        "description": "Brave browser",
+        "install": {
+          "omarchy-aur": {
+            "pkg": "brave-bin"
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "btop": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/btop"
+      },
+      "bzip2-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "chezmoi": {
+        "install": {
+          "brew": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config/chezmoi"
+      },
+      "claude": {
+        "description": "Claude Code CLI",
+        "version": {
+          "command": "claude --version",
+          "regex": "([0-9]+\\.[0-9][0-9.]*)",
+          "origin": "loadouts/private_dot_claude",
+          "path": [
+            "$HOME/.local/bin"
+          ]
+        },
+        "install": {
+          "custom": {
+            "command": "curl -fsSL https://claude.ai/install.sh | bash"
+          }
+        },
+        "outdated": {
+          "command": "file:.loadout/outdated-claude.sh",
+          "upgrade": "file:.loadout/outdated-claude.sh update"
+        },
+        "path": [
+          "$HOME/.local/bin"
+        ],
+        "origin": "loadouts/private_dot_claude"
+      },
+      "code": {
+        "description": "Visual Studio Code",
+        "install": {
+          "dnf-repo": {
+            "with": {
+              "repofile": "$LOADOUT_REPO/loadouts/private_dot_config/.code/.loadout/vscode.repo"
+            }
+          },
+          "omarchy": {
+            "pkg": "visual-studio-code-bin"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.code"
+      },
+      "codex": {
+        "description": "OpenAI Codex CLI",
+        "install": {
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_codex"
+      },
+      "coreutils": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "curl": {
+        "install": {
+          "dnf": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "dbus-devel": {
+        "description": "D-Bus development headers",
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "development-tools-group": {
+        "description": "dnf Development Tools group",
+        "install": {
+          "dnf": {
+            "command": "sudo dnf group install -y development-tools",
+            "check": "dnf group list --installed 2>/dev/null | grep '^development-tools '",
+            "present": true
+          }
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "dnf-plugins-core": {
+        "description": "dnf plugins (provides the copr command)",
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "dnsmasq": {
+        "description": "DNS/DHCP for libvirt's default NAT network",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "edk2-ovmf": {
+        "description": "UEFI firmware for guests",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "eza": {
+        "install": {
+          "brew": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "fd": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "findutils": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "firefox": {
+        "description": "Firefox browser",
+        "install": {
+          "dnf": {
+            "command": "file:.loadout/install-firefox.sh",
+            "sudo": true
+          }
+        },
+        "origin": "loadouts/private_dot_config/.firefox"
+      },
+      "flathub-remote": {
+        "description": "flathub flatpak remote (user)",
+        "install": {
+          "flatpak": {
+            "command": "flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo",
+            "check": "flatpak --user remotes --columns=name | grep -x flathub",
+            "present": true,
+            "depends-on": [
+              "flatpak"
+            ]
+          }
+        },
+        "origin": "loadouts/private_dot_local/share"
+      },
+      "flatpak": {
+        "description": "flatpak app runtime",
+        "install": {
+          "dnf": {
+            "provides": [
+              {
+                "binary": "flatpak"
+              }
+            ]
+          },
+          "omarchy": {
+            "provides": [
+              {
+                "binary": "flatpak"
+              }
+            ]
+          }
+        },
+        "origin": "loadouts/private_dot_local/share"
+      },
+      "fzf": {
+        "install": {
+          "brew": {},
+          "dnf": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config/fzf"
+      },
+      "gawk": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "gcc": {
+        "install": {
+          "dnf": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "gdbm-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "gh": {
+        "description": "GitHub CLI",
+        "install": {
+          "brew": {},
+          "pacman": {
+            "pkg": "github-cli"
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "ghostscript": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "git": {
+        "install": {
+          "dnf": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/.gitconfig"
+      },
+      "git-delta": {
+        "install": {
+          "brew": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "gnu-sed": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "google-chrome-stable": {
+        "description": "Google Chrome browser",
+        "install": {
+          "dnf": {
+            "command": "file:.loadout/install-chrome.sh",
+            "sudo": true
+          }
+        },
+        "origin": "loadouts/private_dot_config/.google-chrome"
+      },
+      "google-cloud-cli": {
+        "description": "Google Cloud CLI",
+        "install": {
+          "dnf-repo": {
+            "with": {
+              "repofile": "$LOADOUT_REPO/loadouts/private_dot_config/.gcloud/.loadout/google-cloud-cli.repo"
+            }
+          },
+          "brew-cask": {
+            "pkg": "gcloud-cli"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.gcloud"
+      },
+      "gum": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "jetbrains-toolbox": {
+        "description": "JetBrains Toolbox",
+        "install": {
+          "linux": {
+            "command": "file:.loadout/install-toolbox.sh install",
+            "check": "file:.loadout/install-toolbox.sh check",
+            "regex": "([0-9]+\\.[0-9][0-9.]*)"
+          },
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_local/share/.jetbrains"
+      },
+      "jira-cli": {
+        "description": "Jira CLI",
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "jordanbaird-ice": {
+        "description": "Ice -- menu bar icon organizer",
+        "install": {
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "jq": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "just": {
+        "install": {
+          "brew": {},
+          "dnf": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "kitty": {
+        "description": "kitty terminal emulator",
+        "install": {
+          "dnf-copr": {
+            "with": {
+              "copr": "solopasha/kitty"
+            }
+          },
+          "omarchy": {},
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config/kitty"
+      },
+      "kotlin-lsp": {
+        "description": "Kotlin language server for Neovim (kotlin.nvim)",
+        "version": {
+          "command": "file:.loadout/outdated-kotlin-lsp.sh version",
+          "regex": "([0-9]+\\.[0-9][0-9.]*)",
+          "origin": "loadouts/private_dot_config/nvim"
+        },
+        "install": {
+          "custom": {
+            "command": "file:.loadout/install-kotlin-lsp.sh"
+          }
+        },
+        "outdated": {
+          "command": "file:.loadout/outdated-kotlin-lsp.sh",
+          "upgrade": "file:.loadout/outdated-kotlin-lsp.sh update"
+        },
+        "origin": "loadouts/private_dot_config/nvim"
+      },
+      "lazydocker": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "lazygit": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "libffi-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "libvirt": {
+        "description": "libvirt virtualization daemon and tools",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "libxcrypt-compat": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "libyaml-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "libzstd-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "loadout": {
+        "description": "loadout, which reads this repo",
+        "version": {
+          "command": "loadout --version",
+          "regex": "([0-9]+\\.[0-9][0-9.]*)",
+          "origin": "loadouts/private_dot_config",
+          "path": [
+            "$HOME/.local/bin"
+          ]
+        },
+        "install": {
+          "custom": {
+            "command": "curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh"
+          }
+        },
+        "path": [
+          "$HOME/.local/bin"
+        ],
+        "origin": "loadouts/private_dot_config"
+      },
+      "lunar": {
+        "description": "Lunar -- external display brightness/contrast control",
+        "install": {
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "meetingbar": {
+        "description": "MeetingBar -- calendar meetings in the menu bar",
+        "install": {
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "mise": {
+        "description": "mise tool-version manager",
+        "install": {
+          "omarchy": {
+            "pkg": "mise-bin"
+          },
+          "brew": {},
+          "mise-run": {
+            "command": "curl -fsSL https://mise.run | sh",
+            "check": "$HOME/.local/bin/mise --version",
+            "regex": "([0-9]+\\.[0-9][0-9.]*)",
+            "outdated": "file:.loadout/outdated-mise.sh"
+          }
+        },
+        "origin": "loadouts/private_dot_config/mise"
+      },
+      "ncurses-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "ngrok": {
+        "description": "ngrok tunnel",
+        "version": {
+          "command": "ngrok version",
+          "regex": "([0-9]+\\.[0-9][0-9.]*)",
+          "origin": "loadouts/private_dot_config/.ngrok",
+          "path": [
+            "$HOME/.local/bin"
+          ]
+        },
+        "install": {
+          "custom": {
+            "command": "file:.loadout/install-ngrok.sh"
+          }
+        },
+        "path": [
+          "$HOME/.local/bin"
+        ],
+        "origin": "loadouts/private_dot_config/.ngrok"
+      },
+      "obs": {
+        "description": "OBS Studio -- screen recording/streaming",
+        "install": {
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "obsidian": {
+        "description": "Obsidian notes",
+        "install": {
+          "flatpak": {
+            "pkg": "md.obsidian.Obsidian"
+          },
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.obsidian"
+      },
+      "openssl-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "pacman-contrib": {
+        "install": {
+          "pacman": {}
+        },
+        "origin": "loadouts/.etc/pacman"
+      },
+      "patch": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "perl-FindBin": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "procps-ng": {
+        "install": {
+          "dnf": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "qemu": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "qemu-desktop": {
+        "description": "QEMU/KVM for desktop guests",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "raycast": {
+        "description": "Raycast launcher",
+        "install": {
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config/raycast"
+      },
+      "readline-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "ripgrep": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "rocm-smi-lib": {
+        "description": "ROCm SMI library (btop's AMD GPU stats)",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/btop"
+      },
+      "rust": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "scrcpy": {
+        "description": "scrcpy Android screen mirroring",
+        "install": {
+          "brew": {},
+          "dnf-copr": {
+            "with": {
+              "copr": "zeno/scrcpy"
+            }
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "setup-brew": {
+        "description": "Homebrew installed and owned by the login user",
+        "install": {
+          "linux": {
+            "command": "file:.loadout/setup-brew.sh install",
+            "check": "file:.loadout/setup-brew.sh check",
+            "present": true,
+            "sudo": true,
+            "depends-on": [
+              "curl",
+              "git",
+              "gcc",
+              "procps-ng"
+            ],
+            "provides": [
+              {
+                "binary": "brew",
+                "at": "/home/linuxbrew/.linuxbrew/bin"
+              }
+            ]
+          },
+          "macos": {
+            "command": "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
+            "check": "file:.loadout/brew.sh --version",
+            "regex": "Homebrew ([0-9][0-9.]*)",
+            "sudo": true,
+            "provides": [
+              {
+                "binary": "brew",
+                "at": "/opt/homebrew/bin"
+              }
+            ]
+          }
+        },
+        "origin": "loadouts/private_dot_config/.homebrew"
+      },
+      "setup-dnf": {
+        "description": "dnf.conf performance and behavior tweaks",
+        "install": {
+          "dnf": {
+            "command": "file:.loadout/setup-dnf.sh install",
+            "check": "file:.loadout/setup-dnf.sh check",
+            "present": true,
+            "sudo": true
+          }
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "slack": {
+        "description": "Slack desktop app",
+        "install": {
+          "dnf-repo": {
+            "with": {
+              "repofile": "$LOADOUT_REPO/loadouts/private_dot_config/.slack/.loadout/slack.repo"
+            }
+          },
+          "omarchy-aur": {
+            "pkg": "slack-desktop"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.slack"
+      },
+      "solaar": {
+        "description": "Logitech device manager",
+        "install": {
+          "dnf": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "spotify": {
+        "description": "Spotify music streaming",
+        "install": {
+          "omarchy": {},
+          "brew-cask": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "sqlite": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "sqlite-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "starship": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "stremio": {
+        "description": "Stremio media center",
+        "install": {
+          "flatpak": {
+            "pkg": "com.stremio.Stremio"
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "sublime-text": {
+        "description": "Sublime Text editor",
+        "install": {
+          "dnf-repo": {
+            "regex": "([0-9]+)",
+            "with": {
+              "repofile": "https://download.sublimetext.com/rpm/stable/$(uname -m)/sublime-text.repo"
+            }
+          },
+          "omarchy": {
+            "pkg": "sublime-text-4"
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "sudo": {
+        "install": {
+          "custom": {
+            "command": "file:.loadout/install-sudo.sh",
+            "check": "pacman -Q sudo",
+            "regex": "^sudo ([0-9][0-9.p]*[0-9])",
+            "outdated": "checkupdates --nocolor | awk '$1 == \"sudo\" {print \"sudo\", $4}'",
+            "sudo": false
+          }
+        },
+        "origin": "loadouts/.etc/pacman"
+      },
+      "swtpm": {
+        "description": "TPM emulator for guests",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "t2fanrd": {
+        "description": "T2 Mac fan control daemon",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/.etc/t2"
+      },
+      "teams-for-linux": {
+        "description": "Microsoft Teams client",
+        "install": {
+          "dnf-repo": {
+            "with": {
+              "repofile": "https://repo.teamsforlinux.de/rpm/teams-for-linux.repo"
+            }
+          },
+          "omarchy-aur": {
+            "pkg": "teams-for-linux-bin"
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "terraform": {
+        "description": "HashiCorp Terraform",
+        "install": {
+          "brew-tap": {
+            "with": {
+              "tap": "hashicorp/tap"
+            }
+          }
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "tk-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "tmux": {
+        "install": {
+          "brew": {},
+          "dnf": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/tmux"
+      },
+      "tpack": {
+        "description": "tmux package manager",
+        "install": {
+          "brew-tap-cask": {
+            "with": {
+              "tap": "tmuxpack/tpack"
+            }
+          },
+          "linux": {
+            "command": "file:.loadout/install-tpack.sh",
+            "check": "$HOME/.local/bin/tpack --version",
+            "regex": "([0-9]+\\.[0-9][0-9.]*)"
+          }
+        },
+        "origin": "loadouts/private_dot_config/tmux"
+      },
+      "trash-cli": {
+        "install": {
+          "brew": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "tree": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "tree-sitter-cli": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "try": {
+        "description": "ephemeral workspace manager",
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "ttf-firacode-nerd": {
+        "description": "FiraCode Nerd Font",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/kitty"
+      },
+      "unixodbc": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "vim": {
+        "install": {
+          "dnf": {
+            "pkg": "vim-enhanced"
+          },
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "virt-install": {
+        "description": "virt-install, command-line VM creation",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "virt-manager": {
+        "description": "virt-manager GUI",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "virt-viewer": {
+        "description": "virt-viewer, a guest's graphical console",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "virtualization": {
+        "description": "virtualization stack (libvirt, qemu, virt-manager)",
+        "install": {
+          "dnf": {
+            "command": "file:.loadout/virtualization.sh install",
+            "check": "file:.loadout/virtualization.sh check",
+            "present": true
+          }
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "vlc": {
+        "description": "VLC media player",
+        "install": {
+          "dnf": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "voxtype": {
+        "description": "Voxtype push-to-talk speech-to-text",
+        "install": {
+          "brew-tap-cask": {
+            "with": {
+              "tap": "peteonrails/voxtype"
+            }
+          },
+          "omarchy": {
+            "pkg": "voxtype-bin"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "voxtype-tui": {
+        "description": "Voxtype's settings TUI and the Voxtype plugin's backend",
+        "install": {
+          "omarchy-aur": {}
+        },
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "wget": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "wl-clipboard": {
+        "install": {
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "workmux": {
+        "description": "git worktrees + tmux windows for parallel agent sessions",
+        "depends-on": [
+          "tmux"
+        ],
+        "install": {
+          "brew-tap": {
+            "with": {
+              "tap": "raine/workmux"
+            }
+          }
+        },
+        "origin": "loadouts/private_dot_config/workmux"
+      },
+      "wtype": {
+        "description": "xdotool type for Wayland (voxtype's typing backend)",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "xz-devel": {
+        "install": {
+          "dnf": {}
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "yazi": {
+        "install": {
+          "brew": {},
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/yazi"
+      },
+      "yq": {
+        "install": {
+          "brew": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "zenity": {
+        "description": "GTK dialogs from scripts (the Voxtype plugin's file chooser)",
+        "install": {
+          "omarchy": {}
+        },
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "zlib-devel": {
+        "install": {
+          "dnf": {
+            "check": "rpm -q --whatprovides zlib-devel",
+            "regex": "([0-9]+\\.[0-9][0-9.]*)"
+          }
+        },
+        "origin": "loadouts/.etc/dnf"
+      },
+      "zoxide": {
+        "install": {
+          "brew": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config"
+      },
+      "zsh": {
+        "install": {
+          "dnf": {},
+          "omarchy": {},
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config/zsh"
+      },
+      "zsh-autosuggestions": {
+        "install": {
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config/zsh-omalauncher"
+      },
+      "zsh-syntax-highlighting": {
+        "install": {
+          "pacman": {}
+        },
+        "origin": "loadouts/private_dot_config/zsh-omalauncher"
+      }
+    },
+    "scripts": {
+      "bare-repos": {
+        "description": "josemiguelo's repos as bare clones in ~/Repos/gh/josemiguelo",
+        "file": ".loadout/bare-repos.sh",
+        "check": "file:.loadout/bare-repos.sh check \"$@\"",
+        "after": [
+          "programs.git"
+        ],
+        "origin": "loadouts/.repos"
+      },
+      "default-shell": {
+        "description": "login shell set to zsh",
+        "file": ".loadout/default-shell.sh",
+        "check": "file:.loadout/default-shell.sh check \"$@\"",
+        "after": [
+          "programs.zsh"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/zsh"
+      },
+      "dotfiles-old-build-dir": {
+        "description": "remove the build folder loadout 3.1.0 left in the chezmoi checkout",
+        "run": "rm -rf $HOME/.local/share/chezmoi/build",
+        "check": "test ! -d $HOME/.local/share/chezmoi/build",
+        "origin": "loadouts/private_dot_config/chezmoi"
+      },
+      "dotfiles-pull": {
+        "description": "pull dotfiles source when behind its origin",
+        "file": ".loadout/pull.sh",
+        "check": "file:.loadout/pull.sh check \"$@\"",
+        "modes": [
+          "maintain"
+        ],
+        "origin": "loadouts/private_dot_config/chezmoi"
+      },
+      "dotfiles-push": {
+        "description": "push dotfiles source when ahead of its origin",
+        "file": ".loadout/push.sh",
+        "check": "file:.loadout/push.sh check \"$@\"",
+        "after": [
+          "scripts.dotfiles-pull"
+        ],
+        "modes": [
+          "maintain"
+        ],
+        "origin": "loadouts/private_dot_config/chezmoi"
+      },
+      "dotfiles-ssh-remote": {
+        "description": "point the chezmoi checkout's pushes at the ssh dotfiles remote",
+        "run": "git -C $HOME/.local/share/chezmoi remote set-url origin https://github.com/josemiguelo/.dotfiles.git && git -C $HOME/.local/share/chezmoi config remote.origin.pushurl git@github.com:josemiguelo/.dotfiles.git",
+        "check": "test \"$(git -C $HOME/.local/share/chezmoi config --get remote.origin.url)\" = https://github.com/josemiguelo/.dotfiles.git && test \"$(git -C $HOME/.local/share/chezmoi config --get remote.origin.pushurl)\" = git@github.com:josemiguelo/.dotfiles.git",
+        "origin": "loadouts/private_dot_config/chezmoi"
+      },
+      "download-fonts": {
+        "description": "FiraCode nerd fonts",
+        "file": ".loadout/download-fonts.sh",
+        "check": "file:.loadout/download-fonts.sh check \"$@\"",
+        "origin": "loadouts/private_dot_local/share/.fonts"
+      },
+      "fakeroot-shim": {
+        "description": "a fakeroot that runs under proot, for checkupdates",
+        "run": "install -m 755 .loadout/fakeroot /usr/local/bin/fakeroot",
+        "check": "cmp -s .loadout/fakeroot /usr/local/bin/fakeroot",
+        "origin": "loadouts/private_dot_config/private_omalauncher"
+      },
+      "github-ssh-key": {
+        "description": "this machine's ssh key on GitHub",
+        "file": ".loadout/github-ssh-key.sh",
+        "check": "file:.loadout/github-ssh-key.sh check \"$@\"",
+        "after": [
+          "scripts.setup-ssh",
+          "scripts.mise-tools",
+          "programs.gh"
+        ],
+        "origin": "loadouts/.ssh"
+      },
+      "java-macos-integration": {
+        "description": "mise's JDKs registered with macOS (java_home)",
+        "file": ".loadout/java-macos.sh",
+        "check": "file:.loadout/java-macos.sh check \"$@\"",
+        "after": [
+          "scripts.mise-tools"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/mise"
+      },
+      "keychron-launcher-access": {
+        "description": "Keychron Launcher can reach the keyboard (WebHID)",
+        "file": ".loadout/launcher-access.sh",
+        "check": "file:.loadout/launcher-access.sh check \"$@\"",
+        "sudo": true,
+        "origin": "loadouts/.etc/keychron"
+      },
+      "link-jetbrains-launchers-linux": {
+        "description": "symlink JetBrains Toolbox launcher scripts into ~/.local/bin",
+        "file": ".loadout/link-launchers.sh",
+        "check": "file:.loadout/link-launchers.sh check \"$@\"",
+        "after": [
+          "programs.jetbrains-toolbox"
+        ],
+        "origin": "loadouts/private_dot_local/share/.jetbrains"
+      },
+      "machine-name": {
+        "description": "the machine's name in /etc/hostname and LOADOUT_MACHINE",
+        "file": ".loadout/machine-name.sh",
+        "check": "file:.loadout/machine-name.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/private_omalauncher"
+      },
+      "mise-default-packages": {
+        "description": "default npm/gem packages in every mise node/ruby version",
+        "file": ".loadout/default-packages.sh",
+        "check": "file:.loadout/default-packages.sh check \"$@\"",
+        "after": [
+          "scripts.mise-tools"
+        ],
+        "origin": "loadouts/private_dot_config/mise"
+      },
+      "mise-tools": {
+        "description": "mise tools at the versions ~/.config/mise/config.toml pins",
+        "file": ".loadout/tools.sh",
+        "check": "file:.loadout/tools.sh check \"$@\"",
+        "after": [
+          "programs.mise"
+        ],
+        "origin": "loadouts/private_dot_config/mise"
+      },
+      "nvim-plugins": {
+        "description": "lazy.nvim plugins at the commits lazy-lock.json locks",
+        "file": ".loadout/plugins.sh",
+        "check": "file:.loadout/plugins.sh check \"$@\"",
+        "after": [
+          "scripts.mise-tools"
+        ],
+        "origin": "loadouts/private_dot_config/nvim"
+      },
+      "obsidian-headless-sqlite": {
+        "description": "better-sqlite3's prebuilt binding for mise's obsidian-headless",
+        "file": ".loadout/headless-sqlite.sh",
+        "check": "file:.loadout/headless-sqlite.sh check \"$@\"",
+        "after": [
+          "scripts.mise-tools"
+        ],
+        "origin": "loadouts/private_dot_config/.obsidian"
+      },
+      "obsidian-sync": {
+        "description": "an Obsidian Sync vault in a local folder, through ob",
+        "file": ".loadout/sync.sh",
+        "check": "file:.loadout/sync.sh check \"$@\"",
+        "after": [
+          "scripts.mise-tools",
+          "scripts.obsidian-headless-sqlite"
+        ],
+        "origin": "loadouts/private_dot_config/.obsidian"
+      },
+      "omalauncher-layout": {
+        "description": "home as layout.toml says, once the widgets it names are there",
+        "file": ".loadout/layout.sh",
+        "check": "file:.loadout/layout.sh check \"$@\"",
+        "after": [
+          "programs.chezmoi"
+        ],
+        "origin": "loadouts/private_dot_config/private_omalauncher"
+      },
+      "omalauncher-requires": {
+        "description": "every package the launcher's widgets declare",
+        "file": ".loadout/requires.sh",
+        "check": "file:.loadout/requires.sh check \"$@\"",
+        "after": [
+          "programs.sudo",
+          "scripts.omalauncher-tracked"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/private_omalauncher"
+      },
+      "omalauncher-tracked": {
+        "description": "the launcher's files on this phone, as they are, in the repo",
+        "file": ".loadout/tracked.sh",
+        "check": "file:.loadout/tracked.sh check \"$@\"",
+        "after": [
+          "programs.chezmoi"
+        ],
+        "origin": "loadouts/private_dot_config/private_omalauncher"
+      },
+      "omarchy-1password": {
+        "description": "1Password via Omarchy's installer, unscaled, Ctrl+Shift+Space Quick Access",
+        "file": ".loadout/omarchy-1password.sh",
+        "check": "file:.loadout/omarchy-1password.sh check \"$@\"",
+        "after": [
+          "programs.1password",
+          "programs.1password-cli"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-activity-monitor-size": {
+        "description": "activity monitor (btop) window size",
+        "file": ".loadout/omarchy-activity-monitor-size.sh",
+        "check": "file:.loadout/omarchy-activity-monitor-size.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.hypr"
+      },
+      "omarchy-agents-prune": {
+        "description": "only the Omarchy agent launchers and configs in use",
+        "file": ".loadout/omarchy-agents-prune.sh",
+        "check": "file:.loadout/omarchy-agents-prune.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-bar": {
+        "description": "Omarchy bar position, thickness, workspace widget and its settings",
+        "file": ".loadout/omarchy-bar.sh",
+        "check": "file:.loadout/omarchy-bar.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-plugins"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-bar-icons": {
+        "description": "Bar widgets with SVG icons, rebuilt from their source",
+        "file": ".loadout/omarchy-bar-icons.sh",
+        "check": "file:.loadout/omarchy-bar-icons.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-plugins"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-bar-widgets": {
+        "description": "Bar widgets' places and settings",
+        "file": ".loadout/omarchy-bar-widgets.sh",
+        "check": "file:.loadout/omarchy-bar-widgets.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-plugins",
+          "scripts.omarchy-bar-icons"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-brave": {
+        "description": "Brave, set up by Omarchy's browser installer",
+        "file": ".loadout/omarchy-brave.sh",
+        "check": "file:.loadout/omarchy-brave.sh check \"$@\"",
+        "after": [
+          "programs.brave"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-close-window-key": {
+        "description": "SUPER+Q closes windows",
+        "file": ".loadout/omarchy-close-window-key.sh",
+        "check": "file:.loadout/omarchy-close-window-key.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.hypr"
+      },
+      "omarchy-command-overrides": {
+        "description": "local replacements of Omarchy commands come first",
+        "file": ".loadout/omarchy-command-overrides.sh",
+        "check": "file:.loadout/omarchy-command-overrides.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-default-agent": {
+        "description": "Omarchy's default coding agent",
+        "file": ".loadout/default-agent.sh",
+        "check": "test \"$(omarchy default agent)\" = \"$1\"",
+        "after": [
+          "scripts.mise-tools"
+        ],
+        "origin": "loadouts/private_dot_config/mise"
+      },
+      "omarchy-default-browser": {
+        "description": "Omarchy's default browser",
+        "file": ".loadout/omarchy-default-browser-arch.sh",
+        "check": "test \"$(omarchy default browser)\" = \"$1\"",
+        "after": [
+          "programs.brave",
+          "scripts.omarchy-brave"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-default-terminal": {
+        "description": "kitty as omarchy's default terminal",
+        "file": ".loadout/default-terminal.sh",
+        "check": "file:.loadout/default-terminal.sh check \"$@\"",
+        "after": [
+          "programs.kitty"
+        ],
+        "origin": "loadouts/private_dot_config/kitty"
+      },
+      "omarchy-dictation": {
+        "description": "Voxtype dictation, set up the way Omarchy's installer does",
+        "file": ".loadout/dictation.sh",
+        "check": "file:.loadout/dictation.sh check \"$@\"",
+        "after": [
+          "programs.voxtype",
+          "programs.wtype"
+        ],
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "omarchy-dictation-gpu": {
+        "description": "Voxtype dictation on the GPU (Vulkan)",
+        "file": ".loadout/dictation-gpu.sh",
+        "check": "file:.loadout/dictation-gpu.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-dictation"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "omarchy-google-bindings": {
+        "description": "email and calendar keys open Gmail and Google Calendar",
+        "file": ".loadout/omarchy-google-bindings.sh",
+        "check": "file:.loadout/omarchy-google-bindings.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.hypr"
+      },
+      "omarchy-harpoon": {
+        "description": "Hyper+letter app hotkeys (jump, overlay)",
+        "file": ".loadout/omarchy-harpoon.sh",
+        "check": "file:.loadout/omarchy-harpoon.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.hypr"
+      },
+      "omarchy-hypr-config": {
+        "description": "Hyprland settings from hypr-config/*.lua",
+        "file": ".loadout/omarchy-hypr-config.sh",
+        "check": "file:.loadout/omarchy-hypr-config.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.hypr"
+      },
+      "omarchy-idle": {
+        "description": "the session locks after the opt-in's seconds idle",
+        "file": ".loadout/omarchy-idle.sh",
+        "check": "file:.loadout/omarchy-idle.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-keyboard-backlight-guard": {
+        "description": "keyboard backlight comes back after sleep",
+        "file": ".loadout/omarchy-keyboard-backlight-guard.sh",
+        "check": "file:.loadout/omarchy-keyboard-backlight-guard.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-command-overrides"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-keystroke-windows": {
+        "description": "Hyper+Space lists every window, by workspace (Keystroke)",
+        "file": ".loadout/omarchy-keystroke-windows.sh",
+        "check": "file:.loadout/omarchy-keystroke-windows.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-plugins"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-menu-button": {
+        "description": "The menu button in the place of Keystroke's bar button",
+        "file": ".loadout/omarchy-menu-button.sh",
+        "check": "file:.loadout/omarchy-menu-button.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-plugins",
+          "scripts.omarchy-bar-icons"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-plugins": {
+        "description": "Omarchy shell plugins installed and enabled",
+        "file": ".loadout/omarchy-plugins.sh",
+        "check": "file:.loadout/omarchy-plugins.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-pomodoro": {
+        "description": "Pomodoro timer: by the clock, 50+10, Trigger menu entries",
+        "file": ".loadout/omarchy-pomodoro.sh",
+        "check": "file:.loadout/omarchy-pomodoro.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-plugins",
+          "scripts.omarchy-bar-icons"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-scratchpad-opacity": {
+        "description": "scratchpad kitty windows less see-through",
+        "file": ".loadout/omarchy-scratchpad-opacity.sh",
+        "check": "file:.loadout/omarchy-scratchpad-opacity.sh check \"$@\"",
+        "after": [
+          "programs.kitty"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-sshd": {
+        "description": "sshd with key-only logins for the trusted GitHub keys",
+        "file": ".loadout/omarchy-sshd.sh",
+        "check": "file:.loadout/omarchy-sshd.sh check \"$@\"",
+        "after": [
+          "scripts.github-ssh-key"
+        ],
+        "sudo": true,
+        "origin": "loadouts/.ssh"
+      },
+      "omarchy-sudoless-docker": {
+        "description": "sudoless Docker (user in the docker group)",
+        "file": ".loadout/omarchy-sudoless-docker.sh",
+        "check": "file:.loadout/omarchy-sudoless-docker.sh check \"$@\"",
+        "after": [
+          "programs.lazydocker"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-theme-mode": {
+        "description": "Hyper+Enter switches between the dark and light theme",
+        "file": ".loadout/omarchy-theme-mode.sh",
+        "check": "file:.loadout/omarchy-theme-mode.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.hypr"
+      },
+      "omarchy-tmux-theme": {
+        "description": "tmux keeps kitty's palette across omarchy theme switches",
+        "file": ".loadout/omarchy-theme.sh",
+        "check": "file:.loadout/omarchy-theme.sh check \"$@\"",
+        "after": [
+          "programs.tmux"
+        ],
+        "origin": "loadouts/private_dot_config/tmux"
+      },
+      "omarchy-vscode": {
+        "description": "VS Code, set up by Omarchy's installer",
+        "file": ".loadout/omarchy-vscode.sh",
+        "check": "file:.loadout/omarchy-vscode.sh check \"$@\"",
+        "after": [
+          "programs.code"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-webapp-claude": {
+        "description": "Claude web app, on Hyper+C",
+        "file": ".loadout/omarchy-webapp-claude.sh",
+        "check": "file:.loadout/omarchy-webapp-claude.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-webapp-gmail": {
+        "description": "Gmail web app, the default for email links",
+        "file": ".loadout/omarchy-webapp-gmail.sh",
+        "check": "file:.loadout/omarchy-webapp-gmail.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-webapps-remove"
+        ],
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-webapp-google-calendar": {
+        "description": "Google Calendar web app",
+        "file": ".loadout/omarchy-webapp-google-calendar.sh",
+        "check": "file:.loadout/omarchy-webapp-google-calendar.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "omarchy-webapps-remove": {
+        "description": "Omarchy web apps removed",
+        "file": ".loadout/omarchy-webapps-remove.sh",
+        "check": "file:.loadout/omarchy-webapps-remove.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "remove-brew-tmux": {
+        "description": "no tpack, tmux or git from brew (Linux has its own)",
+        "file": ".loadout/remove-brew-tmux.sh",
+        "check": "file:.loadout/remove-brew-tmux.sh check \"$@\"",
+        "after": [
+          "programs.tpack"
+        ],
+        "origin": "loadouts/private_dot_config/tmux"
+      },
+      "remove-firefox-flatpak": {
+        "description": "remove the firefox flatpak",
+        "run": "flatpak --user uninstall --delete-data -y org.mozilla.firefox",
+        "check": "! flatpak --user info org.mozilla.firefox >/dev/null 2>&1",
+        "origin": "loadouts/private_dot_config/.firefox"
+      },
+      "setup-completions": {
+        "description": "shell completions",
+        "file": ".loadout/completions.sh",
+        "check": "file:.loadout/completions.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/zsh"
+      },
+      "setup-git": {
+        "description": "git identity and delta configuration",
+        "file": ".loadout/setup-git.sh",
+        "check": "file:.loadout/setup-git.sh check \"$@\"",
+        "origin": "loadouts/.gitconfig"
+      },
+      "setup-libvirt": {
+        "description": "libvirtd enabled and the login user in its group",
+        "sudo": true,
+        "variants": {
+          "arch": {
+            "file": ".loadout/setup-libvirt-arch.sh",
+            "check": "file:.loadout/setup-libvirt-arch.sh check \"$@\"",
+            "after": [
+              "programs.libvirt",
+              "programs.qemu-desktop",
+              "programs.dnsmasq"
+            ],
+            "origin": "loadouts/private_dot_config/.libvirt"
+          },
+          "fedora": {
+            "run": "sudo systemctl enable libvirtd && sudo systemctl start libvirtd && sudo usermod -a -G kvm \"$USER\"",
+            "check": "systemctl is-enabled libvirtd >/dev/null 2>&1 && id -nG \"$USER\" | grep -qw kvm",
+            "after": [
+              "programs.virtualization"
+            ],
+            "origin": "loadouts/private_dot_config/.libvirt"
+          }
+        },
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "setup-ssh": {
+        "description": "machine ssh key and agent auto-add config",
+        "file": ".loadout/setup-ssh.sh",
+        "check": "test -f $HOME/.ssh/$1 && grep -q 'AddKeysToAgent yes' $HOME/.ssh/config && { test \"$(uname -s)\" != Linux || test ! -d /run/systemd/system || systemctl --user -q is-enabled ssh-agent.socket; }",
+        "origin": "loadouts/.ssh"
+      },
+      "skills-repo": {
+        "description": "clone the skills repo (bare + worktree) and symlink its skills into ~/.claude/skills",
+        "file": ".loadout/skills-repo.sh",
+        "check": "file:.loadout/skills-repo.sh check \"$@\"",
+        "origin": "loadouts/private_dot_claude"
+      },
+      "solaar-no-autostart": {
+        "description": "remove solaar autostart entry",
+        "run": "sudo rm -f /etc/xdg/autostart/solaar.desktop",
+        "check": "test ! -f /etc/xdg/autostart/solaar.desktop",
+        "after": [
+          "programs.solaar"
+        ],
+        "origin": "loadouts/private_dot_config"
+      },
+      "surfingkeys": {
+        "description": "Surfingkeys in Brave, reading ~/.config/surfingkeys/surfingkeys.js",
+        "file": ".loadout/surfingkeys.sh",
+        "check": "file:.loadout/surfingkeys.sh check \"$@\"",
+        "after": [
+          "programs.brave"
+        ],
+        "origin": "loadouts/private_dot_config/surfingkeys"
+      },
+      "surfingkeys-split-view": {
+        "description": "Brave loads the Split view keys extension behind Surfingkeys' gs",
+        "file": ".loadout/split-view.sh",
+        "check": "file:.loadout/split-view.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-brave"
+        ],
+        "origin": "loadouts/private_dot_config/surfingkeys"
+      },
+      "t2-boot-clock": {
+        "description": "keep the EC hardware clock set (T2 Mac)",
+        "file": ".loadout/boot-clock.sh",
+        "check": "file:.loadout/boot-clock.sh check \"$@\"",
+        "sudo": true,
+        "origin": "loadouts/.etc/t2"
+      },
+      "t2-fan-curve": {
+        "description": "t2fanrd fan curve in /etc/t2fand.conf",
+        "file": ".loadout/fan-curve.sh",
+        "check": "file:.loadout/fan-curve.sh check \"$@\"",
+        "after": [
+          "programs.t2fanrd"
+        ],
+        "sudo": true,
+        "origin": "loadouts/.etc/t2"
+      },
+      "t2-fan-gpu-card": {
+        "description": "the GPU with a temperature sensor as card0, where t2fanrd reads it",
+        "file": ".loadout/fan-gpu-card.sh",
+        "check": "file:.loadout/fan-gpu-card.sh check \"$@\"",
+        "after": [
+          "programs.t2fanrd"
+        ],
+        "sudo": true,
+        "origin": "loadouts/.etc/t2"
+      },
+      "t2-gmux-backlight": {
+        "description": "screen brightness kept across suspend and reboots (T2 Mac)",
+        "file": ".loadout/gmux-backlight.sh",
+        "check": "file:.loadout/gmux-backlight.sh check \"$@\"",
+        "after": [
+          "scripts.omarchy-command-overrides"
+        ],
+        "sudo": true,
+        "origin": "loadouts/.etc/t2"
+      },
+      "t2-hid-apple-keyboard": {
+        "description": "internal keyboard fn/ctrl swap and fnmode",
+        "sudo": true,
+        "variants": {
+          "arch": {
+            "file": ".loadout/hid-apple-keyboard-arch.sh",
+            "check": "file:.loadout/hid-apple-keyboard-arch.sh check \"$@\"",
+            "origin": "loadouts/.etc/t2"
+          },
+          "fedora": {
+            "file": ".loadout/hid-apple-keyboard.sh",
+            "check": "file:.loadout/hid-apple-keyboard.sh check \"$@\"",
+            "origin": "loadouts/.etc/t2"
+          }
+        },
+        "origin": "loadouts/.etc/t2"
+      },
+      "t2-render-gpu": {
+        "description": "Hyprland renders on the GPU driving the panel (T2 Mac)",
+        "file": ".loadout/render-gpu.sh",
+        "check": "file:.loadout/render-gpu.sh check \"$@\"",
+        "origin": "loadouts/.etc/t2"
+      },
+      "tmux-plugins": {
+        "description": "tmux plugins tmux.conf declares",
+        "file": ".loadout/plugins.sh",
+        "check": "file:.loadout/plugins.sh check \"$@\"",
+        "after": [
+          "programs.tmux",
+          "programs.tpack"
+        ],
+        "origin": "loadouts/private_dot_config/tmux"
+      },
+      "ufw-libvirt": {
+        "description": "ufw allows libvirt's default NAT network (virbr0)",
+        "file": ".loadout/ufw-libvirt.sh",
+        "check": "file:.loadout/ufw-libvirt.sh check \"$@\"",
+        "after": [
+          "scripts.setup-libvirt"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/.libvirt"
+      },
+      "unlink-brew-glib": {
+        "description": "brew's glib unlinked (the system's gsettings reaches dconf)",
+        "file": ".loadout/unlink-brew-glib.sh",
+        "check": "file:.loadout/unlink-brew-glib.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.homebrew"
+      },
+      "user-environment": {
+        "description": "systemd user environment matches ~/.config/environment.d",
+        "file": ".loadout/user-environment.sh",
+        "check": "file:.loadout/user-environment.sh check \"$@\"",
+        "origin": "loadouts/private_dot_config/.environment.d"
+      },
+      "voxtype-setup": {
+        "description": "Voxtype configured, Voxtype.app created (macOS)",
+        "file": ".loadout/voxtype-setup.sh",
+        "check": "file:.loadout/voxtype-setup.sh check \"$@\"",
+        "after": [
+          "programs.voxtype"
+        ],
+        "sudo": true,
+        "origin": "loadouts/private_dot_config/.voxtype"
+      },
+      "workmux-setup": {
+        "description": "workmux's status-tracking hooks and skills for the agents here",
+        "file": ".loadout/setup.sh",
+        "check": "file:.loadout/setup.sh check \"$@\"",
+        "after": [
+          "programs.workmux"
+        ],
+        "origin": "loadouts/private_dot_config/workmux"
+      },
+      "zsh-plugins": {
+        "description": "antidote and the bundles .zplugins declares",
+        "file": ".loadout/plugins.sh",
+        "check": "file:.loadout/plugins.sh check \"$@\"",
+        "after": [
+          "programs.zsh"
+        ],
+        "origin": "loadouts/private_dot_config/zsh"
+      }
+    },
+    "machines": {
+      "omalauncher-galaxy-a56": {
+        "extends": [
+          "omalauncher"
+        ],
+        "pm": {
+          "bat": "pacman",
+          "chezmoi": "pacman",
+          "eza": "pacman",
+          "fzf": "pacman",
+          "gh": "pacman",
+          "git": "pacman",
+          "git-delta": "pacman",
+          "loadout": "custom",
+          "mise": "mise-run",
+          "pacman-contrib": "pacman",
+          "sudo": "custom",
+          "trash-cli": "pacman",
+          "wl-clipboard": "pacman",
+          "zoxide": "pacman",
+          "zsh": "pacman",
+          "zsh-autosuggestions": "pacman",
+          "zsh-syntax-highlighting": "pacman"
+        },
+        "scripts": [
+          "machine-name",
+          "fakeroot-shim",
+          "omalauncher-tracked",
+          "omalauncher-requires",
+          "omalauncher-layout",
+          "bare-repos loadout loadout.wiki",
+          "skills-repo",
+          "setup-ssh id_ed25519",
+          "github-ssh-key id_ed25519",
+          "dotfiles-pull",
+          "dotfiles-push",
+          "dotfiles-ssh-remote",
+          "dotfiles-old-build-dir",
+          "setup-git",
+          "mise-tools",
+          "obsidian-headless-sqlite",
+          "obsidian-sync jm ~/Obsidian/vault pull-only",
+          "default-shell"
+        ],
+        "data": {
+          "omarchy": false,
+          "work": false,
+          "omalauncher": true,
+          "kitty": {
+            "opacity": 0.85
+          }
+        }
+      },
+      "omarchy-vm": {
+        "extends": [
+          "omarchy"
+        ],
+        "pm": {
+          "1password": "omarchy",
+          "1password-cli": "omarchy",
+          "antigravity": "omarchy-aur",
+          "anydesk": "omarchy-aur",
+          "atuin": "omarchy",
+          "awscli": "brew",
+          "bat": "omarchy",
+          "brave": "omarchy-aur",
+          "btop": "omarchy",
+          "chezmoi": "omarchy",
+          "code": "omarchy",
+          "curl": "omarchy",
+          "eza": "omarchy",
+          "fd": "omarchy",
+          "flathub-remote": "flatpak",
+          "flatpak": "omarchy",
+          "fzf": "omarchy",
+          "gcc": "omarchy",
+          "ghostscript": "omarchy",
+          "git": "omarchy",
+          "git-delta": "omarchy",
+          "google-cloud-cli": "brew-cask",
+          "gum": "omarchy",
+          "jetbrains-toolbox": "linux",
+          "just": "brew",
+          "kitty": "omarchy",
+          "kotlin-lsp": "custom",
+          "lazydocker": "omarchy",
+          "lazygit": "omarchy",
+          "mise": "omarchy",
+          "ngrok": "custom",
+          "obsidian": "omarchy",
+          "procps-ng": "omarchy",
+          "ripgrep": "omarchy",
+          "scrcpy": "brew",
+          "setup-brew": "linux",
+          "slack": "omarchy-aur",
+          "spotify": "omarchy",
+          "starship": "omarchy",
+          "stremio": "flatpak",
+          "sublime-text": "omarchy",
+          "teams-for-linux": "omarchy-aur",
+          "tmux": "omarchy",
+          "tpack": "linux",
+          "trash-cli": "brew",
+          "tree-sitter-cli": "omarchy",
+          "ttf-firacode-nerd": "omarchy",
+          "vim": "brew",
+          "vlc": "omarchy",
+          "voxtype": "omarchy",
+          "voxtype-tui": "omarchy-aur",
+          "workmux": "brew-tap",
+          "wtype": "omarchy",
+          "yazi": "omarchy",
+          "yq": "brew",
+          "zenity": "omarchy",
+          "zoxide": "omarchy",
+          "zsh": "omarchy"
+        },
+        "scripts": [
+          "dotfiles-pull",
+          "dotfiles-push",
+          "dotfiles-ssh-remote",
+          "dotfiles-old-build-dir",
+          "setup-git",
+          "skills-repo",
+          "workmux-setup",
+          "default-shell",
+          "nvim-plugins",
+          "unlink-brew-glib",
+          "keychron-launcher-access",
+          "zsh-plugins",
+          "setup-completions",
+          "mise-tools",
+          "mise-default-packages",
+          "omarchy-default-agent claude",
+          "omarchy-default-terminal",
+          "tmux-plugins",
+          "remove-brew-tmux",
+          "omarchy-tmux-theme",
+          "link-jetbrains-launchers-linux",
+          "omarchy-hypr-config input looknfeel",
+          "omarchy-close-window-key",
+          "omarchy-google-bindings",
+          "omarchy-harpoon",
+          "omarchy-theme-mode tokyo-night catppuccin-latte",
+          "omarchy-bar top 24 tornikegomareli.spaces",
+          "omarchy-plugins https://github.com/evindor/keystroke.git https://github.com/jankeesvw/omarchy-notification-center.git https://github.com/tornikegomareli/omarchy-spaces.git https://github.com/binoymanoj/pomodoro-omarchy.git https://github.com/Zeus-Deus/voxtype-omarchy-plugin.git https://github.com/sumdahl/omarchy-plugin-media.git",
+          "omarchy-bar-icons josemiguelo.menu-button josemiguelo.workspace-layout josemiguelo.theme-mode omarchy.monitor omarchy.bluetooth omarchy.network omarchy.audio omarchy.power omarchy.agents omarchy.system-update omarchy.indicators omarchy.weather omarchy.tray jankeesvw.notification-center io.github.zeus-deus.voxtype io.github.sumdahl.media pomodoro-omarchy omarchy.clock tornikegomareli.spaces",
+          "omarchy-bar-widgets josemiguelo.workspace-layout left before tornikegomareli.spaces josemiguelo.menu-button left before josemiguelo.workspace-layout io.github.sumdahl.media right after omarchy.tray omarchy.power right after omarchy.monitor josemiguelo.theme-mode right before omarchy.tray",
+          "omarchy-menu-button",
+          "omarchy-keystroke-windows",
+          "omarchy-pomodoro",
+          "omarchy-1password",
+          "omarchy-vscode",
+          "omarchy-brave",
+          "omarchy-default-browser brave",
+          "surfingkeys",
+          "surfingkeys-split-view",
+          "omarchy-agents-prune claude codex gh gemini",
+          "omarchy-webapps-remove Basecamp HEY",
+          "omarchy-webapp-gmail",
+          "omarchy-webapp-google-calendar",
+          "omarchy-webapp-claude",
+          "omarchy-command-overrides",
+          "omarchy-keyboard-backlight-guard",
+          "omarchy-idle 1000",
+          "omarchy-dictation",
+          "omarchy-dictation-gpu",
+          "setup-ssh id_ed25519",
+          "github-ssh-key id_ed25519"
+        ],
+        "data": {
+          "omarchy": true,
+          "work": false,
+          "omalauncher": false,
+          "kitty": {
+            "opacity": 0.85
+          }
+        }
+      },
+      "t2-macbook-omarchy": {
+        "extends": [
+          "t2-macbook"
+        ],
+        "pm": {
+          "1password": "omarchy",
+          "1password-cli": "omarchy",
+          "antigravity": "omarchy-aur",
+          "anydesk": "omarchy-aur",
+          "atuin": "omarchy",
+          "awscli": "brew",
+          "bat": "omarchy",
+          "brave": "omarchy-aur",
+          "btop": "omarchy",
+          "chezmoi": "omarchy",
+          "code": "omarchy",
+          "curl": "omarchy",
+          "dnsmasq": "omarchy",
+          "edk2-ovmf": "omarchy",
+          "eza": "omarchy",
+          "fd": "omarchy",
+          "flathub-remote": "flatpak",
+          "flatpak": "omarchy",
+          "fzf": "omarchy",
+          "gcc": "omarchy",
+          "ghostscript": "omarchy",
+          "git": "omarchy",
+          "git-delta": "omarchy",
+          "google-cloud-cli": "brew-cask",
+          "gum": "omarchy",
+          "jetbrains-toolbox": "linux",
+          "just": "brew",
+          "kitty": "omarchy",
+          "kotlin-lsp": "custom",
+          "lazydocker": "omarchy",
+          "lazygit": "omarchy",
+          "libvirt": "omarchy",
+          "mise": "omarchy",
+          "ngrok": "custom",
+          "obsidian": "omarchy",
+          "procps-ng": "omarchy",
+          "qemu-desktop": "omarchy",
+          "ripgrep": "omarchy",
+          "rocm-smi-lib": "omarchy",
+          "scrcpy": "brew",
+          "setup-brew": "linux",
+          "slack": "omarchy-aur",
+          "solaar": "omarchy",
+          "spotify": "omarchy",
+          "starship": "omarchy",
+          "stremio": "flatpak",
+          "sublime-text": "omarchy",
+          "swtpm": "omarchy",
+          "t2fanrd": "omarchy",
+          "teams-for-linux": "omarchy-aur",
+          "tmux": "omarchy",
+          "tpack": "linux",
+          "trash-cli": "brew",
+          "tree-sitter-cli": "omarchy",
+          "ttf-firacode-nerd": "omarchy",
+          "vim": "brew",
+          "virt-install": "omarchy",
+          "virt-manager": "omarchy",
+          "virt-viewer": "omarchy",
+          "vlc": "omarchy",
+          "voxtype": "omarchy",
+          "voxtype-tui": "omarchy-aur",
+          "workmux": "brew-tap",
+          "wtype": "omarchy",
+          "yazi": "omarchy",
+          "yq": "brew",
+          "zenity": "omarchy",
+          "zoxide": "omarchy",
+          "zsh": "omarchy"
+        },
+        "scripts": [
+          "dotfiles-pull",
+          "dotfiles-push",
+          "dotfiles-ssh-remote",
+          "dotfiles-old-build-dir",
+          "setup-git",
+          "skills-repo",
+          "workmux-setup",
+          "default-shell",
+          "nvim-plugins",
+          "unlink-brew-glib",
+          "keychron-launcher-access",
+          "zsh-plugins",
+          "setup-completions",
+          "mise-tools",
+          "mise-default-packages",
+          "omarchy-default-agent claude",
+          "omarchy-default-terminal",
+          "tmux-plugins",
+          "remove-brew-tmux",
+          "omarchy-tmux-theme",
+          "link-jetbrains-launchers-linux",
+          "omarchy-hypr-config input looknfeel",
+          "omarchy-close-window-key",
+          "omarchy-google-bindings",
+          "omarchy-harpoon",
+          "omarchy-theme-mode tokyo-night catppuccin-latte",
+          "omarchy-bar top 24 tornikegomareli.spaces",
+          "omarchy-plugins https://github.com/evindor/keystroke.git https://github.com/jankeesvw/omarchy-notification-center.git https://github.com/tornikegomareli/omarchy-spaces.git https://github.com/binoymanoj/pomodoro-omarchy.git https://github.com/Zeus-Deus/voxtype-omarchy-plugin.git https://github.com/sumdahl/omarchy-plugin-media.git",
+          "omarchy-bar-icons josemiguelo.menu-button josemiguelo.workspace-layout josemiguelo.theme-mode omarchy.monitor omarchy.bluetooth omarchy.network omarchy.audio omarchy.power omarchy.agents omarchy.system-update omarchy.indicators omarchy.weather omarchy.tray jankeesvw.notification-center io.github.zeus-deus.voxtype io.github.sumdahl.media pomodoro-omarchy omarchy.clock tornikegomareli.spaces",
+          "omarchy-bar-widgets josemiguelo.workspace-layout left before tornikegomareli.spaces josemiguelo.menu-button left before josemiguelo.workspace-layout io.github.sumdahl.media right after omarchy.tray omarchy.power right after omarchy.monitor josemiguelo.theme-mode right before omarchy.tray",
+          "omarchy-menu-button",
+          "omarchy-keystroke-windows",
+          "omarchy-pomodoro",
+          "omarchy-1password",
+          "omarchy-vscode",
+          "omarchy-brave",
+          "omarchy-default-browser brave",
+          "surfingkeys",
+          "surfingkeys-split-view",
+          "omarchy-agents-prune claude codex gh gemini",
+          "omarchy-webapps-remove Basecamp HEY",
+          "omarchy-webapp-gmail",
+          "omarchy-webapp-google-calendar",
+          "omarchy-webapp-claude",
+          "omarchy-command-overrides",
+          "omarchy-keyboard-backlight-guard",
+          "omarchy-idle 1000",
+          "omarchy-dictation",
+          "omarchy-dictation-gpu",
+          "setup-ssh id_ed25519",
+          "github-ssh-key id_ed25519",
+          "omarchy-sshd t2-macbook-omarchy t2-macbook-omarchy-2 omarchy-vm omalauncher-galaxy-a56 work-mac",
+          "t2-hid-apple-keyboard",
+          "t2-fan-curve",
+          "t2-fan-gpu-card",
+          "t2-boot-clock",
+          "t2-gmux-backlight",
+          "t2-render-gpu",
+          "setup-libvirt",
+          "ufw-libvirt",
+          "omarchy-sudoless-docker",
+          "omarchy-activity-monitor-size 90% 90%",
+          "omarchy-scratchpad-opacity 0.99",
+          "solaar-no-autostart"
+        ],
+        "script-variants": {
+          "setup-libvirt": "arch",
+          "t2-hid-apple-keyboard": "arch"
+        },
+        "data": {
+          "omarchy": true,
+          "work": false,
+          "omalauncher": false,
+          "kitty": {
+            "opacity": 0.85
+          }
+        }
+      }
+    },
+    "outdated": {
+      "antidote": {
+        "command": "file:.loadout/outdated-antidote.sh",
+        "upgrade": "file:.loadout/outdated-antidote.sh update {item}",
+        "origin": "loadouts/private_dot_config/zsh"
+      },
+      "antidote-plugins": {
+        "command": "file:.loadout/outdated-antidote-plugins.sh",
+        "upgrade": "file:.loadout/outdated-antidote-plugins.sh update {item}",
+        "origin": "loadouts/private_dot_config/zsh"
+      },
+      "mise-tools": {
+        "command": "file:.loadout/outdated-tools.sh",
+        "upgrade": "file:.loadout/outdated-tools.sh update {item}",
+        "origin": "loadouts/private_dot_config/mise"
+      },
+      "nvim-plugins": {
+        "command": "file:.loadout/outdated-plugins.sh",
+        "upgrade": "file:.loadout/outdated-plugins.sh update {item}",
+        "origin": "loadouts/private_dot_config/nvim"
+      },
+      "omarchy-plugins": {
+        "command": "file:.loadout/outdated-plugins.sh",
+        "upgrade": "file:.loadout/outdated-plugins.sh update {item}",
+        "origin": "loadouts/private_dot_config/.omarchy"
+      },
+      "tmux-plugins": {
+        "command": "file:.loadout/outdated-plugins.sh",
+        "upgrade": "file:.loadout/outdated-plugins.sh update {item}",
+        "origin": "loadouts/private_dot_config/tmux"
+      }
+    },
+    "builtinInstallers": [
+      "apt",
+      "brew",
+      "brew-cask",
+      "dnf",
+      "dnf-copr",
+      "dnf-repo",
+      "flatpak",
+      "omarchy",
+      "omarchy-aur",
+      "pacman"
+    ],
+    "data": {
+      "omarchy": false,
+      "work": false,
+      "omalauncher": false,
+      "kitty": {
+        "opacity": 0.85
+      }
+    }
+  }
+}

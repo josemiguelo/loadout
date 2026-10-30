@@ -36,8 +36,8 @@ printf '.config/zsh/.zshrc\n.config/zsh/conf.d/a.zsh\n.config/tmux/tmux.conf\n.z
 printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
 
 basic_repo repo
-sed -i.bak 's|state = "machines/state",|state = "machines/state", configs = "configs",|' repo/loadout.kt && rm repo/loadout.kt.bak
-grep -q 'configs = "configs"' repo/loadout.kt || fail "the fixture declares configs"
+repo_attr repo/loadout.hcl 'configs = "configs"'
+grep -q 'configs = "configs"' repo/loadout.hcl || fail "the fixture declares configs"
 mkdir -p repo/configs
 compile_repo repo
 
@@ -156,7 +156,7 @@ git -C repo push -qu origin HEAD 2>/dev/null
 git clone -q origin.git elsewhere
 git -C elsewhere config user.email test@example.com && git -C elsewhere config user.name "Integration Test"
 git -C elsewhere mv configs dots
-sed -i.bak 's|configs = "configs"|configs = "dots"|' elsewhere/loadout.kt && rm elsewhere/loadout.kt.bak
+sed -i.bak 's|configs = "configs"|configs = "dots"|' elsewhere/loadout.hcl && rm elsewhere/loadout.hcl.bak
 compile_repo elsewhere
 git -C elsewhere add -A && git -C elsewhere commit -qm "configs is dots now" && git -C elsewhere push -q 2>/dev/null
 printf ' M .zshenv\n' > "$CZ/status"
@@ -166,34 +166,38 @@ grep -q "^--source [^ ]*/repo/dots --no-pager apply" "$CZ/log" || fail "the appl
 grep -q "/repo/configs " "$CZ/log" && fail "nothing reads the old folder: $(cat "$CZ/log")"
 ok "sync applies from a configs folder its own pull renamed"
 
-# --- the home screen's configs row ----------------------------------------
+# --- the home screen's configs subject --------------------------------------
 # The stub goes on PATH in a subshell: an assignment in front of a shell
 # function may outlive the call, and the next test file must not see it.
 if has_pty; then
     fake_release_cache
     printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
     cz_loadout --repo repo --machine m1 status >/dev/null
-    # jj to the configs row (programs, scripts, configs), l opens it with
-    # the drifted one ticked, enter asks, enter applies on the terminal.
-    { wait_settled tui-configs.log; wait_screen tui-configs.log 'apply wh'
-      printf 'jj'; sleep 0.4; printf 'l'; wait_screen tui-configs.log 'enter apply'
-      printf '\r'; wait_screen tui-configs.log 'These configs will be written'
-      printf '\r'; wait_back tui-configs.log; printf '\r'; wait_screen tui-configs.log 'nothing drifted'; printf 'q'; sleep 1; } |
-        (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; pty_run tui-configs.log --repo repo --machine m1)
-    seen tui-configs.log "configs .*1 drifted" || fail "the configs row counts what drifted"
-    seen tui-configs.log "\[x\] ! zsh +drifted +.config/zsh/.zshrc" || fail "the picker ticks the drifted config, naming its file"
-    seen tui-configs.log "━━ loadout apply zsh ━" || fail "enter hands the ticked configs to apply"
-    seen_after_back tui-configs.log "nothing drifted" || fail "the screen comes back with the row settled"
-    ok "the home screen's configs row hands drifted configs to apply"
+    # 3 shows the configs (programs, scripts, configs), l goes into the list
+    # with the drifted one ticked, enter asks, enter applies in the panel.
+    { wait_settled tui-configs; wait_frame tui-configs 'configs +1 drifted' && cp tui-configs.screen tui-configs.first
+      printf '3'; sleep 0.3; printf 'l'; wait_frame tui-configs '◉ ● zsh +\.config/zsh/\.zshrc +drifted' && cp tui-configs.screen tui-configs.list
+      printf '\r'; wait_frame tui-configs 'These configs will be written'
+      printf '\r'; wait_done tui-configs; wait_frame tui-configs 'configs +[0-9]+ applied' && cp tui-configs.screen tui-configs.done
+      printf 'q'; sleep 1; } |
+        (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; screen_run tui-configs --repo repo --machine m1)
+    [ -f tui-configs.first ] || fail_frame tui-configs "the configs subject counts what drifted"
+    [ -f tui-configs.list ] || fail_frame tui-configs "the list ticks the drifted config, naming its file"
+    grep -qE 'Run .*loadout apply zsh' tui-configs.done || fail_frame tui-configs "enter runs apply on the ticked configs"
+    grep -q " apply" "$CZ/log" || fail "chezmoi applied"
+    ok "the home screen's configs subject applies drifted configs in the run panel"
 
     printf 'MM .config/zsh/.zshrc\n' > "$CZ/status"
     cz_loadout --repo repo --machine m1 status >/dev/null
     : > "$CZ/log"
-    { wait_settled tui-edited.log; wait_screen tui-edited.log 'apply wh'
-      printf 'jj'; sleep 0.4; printf 'l'; wait_screen tui-edited.log 'enter apply'
-      printf '\r'; wait_screen tui-edited.log 'edited on this machine'; printf 'q'; sleep 1; } |
-        (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; pty_run tui-edited.log --repo repo --machine m1)
-    seen tui-edited.log "edited on this machine: .config/zsh/.zshrc" || fail "the screen names the edited file"
+    { wait_settled tui-edited; wait_frame tui-edited 'configs +1 drifted'
+      printf '3'; sleep 0.3; printf 'l'; sleep 0.3; printf '\r'; wait_frame tui-edited 'edited on this machine' 'Edited here' && cp tui-edited.screen tui-edited.refused
+      printf '\033'; sleep 0.4; printf 'q'; sleep 1; } |
+        (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; screen_run tui-edited --repo repo --machine m1)
+    # The card wraps its message: its title, then the words across lines.
+    grep -q "× Error" tui-edited.refused && grep -q "edited on this machine" tui-edited.refused \
+        && grep -q "zshrc" tui-edited.refused || fail_frame tui-edited "a toast names the edited file"
+    grep -qE '│ +\.config/zsh/\.zshrc' tui-edited.refused || fail "and a dialog lists it"
     grep -q " apply" "$CZ/log" && fail "nothing is applied from the screen over an edit"
-    ok "the configs row refuses a file edited on this machine before leaving the screen"
+    ok "the configs subject refuses a file edited on this machine before anything runs"
 fi

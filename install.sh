@@ -1,20 +1,17 @@
 #!/bin/sh
-# Install the latest loadout release into ~/.local: the binary in bin/, and
-# its share directory (the manifest DSL, its Gradle plugin and the Gradle
-# wrapper new repos get) in share/loadout/. No sudo.
+# Install the latest loadout release into ~/.local/bin: one binary, which
+# compiles manifests itself (no share directory, no JDK). An older
+# loadout's ~/.local/share/loadout is left as it was. No sudo.
 #
 #   curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
 #
 # Environment overrides:
-#   LOADOUT_VERSION=v3.0.0   pin a release (default: latest)
-#   LOADOUT_INSTALL_DIR=...  install the binary somewhere else (default: ~/.local/bin);
-#                            the share directory goes to <its parent>/share/loadout
+#   LOADOUT_VERSION=v4.0.0   pin a release (default: latest)
+#   LOADOUT_INSTALL_DIR=...  install the binary somewhere else (default: ~/.local/bin)
 set -eu
 
 REPO="josemiguelo/loadout"
 INSTALL_DIR="${LOADOUT_INSTALL_DIR:-$HOME/.local/bin}"
-# Where the binary looks for it: <prefix>/bin/loadout -> <prefix>/share/loadout.
-SHARE_DIR="$(dirname "$INSTALL_DIR")/share/loadout"
 DOWNLOAD_BASE="${LOADOUT_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download}"
 
 case "$(uname -s)-$(uname -m)" in
@@ -44,7 +41,7 @@ fi
 
 # An upgrade or a first install? Asked BEFORE overwriting, because the
 # closing instructions ("clone your config repo") are wrong for someone who
-# already has one — `loadout upgrade` runs this same script.
+# already has one — `loadout self-upgrade` runs this same script.
 previous=""
 if [ -x "$INSTALL_DIR/loadout" ]; then
   previous=$("$INSTALL_DIR/loadout" --version 2>/dev/null | awk '{print $NF}')
@@ -63,17 +60,10 @@ tar -xzf "$tmp/loadout.tar.gz" -C "$tmp"
   echo "error: downloaded binary failed to run" >&2
   exit 1
 }
-[ -f "$tmp/share/loadout/VERSION" ] || {
-  echo "error: the download has no share/loadout directory" >&2
-  exit 1
-}
 
-mkdir -p "$INSTALL_DIR" "$(dirname "$SHARE_DIR")"
+mkdir -p "$INSTALL_DIR"
 mv "$tmp/loadout" "$INSTALL_DIR/loadout"
 chmod +x "$INSTALL_DIR/loadout"
-# Replaced whole: it holds one version, the binary's.
-rm -rf "$SHARE_DIR"
-mv "$tmp/share/loadout" "$SHARE_DIR"
 if [ -n "$previous" ]; then
   echo "Installed $INSTALL_DIR/loadout ($version, was v$previous)"
 else
@@ -91,8 +81,8 @@ if [ -z "$previous" ]; then
   echo "Next steps:"
   echo "  1. git clone <your config repo> <dir>, then export LOADOUT_REPO=<dir>"
   echo "     (no repo yet? loadout init <dir>)"
-  echo "  2. Add machine(\"\$(hostname)\") { … } to its machines file, and run"
-  echo "     loadout compile (needs a JDK; skip it on a machine that only reads the lock)"
+  echo "  2. Add machine \"\$(hostname)\" { … } to its machines file, and run"
+  echo "     loadout compile (skip it on a machine that only reads the lock)"
   echo "  3. loadout setup-new-machine"
   echo "  4. loadout sync"
 fi

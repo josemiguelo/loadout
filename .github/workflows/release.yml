@@ -8,78 +8,35 @@ permissions:
   contents: write
 
 jobs:
-  # The tag must name gradle.properties' version, the binary's own: a tag
+  # The tag must name internal/version's Version, the binary's own: a tag
   # can't publish a binary that reports another version.
   version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Tag matches gradle.properties
+      - name: Tag matches internal/version
         run: |
-          version=$(sed -n 's/^version=//p' gradle.properties)
-          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME but gradle.properties says $version"; exit 1; }
+          version=$(sed -n 's/^var Version = "\(.*\)"$/\1/p' internal/version/version.go)
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME but internal/version says $version"; exit 1; }
 
-  linux:
+  # Go cross-compiles every target from one runner; CGO is off, so the
+  # binaries are static and need nothing beside them.
+  build:
     needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-go@v5
         with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v4
-        with:
-          path: ~/.konan
-          key: konan-linux-${{ hashFiles('gradle/libs.versions.toml') }}
-      # arm64 cross-compiles here: Kotlin/Native links it from an x64 host;
-      # only its strip comes from the cross binutils.
-      - name: Install arm64 binutils
-        run: sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu
-      - name: Build
-        run: ./gradlew :app:linkReleaseExecutableLinuxX64 :app:linkReleaseExecutableLinuxArm64 bundle
-      - name: Package
+          go-version-file: go.mod
+      - name: Build and package
         run: |
-          for target in linuxX64:linux-x64:strip linuxArm64:linux-arm64:aarch64-linux-gnu-strip; do
-            gradle_name="${target%%:*}"; rest="${target#*:}"; release_name="${rest%%:*}"; strip_cmd="${rest#*:}"
-            mkdir -p "dist-$release_name/share"
-            cp "app/build/bin/$gradle_name/releaseExecutable/loadout.kexe" "dist-$release_name/loadout"
-            "$strip_cmd" "dist-$release_name/loadout"
-            cp -R build/bundle "dist-$release_name/share/loadout"
-            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout share
-          done
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: loadout-*.tar.gz
-
-  macos:
-    needs: version
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Cache Kotlin/Native toolchain
-        uses: actions/cache@v4
-        with:
-          path: ~/.konan
-          key: konan-macos-${{ hashFiles('gradle/libs.versions.toml') }}
-      - name: Build
-        run: ./gradlew :app:linkReleaseExecutableMacosArm64 :app:linkReleaseExecutableMacosX64 bundle
-      - name: Package
-        run: |
-          for target in macosArm64:macos-arm64 macosX64:macos-x64; do
-            gradle_name="${target%%:*}"; release_name="${target##*:}"
-            mkdir -p "dist-$release_name/share"
-            cp "app/build/bin/$gradle_name/releaseExecutable/loadout.kexe" "dist-$release_name/loadout"
-            strip "dist-$release_name/loadout"
-            cp -R build/bundle "dist-$release_name/share/loadout"
-            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout share
+          for target in linux/amd64:linux-x64 linux/arm64:linux-arm64 darwin/arm64:macos-arm64 darwin/amd64:macos-x64; do
+            platform="${target%%:*}"; release_name="${target##*:}"
+            mkdir -p "dist-$release_name"
+            CGO_ENABLED=0 GOOS="${platform%/*}" GOARCH="${platform#*/}" \
+              go build -trimpath -ldflags='-s -w' -o "dist-$release_name/loadout" ./cmd/loadout
+            tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout
           done
       - uses: softprops/action-gh-release@v2
         with:

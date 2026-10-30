@@ -1,17 +1,16 @@
 # Version floors, newer locks and state files, and install.sh (the release
 # bootstrap).
 
-kt_repo verrepo
-kt_file verrepo/loadout.kt <<'KT'
-val repo = repo(name = "test", state = "machines/state", minToolVersion = "999.0.0")
-
-val git = root.program(name = "git") {
-    version(command = "git --version", regex = "git version ([0-9.]+)")
-    custom(name = "manual") {
-        command = "false"
-    }
+hcl_root verrepo <<'HCL'
+program "git" {
+  version = "git --version"
+  regex   = "git version ([0-9.]+)"
+  custom "manual" {
+    command = "false"
+  }
 }
-KT
+HCL
+repo_attr verrepo/loadout.hcl 'min_tool_version = "999.0.0"'
 compile_repo verrepo
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
@@ -19,20 +18,21 @@ echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "refusal should point 
 "$BIN" --help | grep -q "self-upgrade" || fail "self-upgrade command should be registered"
 ok "a repo's min-tool-version blocks an outdated binary with recovery hint"
 
-# A lock compiled by a newer minor's DSL is refused the same way: it may
-# say what this binary would misread.
-kt_file verrepo/loadout.kt <<'KT'
-val repo = repo(name = "test", state = "machines/state")
-
-val git = root.program(name = "git") {
-    version(command = "git --version", regex = "git version ([0-9.]+)")
-    custom(name = "manual") {
-        command = "false"
-    }
+# A lock compiled by a newer minor's loadout is refused the same way: it
+# may say what this binary would misread.
+hcl_root verrepo <<'HCL'
+program "git" {
+  version = "git --version"
+  regex   = "git version ([0-9.]+)"
+  custom "manual" {
+    command = "false"
+  }
 }
 
-val m1 = machine(hostname = "m1") { install(git) }
-KT
+machine "m1" {
+  install = [program.git]
+}
+HCL
 compile_repo verrepo
 cp verrepo/loadout.lock.json lock.good
 sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/' lock.good > verrepo/loadout.lock.json
@@ -61,33 +61,29 @@ ok "state files from a newer loadout are skipped with a warning"
 # release name, so install.sh resolves the host's own target and finds it
 # — the test never repeats that mapping, which is the thing being trusted
 # (and repeating it would misread a Rosetta shell, where uname says x86_64
-# but install.sh correctly picks macos-arm64).
-mkdir -p rel/v9.9.9 relbuild/share/loadout/maven prefix/bin
+# but install.sh correctly picks macos-arm64). A release is the binary
+# alone: it needs no share directory.
+mkdir -p rel/v9.9.9 relbuild prefix/bin
 printf '#!/bin/sh\ncase "$1" in --version) echo "loadout version 9.9.9";; *) echo help;; esac\n' > relbuild/loadout
 chmod +x relbuild/loadout
-echo 9.9.9 > relbuild/share/loadout/VERSION
 for target in linux-x64 linux-arm64 macos-arm64 macos-x64; do
-    tar -czf "rel/v9.9.9/loadout-v9.9.9-$target.tar.gz" -C relbuild loadout share
+    tar -czf "rel/v9.9.9/loadout-v9.9.9-$target.tar.gz" -C relbuild loadout
 done
-OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH")
+OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) ||
+    fail "a release of the binary alone installs: $OUT"
 echo "$OUT" | grep -q "Next steps:" || fail "a first install prints the setup steps"
 [ -x prefix/bin/loadout ] || fail "the binary lands in the install dir"
-grep -qx 9.9.9 prefix/share/loadout/VERSION || fail "the share dir lands beside the bin dir"
-echo stale > prefix/share/loadout/stale.txt
+[ -e prefix/share ] && fail "nothing but the binary is installed: $(find prefix/share)" || true
 OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH")
 echo "$OUT" | grep -q "Next steps:" && fail "an upgrade must not print first-install steps" || true
 echo "$OUT" | grep -q "was v9.9.9" || fail "an upgrade names the version it replaced"
-[ -e prefix/share/loadout/stale.txt ] && fail "an upgrade replaces the share dir whole" || true
-ok "install.sh installs the binary and its share dir, and tells a first install from an upgrade"
+ok "install.sh installs the binary alone, and tells a first install from an upgrade"
 
-# A release without its share dir is refused before anything is replaced.
-mkdir -p rel/v9.9.8 relbare
-cp relbuild/loadout relbare/loadout
-for target in linux-x64 linux-arm64 macos-arm64 macos-x64; do
-    tar -czf "rel/v9.9.8/loadout-v9.9.8-$target.tar.gz" -C relbare loadout
-done
-OUT=$(LOADOUT_VERSION=v9.9.8 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) &&
-    fail "a release without share/loadout must be refused"
-echo "$OUT" | grep -q "no share/loadout directory" || fail "says what's missing: $OUT"
-grep -qx 9.9.9 prefix/share/loadout/VERSION || fail "the installed share dir is left as it was"
-ok "install.sh refuses a release without its share dir"
+# An older loadout's share directory (its Kotlin DSL and Gradle plugin) is
+# left as it was: install.sh never deletes what it no longer installs.
+mkdir -p prefix/share/loadout/maven
+echo 3.0.0 > prefix/share/loadout/VERSION
+OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) ||
+    fail "an upgrade over an old share dir installs: $OUT"
+grep -qx 3.0.0 prefix/share/loadout/VERSION && [ -d prefix/share/loadout/maven ] || fail "the old share dir is left alone"
+ok "install.sh leaves an older loadout's share directory alone"

@@ -1,45 +1,41 @@
 # upgrade: whole mechanisms only, deduped by command; converge never upgrades.
 
-kt_repo uprepo
-kt_file uprepo/programs/up.loadout.kt <<'KT'
-val pm = root.installer(name = "pm") {
-    install = "echo installing {pkg}"
-    upgrade = "echo upgrading all pm"
-    check = "echo {pkg} 1.0"
-    regex = "([0-9.]+)"
+hcl_repo uprepo
+hcl_file uprepo/programs/up.loadout.hcl <<'HCL'
+installer "pm" {
+  install = "echo installing {pkg}"
+  upgrade = "echo upgrading all pm"
+  check   = "echo {pkg} 1.0"
+  regex   = "([0-9.]+)"
 }
 
-val pmExtra = root.installer(name = "pm-extra") {
-    install = "echo installing {pkg}"
-    upgrade = "echo upgrading all pm"
-    check = "echo {pkg} 1.0"
-    regex = "([0-9.]+)"
+installer "pm-extra" {
+  install = "echo installing {pkg}"
+  upgrade = "echo upgrading all pm"
+  check   = "echo {pkg} 1.0"
+  regex   = "([0-9.]+)"
 }
 
-val byhand = root.installer(name = "byhand") {
-    install = "echo installing {pkg}"
-    check = "echo {pkg} 1.0"
-    regex = "([0-9.]+)"
+installer "byhand" {
+  install = "echo installing {pkg}"
+  check   = "echo {pkg} 1.0"
+  regex   = "([0-9.]+)"
 }
 
-val alpha = root.program(name = "alpha") {
-    installVia(
-        pm,
-    )
+program "alpha" {
+  install_via = [pm]
 }
-val bravo = root.program(name = "bravo") {
-    installVia(
-        pmExtra,
-    )
+program "bravo" {
+  install_via = [pm-extra]
 }
-val charlie = root.program(name = "charlie") {
-    installVia(
-        byhand,
-    )
+program "charlie" {
+  install_via = [byhand]
 }
 
-val m1 = machine(hostname = "m1") { install(alpha, bravo, charlie) }
-KT
+machine "m1" {
+  install = [program.alpha, program.bravo, program.charlie]
+}
+HCL
 compile_repo uprepo
 OUT=$("$BIN" --repo uprepo --machine m1 upgrade --all --dry-run)
 # Mechanisms sharing a command are ONE transaction, not one per installer.
@@ -58,26 +54,31 @@ ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 # --item: one item of a custom outdated source at a time — what the home
 # screen hands off when you tick a tmux plugin or a pinned tool. Alone, or
 # beside whole mechanisms in the same run.
-kt_repo irepo
-kt_file irepo/programs/items.loadout.kt <<'KT'
-val pm = root.installer(name = "pm") {
-    install = "echo installing {pkg}"
-    upgrade = "echo swept > swept.txt"
-    check = "echo {pkg} 1.0"
-    regex = "([0-9.]+)"
+hcl_root irepo <<'HCL'
+installer "pm" {
+  install = "echo installing {pkg}"
+  upgrade = "echo swept > swept.txt"
+  check   = "echo {pkg} 1.0"
+  regex   = "([0-9.]+)"
 }
 
-val alpha = root.program(name = "alpha") {
-    installVia(
-        pm,
-    )
+program "alpha" {
+  install_via = [pm]
 }
 
-val plugins = root.outdated(name = "plugins", command = "echo 'tpack aaa bbb'", upgrade = "echo pulled > pulled-{item}.txt")
-val readonly = root.outdated(name = "readonly", command = "echo 'x 1 2'")
+outdated "plugins" {
+  command = "echo 'tpack aaa bbb'"
+  upgrade = "echo pulled > pulled-{item}.txt"
+}
 
-val m1 = machine(hostname = "m1") { install(alpha) }
-KT
+outdated "readonly" {
+  command = "echo 'x 1 2'"
+}
+
+machine "m1" {
+  install = [program.alpha]
+}
+HCL
 compile_repo irepo
 "$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null
 [ -f irepo/pulled-tpack.txt ] && [ -f irepo/pulled-other.txt ] || fail "--item upgrades each named item of its source"

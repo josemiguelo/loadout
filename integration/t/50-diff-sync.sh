@@ -8,24 +8,25 @@ basic_repo repo
 ok "diff exits 0 when machines agree"
 
 # A program in a file of its own, installed on both machines.
-kt_file repo/programs/missing.loadout.kt <<'KT'
-val notInstalled = root.program(name = "definitely-not-installed-xyz") {
-    version(command = "definitely-not-installed-xyz --version", regex = "([0-9.]+)")
-    custom(name = "manual") {
-        command = "false"
-    }
+hcl_file repo/programs/missing.loadout.hcl <<'HCL'
+program "definitely-not-installed-xyz" {
+  version = "definitely-not-installed-xyz --version"
+  regex   = "([0-9.]+)"
+  custom "manual" {
+    command = "false"
+  }
 }
 
-val m1 = machine(hostname = "m1") {
-    install(git.variant(name = "manual"), notInstalled)
-    run(marker)
+machine "m1" {
+  install = [variant(program.git, "manual"), program.definitely-not-installed-xyz]
+  run     = [script.marker]
 }
 
-val m2 = machine(hostname = "m2") { install(git.variant(name = "manual"), notInstalled) }
-KT
-cat > repo/machines/machines.loadout.kt <<'KT'
-package repo
-KT
+machine "m2" {
+  install = [variant(program.git, "manual"), program.definitely-not-installed-xyz]
+}
+HCL
+: > repo/machines/machines.loadout.hcl
 compile_repo repo
 "$BIN" --repo repo --machine m1 status >/dev/null
 "$BIN" --repo repo --machine m2 status >/dev/null
@@ -63,9 +64,9 @@ ok "sync ends naming what this machine still lacks"
 # Offline: a fake curl answers the release check and the install script.
 # The install replaces a copy of the binary with a stub that says how it
 # was run, which is how the second sync is seen.
-grep -q 'minToolVersion' repo/loadout.kt && fail "fixture already declares a floor"
-sed -i.bak 's/repo(name = \([^,]*\),/repo(name = \1, minToolVersion = "999.0.0",/' repo/loadout.kt && rm repo/loadout.kt.bak
-grep -q 'minToolVersion = "999.0.0"' repo/loadout.kt || fail "fixture floor not set"
+grep -q 'min_tool_version' repo/loadout.hcl && fail "fixture already declares a floor"
+repo_attr repo/loadout.hcl 'min_tool_version = "999.0.0"'
+grep -q 'min_tool_version = "999.0.0"' repo/loadout.hcl || fail "fixture floor not set"
 compile_repo repo
 git -C repo add -A && git -C repo commit -qm "floor" && git -C repo push -q 2>/dev/null
 mkdir -p self fakecurl

@@ -1,0 +1,20 @@
+Usage: loadout [<options>] <command> [<args>]...
+
+  Set up a machine from a shared config repo and track installed program
+  versions. v{{VERSION}}
+
+Options:
+  -V, --version     Show the version and exit
+  --repo=<text>     Path to the config repo (default: $LOADOUT_REPO, then the
+                    current directory)
+  --machine=<text>  Machine name for state tracking (default: hostname)
+  -v, --verbose     Verbose output
+  -h, --help        Show this message and exit
+
+Commands:
+  status             Observe this machine: every program version and script
+                     check re-asked, drift explained, state file updated.
+                       --json      print the full state as JSON
+                       --no-write  observe without touching the state file
+  explain            Explain programs, scripts or configs: the fully expanded
+                     definition exactly as the engine sees it.

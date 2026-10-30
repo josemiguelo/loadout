@@ -8,50 +8,50 @@ fail() { echo "FAIL - $1"; exit 1; }
 # A fresh working directory for one test file: nothing leaks between files.
 new_work() { mktemp -d -p "$WORK"; }
 
-# A config repo is Kotlin compiled to loadout.lock.json. KT_TEMPLATE (made
-# once by run-tests.sh with `loadout init`) holds the Gradle skeleton every
-# fixture copies, so fixtures build exactly like a scaffolded repo.
+# A config repo is HCL compiled to loadout.lock.json: loadout.hcl at the
+# root (the repo block, always compiled) and the *.loadout.hcl files its
+# sources globs match. A declaration's folder is its file's, so what must
+# run from the repo root (scripts beside loadout.hcl, files a command
+# writes there) is declared in loadout.hcl itself.
 
-# The Gradle skeleton and a minimal loadout.kt in <dir>: a repo named test
-# with its state in machines/state/. Fixtures add manifests with kt_file.
-kt_repo() {
-    mkdir -p "$1/machines/state" "$1/gradle"
-    cp "$KT_TEMPLATE/settings.gradle.kts" "$KT_TEMPLATE/build.gradle.kts" "$KT_TEMPLATE/gradlew" "$KT_TEMPLATE/.gitignore" "$1/"
-    cp -R "$KT_TEMPLATE/gradle/wrapper" "$1/gradle/"
-    printf 'val repo = repo(name = "test", state = "machines/state")\n' | kt_file "$1/loadout.kt"
+# loadout.hcl in <dir>: a repo named test, its state in machines/state/,
+# globbing init's plain layout (programs/, maintenance/, machines/); stdin
+# follows the repo block, as declarations at the repo root.
+hcl_root() {
+    mkdir -p "$1/machines/state"
+    {
+        cat <<'HCL'
+repo {
+  name    = "test"
+  state   = "machines/state"
+  sources = ["programs/**/*.loadout.hcl", "maintenance/**/*.loadout.hcl", "machines/**/*.loadout.hcl"]
+}
+HCL
+        printf '\n'
+        cat
+    } > "$1/loadout.hcl"
 }
 
-# stdin as the Kotlin manifest file <path>, in the repo package with the
-# DSL imported (both are what every file needs).
-kt_file() {
+# hcl_root with nothing at the root: fixtures add manifests with hcl_file.
+hcl_repo() { hcl_root "$1" </dev/null; }
+
+# stdin as the manifest file <path>.
+hcl_file() {
     mkdir -p "$(dirname "$1")"
-    { printf 'package repo\n\nimport loadout.dsl.*\n\n'; cat; } > "$1"
+    cat > "$1"
 }
 
-# A key over every Kotlin source and build file of repo <dir>, paths
-# included: identical fixtures compile once per run.
-kt_key() {
-    (cd "$1" && find . \( -path ./build -o -path ./.gradle -o -path ./.kotlin \) -prune -o \
-        \( -name '*.kt' -o -name '*.kts' \) -type f -print | LC_ALL=C sort | while read -r f; do
-        printf '%s\n' "$f"; cat "$f"; done) | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1
+# Adds the attribute line <attr> (`configs = "configs"`) to the repo block
+# of loadout.hcl <file>, as its first line. awk, not sed: BSD and GNU sed
+# disagree on inserting a line.
+repo_attr() {
+    awk -v line="$2" '{ print } /^repo \{/ { print "  " line }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
 }
 
-# `loadout compile` repo <dir>, through the lock cache: what compile writes
-# (the lock, and with configs the chezmoi data beside them) is a pure
-# function of the sources, and Gradle is the slow part of every fixture.
+# `loadout compile` repo <dir>, failing the test with its output when it
+# doesn't compile.
 compile_repo() {
-    key=$(kt_key "$1")
-    if [ -d "$LOCK_CACHE/$key" ]; then
-        cp -R "$LOCK_CACHE/$key/." "$1/"
-        return 0
-    fi
     out=$("$BIN" --repo "$1" compile 2>&1) || { echo "$out"; fail "fixture $1 compiles"; }
-    mkdir -p "$LOCK_CACHE/$key"
-    (cd "$1" && find . -path ./build -prune -o \( -name loadout.lock.json -o -path '*/.chezmoidata/loadout.json' -o -path '*/.chezmoitemplates/loadout/machine' \) -type f -print) |
-        while read -r f; do
-            mkdir -p "$LOCK_CACHE/$key/$(dirname "$f")"
-            cp "$1/$f" "$LOCK_CACHE/$key/$f"
-        done
 }
 
 # `loadout init` scaffold with a git identity so sync/commit tests can run.
@@ -67,35 +67,35 @@ scaffold_repo() {
 # deliberately does NOT.
 basic_repo() {
     scaffold_repo "$1"
-    rm -f "$1/programs/cli.loadout.kt"
-    kt_file "$1/programs/git.loadout.kt" <<'KT'
-val git = root.program(name = "git") {
-    version(command = "git --version", regex = "git version ([0-9.]+)")
-    installVia(
-        Builtin.dnf {
-            command = "sudo dnf install -y git"
-        },
-    )
-    custom(name = "manual") {
-        command = "echo install git yourself && false"
-    }
+    rm -f "$1/programs/cli.loadout.hcl"
+    cat >> "$1/loadout.hcl" <<'HCL'
+
+program "git" {
+  version = "git --version"
+  regex   = "git version ([0-9.]+)"
+  via "dnf" {
+    command = "sudo dnf install -y git"
+  }
+  custom "manual" {
+    command = "echo install git yourself && false"
+  }
 }
 
-val marker = root.script(name = "marker") {
-    file("scripts/marker.sh")
-    check("test -f marker.txt")
+script "marker" {
+  file  = "scripts/marker.sh"
+  check = "test -f marker.txt"
 }
-KT
-    kt_file "$1/machines/machines.loadout.kt" <<'KT'
-val m1 = machine(hostname = "m1") {
-    install(git.variant(name = "manual"))
-    run(marker)
+HCL
+    hcl_file "$1/machines/machines.loadout.hcl" <<'HCL'
+machine "m1" {
+  install = [variant(program.git, "manual")]
+  run     = [script.marker]
 }
 
-val m2 = machine(hostname = "m2") {
-    install(git.variant(name = "manual"))
+machine "m2" {
+  install = [variant(program.git, "manual")]
 }
-KT
+HCL
     mkdir -p "$1/scripts"
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
     compile_repo "$1"
@@ -127,43 +127,40 @@ worktree_repo() {
 # package manager involved) and whose scripts cover every verdict: one
 # passing, one whose check keeps failing, one setup-only.
 scripts_repo() {
-    kt_repo "$1"
-    kt_file "$1/programs/scripts.loadout.kt" <<'KT'
-val fake = root.installer(name = "fake") {
-    probe = "sh"
-    install = "echo installed-{pkg} > fake-install.txt"
-    check = "test -f fake-install.txt && echo mytool 1.0"
-    regex = "mytool ([0-9.]+)"
+    hcl_root "$1" <<'HCL'
+installer "fake" {
+  probe   = "sh"
+  install = "echo installed-{pkg} > fake-install.txt"
+  check   = "test -f fake-install.txt && echo mytool 1.0"
+  regex   = "mytool ([0-9.]+)"
 }
 
-val mytool = root.program(name = "mytool") {
-    installVia(
-        fake,
-    )
+program "mytool" {
+  install_via = [fake]
 }
 
-val healthy = root.script(name = "healthy") {
-    run("true")
-    check("true")
+script "healthy" {
+  run   = "true"
+  check = "true"
 }
 
-val drifted = root.script(name = "drifted") {
-    run("true")
-    check("echo missing: nodejs 16 npm firebase-tools; false")
+script "drifted" {
+  run   = "true"
+  check = "echo missing: nodejs 16 npm firebase-tools; false"
 }
 
-val bootstrapOnly = root.script(name = "bootstrap-only") {
-    run("echo bootstrapped > bootstrap-marker.txt")
-    check("test -f bootstrap-marker.txt")
-    setupOnly()
+script "bootstrap-only" {
+  run        = "echo bootstrapped > bootstrap-marker.txt"
+  check      = "test -f bootstrap-marker.txt"
+  setup_only = true
 }
-KT
-    kt_file "$1/machines/machines.loadout.kt" <<'KT'
-val m1 = machine(hostname = "m1") {
-    install(mytool)
-    run(healthy, drifted, bootstrapOnly)
+HCL
+    hcl_file "$1/machines/machines.loadout.hcl" <<'HCL'
+machine "m1" {
+  install = [program.mytool]
+  run     = [script.healthy, script.drifted, script.bootstrap-only]
 }
-KT
+HCL
     compile_repo "$1"
 }
 
@@ -261,22 +258,6 @@ wait_screen() {
     return 1
 }
 
-# The home screen has answered on every subject row: a busy row shows no
-# verb, so each verb on screen is an answer landed (the model starts its
-# refresh before the first frame, so none is left over from the stored
-# state). Keys before this can land on a row that refuses them. Verbs are
-# matched by their start: the row under the cursor clips its own
-# ("install what's mis…").
-wait_settled() {
-    wait_screen "$1" 'review th' '(nothing miss|install wh)' '(nothing pend|run wh)'
-}
-
-# A hand-off's command finished, whatever the outcome: the way-back prompt
-# is on screen.
-wait_back() {
-    wait_screen "$1" 'enter returns to loadout'
-}
-
 # The capture $1 as text: escape sequences (colours, cursor moves) removed.
 plain_screen() {
     perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a\e]*(\a|\e\\)//g' "$1"
@@ -296,7 +277,72 @@ seen() {
     plain_screen "$1" | grep -qaE -- "$2"
 }
 
-# [pattern] is drawn after the way-back prompt, i.e. by the reopened screen.
-seen_after_back() {
-    plain_screen "$1" | sed -n '/enter returns to loadout/,$p' | grep -qaE -- "$2"
+# --- the home screen ------------------------------------------------------
+# Bubble Tea's renderer writes only the cells that changed, so the raw
+# capture can't be grepped for what is on screen. The screen writes its
+# current frame as plain text to LOADOUT_SCREEN_DUMP after every render
+# (atomically): these helpers read that file, <name>.screen.
+
+# Drive the home screen on a pseudo-terminal of PTY_SIZE cells (default
+# 140x40: the wide layout), keys from stdin, like pty_run: the raw output
+# goes to <name>.log, the frames to <name>.screen. The size is set inside
+# the pty (stty) before loadout starts.
+screen_run() {
+    name=$1; shift
+    size=${PTY_SIZE:-140x40}
+    cols=${size%x*}; rows=${size#*x}
+    # CI sets no COLORTERM: without it the screen drops to 256 colours, and
+    # the theme's assertions look for its truecolor escapes.
+    TERM=xterm-256color; COLORTERM=truecolor; export TERM COLORTERM
+    if [ "$(uname)" = "Darwin" ]; then
+        LOADOUT_SCREEN_DUMP="$PWD/$name.screen" script -qF "$name.log" \
+            sh -c 'stty cols "$1" rows "$2"; shift 2; exec "$@"' sh "$cols" "$rows" "$BIN" "$@" >/dev/null || true
+    else
+        LOADOUT_SCREEN_DUMP="$PWD/$name.screen" script -qfec "stty cols $cols rows $rows; exec \"$BIN\" $*" "$name.log" >/dev/null || true
+    fi
+}
+
+# For key feeders: block until the current frame of <name> shows every
+# extended regex that follows — or give up after WAIT_SCREEN_TIMEOUT
+# seconds (default 30), say so, and return 1.
+wait_frame() {
+    name=$1; shift
+    deadline=$(( $(date +%s) + ${WAIT_SCREEN_TIMEOUT:-30} ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if [ -f "$name.screen" ]; then
+            hit=1
+            for pattern in "$@"; do
+                grep -qaE -- "$pattern" "$name.screen" || { hit=0; break; }
+            done
+            [ "$hit" = 1 ] && return 0
+        fi
+        sleep 0.1
+    done
+    echo "wait_frame: $name never showed: $*" >&2
+    return 1
+}
+
+# Every subject has answered: the sidebar shows each one's count, which a
+# subject still being checked leaves out (the refresh starts before the
+# first frame). Keys before this can land on a row that refuses them.
+wait_settled() {
+    wait_frame "$1" 'programs +[0-9]+/[0-9]+' 'scripts +[0-9]+/[0-9]+' 'remote +(up to date|unavailable|[0-9?]+)'
+}
+
+# The run in the panel has ended, whatever the outcome.
+wait_done() {
+    wait_frame "$1" 'Run .*(✓ done|× exit [0-9]+|interrupted)'
+}
+
+# [pattern] is in the current frame of <name>.
+frame_seen() {
+    grep -qaE -- "$2" "$1.screen"
+}
+
+# Fail with [message] $2, showing the last frame of <name>.
+fail_frame() {
+    echo "--- last frame of $1 ---"
+    cat "$1.screen" 2>/dev/null
+    echo "---"
+    fail "$2"
 }

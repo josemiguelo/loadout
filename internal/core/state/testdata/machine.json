@@ -1,0 +1,770 @@
+{
+  "schemaVersion": 1,
+  "machine": "t2-macbook-omarchy",
+  "os": "linux",
+  "distro": "omarchy",
+  "arch": "x86_64",
+  "toolVersion": "3.3.1",
+  "updatedAt": "2026-10-29T15:36:39.114690261Z",
+  "programs": {
+    "1password": {
+      "status": "installed",
+      "version": "8.12.40",
+      "reason": null
+    },
+    "1password-cli": {
+      "status": "installed",
+      "version": "2.41.0",
+      "reason": null
+    },
+    "antigravity": {
+      "status": "installed",
+      "version": "2.5.5",
+      "reason": null
+    },
+    "anydesk": {
+      "status": "installed",
+      "version": "8.1.0",
+      "reason": null
+    },
+    "atuin": {
+      "status": "installed",
+      "version": "18.23.0",
+      "reason": null
+    },
+    "awscli": {
+      "status": "installed",
+      "version": "2.38.6",
+      "reason": null
+    },
+    "bat": {
+      "status": "installed",
+      "version": "0.26.1",
+      "reason": null
+    },
+    "brave": {
+      "status": "installed",
+      "version": "1.97.59",
+      "reason": null
+    },
+    "btop": {
+      "status": "installed",
+      "version": "1.4.7",
+      "reason": null
+    },
+    "chezmoi": {
+      "status": "installed",
+      "version": "2.73.1",
+      "reason": null
+    },
+    "code": {
+      "status": "installed",
+      "version": "1.142.0",
+      "reason": null
+    },
+    "curl": {
+      "status": "installed",
+      "version": "8.23.0",
+      "reason": null
+    },
+    "dnsmasq": {
+      "status": "installed",
+      "version": "2.93",
+      "reason": null
+    },
+    "edk2-ovmf": {
+      "status": "installed",
+      "version": null,
+      "reason": null
+    },
+    "eza": {
+      "status": "installed",
+      "version": "0.23.5",
+      "reason": null
+    },
+    "fd": {
+      "status": "installed",
+      "version": "10.5.0",
+      "reason": null
+    },
+    "fzf": {
+      "status": "installed",
+      "version": "0.74.5",
+      "reason": null
+    },
+    "gcc": {
+      "status": "installed",
+      "version": "16.2.1",
+      "reason": null
+    },
+    "git": {
+      "status": "installed",
+      "version": "2.56.0",
+      "reason": null
+    },
+    "git-delta": {
+      "status": "installed",
+      "version": "0.20.1",
+      "reason": null
+    },
+    "google-cloud-cli": {
+      "status": "installed",
+      "version": "588.0.0",
+      "reason": null
+    },
+    "gum": {
+      "status": "installed",
+      "version": "2.0.2",
+      "reason": null
+    },
+    "jetbrains-toolbox": {
+      "status": "installed",
+      "version": "3.9.0.88839",
+      "reason": null
+    },
+    "just": {
+      "status": "installed",
+      "version": "1.59.0",
+      "reason": null
+    },
+    "kitty": {
+      "status": "installed",
+      "version": "0.49.2",
+      "reason": null
+    },
+    "kotlin-lsp": {
+      "status": "installed",
+      "version": "263.7084.0",
+      "reason": null
+    },
+    "lazydocker": {
+      "status": "installed",
+      "version": "0.25.2",
+      "reason": null
+    },
+    "lazygit": {
+      "status": "installed",
+      "version": "0.66.2",
+      "reason": null
+    },
+    "libvirt": {
+      "status": "installed",
+      "version": "12.8.0",
+      "reason": null
+    },
+    "mise": {
+      "status": "installed",
+      "version": "2026.10.14",
+      "reason": null
+    },
+    "ngrok": {
+      "status": "installed",
+      "version": "3.39.11",
+      "reason": null
+    },
+    "obsidian": {
+      "status": "installed",
+      "version": "1.14.4",
+      "reason": null
+    },
+    "procps-ng": {
+      "status": "installed",
+      "version": "4.0.7",
+      "reason": null
+    },
+    "qemu-desktop": {
+      "status": "installed",
+      "version": "11.1.2",
+      "reason": null
+    },
+    "ripgrep": {
+      "status": "installed",
+      "version": "15.2.0",
+      "reason": null
+    },
+    "rocm-smi-lib": {
+      "status": "installed",
+      "version": "7.2.0",
+      "reason": null
+    },
+    "scrcpy": {
+      "status": "installed",
+      "version": "5.0.1",
+      "reason": null
+    },
+    "setup-brew": {
+      "status": "installed",
+      "version": null,
+      "reason": null
+    },
+    "slack": {
+      "status": "installed",
+      "version": "4.52.178",
+      "reason": null
+    },
+    "solaar": {
+      "status": "installed",
+      "version": "1.1.20",
+      "reason": null
+    },
+    "spotify": {
+      "status": "installed",
+      "version": "1.3.4.258",
+      "reason": null
+    },
+    "starship": {
+      "status": "installed",
+      "version": "1.27.0",
+      "reason": null
+    },
+    "sublime-text": {
+      "status": "installed",
+      "version": "4.4215",
+      "reason": null
+    },
+    "swtpm": {
+      "status": "installed",
+      "version": "0.10.2",
+      "reason": null
+    },
+    "t2fanrd": {
+      "status": "installed",
+      "version": "16.48",
+      "reason": null
+    },
+    "teams-for-linux": {
+      "status": "installed",
+      "version": "2.26.0",
+      "reason": null
+    },
+    "tmux": {
+      "status": "installed",
+      "version": "3.8",
+      "reason": null
+    },
+    "tpack": {
+      "status": "installed",
+      "version": "2.0.6",
+      "reason": null
+    },
+    "trash-cli": {
+      "status": "installed",
+      "version": "0.26.9.29",
+      "reason": null
+    },
+    "tree-sitter-cli": {
+      "status": "installed",
+      "version": "0.26.9",
+      "reason": null
+    },
+    "ttf-firacode-nerd": {
+      "status": "installed",
+      "version": "3.5.1",
+      "reason": null
+    },
+    "vim": {
+      "status": "installed",
+      "version": "9.2.1200",
+      "reason": null
+    },
+    "virt-install": {
+      "status": "installed",
+      "version": "5.1.0",
+      "reason": null
+    },
+    "virt-manager": {
+      "status": "installed",
+      "version": "5.1.0",
+      "reason": null
+    },
+    "virt-viewer": {
+      "status": "installed",
+      "version": "11.0",
+      "reason": null
+    },
+    "vlc": {
+      "status": "installed",
+      "version": "3.0.24",
+      "reason": null
+    },
+    "voxtype": {
+      "status": "installed",
+      "version": "1.1.1",
+      "reason": null
+    },
+    "voxtype-tui": {
+      "status": "installed",
+      "version": "0.1.9",
+      "reason": null
+    },
+    "workmux": {
+      "status": "installed",
+      "version": "0.1.277",
+      "reason": null
+    },
+    "wtype": {
+      "status": "installed",
+      "version": "0.4",
+      "reason": null
+    },
+    "yazi": {
+      "status": "installed",
+      "version": "26.9.1",
+      "reason": null
+    },
+    "yq": {
+      "status": "installed",
+      "version": "4.54.1",
+      "reason": null
+    },
+    "zenity": {
+      "status": "installed",
+      "version": "4.2.2",
+      "reason": null
+    },
+    "zoxide": {
+      "status": "installed",
+      "version": "0.10.0",
+      "reason": null
+    },
+    "zsh": {
+      "status": "installed",
+      "version": "5.9.2",
+      "reason": null
+    }
+  },
+  "scripts": {
+    "dotfiles-pull": {
+      "status": "pending",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "dotfiles-push": {
+      "status": "pending",
+      "lastRun": "2026-10-27T13:56:44.341985062Z",
+      "exitCode": 1
+    },
+    "dotfiles-ssh-remote": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:14:42.702925664Z",
+      "exitCode": 0
+    },
+    "dotfiles-old-build-dir": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "setup-git": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:14:42.696888006Z",
+      "exitCode": 0
+    },
+    "skills-repo": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:14:43.672225067Z",
+      "exitCode": 0
+    },
+    "workmux-setup": {
+      "status": "done",
+      "lastRun": "2026-10-27T13:56:50.290670363Z",
+      "exitCode": 0
+    },
+    "default-shell": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:14:43.758773239Z",
+      "exitCode": 0
+    },
+    "nvim-plugins": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:43.514354992Z",
+      "exitCode": 0
+    },
+    "unlink-brew-glib": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "keychron-launcher-access": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:52.311514314Z",
+      "exitCode": 0
+    },
+    "zsh-plugins": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:14:46.035756992Z",
+      "exitCode": 0
+    },
+    "setup-completions": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:14:46.236826820Z",
+      "exitCode": 0
+    },
+    "mise-tools": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:21:49.529320720Z",
+      "exitCode": 0
+    },
+    "mise-default-packages": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:25.149669894Z",
+      "exitCode": 0
+    },
+    "omarchy-default-agent": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:26.178240243Z",
+      "exitCode": 0
+    },
+    "omarchy-default-terminal": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:43.534986841Z",
+      "exitCode": 0
+    },
+    "tmux-plugins": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:52.209253225Z",
+      "exitCode": 0
+    },
+    "remove-brew-tmux": {
+      "status": "done",
+      "lastRun": "2026-10-13T16:52:49.933517706Z",
+      "exitCode": 0
+    },
+    "omarchy-tmux-theme": {
+      "status": "done",
+      "lastRun": "2026-10-13T16:52:49.964724569Z",
+      "exitCode": 0
+    },
+    "link-jetbrains-launchers-linux": {
+      "status": "done",
+      "lastRun": "2026-10-27T13:56:44.366848674Z",
+      "exitCode": 0
+    },
+    "omarchy-hypr-config": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:52.458179861Z",
+      "exitCode": 0
+    },
+    "omarchy-close-window-key": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:52.610484317Z",
+      "exitCode": 0
+    },
+    "omarchy-google-bindings": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:22:52.771832959Z",
+      "exitCode": 0
+    },
+    "omarchy-harpoon": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:43.572064700Z",
+      "exitCode": 0
+    },
+    "omarchy-theme-mode": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:44.280262330Z",
+      "exitCode": 0
+    },
+    "omarchy-bar": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:42.688372953Z",
+      "exitCode": 0
+    },
+    "omarchy-plugins": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:23:12.200349607Z",
+      "exitCode": 0
+    },
+    "omarchy-bar-icons": {
+      "status": "done",
+      "lastRun": "2026-10-20T03:16:56.496283150Z",
+      "exitCode": 0
+    },
+    "omarchy-bar-widgets": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:23:49.056303419Z",
+      "exitCode": 0
+    },
+    "omarchy-menu-button": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:23:46.152963782Z",
+      "exitCode": 0
+    },
+    "omarchy-keystroke-windows": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:43.697406455Z",
+      "exitCode": 0
+    },
+    "omarchy-pomodoro": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:44.002486523Z",
+      "exitCode": 0
+    },
+    "omarchy-1password": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:42.302133844Z",
+      "exitCode": 0
+    },
+    "omarchy-vscode": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:23:59.812771397Z",
+      "exitCode": 0
+    },
+    "omarchy-brave": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:23:53.836263603Z",
+      "exitCode": 0
+    },
+    "omarchy-default-browser": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:23:54.215882136Z",
+      "exitCode": 0
+    },
+    "surfingkeys": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "surfingkeys-split-view": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "omarchy-agents-prune": {
+      "status": "done",
+      "lastRun": "2026-10-21T01:41:39.460257175Z",
+      "exitCode": 0
+    },
+    "omarchy-webapps-remove": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:00.168728778Z",
+      "exitCode": 0
+    },
+    "omarchy-webapp-gmail": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:00.615669095Z",
+      "exitCode": 0
+    },
+    "omarchy-webapp-google-calendar": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:01.013431561Z",
+      "exitCode": 0
+    },
+    "omarchy-command-overrides": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:01.837379238Z",
+      "exitCode": 0
+    },
+    "omarchy-keyboard-backlight-guard": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:01.906156608Z",
+      "exitCode": 0
+    },
+    "omarchy-idle": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "omarchy-dictation": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:07.723742372Z",
+      "exitCode": 0
+    },
+    "omarchy-dictation-gpu": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:07.800448203Z",
+      "exitCode": 0
+    },
+    "setup-ssh": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:24:08.543598123Z",
+      "exitCode": 0
+    },
+    "github-ssh-key": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:26:52.764350818Z",
+      "exitCode": 0
+    },
+    "omarchy-sshd": {
+      "status": "done",
+      "lastRun": "2026-10-27T22:15:19.267504925Z",
+      "exitCode": 0
+    },
+    "t2-hid-apple-keyboard": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:08.761214760Z",
+      "exitCode": 0
+    },
+    "t2-fan-curve": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:09.777617968Z",
+      "exitCode": 0
+    },
+    "t2-fan-gpu-card": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    },
+    "t2-boot-clock": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:11.035424312Z",
+      "exitCode": 0
+    },
+    "t2-gmux-backlight": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:17:54.669140164Z",
+      "exitCode": 0
+    },
+    "t2-render-gpu": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:44.300143647Z",
+      "exitCode": 0
+    },
+    "setup-libvirt": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:13.165153881Z",
+      "exitCode": 0
+    },
+    "ufw-libvirt": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:13.646121255Z",
+      "exitCode": 0
+    },
+    "omarchy-sudoless-docker": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:11.363933252Z",
+      "exitCode": 0
+    },
+    "omarchy-activity-monitor-size": {
+      "status": "done",
+      "lastRun": "2026-10-13T14:27:11.504990272Z",
+      "exitCode": 0
+    },
+    "omarchy-scratchpad-opacity": {
+      "status": "done",
+      "lastRun": "2026-10-28T02:13:44.152537918Z",
+      "exitCode": 0
+    },
+    "solaar-no-autostart": {
+      "status": "done",
+      "lastRun": null,
+      "exitCode": null
+    }
+  },
+  "configs": {
+    ".default-gems": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    ".default-npm-packages": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    ".gradle": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    ".ideavimrc": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    ".local": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    ".zshenv": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "btop": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "chezmoi": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "command-palette": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "fcitx5": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "fzf": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "kitty": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "mise": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "nvim": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "raycast": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "spotify-flags.conf": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "starship.toml": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "surfingkeys": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "tmux": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "tmuxinator": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "workmux": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "yazi": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    },
+    "zsh": {
+      "status": "applied",
+      "files": [],
+      "reason": null
+    }
+  }
+}

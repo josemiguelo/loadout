@@ -3,7 +3,7 @@
 # before the first step; the steps then find it cached. Nothing needing it,
 # or nothing left to run, asks nothing.
 
-kt_repo srepo
+mkdir -p srepo
 # -n: never prompts, so it only succeeds on credentials asked for earlier.
 cat > srepo/needs.sh <<'SH'
 sudo -n true && touch needs-ran.txt
@@ -11,20 +11,22 @@ SH
 cat > srepo/plain.sh <<'SH'
 touch plain-ran.txt
 SH
-kt_file srepo/maintenance/sudo.loadout.kt <<'KT'
-val needs = root.script(name = "needs") {
-    file("needs.sh")
-    check("test -f needs-ran.txt")
-    needsSudo()
+hcl_root srepo <<'HCL'
+script "needs" {
+  file       = "needs.sh"
+  check      = "test -f needs-ran.txt"
+  needs_sudo = true
 }
 
-val plain = root.script(name = "plain") {
-    file("plain.sh")
-    check("test -f plain-ran.txt")
+script "plain" {
+  file  = "plain.sh"
+  check = "test -f plain-ran.txt"
 }
 
-val m1 = machine(hostname = "m1") { run(needs, plain) }
-KT
+machine "m1" {
+  run = [script.needs, script.plain]
+}
+HCL
 compile_repo srepo
 fake_sudo
 

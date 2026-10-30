@@ -2,8 +2,8 @@
 # from a REAL background-colour query — which some terminals never answer.
 # `script`'s pty is one of them (there is no emulator behind it), so these
 # tests are the regression for the hang that took out every command on a
-# mac inside a nested tmux: the palette is built while the Clikt context is
-# assembled, so `status` never printed a byte either.
+# mac inside a nested tmux: the palette is built before any command runs,
+# so `status` never printed a byte either.
 basic_repo repo
 ESC=$(printf '\033')
 
@@ -34,5 +34,5 @@ fi
 
 LOADOUT_THEME=lite "$BIN" --repo repo --machine m1 status >lite.out 2>&1 && fail "an unreadable LOADOUT_THEME must refuse"
 grep -q 'error: LOADOUT_THEME must be dark or light, not "lite"' lite.out || fail "and say so in one clean line: $(cat lite.out)"
-grep -q 'Uncaught Kotlin exception' lite.out && fail "never as a stack trace" || true
+grep -qE '^panic:|goroutine [0-9]+' lite.out && fail "never as a stack trace" || true
 ok "an unreadable LOADOUT_THEME is refused in one line, not ignored"

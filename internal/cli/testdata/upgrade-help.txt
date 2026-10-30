@@ -1,0 +1,21 @@
+Usage: loadout upgrade [<options>] [<installers>]...
+
+  Upgrade everything a package manager on this machine manages — the whole
+  mechanism, never single packages (the binary itself is `self-upgrade`).
+    <installers...>         which mechanisms to upgrade (dnf, brew, flatpak,
+  ...)
+    --all                   every mechanism this machine's mapping uses
+    --item <source>/<name>  one item of an outdated.<source> (a tmux plugin, a
+  pinned tool); repeatable
+    --dry-run               print the commands, run nothing
+    --yes                   skip the confirmation
+
+Options:
+  --all          Every mechanism this machine uses
+  --item=<text>  One item of a custom outdated source, as <source>/<name>
+  --dry-run      Show the commands without running them
+  -y, --yes      Don't ask for confirmation
+  -h, --help     Show this message and exit
+
+Arguments:
+  <installers>  Installers to upgrade

@@ -6,10 +6,10 @@ loadout makes it explicit: **declared** once in a shared git repo,
 **converged** on every machine, **observed** continuously, and **compared**
 across the fleet.
 
-One native binary (Kotlin/Native, no runtime dependencies) that shells out
-to your package managers and `git`. Linux and macOS. You write the manifests
-in Kotlin; `loadout compile` turns them into a committed lock file, so only
-the machine you edit them on needs a JDK.
+One static binary (Go, no runtime dependencies) that shells out to your
+package managers and `git`. Linux and macOS. You write the manifests in
+HCL; `loadout compile` turns them into a committed lock file, which every
+other command reads.
 
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
@@ -17,25 +17,27 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ## How it thinks
 
-- **You declare intent** in a small Kotlin DSL: programs with their install
-  mechanics, scripts with idempotency checks, and an explicit per-machine
-  list of what each one installs and runs. Your IDE completes it, and a typo
-  in a name doesn't compile. Machines share small *profiles*; a standard
-  machine is one line
-  (`machine(hostname = "laptop") { extends(macos, work) }`).
-- **One repo, laid out the way you choose.** The globs in
-  `build.gradle.kts` name the manifest files. A tool's file can sit beside
-  its dotfiles (`loadouts/.config/tmux/.tmux.loadout.kt` next to
-  `tmux.conf`), and every path in it is relative to its folder. `init
+- **You declare intent** in HCL: programs with their install mechanics,
+  scripts with idempotency checks, and an explicit per-machine list of what
+  each one installs and runs. Everything refers to everything else by name
+  (`program.ripgrep`), and a typo in a name doesn't compile: the error
+  names the file, line and column. Machines share small *profiles*; a
+  standard machine is one line
+  (`machine "laptop" { extends = [profile.macos, profile.work] }`).
+- **One repo, laid out the way you choose.** `loadout.hcl` at its root
+  holds the `repo` block, whose `sources` globs name the other manifest
+  files. A tool's file can sit beside its dotfiles
+  (`loadouts/.config/tmux/.tmux.loadout.hcl` next to `tmux.conf`), and
+  every path in it is relative to its folder. `init
   --configs` lays a repo out that way: everything in `loadouts/`, each
   tool where its files land, and what lands outside your home (system
   packages, hardware) in `loadouts/.etc/<concern>/`.
-- **Your dotfiles are part of the loadout.** With `repo(configs = …)`, the
+- **Your dotfiles are part of the loadout.** With `configs = …` in the `repo` block, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
 - **A private repo can build on a public one.** A child repo names its
-  parent in its build (`parent(name, path)`) and uses the parent's
+  parent in its `repo` block (`parent { name = …, path = … }`) and uses the parent's
   programs, scripts and profiles by name, adding its own machines,
   programs and dotfiles; nothing of it is ever written into the parent. A
   work laptop's employer-specific setup stays out of your public dotfiles.
@@ -50,14 +52,14 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
   pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
-  so `installVia(dnf)` works in an empty repo. `loadout installers` shows
+  so `install_via = [dnf]` works in an empty repo. `loadout installers` shows
   them, and an installer of your own with the same name replaces one.
 
 ## Commands
 
 | | Command | What it does |
 |---|---|---|
-| **start here** | `loadout` | The home screen: what needs work. `l` opens a row; enter runs what you ticked (missing programs, pending scripts, drifted configs, outdated mechanisms) full-window, then the screen comes back (`v` shows a command's whole output); quitting leaves your terminal as it was. r/S/U/C re-check, sync, self-upgrade, set up. A pipe gets help instead |
+| **start here** | `loadout` | The home screen: every subject (programs, scripts, configs, remote, fleet) with its verdict, its list beside it. Tick rows, press enter, confirm: the command runs in a panel inside the screen, where sudo and prompts are answered (`ctrl+]` back to the dashboard, Ctrl-C stops it). `i` explains a row, `/` filters, ctrl+p lists every command, ctrl+g every key; r/S/U/C re-check, sync, self-upgrade, set up; `t` switches dark/light. A pipe gets help instead |
 | **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
 | | `explain [names]` | Programs, scripts or configs exactly as the engine resolves them (default: every program and script) |
 | | `installers [name]` | The install mechanisms available here, built-in and your own |
@@ -70,8 +72,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
-| | `compile` | Turn the repo's Kotlin manifests into `loadout.lock.json`, which every other command reads (needs a JDK); warns about what no machine uses, and about `transitional()` scripts every machine has done |
-| | `init` | Scaffold a new config repo (a small Gradle project); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
+| | `compile` | Turn the repo's HCL manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `transitional` scripts every machine has done |
+| | `init` | Scaffold a new config repo (`loadout.hcl` and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
 
 ## Quickstart
 
@@ -84,24 +86,18 @@ $ loadout setup-new-machine                  # converge
 $ loadout sync                               # publish (after adding a git remote)
 ```
 
-```kotlin
-// programs/cli.loadout.kt
-val ripgrep = program(
-    name = "ripgrep",
-    description = "fast grep",
-) {
-    installVia(
-        dnf,
-        pacman,
-        brew,
-    )
+```hcl
+# programs/cli.loadout.hcl
+program "ripgrep" {
+  description = "fast grep"
+  install_via = [dnf, pacman, brew]
 }
 
-// machines/machines.loadout.kt
-val laptop = machine(hostname = "laptop") {
-    via(dnf) {
-        install(ripgrep)
-    }
+# machines/machines.loadout.hcl
+machine "laptop" {
+  via "dnf" {
+    install = [program.ripgrep]
+  }
 }
 ```
 
@@ -109,7 +105,7 @@ val laptop = machine(hostname = "laptop") {
 
 - **[Writing your manifest](../../wiki/Writing-Your-Manifest)**: from a
   three-line loadout to installers, variants, scripts and profiles.
-- **[Repo layout](../../wiki/Repo-Layout)**: the Gradle project, manifest
+- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.hcl`, manifest
   files beside their dotfiles, machines, profiles, the lock and configs.
 - **[A day with loadout](../../wiki/A-Day-With-Loadout)**: the whole loop in
   practice: observing drift, maintaining, adding gear, new-machine day.
@@ -120,26 +116,29 @@ val laptop = machine(hostname = "laptop") {
 
 ## Building from source
 
-Requires a JDK (21 works); the Gradle wrapper fetches the rest.
+Requires Go (the version in `go.mod`); nothing else.
 
 ```console
-$ ./gradlew :app:linkDebugExecutableLinuxX64
-$ ./app/build/bin/linuxX64/debugExecutable/loadout.kexe --help
+$ go build -o build/loadout ./cmd/loadout
+$ ./build/loadout --help
 
-$ ./gradlew :model:linuxX64Test :dsl:jvmTest :core:linuxX64Test :app:linuxX64Test   # unit tests
-$ ./gradlew bundle                                  # the share directory: DSL, Gradle plugin, wrapper
-$ ./integration/run-tests.sh [pattern]             # black-box suite (real binary; pattern = only t/*pattern*.sh)
+$ go vet ./... && go test ./...                    # unit tests
+$ ./integration/run-tests.sh [binary] [pattern]    # black-box suite (default build/loadout; pattern = only t/*pattern*.sh)
 ```
 
-Targets: linux-x64, linux-arm64, macos-arm64, macos-x64 (macs build on
-macs). A `v*` tag builds, strips and attaches release tarballs for
-all four (the binary plus its `share/loadout` directory), which the
-install one-liner and `loadout self-upgrade` download.
+Targets: linux-x64, linux-arm64, macos-arm64, macos-x64, all
+cross-compiled from one machine. A `v*` tag builds and attaches a release
+tarball for each (the binary alone), which the install one-liner and
+`loadout self-upgrade` download.
 
-Stack: [Clikt](https://github.com/ajalt/clikt) · kotlinx-serialization ·
-[kommand](https://github.com/kgit2/kommand) ·
-[Okio](https://square.github.io/okio/) ·
-[Mosaic](https://github.com/JakeWharton/mosaic) (the home screen).
+Stack: [cobra](https://github.com/spf13/cobra) ·
+[HCL](https://github.com/hashicorp/hcl) ·
+[Bubble Tea](https://github.com/charmbracelet/bubbletea),
+[Lip Gloss](https://github.com/charmbracelet/lipgloss) and
+[Bubbles](https://github.com/charmbracelet/bubbles) (the home screen, in
+[Crush](https://github.com/charmbracelet/crush)'s style and Charmtone colours;
+its run panel is a pseudo-terminal read through
+[x/vt](https://github.com/charmbracelet/x/tree/main/vt)).
 
 Known limits: unix-like only · dependency edges have no version
 constraints.

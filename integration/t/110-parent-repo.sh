@@ -5,60 +5,60 @@
 # program of its own.
 
 basic_repo dots
-kt_file dots/programs/where.loadout.kt <<'KT'
-val whereParent = root.script(name = "where-parent") {
-    run("printf '%s|%s|%s\\n' \"\$LOADOUT_REPO\" \"\$PWD\" \"\$LOADOUT_PARENT\" > \"\$WHERE_OUT/parent.txt\"")
-    check("test -f \"\$WHERE_OUT/parent.txt\"")
+# In loadout.hcl, so it runs from the parent's root.
+cat >> dots/loadout.hcl <<'HCL'
+
+script "where-parent" {
+  run   = "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/parent.txt\""
+  check = "test -f \"$WHERE_OUT/parent.txt\""
 }
-KT
+HCL
 compile_repo dots
 PARENT=$(cd dots && pwd -P)
 
-# <dir>: the child of dots, compiled for real (its lock depends on the
-# parent's sources too, which compile_repo's cache key doesn't see).
+# <dir>: the child of dots, uncompiled (the tests compile it themselves).
 child_repo() {
-    kt_repo "$1"
-    rm -f "$1/loadout.kt"
-    cat > "$1/build.gradle.kts" <<KTS
-plugins {
-    id("io.github.josemiguelo.loadout")
+    mkdir -p "$1/machines/state"
+    # Unquoted for $PARENT; where-child, quoted, follows at the child's root.
+    hcl_file "$1/loadout.hcl" <<HCL
+repo {
+  name    = "work"
+  state   = "machines/state"
+  sources = ["machines/**/*.loadout.hcl"]
+
+  parent {
+    name = "dots"
+    path = "$PARENT"
+  }
+}
+HCL
+    cat >> "$1/loadout.hcl" <<'HCL'
+
+script "where-child" {
+  run   = "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/child.txt\""
+  check = "test -f \"$WHERE_OUT/child.txt\""
+}
+HCL
+    hcl_file "$1/machines/work.loadout.hcl" <<'HCL'
+program "worktool" {
+  version = "echo worktool 1.0"
+  regex   = "worktool ([0-9.]+)"
+  custom "manual" {
+    command = "true"
+  }
 }
 
-loadout {
-    parent(name = "dots", path = "$PARENT")
-    sources(
-        "child.kt",
-        "machines/**/*.loadout.kt",
-    )
-}
-KTS
-    kt_file "$1/child.kt" <<'KT'
-val child = repo(name = "work", state = "machines/state")
-KT
-    kt_file "$1/machines/work.loadout.kt" <<'KT'
-val worktool = root.program(name = "worktool") {
-    version(command = "echo worktool 1.0", regex = "worktool ([0-9.]+)")
-    custom(name = "manual") {
-        command = "true"
-    }
+program "forgotten" {
+  custom "manual" {
+    command = "true"
+  }
 }
 
-val forgotten = root.program(name = "forgotten") {
-    custom(name = "manual") {
-        command = "true"
-    }
+machine "work" {
+  install = [variant(program.git, "manual"), program.worktool]
+  run     = [script.where-parent, script.where-child]
 }
-
-val whereChild = root.script(name = "where-child") {
-    run("printf '%s|%s|%s\\n' \"\$LOADOUT_REPO\" \"\$PWD\" \"\$LOADOUT_PARENT\" > \"\$WHERE_OUT/child.txt\"")
-    check("test -f \"\$WHERE_OUT/child.txt\"")
-}
-
-val work = machine(hostname = "work") {
-    install(git.variant(name = "manual"), worktool)
-    run(whereParent, whereChild)
-}
-KT
+HCL
 }
 
 # --- compile -----------------------------------------------------------------
@@ -94,15 +94,15 @@ echo "$OUT" | grep -qE "parent +dots \($PARENT\)" || fail "explain's machine blo
 ok "a parent's command runs in the parent's checkout with its LOADOUT_REPO; a child's in the child"
 
 # --- staleness and a missing parent -----------------------------------------
-cp dots/programs/where.loadout.kt where.bak
-printf '\n// edited\n' >> dots/programs/where.loadout.kt
+cp dots/loadout.hcl where.bak
+printf '\n# edited\n' >> dots/loadout.hcl
 OUT=$("$BIN" --repo work --machine work status 2>&1) && fail "a parent edit the child hasn't compiled must be refused"
 echo "$OUT" | grep -q "parent dots: the manifests changed since loadout.lock.json was written — run: loadout compile" ||
     fail "the parent edit is named: $OUT"
 OUT=$("$BIN" --repo work compile 2>&1) && fail "a child can't compile against a parent whose own lock is stale"
 echo "$OUT" | grep -q "parent dots: loadout.lock.json is older than its manifests — run: loadout compile there first" ||
     fail "the stale parent lock is named: $OUT"
-cp where.bak dots/programs/where.loadout.kt
+cp where.bak dots/loadout.hcl
 "$BIN" --repo work --machine work status >/dev/null 2>&1 || fail "the parent restored, the child loads again"
 mv dots dots.away
 OUT=$("$BIN" --repo work --machine work status 2>&1) && fail "a missing parent must be refused"
@@ -111,14 +111,14 @@ mv dots.away dots
 ok "a parent edit, a stale parent lock and a missing parent are each refused by name"
 
 # --- one name, two repos ------------------------------------------------------
-cat >> work/machines/work.loadout.kt <<'KT'
+cat >> work/machines/work.loadout.hcl <<'HCL'
 
-val git2 = root.program(name = "git") {
-    custom(name = "manual") {
-        command = "true"
-    }
+program "git" {
+  custom "manual" {
+    command = "true"
+  }
 }
-KT
+HCL
 OUT=$("$BIN" --repo work compile 2>&1) && fail "a name both repos declare must be refused"
 echo "$OUT" | grep -q "program 'git' is declared by parent dots too" || fail "the clash names the parent: $OUT"
 ok "a program both repos declare is refused, naming the parent"
@@ -126,7 +126,7 @@ ok "a program both repos declare is refused, naming the parent"
 # --- configs: the parent's source and the child's ---------------------------
 # A stub chezmoi that answers per source (the --source folder's own files),
 # logs every call with the LOADOUT_REPO and LOADOUT_MACHINE it saw.
-sed -i.bak '/^val git2 = /,$d' work/machines/work.loadout.kt && rm -f work/machines/work.loadout.kt.bak
+sed -i.bak '/^program "git" {/,$d' work/machines/work.loadout.hcl && rm -f work/machines/work.loadout.hcl.bak
 CZ=$PWD/cz
 mkdir -p "$CZ/bin"
 cat > "$CZ/bin/chezmoi" <<'SH'
@@ -154,11 +154,11 @@ chmod +x "$CZ/bin/chezmoi"
 export CZ
 cz_loadout() { PATH="$CZ/bin:$PATH" "$BIN" "$@"; }
 
-sed -i.bak 's|state = "machines/state",|state = "machines/state", configs = "configs",|' dots/loadout.kt && rm dots/loadout.kt.bak
-grep -q 'configs = "configs"' dots/loadout.kt || fail "the parent fixture declares configs"
+repo_attr dots/loadout.hcl 'configs = "configs"'
+grep -q 'configs = "configs"' dots/loadout.hcl || fail "the parent fixture declares configs"
 mkdir -p dots/configs
 "$BIN" --repo dots compile >/dev/null 2>&1 || fail "the parent compiles with configs"
-sed -i.bak 's|repo(name = "work", state = "machines/state")|repo(name = "work", state = "machines/state", configs = "configs")|' work/child.kt && rm work/child.kt.bak
+repo_attr work/loadout.hcl 'configs = "configs"'
 mkdir -p work/configs
 OUT=$("$BIN" --repo work compile 2>&1) || fail "the child compiles with configs: $OUT"
 [ "$(grep -c '"configs": "configs"' work/loadout.lock.json)" = 2 ] || fail "the child's lock records its configs and the parent's"
@@ -217,12 +217,12 @@ done
 # Someone changes the parent elsewhere: a new script, compiled and pushed.
 git clone -q dots.git dots-elsewhere
 gitid dots-elsewhere
-kt_file dots-elsewhere/programs/later.loadout.kt <<'KT'
-val later = root.script(name = "later") {
-    run("true")
-    check("true")
+hcl_file dots-elsewhere/programs/later.loadout.hcl <<'HCL'
+script "later" {
+  run   = "true"
+  check = "true"
 }
-KT
+HCL
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's change compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "a later script" && git -C dots-elsewhere push -q 2>/dev/null
 PARENT_HEAD=$(git -C dots.git rev-parse HEAD)
@@ -239,7 +239,7 @@ ok "a child's sync pulls its parent, recompiles when the parent changed, and com
 # applies from the new folder, not the one its lock named before the pull.
 git -C dots-elsewhere pull -q
 git -C dots-elsewhere mv configs dotfiles
-sed -i.bak 's|configs = "configs"|configs = "dotfiles"|' dots-elsewhere/loadout.kt && rm dots-elsewhere/loadout.kt.bak
+sed -i.bak 's|configs = "configs"|configs = "dotfiles"|' dots-elsewhere/loadout.hcl && rm dots-elsewhere/loadout.hcl.bak
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's rename compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "configs is dotfiles now" && git -C dots-elsewhere push -q 2>/dev/null
 : > "$CZ/log"
@@ -253,7 +253,7 @@ ok "a child's sync applies from a configs folder its parent renamed"
 # Offline, as in 50-diff-sync: a fake curl answers the release check and an
 # install that swaps a copy of the binary for a stub saying how it was run.
 git -C dots-elsewhere pull -q
-sed -i.bak 's/repo(name = \([^,]*\),/repo(name = \1, minToolVersion = "999.0.0",/' dots-elsewhere/loadout.kt && rm dots-elsewhere/loadout.kt.bak
+repo_attr dots-elsewhere/loadout.hcl 'min_tool_version = "999.0.0"'
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's floor compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "floor" && git -C dots-elsewhere push -q 2>/dev/null
 mkdir -p self fakecurl
@@ -275,7 +275,7 @@ ok "a child's sync that compiles and then upgrades tells the next sync it compil
 # That next sync finds the lock compiled (parent unchanged since) and commits
 # it with the state.
 git -C dots-elsewhere pull -q
-sed -i.bak 's/ minToolVersion = "999.0.0",//' dots-elsewhere/loadout.kt && rm dots-elsewhere/loadout.kt.bak
+sed -i.bak '/min_tool_version = "999.0.0"/d' dots-elsewhere/loadout.hcl && rm dots-elsewhere/loadout.hcl.bak
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent drops its floor"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "no floor" && git -C dots-elsewhere push -q 2>/dev/null
 git -C dots pull -q
