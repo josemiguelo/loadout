@@ -137,9 +137,12 @@ internal/
                    assembling, shared with Check
     analyze.go     for the language server: Analyze (every pass, never
                    stopping at a mistake; every declaration with where it
-                   is, every diagnostic) and Check (what compile would
-                   refuse, writing nothing, an editor's unsaved buffers
-                   over the disk)
+                   is, its variants or params, every diagnostic, the data
+                   schema) and Check (what compile would refuse, writing
+                   nothing, an editor's unsaved buffers over the disk)
+    schema.go      ShapeOf: what each block may hold, built from the same
+                   specs the decoder checks, plus what each attribute
+                   takes; schema_test holds every spec attribute to a value
     hcltest/       ManifestOf for tests (TEST-ONLY)
   core/
     loader/        LoadRepo — reads the lock: missing/newer/stale/floor
@@ -197,8 +200,11 @@ internal/
   lsp/         `loadout lsp`, the manifests' language server over stdio:
                rpc.go (JSON-RPC framing), server.go (lifecycle, dispatch),
                workspace.go (the repo root, open buffers, debounced Check,
-               diagnostics published per file), complete.go (reference
-               names at the cursor), position.go (HCL <-> LSP positions,
+               diagnostics published per file), scan.go (where the cursor
+               is: block path, key or value, the attribute, object keys),
+               complete.go (what goes there: block types, attributes,
+               nested blocks, references, flags, data keys, params,
+               labels, variants), position.go (HCL <-> LSP positions,
                UTF-8 or UTF-16)
   theme/       Tokyo Night / Day palettes, DetectDarkTerminal, ForcedDark
   tui/         the home screen; registers itself as app.NewScreen.
@@ -664,7 +670,10 @@ Explicit user decisions; don't "improve" them away.
   it), a file that doesn't parse still names its declarations, an error
   without a position is placed on the first `<kind> '<name>'` it names,
   and completion reads the cursor's context from a loose scan of the text
-  before it. Keep those out of compile's path: `readRepo`'s `tolerant` is
+  before it. What completion offers comes from `hclconf.ShapeOf`, built
+  from the decoder's own specs: a new attribute or block needs its value
+  in schema.go's `shapeSpecs` (schema_test fails until it has one), and
+  nothing else to be completed. Keep those out of compile's path: `readRepo`'s `tolerant` is
   false there.
 
 - **Go, per go.mod's `go` line**; deps added with `go get`, then `go mod

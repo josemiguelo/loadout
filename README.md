@@ -105,8 +105,9 @@ machine "laptop" {
 
 `loadout lsp` is a language server for the manifests: your editor shows
 what `loadout compile` would refuse as you type, unsaved buffers
-included, and completes `program.`, `script.`, `profile.`, `installer.`
-and `local.` names declared anywhere in the repo. Setup is in
+included, and completes everything a manifest names: block types,
+attributes, `program.`/`script.`/… references from anywhere in the repo,
+installers, data settings and variants. Setup is in
 [Writing your manifest](../../wiki/Writing-Your-Manifest#8-your-editor-knows-your-manifest).
 
 ## Learn more

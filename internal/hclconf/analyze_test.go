@@ -222,3 +222,54 @@ func TestCheckReadsTheGlobsPastASyntaxErrorInTheEntryFile(t *testing.T) {
 		t.Errorf("compiled a broken entry file: %v", err)
 	}
 }
+
+func TestAnalyzeKnowsVariantsParamsFunctionsAndTheDataSchema(t *testing.T) {
+	a := Analyze(filesOf(map[string]string{
+		EntryFile: `data {
+  dark   = flag(true)
+  editor = text("nvim")
+  tools {
+    extra = list([])
+  }
+}
+function "pair" {
+  params = [a]
+  result = [a, a]
+}`,
+		"cli/cli.loadout.hcl": `installer "mine" {
+  install = "true {copr}"
+  params  = ["copr"]
+}
+program "bat" {
+  via "brew" {}
+  via "mine" {
+    params = { copr = "x/y" }
+  }
+}
+script "setup" {
+  run = "true"
+  variant "arch" { run = "true" }
+  variant "mac" { run = "true" }
+}`,
+	}), Options{})
+	equalSlices(t, lines(a.Diagnostics), nil)
+	find := func(kind, name string) Declaration {
+		for _, d := range a.Declarations {
+			if d.Kind == kind && d.Name == name && (d.Range != nil || kind == "installer") {
+				return d
+			}
+		}
+		t.Fatalf("no %s %s", kind, name)
+		return Declaration{}
+	}
+	equalSlices(t, find("program", "bat").Variants, []string{"brew", "mine"})
+	equalSlices(t, find("script", "setup").Variants, []string{"arch", "mac"})
+	equalSlices(t, find("installer", "mine").Params, []string{"copr"})
+	if find("installer", "dnf-copr").Params == nil {
+		t.Error("a built-in installer's params are missing")
+	}
+	equalSlices(t, declared(a, "function"), []string{"pair@loadout.hcl:8,10"})
+	if !a.HasData || len(a.Data) != 3 || a.Data[0].Name != "dark" || a.Data[0].Kind != "flag" || a.Data[2].Kind != "table" || a.Data[2].Table[0].Name != "extra" {
+		t.Errorf("data: %+v", a.Data)
+	}
+}

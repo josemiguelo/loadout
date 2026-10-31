@@ -4,6 +4,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
 	"github.com/zclconf/go-cty/cty/function/stdlib"
+	"slices"
 )
 
 // A reference is what `program.x`, `script.x`, `profile.x`, `installer.x`
@@ -209,4 +210,14 @@ func functions() map[string]function.Function {
 		"upper":         stdlib.UpperFunc,
 		"values":        stdlib.ValuesFunc,
 	}
+}
+
+// FunctionNames is what every expression may call, user functions aside, sorted.
+func FunctionNames() []string {
+	var out []string
+	for name := range functions() {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
 }

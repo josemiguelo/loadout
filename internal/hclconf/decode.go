@@ -272,6 +272,10 @@ func (d *decoder) namespace() {
 	d.ctx = &hcl.EvalContext{Variables: vars, Functions: functions()}
 }
 
+// functionSpec is a `function` block's body, as ext/userfunc reads it
+// (and checks it: this spec only describes it).
+var functionSpec = spec{attrs: []string{"params", "variadic_param", "result"}}
+
 // decodeFunctions is every file's `function` blocks (ext/userfunc), callable
 // from any file.
 func (d *decoder) decodeFunctions() {
@@ -390,6 +394,8 @@ var repoSpec = spec{
 	blocks: map[string][2]int{"parent": {0, 0}},
 }
 
+var parentSpec = spec{attrs: []string{"name", "path"}}
+
 // decodeRepo is the repo block and the data schema.
 func (d *decoder) decodeRepo() {
 	var repo, data *hclsyntax.Block
@@ -428,7 +434,7 @@ func (d *decoder) decodeRepo() {
 				continue
 			}
 			pb := p.Body
-			d.diags = append(d.diags, spec{attrs: []string{"name", "path"}}.check(pb, "the parent block")...)
+			d.diags = append(d.diags, parentSpec.check(pb, "the parent block")...)
 			if d.required(p, "name") && d.required(p, "path") {
 				d.out.Parent = &ParentRef{Name: d.text(pb, "name"), Path: d.text(pb, "path")}
 			}
@@ -513,8 +519,10 @@ func (d *decoder) installerLabel(b *hclsyntax.Block) bool {
 	return false
 }
 
+var requiresSpec = spec{attrs: []string{"programs"}}
+
 func (d *decoder) declareRequires(b *hclsyntax.Block) {
-	d.diags = append(d.diags, spec{attrs: []string{"programs"}}.check(b.Body, "a requires block")...)
+	d.diags = append(d.diags, requiresSpec.check(b.Body, "a requires block")...)
 	if !d.installerLabel(b) {
 		return
 	}
@@ -541,6 +549,8 @@ var variantSpec = spec{
 	},
 	blocks: map[string][2]int{"provides": {1, 1}},
 }
+
+var providesSpec = spec{attrs: []string{"at"}}
 
 func (d *decoder) declareProgram(name string, body *hclsyntax.Body, origin string) {
 	d.diags = append(d.diags, programSpec.check(body, "a program")...)
@@ -659,7 +669,7 @@ func (d *decoder) installVariant(body *hclsyntax.Body) (model.InstallVariant, *s
 		if b.Type != "provides" {
 			continue
 		}
-		d.diags = append(d.diags, spec{attrs: []string{"at"}}.check(b.Body, "a provides block")...)
+		d.diags = append(d.diags, providesSpec.check(b.Body, "a provides block")...)
 		v.Provides = append(v.Provides, model.Provides{Binary: b.Labels[0], At: d.str(b.Body, "at")})
 	}
 	return v, d.str(body, "spare")
@@ -852,6 +862,8 @@ var machineSpec = spec{
 	blocks: map[string][2]int{"via": {1, 1}},
 }
 
+var machineViaSpec = spec{attrs: []string{"install"}}
+
 // declareMachine is a machine or a profile: the
 // same body, two verbs (install, run) and `via` blocks, and contract 2's
 // rules.
@@ -905,7 +917,7 @@ func (d *decoder) declareMachine(kind, name string, body *hclsyntax.Body) {
 			continue
 		}
 		parts = append(parts, part{b.TypeRange.Start.Byte, func() {
-			d.diags = append(d.diags, spec{attrs: []string{"install"}}.check(b.Body, "a via block")...)
+			d.diags = append(d.diags, machineViaSpec.check(b.Body, "a via block")...)
 			if !d.installerLabel(b) {
 				return
 			}

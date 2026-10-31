@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"path/filepath"
 	"slices"
 	"time"
 
+	"github.com/josemiguelo/loadout/internal/hclconf"
 	"github.com/josemiguelo/loadout/internal/version"
 )
 
@@ -138,7 +140,7 @@ func (s *server) dispatch(m message) (any, error) {
 		}
 		src, analysis := s.ws.snapshot(path)
 		off := toOffset(src, p.Position, s.ws.encoding)
-		return complete(src, off, p.Position.Line, s.ws.encoding, analysis), nil
+		return complete(src, off, p.Position.Line, s.ws.encoding, analysis, filepath.Base(path) == hclconf.EntryFile), nil
 	case "textDocument/didSave":
 		s.ws.check()
 		return nil, nil

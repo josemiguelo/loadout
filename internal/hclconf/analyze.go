@@ -25,16 +25,35 @@ type Analysis struct {
 	// Errors is the manifest language's own mistakes (Decoded.Errors),
 	// which have no position.
 	Errors []string
+	// Data is the data schema's keys (the parent's, for a child without
+	// one); HasData says whether there is a schema at all.
+	Data    []DataKey
+	HasData bool
 }
 
-// Declaration is one name a reference may use (`<Kind>.<Name>`), or a
-// machine.
+// DataKey is one key of the data schema.
+type DataKey struct {
+	Name string
+	// Kind is flag, text, number, whole, list or table.
+	Kind string
+	// Table is a table's keys.
+	Table []DataKey
+}
+
+// Declaration is one name a reference may use (`<Kind>.<Name>`), a
+// function, or a machine.
 type Declaration struct {
-	// Kind is installer, program, script, profile, local or machine.
+	// Kind is installer, program, script, profile, local, function or
+	// machine.
 	Kind, Name string
 	// Range is the name where it's declared (a block's label, a local's
 	// name); nil for a built-in installer and the parent's declarations.
 	Range *hcl.Range
+	// Variants is a program's install variants or a script's variants:
+	// what variant() picks.
+	Variants []string
+	// Params is an installer's params: what its variants' `params` set.
+	Params []string
 }
 
 // Analyze decodes files as Decode does, through every pass, without
@@ -57,6 +76,8 @@ func analyze(files []File, opts Options) (*Analysis, *Decoded) {
 		Declarations: d.declarations(),
 		Diagnostics:  append(syntax, d.diags...),
 		Errors:       model.Distinct(d.errors),
+		Data:         dataKeys(d.schema),
+		HasData:      d.schema != nil,
 	}, d.out
 }
 
@@ -112,33 +133,60 @@ func refusalLines(message string) []string {
 // declarations is every name the namespace holds, with where it's declared.
 func (d *decoder) declarations() []Declaration {
 	var out []Declaration
-	for _, n := range model.InstallerLibraryNames() {
-		out = append(out, Declaration{Kind: "installer", Name: n})
+	library := model.InstallerLibrary()
+	for _, n := range library.Keys() {
+		out = append(out, Declaration{Kind: "installer", Name: n, Params: library.Value(n).Params})
 	}
 	if p := d.opts.Parent; p != nil {
-		for _, k := range []struct {
-			kind  string
-			names []string
-		}{
-			{"installer", p.Draft.Manifest.Installers.Keys()},
-			{"program", p.Draft.Manifest.Programs.Keys()},
-			{"script", p.Draft.Manifest.Scripts.Keys()},
-			{"profile", p.Draft.Profiles.Keys()},
-		} {
-			for _, n := range k.names {
-				out = append(out, Declaration{Kind: k.kind, Name: n})
-			}
+		m := p.Draft.Manifest
+		for _, n := range m.Installers.Keys() {
+			out = append(out, Declaration{Kind: "installer", Name: n, Params: m.Installers.Value(n).Params})
+		}
+		for _, n := range m.Programs.Keys() {
+			out = append(out, Declaration{Kind: "program", Name: n, Variants: m.Programs.Value(n).Install.Keys()})
+		}
+		for _, n := range m.Scripts.Keys() {
+			out = append(out, Declaration{Kind: "script", Name: n, Variants: m.Scripts.Value(n).Variants.Keys()})
+		}
+		for _, n := range p.Draft.Profiles.Keys() {
+			out = append(out, Declaration{Kind: "profile", Name: n})
 		}
 	}
+	m := d.out.Draft.Manifest
 	for _, b := range slices.Concat(d.blocks, d.broken) {
+		decl := Declaration{Kind: b.block.Type}
+		if len(b.block.Labels) > 0 {
+			decl.Name, decl.Range = b.block.Labels[0], b.block.LabelRanges[0].Ptr()
+		}
 		switch b.block.Type {
-		case "installer", "program", "script", "profile", "machine":
-			out = append(out, Declaration{Kind: b.block.Type, Name: b.block.Labels[0], Range: b.block.LabelRanges[0].Ptr()})
+		case "installer":
+			decl.Params = m.Installers.Value(decl.Name).Params
+		case "program":
+			decl.Variants = d.out.variants[decl.Name]
+		case "script":
+			decl.Variants = m.Scripts.Value(decl.Name).Variants.Keys()
+		case "profile", "machine", "function":
 		case "locals":
 			for _, a := range sortedAttrs(b.block.Body) {
 				out = append(out, Declaration{Kind: "local", Name: a.Name, Range: a.NameRange.Ptr()})
 			}
+			continue
+		default:
+			continue
 		}
+		out = append(out, decl)
+	}
+	return out
+}
+
+// dataKeys is schema's keys, in declaration order.
+func dataKeys(schema *dataSchema) []DataKey {
+	if schema == nil {
+		return nil
+	}
+	var out []DataKey
+	for _, k := range schema.keys {
+		out = append(out, DataKey{Name: k, Kind: schema.kinds[k], Table: dataKeys(schema.table[k])})
 	}
 	return out
 }
