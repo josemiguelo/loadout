@@ -93,8 +93,9 @@ One Go module (`github.com/josemiguelo/loadout`, go.mod at the root), one
 binary (`cmd/loadout`), everything else under `internal/`. Releases build
 with CGO off for linux-x64, linux-arm64, macos-arm64 and macos-x64 from one
 runner. The packages depend downwards: model ← assemble ← core and
-hclconf; core ← app ← cli and tui; only cli imports hclconf (`compile`),
-and cli and tui never import each other (they meet in app).
+hclconf; core ← app ← cli and tui; hclconf ← lsp ← cli: only cli
+(`compile`) and lsp (the language server) import hclconf, and cli and tui
+never import each other (they meet in app).
 
 ```
 cmd/loadout/main.go  dispatch to cli.Execute; LOADOUT_THEME checked first,
@@ -131,7 +132,14 @@ internal/
     unused.go      UnusedWarnings, TransitionalWarnings
     compile.go     Compile: loadout.hcl's repo block, globs, the parent, decode,
                    assemble, write the lock (and, with configs, the chezmoi
-                   data and partial) only when changed; refuses a Kotlin repo
+                   data and partial) only when changed; refuses a Kotlin repo.
+                   readRepoFiles/repoFiles.assemble are its reading and
+                   assembling, shared with Check
+    analyze.go     for the language server: Analyze (every pass, never
+                   stopping at a mistake; every declaration with where it
+                   is, every diagnostic) and Check (what compile would
+                   refuse, writing nothing, an editor's unsaved buffers
+                   over the disk)
     hcltest/       ManifestOf for tests (TEST-ONLY)
   core/
     loader/        LoadRepo — reads the lock: missing/newer/stale/floor
@@ -178,13 +186,20 @@ internal/
                (what a confirmed action runs)
   cli/         cobra commands, one file per subcommand (status/explain/
                installers/setup-new-machine/install/upgrade/self-upgrade/
-               outdated/run/apply/diff/sync/init/compile); root.go (bare
+               outdated/run/apply/diff/sync/init/compile, and the hidden
+               lsp); root.go (bare
                invocation without a TTY prints help), home.go (starts the
                screen, prints what it ended with), style.go, table.go, spinner.go, help.go, errors.go
                (usage errors as loadout 3 printed them), converge.go;
                scaffold/ is `init`'s templates (go:embed). `self-upgrade`
                shells to version.InstallCommand and needs no repo, so it works
                under a min-tool-version refusal (which points at it)
+  lsp/         `loadout lsp`, the manifests' language server over stdio:
+               rpc.go (JSON-RPC framing), server.go (lifecycle, dispatch),
+               workspace.go (the repo root, open buffers, debounced Check,
+               diagnostics published per file), complete.go (reference
+               names at the cursor), position.go (HCL <-> LSP positions,
+               UTF-8 or UTF-16)
   theme/       Tokyo Night / Day palettes, DetectDarkTerminal, ForcedDark
   tui/         the home screen; registers itself as app.NewScreen.
                homemodel.go (ALL state + the domain-facing builders, no
@@ -641,6 +656,16 @@ Explicit user decisions; don't "improve" them away.
       child.
 
 ## Toolchain facts — don't rediscover
+
+- **`loadout lsp` guesses; compile never does.** The no-heuristics,
+  no-fallbacks rule is compile's and the CLI's; the language server is
+  held to being useful while you type. So `Check` reads the entry file's
+  globs from what HCL recovered of a half-typed buffer (compile refuses
+  it), a file that doesn't parse still names its declarations, an error
+  without a position is placed on the first `<kind> '<name>'` it names,
+  and completion reads the cursor's context from a loose scan of the text
+  before it. Keep those out of compile's path: `readRepo`'s `tolerant` is
+  false there.
 
 - **Go, per go.mod's `go` line**; deps added with `go get`, then `go mod
   tidy`. cobra/pflag for the CLI, hashicorp/hcl v2 + go-cty for manifests,

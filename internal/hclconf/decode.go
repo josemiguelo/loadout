@@ -107,12 +107,24 @@ func Decode(files []File, opts Options) (*Decoded, error) {
 	if syntax := d.parse(files); syntax.HasErrors() {
 		return nil, diagnosticsError(syntax)
 	}
+	d.decodeAll()
+	if d.diags.HasErrors() {
+		return nil, diagnosticsError(d.diags)
+	}
+	d.out.Errors = d.errors
+	d.out.schema = d.schema
+	return d.out, nil
+}
+
+// decodeAll is every pass after parse: the namespace, then what each
+// block declares.
+func (d *decoder) decodeAll() {
 	d.namespace()
 	d.decodeFunctions()
 	d.decodeLocals()
 	d.decodeRepo()
-	if opts.Parent != nil && d.schema == nil {
-		d.schema = opts.Parent.schema
+	if d.opts.Parent != nil && d.schema == nil {
+		d.schema = d.opts.Parent.schema
 	}
 	for _, phase := range [][]string{{"installer", "requires", "program", "script", "outdated"}, {"profile", "machine"}} {
 		for _, b := range d.blocks {
@@ -121,12 +133,6 @@ func Decode(files []File, opts Options) (*Decoded, error) {
 			}
 		}
 	}
-	if d.diags.HasErrors() {
-		return nil, diagnosticsError(d.diags)
-	}
-	d.out.Errors = d.errors
-	d.out.schema = d.schema
-	return d.out, nil
 }
 
 // block is a top-level block and the file it's in.
@@ -144,6 +150,9 @@ type decoder struct {
 	bodies []*hclsyntax.Body
 	blocks []block
 	entry  *hclsyntax.Body
+	// broken is the top-level blocks of the files that don't parse, as far
+	// as HCL recovered them: they name things (Analyze), nothing more.
+	broken []block
 
 	ctx    *hcl.EvalContext
 	schema *dataSchema
@@ -168,6 +177,13 @@ func (d *decoder) parse(files []File) hcl.Diagnostics {
 		file, diags := hclsyntax.ParseConfig(f.Src, name, hcl.InitialPos)
 		syntax = append(syntax, diags...)
 		if diags.HasErrors() {
+			if body, ok := file.Body.(*hclsyntax.Body); ok {
+				for _, b := range body.Blocks {
+					if labels, ok := topLevel.blocks[b.Type]; ok && b.Type != "repo" && len(checkLabels(b, labels)) == 0 {
+						d.broken = append(d.broken, block{b, ""})
+					}
+				}
+			}
 			continue
 		}
 		body := file.Body.(*hclsyntax.Body)
@@ -221,7 +237,7 @@ func (d *decoder) namespace() {
 			d.out.variants[name] = vs
 		}
 	}
-	for _, b := range d.blocks {
+	for _, b := range slices.Concat(d.blocks, d.broken) {
 		switch b.block.Type {
 		case "installer":
 			add(&d.installers, b.block.Labels[0])

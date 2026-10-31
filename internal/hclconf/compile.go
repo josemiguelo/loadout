@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -45,62 +46,19 @@ func Compile(root string) ([]string, error) {
 		}
 		return nil, model.NewManifestException(root + " has no " + EntryFile + " — a config repo starts there (see: loadout init)")
 	}
-	repoFS := os.DirFS(root)
-	entry, err := os.ReadFile(filepath.Join(root, EntryFile))
+	repo, err := readRepoFiles(root, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	sources, parentRef, err := readRepo(entry)
+	decoded, err := Decode(repo.files, repo.opts())
 	if err != nil {
 		return nil, err
 	}
-	globs := model.Distinct(append([]string{EntryFile}, sources...))
-	files, err := readFiles(repoFS, globs, "")
+	manifest, draft, err := repo.assemble(decoded)
 	if err != nil {
 		return nil, err
 	}
-
-	var parent *parentRepo
-	if parentRef != nil {
-		if parent, err = loadParent(*parentRef, root); err != nil {
-			return nil, err
-		}
-	}
-	var opts Options
-	if parent != nil {
-		opts.Parent = parent.decoded
-	}
-	decoded, err := Decode(files, opts)
-	if err != nil {
-		return nil, err
-	}
-	var draft assemble.ManifestDraft
-	if parent == nil {
-		draft, err = decoded.DraftOf()
-	} else {
-		draft, err = decoded.DraftOver(parent.decoded, parent.ref.Name)
-	}
-	if err != nil {
-		return nil, err
-	}
-	draft.Manifest.Layout.Sources = globs
-	var parentFS fs.FS
-	if parent != nil {
-		parentFS = parent.fs
-		layout := parent.decoded.Draft.Manifest.Layout
-		draft.Manifest.Layout.Parent = &model.ParentLayout{
-			Name:    parent.ref.Name,
-			Path:    parent.ref.Path,
-			State:   layout.State,
-			Configs: layout.Configs,
-			Sources: parent.globs,
-			Hash:    parent.hash,
-		}
-	}
-	manifest, err := assemble.Assemble(draft, repoFS, parentFS)
-	if err != nil {
-		return nil, err
-	}
+	repoFS, globs, parent := repo.fs, repo.globs, repo.parent
 	hash, err := model.SourcesHash(repoFS, globs)
 	if err != nil {
 		return nil, err
@@ -133,6 +91,110 @@ func Compile(root string) ([]string, error) {
 	return warnings, nil
 }
 
+// repoFiles is a repo's manifests, read: what Compile and Check decode.
+type repoFiles struct {
+	fs     fs.FS
+	globs  []string
+	files  []File
+	parent *parentRepo
+}
+
+// readRepoFiles reads the repo at root: its entry file's sources and
+// parent, then every file the globs match. A path in overlay (repo-relative)
+// is read from there instead of the disk, and one the globs match that
+// isn't on disk is read too. Tolerant is readRepo's.
+func readRepoFiles(root string, overlay map[string][]byte, tolerant bool) (*repoFiles, error) {
+	repoFS := os.DirFS(root)
+	entry, ok := overlay[EntryFile]
+	if !ok {
+		var err error
+		if entry, err = os.ReadFile(filepath.Join(root, EntryFile)); err != nil {
+			return nil, err
+		}
+	}
+	sources, parentRef, err := readRepo(entry, tolerant)
+	if err != nil {
+		return nil, err
+	}
+	globs := model.Distinct(append([]string{EntryFile}, sources...))
+	files, err := readFiles(repoFS, globs, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(overlay) > 0 {
+		files = overlaid(files, globs, overlay)
+	}
+	repo := &repoFiles{fs: repoFS, globs: globs, files: files}
+	if parentRef != nil {
+		if repo.parent, err = loadParent(*parentRef, root); err != nil {
+			return nil, err
+		}
+	}
+	return repo, nil
+}
+
+// overlaid is files with each overlay path's source swapped in, then the
+// overlay paths the globs match that files lacks, path-sorted.
+func overlaid(files []File, globs []string, overlay map[string][]byte) []File {
+	seen := map[string]bool{}
+	for i, f := range files {
+		seen[f.Path] = true
+		if src, ok := overlay[f.Path]; ok {
+			files[i].Src = src
+		}
+	}
+	var extra []string
+	for p := range overlay {
+		if !seen[p] && slices.ContainsFunc(globs, func(g string) bool { return model.GlobMatches(g, p) }) {
+			extra = append(extra, p)
+		}
+	}
+	slices.Sort(extra)
+	for _, p := range extra {
+		files = append(files, File{Path: p, Src: overlay[p]})
+	}
+	return files
+}
+
+// opts is what the repo's own files decode against: its parent, if any.
+func (r *repoFiles) opts() Options {
+	if r.parent == nil {
+		return Options{}
+	}
+	return Options{Parent: r.parent.decoded}
+}
+
+// assemble is decoded's manifest, as the lock holds it, and the draft it
+// came from.
+func (r *repoFiles) assemble(decoded *Decoded) (model.Manifest, assemble.ManifestDraft, error) {
+	var draft assemble.ManifestDraft
+	var err error
+	if r.parent == nil {
+		draft, err = decoded.DraftOf()
+	} else {
+		draft, err = decoded.DraftOver(r.parent.decoded, r.parent.ref.Name)
+	}
+	if err != nil {
+		return model.Manifest{}, draft, err
+	}
+	draft.Manifest.Layout.Sources = r.globs
+	var parentFS fs.FS
+	if parent := r.parent; parent != nil {
+		parentFS = parent.fs
+		layout := parent.decoded.Draft.Manifest.Layout
+		draft.Manifest.Layout.Parent = &model.ParentLayout{
+			Name:    parent.ref.Name,
+			Path:    parent.ref.Path,
+			State:   layout.State,
+			Configs: layout.Configs,
+			Sources: parent.globs,
+			Hash:    parent.hash,
+		}
+	}
+	manifest, err := assemble.Assemble(draft, r.fs, parentFS)
+	return manifest, draft, err
+}
+
 func isFile(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.Mode().IsRegular()
@@ -141,9 +203,11 @@ func isFile(p string) bool {
 // readRepo is the entry file's `repo.sources` and `repo.parent`, read before
 // anything else is: which files to decode, and against which parent. A
 // mistake here is reported again, with everything else, by Decode.
-func readRepo(src []byte) ([]string, *ParentRef, error) {
+// Tolerant reads past a syntax error what HCL recovered of the file (an
+// editor's half-typed buffer); a mistake in the repo block still refuses.
+func readRepo(src []byte, tolerant bool) ([]string, *ParentRef, error) {
 	file, diags := hclsyntax.ParseConfig(src, EntryFile, hcl.InitialPos)
-	if diags.HasErrors() {
+	if diags.HasErrors() && !tolerant {
 		return nil, nil, diagnosticsError(diags)
 	}
 	d := &decoder{ctx: &hcl.EvalContext{Functions: functions(), Variables: map[string]cty.Value{}}, out: &Decoded{}}
