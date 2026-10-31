@@ -41,8 +41,9 @@ top-down, first fit wins:
    differently per platform is one script with `variant "arch" { … }`s,
    picked by the machine.
 
-Cross-cutting: no `||` chains or trailing pipes in checks; versions are the
-mapped pm's truth (rpm's version, not the binary's self-report: expected,
+Cross-cutting: once any variant is a block (recipes 2–5), write every
+variant as one (`via "brew" {}`), never `install_via` beside them; no
+`||` chains or trailing pipes in checks; versions are the mapped pm's truth (rpm's version, not the binary's self-report: expected,
 not a bug); a repo script (`run_script`, `installed_by`, `managed_by`) for
 every script file (existence checked at compile and load); plain values
 over abstraction (contract 11). Verify loop: `explain` →

@@ -37,9 +37,11 @@
   "github-cli" }`); two need the multi-line form.
 - **HCL house style** (the dotfiles port, `init`'s scaffold and the docs):
   the label is the name (`program "ripgrep"`, `machine "<hostname>"`);
-  `description` is the body's first line, on its own; `install_via` is one
-  line (`install_via = [brew, omarchy]`), the variants it can't express as
-  `via`/`custom` blocks after it; a one-attribute block may stay on one
+  `description` is the body's first line, on its own; a program reads one
+  way: `install_via` (one line, `install_via = [brew, omarchy]`) when no
+  variant needs a setting, else every variant a block, an empty `via
+  "omarchy" {}` for one that needs none, never the list beside blocks; a
+  one-attribute block may stay on one
   line (`via "pacman" { pkg = "github-cli" }`); `=` aligned within a group
   of attributes (hclfmt's style); a list too long for a line opens `[` and
   closes `]` on their own lines, one entry per line with a trailing comma
