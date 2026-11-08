@@ -4,6 +4,7 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -259,6 +260,30 @@ func (m Manifest) ForMachine(machine string) Manifest {
 		}
 	}
 	out.ToolPaths = paths
+	if scriptPath := providedFolders(paths); len(scriptPath) > 0 {
+		out.Scripts = MapValues(out.Scripts, func(_ string, step ScriptStep) ScriptStep {
+			step.Path = scriptPath
+			return step
+		})
+		out.Outdated = MapValues(out.Outdated, func(_ string, source OutdatedSource) OutdatedSource {
+			source.Path = scriptPath
+			return source
+		})
+	}
+	return out
+}
+
+// providedFolders is every folder in paths, once, by binary name: what
+// scripts get first on PATH.
+func providedFolders(paths map[string][]string) []string {
+	var out []string
+	for _, binary := range slices.Sorted(maps.Keys(paths)) {
+		for _, dir := range paths[binary] {
+			if !slices.Contains(out, dir) {
+				out = append(out, dir)
+			}
+		}
+	}
 	return out
 }
 
@@ -534,18 +559,37 @@ func ParentOrigin(folder string) string { return OriginParent + folder }
 // can't contain spaces.
 const InstallFilePrefix = "file:"
 
-// ExpandFilePrefix expands a `file:path args…` command to `sh 'path' args…`;
-// others pass through.
+// ExpandFilePrefix expands a `file:path args…` command to FileLine(path,
+// args); others pass through.
 func ExpandFilePrefix(command string) string {
 	spec, ok := strings.CutPrefix(command, InstallFilePrefix)
 	if !ok {
 		return command
 	}
 	p, args, _ := strings.Cut(spec, " ")
+	return FileLine(p, args)
+}
+
+// FileLine runs the repo script at path with args the way the kernel runs an
+// executable: with the interpreter its first line names (`#!/usr/bin/env
+// bun`, `#!/bin/bash`), else sh. The line is read when the command runs, so
+// a script file is never read here, and needn't be executable.
+func FileLine(path, args string) string {
+	quoted := "'" + path + "'"
 	if args != "" {
-		return "sh '" + p + "' " + args
+		quoted += " " + args
 	}
-	return "sh '" + p + "'"
+	return "{ l=$(head -n 1 '" + path + "'); case $l in '#!'*) ${l#??} " + quoted + ";; *) sh " + quoted + ";; esac; }"
+}
+
+// fileLineShape matches what FileLine writes: group 1 is the path, group 2
+// the arguments (with their leading space).
+var fileLineShape = regexp.MustCompile(`\{ l=\$\(head -n 1 '([^']*)'\); case \$l in '#!'\*\) \$\{l#\?\?\} '[^']*'(.*?);; \*\) sh '[^']*'.*?;; esac; \}`)
+
+// ShownLine is line as a user reads it: every FileLine back to the script
+// it runs and its arguments (`.loadout/x.ts check`).
+func ShownLine(line string) string {
+	return fileLineShape.ReplaceAllString(line, "$1$2")
 }
 
 // ShellLine is the shell line for command: `file:` expanded, and path put
@@ -658,6 +702,11 @@ type ScriptStep struct {
 	// Origin is the repo-relative directory of the declaring file ("" = repo
 	// root): paths resolve and commands run there.
 	Origin string
+	// Path is the directories put first on PATH for the script's commands:
+	// every `provides … at` folder of the machine in view (ForMachine), so a
+	// script finds its interpreter (bun from brew) before a shell would.
+	// Never written to the lock.
+	Path []string
 }
 
 // ModeList is Modes with the default applied.
@@ -705,4 +754,6 @@ type OutdatedSource struct {
 	// Origin is the repo-relative directory of the declaring file ("" = repo
 	// root): paths resolve and commands run there.
 	Origin string
+	// Path is ScriptStep.Path, for the source's commands (ForMachine).
+	Path []string
 }

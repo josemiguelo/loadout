@@ -23,7 +23,7 @@ func TestSkipsWhenCheckPasses(t *testing.T) {
 }
 
 func TestFileCheckExpandsToShAndKeepsArgs(t *testing.T) {
-	fake := fakeexec.New().OnCommand("set -- fedora; sh 'scripts/x.sh' check")
+	fake := fakeexec.New().OnCommand("set -- fedora; " + model.FileLine("scripts/x.sh", "check"))
 	if !runScript(t, fake, model.ScriptStep{File: s("scripts/x.sh"), Check: s("file:scripts/x.sh check")}, false, "fedora").AlreadyDone {
 		t.Error("ran")
 	}
@@ -38,12 +38,12 @@ func TestForceIgnoresCheck(t *testing.T) {
 }
 
 func TestRunsScriptFileThroughSh(t *testing.T) {
-	fake := fakeexec.New().OnCommand("sh 'scripts/setup.sh'")
+	fake := fakeexec.New().OnCommand(model.FileLine("scripts/setup.sh", ""))
 	outcome := runScript(t, fake, model.ScriptStep{File: s("scripts/setup.sh")}, false, "")
 	if outcome.AlreadyDone || outcome.State.Status != coremodel.Done {
 		t.Errorf("%+v", outcome)
 	}
-	if !slices.Contains(fake.Executed(), "sh 'scripts/setup.sh'") {
+	if !slices.Contains(fake.Executed(), model.FileLine("scripts/setup.sh", "")) {
 		t.Error(fake.Executed())
 	}
 }
@@ -52,9 +52,9 @@ func TestArgsReachFileScriptAndCheck(t *testing.T) {
 	// Check receives args as positional params via `set --`; fails -> script runs.
 	fake := fakeexec.New().
 		OnCommand("set -- fedora; test -f $HOME/.ssh/$1", fakeexec.Exit(1)).
-		OnCommand("sh 'scripts/setup-ssh.sh' fedora")
+		OnCommand(model.FileLine("scripts/setup-ssh.sh", "fedora"))
 	outcome := runScript(t, fake, model.ScriptStep{File: s("scripts/setup-ssh.sh"), Check: s("test -f $HOME/.ssh/$1")}, false, "fedora")
-	if outcome.AlreadyDone || !slices.Contains(fake.Executed(), "sh 'scripts/setup-ssh.sh' fedora") {
+	if outcome.AlreadyDone || !slices.Contains(fake.Executed(), model.FileLine("scripts/setup-ssh.sh", "fedora")) {
 		t.Errorf("%+v %v", outcome, fake.Executed())
 	}
 }
@@ -67,7 +67,7 @@ func TestArgsCheckPassingSkipsRun(t *testing.T) {
 }
 
 func TestAScriptAndItsCheckRunInTheDeclaringDirectoryWithTheLoadoutEnv(t *testing.T) {
-	fake := fakeexec.New().OnCommand("sh 'plugins.sh' check", fakeexec.Exit(1)).OnCommand("sh 'plugins.sh'")
+	fake := fakeexec.New().OnCommand(model.FileLine("plugins.sh", "check"), fakeexec.Exit(1)).OnCommand(model.FileLine("plugins.sh", ""))
 	system := coremodel.SystemInfo{Machine: "m1", Os: coremodel.MacOS, Arch: "arm64"}
 	frame := exec.FrameOf("/repo", system, s("configs"), "", nil)
 	step := model.ScriptStep{File: s("plugins.sh"), Check: s("file:plugins.sh check"), Origin: "configs/tmux"}
@@ -91,7 +91,7 @@ func TestAScriptAndItsCheckRunInTheDeclaringDirectoryWithTheLoadoutEnv(t *testin
 }
 
 func TestInAChildAParentsScriptRunsInTheParentWithTheParentsRepoAndAChildsInTheChild(t *testing.T) {
-	fake := fakeexec.New().OnCommand("sh 'helper.sh'").OnCommand("sh 'mine.sh'")
+	fake := fakeexec.New().OnCommand(model.FileLine("helper.sh", "")).OnCommand(model.FileLine("mine.sh", ""))
 	system := coremodel.SystemInfo{Machine: "work", Os: coremodel.MacOS, Arch: "arm64"}
 	frame := exec.FrameOf("/child", system, s("configs"), "/parent", s("dots"))
 
@@ -131,14 +131,14 @@ func TestRecordsFailure(t *testing.T) {
 func TestATwoModeChecksArgumentsAreForwarded(t *testing.T) {
 	// A managing script's check is `file:x.sh check "$@"`: the machine's
 	// arguments, set as positional params, reach the check mode.
-	fake := fakeexec.New().OnCommand(`set -- id_ed25519; sh 'x.sh' check "$@"`)
+	fake := fakeexec.New().OnCommand("set -- id_ed25519; " + model.FileLine("x.sh", `check "$@"`))
 	if !runScript(t, fake, model.ScriptStep{File: s("x.sh"), Check: s(`file:x.sh check "$@"`)}, false, "id_ed25519").AlreadyDone {
 		t.Error("ran")
 	}
 }
 
 func TestAVariantRunsItsOwnFileAndCheck(t *testing.T) {
-	fake := fakeexec.New().OnCommand("sh 'arch.sh' check", fakeexec.Exit(1)).OnCommand("sh 'arch.sh'")
+	fake := fakeexec.New().OnCommand(model.FileLine("arch.sh", "check"), fakeexec.Exit(1)).OnCommand(model.FileLine("arch.sh", ""))
 	step := model.ScriptStep{
 		Description: "keyboard",
 		Sudo:        true,
@@ -150,6 +150,6 @@ func TestAVariantRunsItsOwnFileAndCheck(t *testing.T) {
 	if runScript(t, fake, step, false, "").AlreadyDone {
 		t.Error("didn't run")
 	}
-	eq(t, []string{"sh 'arch.sh' check", "sh 'arch.sh'"}, fake.Executed())
+	eq(t, []string{model.FileLine("arch.sh", "check"), model.FileLine("arch.sh", "")}, fake.Executed())
 	eq(t, true, step.Sudo)
 }

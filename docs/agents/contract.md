@@ -89,8 +89,16 @@ Explicit user decisions; don't "improve" them away.
    AND at every lock load to exist without leaving the repo (`..` inside
    one is fine: a shared helper). Expansion is centralized in
    model.ExpandFilePrefix/ShellLine, applied at the execution sites. Tokens
-   after the first space are arguments (`file:path args…` → `sh 'path'
-   args…`), so script paths can't contain spaces. A variant's param value
+   after the first space are arguments, so script paths can't contain
+   spaces. A file runs like an executable (`model.FileLine`): with the
+   interpreter its `#!` line names (`#!/usr/bin/env bun`), else `sh`. The
+   line is read by the shell when the command runs, never by loadout, and
+   the file needn't be executable; what's shown to the user is the script
+   and its arguments (`model.ShownLine`), not that launcher. Every script
+   command and custom `outdated` source gets the machine's `provides … at`
+   folders first on PATH (`ScriptStep.Path`, set by `ForMachine`), so a
+   script's interpreter is found where its program put it (bun from brew
+   on a fresh Mac) before any shell profile adds that folder. A variant's param value
    given as `file("repos/x.repo")` (`params = { repofile = file(…) }`) is a
    path too, relative to the program's directory and validated the same
    way; it is substituted as `$LOADOUT_REPO/<repo path>` because the

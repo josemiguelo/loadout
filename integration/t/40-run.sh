@@ -93,3 +93,50 @@ grep -qx "$REPO_ABS|$REPO_ABS/maintenance/greet|m5|$(uname -s | sed 's/Darwin/ma
 OUT=$("$BIN" --repo repo --machine m5 run greet)
 echo "$OUT" | grep -q "already done" || fail "the check runs in the folder too"
 ok "a file's script and check run in its folder, with the LOADOUT_* variables"
+
+# A script file runs with the interpreter its #! line names, found in the
+# folder a program provides it at even when that folder isn't on PATH (bun
+# from brew on a fresh Mac); a file without #! runs with sh.
+hcl_repo interp
+TOOLS=$(pwd -P)/interp-tools
+mkdir -p "$TOOLS"
+printf '#!/bin/sh\necho "fakeinterp: $*" >> "$LOADOUT_FRAGMENT_DIR/ran.txt"\n[ "$2" != check ] || exit 1\n' > "$TOOLS/loadout-test-interp"
+chmod +x "$TOOLS/loadout-test-interp"
+hcl_file interp/maintenance/interp.loadout.hcl <<HCL
+program "interp" {
+  custom {
+    command = "false"
+    present = "test -x $TOOLS/loadout-test-interp"
+    provides "loadout-test-interp" {
+      at = "$TOOLS"
+    }
+  }
+}
+
+script "hashbang" {
+  managed_by = "hashbang.ts"
+}
+
+script "plain" {
+  file = "plain.sh"
+}
+HCL
+printf '#!/usr/bin/env loadout-test-interp\nignored by sh\n' > interp/maintenance/hashbang.ts
+printf 'echo "sh: $0" > "$LOADOUT_FRAGMENT_DIR/plain-ran.txt"\n' > interp/maintenance/plain.sh
+hcl_file interp/machines/machines.loadout.hcl <<'HCL'
+machine "m1" {
+  install = [program.interp]
+  run     = [script.hashbang, script.plain]
+}
+HCL
+compile_repo interp
+command -v loadout-test-interp >/dev/null 2>&1 && fail "the interpreter must not be on PATH for this test" || true
+"$BIN" --repo interp --machine m1 run hashbang >/dev/null || fail "a #! script runs: $("$BIN" --repo interp --machine m1 run hashbang 2>&1)"
+grep -qx "fakeinterp: hashbang.ts" interp/maintenance/ran.txt || fail "the #! interpreter ran the script: $(cat interp/maintenance/ran.txt 2>/dev/null)"
+"$BIN" --repo interp --machine m1 status --no-write >/dev/null 2>&1
+grep -qx "fakeinterp: hashbang.ts check" interp/maintenance/ran.txt || fail "its check runs with the interpreter too: $(cat interp/maintenance/ran.txt)"
+"$BIN" --repo interp --machine m1 run plain >/dev/null || fail "a script without #! runs"
+grep -qx "sh: plain.sh" interp/maintenance/plain-ran.txt || fail "a script without #! runs with sh: $(cat interp/maintenance/plain-ran.txt 2>/dev/null)"
+OUT=$("$BIN" --repo interp --machine m1 setup-new-machine --dry-run 2>&1)
+echo "$OUT" | grep -q "head -n 1" && fail "the plan shows the script, not how it's launched: $OUT" || true
+ok "a script file runs with its #! interpreter, found where a program provides it; without #!, with sh"

@@ -113,7 +113,7 @@ func runUpgrade(names []string, all bool, items []string, dryRun, yes bool) erro
 	echo(Style.Header("Upgrade on ") + Style.Machine(system.Machine) + Style.Header(":"))
 	sweep, needsSudo := false, false
 	for _, step := range plan {
-		echo("  " + Style.Warn("↑") + " " + Style.Dim("["+step.Label()+"]") + " " + step.Command)
+		echo("  " + Style.Warn("↑") + " " + Style.Dim("["+step.Label()+"]") + " " + model.ShownLine(step.Command))
 		if len(step.Covers) > 0 {
 			echo("      " + Style.Dim("covers "+strconv.Itoa(len(step.Covers))+" mapped program(s): "+strings.Join(step.Covers, ", ")))
 		}

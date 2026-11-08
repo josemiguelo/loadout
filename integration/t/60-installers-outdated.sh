@@ -82,7 +82,7 @@ echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must 
 # much of it is in the loadout — the whole picture an upgrade would touch.
 echo "$OUT" | grep -qE "sh +2 updates · 1 in your loadout" || fail "outdated leads with the tool's whole count (fake3's probe is sh)"
 # The hint shows the command that runs, not the manifest's file: shorthand.
-echo "$OUT" | grep -qF "loadout upgrade fake3  →  sh 'upgrade-fake3.sh' --all" || fail "the upgrade hint is the expanded command: $OUT"
+echo "$OUT" | grep -qF "loadout upgrade fake3  →  upgrade-fake3.sh --all" || fail "the upgrade hint is the script and its arguments: $OUT"
 ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
 # --- the shipped pacman mechanism: pacman -Q + checkupdates ---------------

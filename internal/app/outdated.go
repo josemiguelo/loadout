@@ -223,7 +223,7 @@ func (a *AppContext) OutdatedReport(
 		for _, installer := range installers {
 			if upgrade := manifest.Installers.Value(installer).Upgrade; upgrade != nil {
 				// What runs, not the manifest's file: shorthand.
-				expanded := model.ExpandFilePrefix(*upgrade)
+				expanded := model.ShownLine(model.ExpandFilePrefix(*upgrade))
 				command = &expanded
 				break
 			}

@@ -84,7 +84,7 @@ func TestCustomSourceRowsParseAndValidate(t *testing.T) {
 	runner := fakeexec.New().OnCommand("plugin-sweep", fakeexec.Stdout(
 		"java 9bd89aa ea1fe99\nruby fa85ede 498c76f extra\n"+
 			"go 1111111 2222222 3 commit(s) behind https://github.com/x/go/compare/1111111...2222222\nmalformed line\n"))
-	result := must[SourceResult](t)(updates(runner).SourceRows("plugin-sweep", ""))
+	result := must[SourceResult](t)(updates(runner).SourceRows("plugin-sweep", "", nil))
 	if result.Error != nil || len(result.Rows) != 3 {
 		t.Fatalf("%+v", result)
 	}
@@ -123,7 +123,7 @@ func TestCustomSourceNonZeroExitIsReportedAsErrorNotEmptyRows(t *testing.T) {
 	// exit code and last stderr line become a surfaced error, no rows.
 	runner := fakeexec.New().OnCommand("flaky-oracle", fakeexec.Exit(1),
 		fakeexec.Stdout("java 9bd89aa ea1fe99\n"), fakeexec.Stderr("warming up\nfatal: could not fetch remote\n"))
-	result := must[SourceResult](t)(updates(runner).SourceRows("flaky-oracle", ""))
+	result := must[SourceResult](t)(updates(runner).SourceRows("flaky-oracle", "", nil))
 	if len(result.Rows) != 0 || result.Error == nil || *result.Error != "exited 1: fatal: could not fetch remote" {
 		t.Errorf("%+v", result)
 	}
@@ -131,7 +131,7 @@ func TestCustomSourceNonZeroExitIsReportedAsErrorNotEmptyRows(t *testing.T) {
 
 func TestCustomSourceMissingBinaryIsReportedAsError(t *testing.T) {
 	// Unregistered command = exit 127 (missing binary) -> loud error.
-	result := must[SourceResult](t)(updates(fakeexec.New()).SourceRows("no-such-oracle", ""))
+	result := must[SourceResult](t)(updates(fakeexec.New()).SourceRows("no-such-oracle", "", nil))
 	if len(result.Rows) != 0 || result.Error == nil {
 		t.Fatalf("%+v", result)
 	}

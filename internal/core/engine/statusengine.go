@@ -183,7 +183,7 @@ func (s *StatusEngine) RefreshParts(
 		o := &scriptObservation{name: name}
 		switch {
 		case step.Check != nil:
-			check := WithArgs(*step.Check, args)
+			check := WithArgs(*step.Check, args, step.Path)
 			observed = append(observed, o)
 			scriptsWG.Go(func() {
 				permits <- struct{}{}

@@ -109,8 +109,8 @@ func (u *UpdateChecker) BatchAll(oracles model.Map[model.BatchOracle]) (model.Ma
 // persistent failure would silently hide updates forever. So a non-zero
 // exit is reported as SourceResult.Error (no rows trusted), which the CLI
 // surfaces as a loud line instead of empty output.
-func (u *UpdateChecker) SourceRows(command, origin string) (SourceResult, error) {
-	result, err := u.runner.Capture(u.frame.Command(model.ExpandFilePrefix(command), origin))
+func (u *UpdateChecker) SourceRows(command, origin string, path []string) (SourceResult, error) {
+	result, err := u.runner.Capture(u.frame.Command(model.ShellLine(command, path), origin))
 	if err != nil {
 		return SourceResult{}, err
 	}
@@ -159,7 +159,7 @@ func (u *UpdateChecker) SourcesAll(sources model.Map[model.OutdatedSource]) (mod
 		if s.Command != nil {
 			command = *s.Command
 		}
-		out[i], errs[i] = u.SourceRows(command, s.Origin)
+		out[i], errs[i] = u.SourceRows(command, s.Origin, s.Path)
 	})
 	return zip(names, out), firstError(errs)
 }

@@ -78,7 +78,7 @@ func echoPlan(plan programPlan, machine string, extraRows []extraRow) {
 	for _, item := range plan.items {
 		switch it := item.(type) {
 		case engine.InstallItem:
-			echo("  " + Style.Warn("+") + " " + padEnd(it.Program, nameWidth) + "  " + Style.Dim("["+it.InstallKey+"]") + " " + it.Command)
+			echo("  " + Style.Warn("+") + " " + padEnd(it.Program, nameWidth) + "  " + Style.Dim("["+it.InstallKey+"]") + " " + model.ShownLine(it.Command))
 		case engine.InstalledItem:
 			version := "installed"
 			if it.Version != nil {

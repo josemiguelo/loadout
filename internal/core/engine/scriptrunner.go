@@ -25,9 +25,9 @@ func NewScriptRunner(runner exec.ProcessRunner, frame exec.CommandFrame) *Script
 }
 
 // WithArgs gives command (a check, `file:` prefix allowed) the machine's
-// script arguments as positional parameters.
-func WithArgs(command, args string) string {
-	expanded := model.ExpandFilePrefix(command)
+// script arguments as positional parameters, with path first on PATH.
+func WithArgs(command, args string, path []string) string {
+	expanded := model.ShellLine(command, path)
 	if args == "" {
 		return expanded
 	}
@@ -37,13 +37,16 @@ func WithArgs(command, args string) string {
 // CommandFor is the shell command that executes step itself (not its check).
 func CommandFor(step model.ScriptStep, args string) string {
 	if step.File != nil {
-		command := "sh '" + *step.File + "'"
-		if args != "" {
-			command += " " + args
-		}
-		return command
+		return model.ShellLine(model.InstallFilePrefix+*step.File+argsSuffix(args), step.Path)
 	}
-	return deref(step.Run)
+	return model.ShellLine(deref(step.Run), step.Path)
+}
+
+func argsSuffix(args string) string {
+	if args == "" {
+		return ""
+	}
+	return " " + args
 }
 
 // NeedsSudo says whether running step needs sudo's password: it says so, or its command runs sudo.
@@ -57,7 +60,7 @@ func (r *ScriptRunner) Pending(step model.ScriptStep, force bool, args string) (
 	if force || step.Check == nil {
 		return true, nil
 	}
-	result, err := r.runner.Capture(r.frame.Command(WithArgs(*step.Check, args), step.Origin))
+	result, err := r.runner.Capture(r.frame.Command(WithArgs(*step.Check, args, step.Path), step.Origin))
 	return !result.Success(), err
 }
 
@@ -66,7 +69,7 @@ func (r *ScriptRunner) Pending(step model.ScriptStep, force bool, args string) (
 // parameters) and a `file` script's argv. Output goes straight to the terminal.
 func (r *ScriptRunner) Run(step model.ScriptStep, force bool, args string) (ScriptOutcome, error) {
 	if !force && step.Check != nil {
-		result, err := r.runner.Capture(r.frame.Command(WithArgs(*step.Check, args), step.Origin))
+		result, err := r.runner.Capture(r.frame.Command(WithArgs(*step.Check, args, step.Path), step.Origin))
 		if err != nil {
 			return ScriptOutcome{}, err
 		}

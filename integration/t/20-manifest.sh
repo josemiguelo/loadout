@@ -285,7 +285,7 @@ mkdir -p filerepo/scripts
 printf '#!/bin/sh\n[ "${1:-}" = "install" ] || exit 9\necho done > installed-marker.txt\n' > filerepo/scripts/install-filetool.sh
 compile_repo filerepo
 OUT=$("$BIN" --repo filerepo --machine m1 setup-new-machine --dry-run)
-echo "$OUT" | grep -q "sh 'scripts/install-filetool.sh' install" || fail "file: value with args translated in plan"
+echo "$OUT" | grep -q "scripts/install-filetool.sh install" || fail "file: value with args shown as the script and its arguments in the plan"
 "$BIN" --repo filerepo --machine m1 setup-new-machine --yes >/dev/null || fail "file: install exits 0"
 [ -f filerepo/installed-marker.txt ] || fail "install ran with repo-root cwd and args"
 ok "file: install values run repo scripts with arguments from the repo root"

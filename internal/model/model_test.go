@@ -269,14 +269,33 @@ func TestAScriptEntrysWhitespaceBecomesSingleSpaces(t *testing.T) {
 }
 
 func TestShellLineExpandsFileAndPutsPathFirst(t *testing.T) {
-	if got := ShellLine("file:x.sh check \"$@\"", nil); got != `sh 'x.sh' check "$@"` {
+	if got := ShellLine("file:x.sh check \"$@\"", nil); got != `{ l=$(head -n 1 'x.sh'); case $l in '#!'*) ${l#??} 'x.sh' check "$@";; *) sh 'x.sh' check "$@";; esac; }` {
 		t.Fatalf("got %s", got)
 	}
-	if got := ShellLine("file:x.sh", []string{"$HOME/.local/bin", "/opt/b"}); got != `PATH="$HOME/.local/bin:/opt/b:$PATH"; export PATH; sh 'x.sh'` {
+	if got := ShellLine("file:x.sh", []string{"$HOME/.local/bin", "/opt/b"}); got != `PATH="$HOME/.local/bin:/opt/b:$PATH"; export PATH; `+FileLine("x.sh", "") {
 		t.Fatalf("got %s", got)
 	}
 	if got := ExpandFilePrefix("echo hi"); got != "echo hi" {
 		t.Fatalf("got %s", got)
+	}
+}
+
+func TestShownLineGivesBackTheScriptAndItsArguments(t *testing.T) {
+	if got := ShownLine("set -- a; " + FileLine(".loadout/x.ts", `check "$@"`)); got != `set -- a; .loadout/x.ts check "$@"` {
+		t.Fatalf("got %s", got)
+	}
+	if got := ShownLine(FileLine("up.sh", "") + " && " + FileLine("b.sh", "--all")); got != "up.sh && b.sh --all" {
+		t.Fatalf("got %s", got)
+	}
+	if got := ShownLine("echo hi"); got != "echo hi" {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestProvidedFoldersComeFirstForScriptsOnTheMachine(t *testing.T) {
+	got := providedFolders(map[string][]string{"brew": {"/opt/homebrew/bin"}, "bun": {"/opt/homebrew/bin", "$HOME/.bun/bin"}})
+	if strings.Join(got, ":") != "/opt/homebrew/bin:$HOME/.bun/bin" {
+		t.Fatalf("got %v", got)
 	}
 }
 

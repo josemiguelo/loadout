@@ -93,7 +93,7 @@ func PlanSourceItems(manifest model.Manifest, source string, items []string) ([]
 	}
 	var steps []UpgradeStep
 	for _, item := range items {
-		command := strings.ReplaceAll(model.ExpandFilePrefix(*declared.Upgrade), "{item}", item)
+		command := strings.ReplaceAll(model.ShellLine(*declared.Upgrade, declared.Path), "{item}", item)
 		steps = append(steps, UpgradeStep{
 			Installers: []string{source},
 			Command:    command,

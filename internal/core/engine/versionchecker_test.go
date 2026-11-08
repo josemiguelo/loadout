@@ -96,7 +96,7 @@ func TestUnknownWhenNoVersionCheckDeclared(t *testing.T) {
 }
 
 func TestFileCheckCommandsRunAsRepoScripts(t *testing.T) {
-	runner := fakeexec.New().OnCommand("sh 'scripts/ver.sh' check", fakeexec.Stdout("tool 2.0"))
+	runner := fakeexec.New().OnCommand(model.FileLine("scripts/ver.sh", "check"), fakeexec.Stdout("tool 2.0"))
 	if v := versionOf(check(t, runner, ct.Version("file:scripts/ver.sh check", "tool ([0-9.]+)"))); v != "2.0" {
 		t.Error(v)
 	}

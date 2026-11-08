@@ -972,7 +972,7 @@ func scriptRowsOf(manifest model.Manifest, system coremodel.SystemInfo, observed
 		if !ok || !declared || !step.RunsIn("maintain") {
 			continue
 		}
-		row := ScriptRow{Name: name, Command: engine.CommandFor(step, args), Description: step.Description}
+		row := ScriptRow{Name: name, Command: model.ShownLine(engine.CommandFor(step, args)), Description: step.Description}
 		if observed != nil {
 			if verdict, ok := observed.Scripts.Get(name); ok {
 				row.Status = verdict.Status

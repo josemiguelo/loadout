@@ -119,12 +119,12 @@ func oneTool(t *testing.T, command string) model.Manifest {
 
 func TestFileInstallValuesRunAsRepoScripts(t *testing.T) {
 	got := plan(t, oneTool(t, "file:scripts/install-tool.sh"), "m", nil, model.Map[cs]{}, yes)
-	eq(t, []PlanItem{InstallItem{Program: "tool", InstallKey: "script", Command: "sh 'scripts/install-tool.sh'"}}, got)
+	eq(t, []PlanItem{InstallItem{Program: "tool", InstallKey: "script", Command: model.FileLine("scripts/install-tool.sh", "")}}, got)
 }
 
 func TestFileInstallValuesPassArgumentsThrough(t *testing.T) {
 	got := plan(t, oneTool(t, "file:scripts/tool.sh install --verbose"), "m", nil, model.Map[cs]{}, yes)
-	eq(t, []PlanItem{InstallItem{Program: "tool", InstallKey: "script", Command: "sh 'scripts/tool.sh' install --verbose"}}, got)
+	eq(t, []PlanItem{InstallItem{Program: "tool", InstallKey: "script", Command: model.FileLine("scripts/tool.sh", "install --verbose")}}, got)
 }
 
 func TestAProgramsPathComesFirstOnTheInstallCommandsPath(t *testing.T) {
@@ -133,7 +133,7 @@ func TestAProgramsPathComesFirstOnTheInstallCommandsPath(t *testing.T) {
 		b.Machine("m", model.MachineConfig{PM: ct.PM("tool", "custom")})
 	})
 	item := plan(t, m, "m", nil, model.Map[cs]{}, yes)[0].(InstallItem)
-	eq(t, `PATH="$HOME/.local/bin:$PATH"; export PATH; sh 'install.sh'`, item.Command)
+	eq(t, `PATH="$HOME/.local/bin:$PATH"; export PATH; `+model.FileLine("install.sh", ""), item.Command)
 }
 
 func TestAnInstallersRequirementIsPlannedFirst(t *testing.T) {
