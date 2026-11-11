@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -12,20 +13,26 @@ import (
 )
 
 func newSetupCmd() *cobra.Command {
-	var dryRun, yes, skipScripts bool
+	var dryRun, yes, skipScripts, skipLater bool
 	cmd := subcommand("setup-new-machine", commandHelp(
-		"Set up this machine: install every missing program, then run its setup scripts.",
+		"Set up this machine: install every missing program, then run its setup scripts; what's marked later comes last.",
 		"--dry-run       print the plan, execute nothing",
 		"--yes           skip the confirmation",
 		"--skip-scripts  programs only",
-	), nil, func(cmd *cobra.Command, args []string) error { return runSetup(dryRun, yes, skipScripts) })
+		"--skip-later    stop before the programs and scripts marked later",
+	), nil, func(cmd *cobra.Command, args []string) error { return runSetup(dryRun, yes, skipScripts, skipLater) })
 	boolFlag(cmd, cmd.Flags(), &dryRun, "dry-run", "", "Show what would run without doing it")
 	boolFlag(cmd, cmd.Flags(), &yes, "yes", "y", "Don't ask for confirmation")
 	boolFlag(cmd, cmd.Flags(), &skipScripts, "skip-scripts", "", "Don't run setup scripts")
+	boolFlag(cmd, cmd.Flags(), &skipLater, "skip-later", "", "Don't install or run what's marked later")
 	return cmd
 }
 
-func runSetup(dryRun, yes, skipScripts bool) error {
+// runSetup converges in two phases: core (programs, then scripts), then
+// later (the programs and scripts marked `later`, programs then scripts),
+// so a slow, optional step never holds up the rest. Compile refuses a core
+// step that waits on a later one, so the order holds.
+func runSetup(dryRun, yes, skipScripts, skipLater bool) error {
 	a := appCtx
 	manifest, err := a.LoadManifest()
 	if err != nil {
@@ -43,21 +50,41 @@ func runSetup(dryRun, yes, skipScripts bool) error {
 	}
 	scripts := engine.NewScriptRunner(a.Runner, frame)
 	enabled := manifest.Machines.Value(system.Machine).ScriptArgs()
-	var scriptNames []string
+	var coreScripts, laterScripts []string
 	if !skipScripts {
 		for _, name := range assemble.ScriptOrder(manifest, enabled.Keys()) {
-			if enabled.Has(name) && manifest.Scripts.Value(name).RunsIn("setup") {
-				scriptNames = append(scriptNames, name)
+			step := manifest.Scripts.Value(name)
+			if !enabled.Has(name) || !step.RunsIn("setup") {
+				continue
+			}
+			if step.Later != "" {
+				laterScripts = append(laterScripts, name)
+			} else {
+				coreScripts = append(coreScripts, name)
 			}
 		}
 	}
-	var extra []extraRow
-	for _, name := range scriptNames {
-		extra = append(extra, extraRow{name, "script"})
+	core, later := programPlan{engine: plan.engine}, programPlan{engine: plan.engine}
+	for _, item := range plan.items {
+		if manifest.Programs.Value(item.ProgramName()).Later != "" {
+			later.items = append(later.items, item)
+		} else {
+			core.items = append(core.items, item)
+		}
 	}
-	echoPlan(plan, system.Machine, extra)
+	laterTitle := "Later, after everything above:"
+	if skipLater {
+		laterTitle = "Later, skipped (--skip-later):"
+	}
+	echoSections(system.Machine, []planSection{
+		{items: core.items, extra: scriptRows(coreScripts)},
+		{title: laterTitle, items: later.items, extra: scriptRows(laterScripts)},
+	})
+	if skipLater {
+		later.items, laterScripts = nil, nil
+	}
 
-	if len(plan.installs()) == 0 && len(scriptNames) == 0 {
+	if len(core.installs()) == 0 && len(later.installs()) == 0 && len(coreScripts) == 0 && len(laterScripts) == 0 {
 		echo("\nNothing to do.")
 		return nil
 	}
@@ -67,11 +94,12 @@ func runSetup(dryRun, yes, skipScripts bool) error {
 	if err := confirmOrAbort(yes); err != nil {
 		return err
 	}
+	// One password for both phases, kept fresh until the later phase ends.
 	needsSudo := false
-	for _, item := range plan.installs() {
+	for _, item := range append(core.installs(), later.installs()...) {
 		needsSudo = needsSudo || item.Sudo
 	}
-	for _, name := range scriptNames {
+	for _, name := range append(slices.Clone(coreScripts), laterScripts...) {
 		if needsSudo {
 			break
 		}
@@ -88,23 +116,40 @@ func runSetup(dryRun, yes, skipScripts bool) error {
 		return err
 	}
 
-	outcomes, err := installPrograms(plan, manifest)
+	var results model.Map[coremodel.ScriptState]
+	runScripts := func(names []string) error {
+		for _, name := range names {
+			outcome, err := scripts.Run(manifest.Scripts.Value(name), false, enabled.Value(name))
+			if err != nil {
+				return err
+			}
+			if outcome.AlreadyDone {
+				echo("\n" + Style.Accent("==> script "+name+":") + " already done " + Style.Dim("(check passed)"))
+				continue
+			}
+			echo("\n" + Style.Accent("==> ran script "+name) + " (exit " + exitText(outcome.State.ExitCode) + ")")
+			results.Set(name, outcome.State)
+		}
+		return nil
+	}
+
+	outcomes, err := installPrograms(core, manifest)
 	if err != nil {
 		return err
 	}
-
-	var results model.Map[coremodel.ScriptState]
-	for _, name := range scriptNames {
-		outcome, err := scripts.Run(manifest.Scripts.Value(name), false, enabled.Value(name))
+	if err := runScripts(coreScripts); err != nil {
+		return err
+	}
+	if len(later.installs()) > 0 || len(laterScripts) > 0 {
+		echo("\n" + Style.Header("==> later: what can wait") + Style.Dim(" (the rest of the machine is set up; run this again to finish if you stop it)"))
+		laterOutcomes, err := installProgramsAfter(later, manifest, outcomes)
+		outcomes = append(outcomes, laterOutcomes...)
 		if err != nil {
 			return err
 		}
-		if outcome.AlreadyDone {
-			echo("\n" + Style.Accent("==> script "+name+":") + " already done " + Style.Dim("(check passed)"))
-			continue
+		if err := runScripts(laterScripts); err != nil {
+			return err
 		}
-		echo("\n" + Style.Accent("==> ran script "+name) + " (exit " + exitText(outcome.State.ExitCode) + ")")
-		results.Set(name, outcome.State)
 	}
 
 	echo("")
@@ -138,6 +183,15 @@ func runSetup(dryRun, yes, skipScripts bool) error {
 		return exitWith(1)
 	}
 	return nil
+}
+
+// scriptRows is names as the plan's script rows.
+func scriptRows(names []string) []extraRow {
+	var rows []extraRow
+	for _, name := range names {
+		rows = append(rows, extraRow{name, "script"})
+	}
+	return rows
 }
 
 // exitText is a recorded exit code as Kotlin printed it ("null" for none).

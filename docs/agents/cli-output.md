@@ -64,8 +64,11 @@
   highlight would contrast with nothing.
 - **One converge pipeline**: `cli/converge.go` owns the program half of
   converging: `planPrograms` (re-check + the install plan), `echoPlan`
-  (plan table, `extraRows` for setup's scripts), `confirmOrAbort`,
-  `askForSudoUpfront`, `installPrograms`. `install` and
+  (plan table, `extraRows` for setup's scripts; `echoSections` for setup's
+  later phase under its own heading, one column width), `confirmOrAbort`,
+  `askForSudoUpfront` (once for both phases), `installPrograms` /
+  `installProgramsAfter` (the later phase, skipping what the core one
+  failed). `install` and
   `setup-new-machine` are thin shells over it; scripts are setup's alone.
   Add converge behavior here, not in one command.
 - **Slow steps wear the spinner**: anything that can look like a hang

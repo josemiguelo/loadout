@@ -623,6 +623,10 @@ type Program struct {
 	// for a tool that lands somewhere a fresh shell doesn't look yet
 	// (`$HOME/.local/bin`).
 	Path []string
+	// Later is why this program can wait (`later = "…"`): setup-new-machine
+	// installs it in its later phase, after every core program and script.
+	// "" = core.
+	Later string
 	// Origin is the repo-relative directory of the declaring file ("" = repo
 	// root): paths resolve and commands run there.
 	Origin string
@@ -695,6 +699,10 @@ type ScriptStep struct {
 	Modes []string
 	// Sudo says the script needs sudo's password without saying `sudo`; see Installer.Sudo.
 	Sudo bool
+	// Later is why this script can wait (`later = "…"`): setup-new-machine
+	// runs it in its later phase, after every core program and script. Shared
+	// by its variants. "" = core.
+	Later string
 	// Variants is the ways to do this one step, keyed by name; a machine
 	// running the script picks one. Each holds its own File/Run, Check and
 	// After; the step's own description, modes and sudo apply to all of them.

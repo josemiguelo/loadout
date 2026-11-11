@@ -187,6 +187,7 @@ func (p Program) toJSON() JSONObject {
 		w.any("outdated", ow.obj)
 	}
 	w.list("path", p.Path)
+	w.strIf("later", p.Later)
 	w.strIf("origin", p.Origin)
 	return w.obj
 }
@@ -211,6 +212,7 @@ func (s ScriptStep) toJSON() JSONObject {
 		w.any("modes", strings2any(s.Modes))
 	}
 	w.flag("sudo", s.Sudo)
+	w.strIf("later", s.Later)
 	if !s.Variants.IsEmpty() {
 		w.any("variants", objectsOf(s.Variants, ScriptStep.toJSON))
 	}
@@ -521,6 +523,7 @@ func readProgram(v any, path string, err *error) Program {
 		or.done()
 	}
 	p.Path = r.list("path")
+	p.Later = r.str("later")
 	p.Origin = r.str("origin")
 	r.done()
 	return p
@@ -536,6 +539,7 @@ func readScript(v any, path string, err *error) ScriptStep {
 		s.Modes = r.list("modes")
 	}
 	s.Sudo = r.flag("sudo")
+	s.Later = r.str("later")
 	s.Variants = readMap(r, "variants", readScript)
 	s.Origin = r.str("origin")
 	r.done()

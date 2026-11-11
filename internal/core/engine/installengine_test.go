@@ -372,3 +372,25 @@ func TestExecuteSkipsWhatAFailedInstallWasNeededFor(t *testing.T) {
 		t.Errorf("install-d didn't run: %q", runner.Executed())
 	}
 }
+
+func TestExecuteAfterSkipsWhatAnEarlierPhaseFailed(t *testing.T) {
+	// setup-new-machine's later phase: ripgrep's dependency git failed in the
+	// core phase, so ripgrep isn't tried; with git done earlier, it is.
+	runner := fakeexec.New().
+		OnCommand("sudo dnf install -y ripgrep").
+		OnCommand("rg --version", fakeexec.Stdout("ripgrep 14.1.0"))
+	m := ct.Example(t)
+	p := must[[]PlanItem](t)(installs(runner).Plan(m, "laptop", []string{"ripgrep"}, states(model.E("git", installed("2.46.0"))), yes))
+	failedGit := []InstallOutcome{{Program: "git", ExitCode: 1}}
+	outcomes := must[[]InstallOutcome](t)(installs(runner).ExecuteAfter(m, p, failedGit, nil, nil))
+	if len(outcomes) != 1 || outcomes[0].Program != "ripgrep" {
+		t.Fatalf("only the new outcomes: %+v", outcomes)
+	}
+	eq(t, "git", outcomes[0].SkippedFor)
+
+	ok := []InstallOutcome{{Program: "git", ExitCode: 0, StateAfter: installed("2.46.0")}}
+	outcomes = must[[]InstallOutcome](t)(installs(runner).ExecuteAfter(m, p, ok, nil, nil))
+	if len(outcomes) != 1 || !outcomes[0].Success() {
+		t.Errorf("ripgrep after a good git: %+v", outcomes)
+	}
+}

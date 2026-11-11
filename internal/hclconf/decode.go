@@ -537,7 +537,7 @@ func (d *decoder) declareRequires(b *hclsyntax.Block) {
 var programSpec = spec{
 	attrs: []string{
 		"description", "tags", "depends_on", "version", "regex", "path", "outdated", "upgrade",
-		"updates_managed_by", "spare", "install_via",
+		"updates_managed_by", "spare", "install_via", "later",
 	},
 	blocks: map[string][2]int{"via": {1, 1}, "custom": {0, 1}},
 }
@@ -559,6 +559,7 @@ func (d *decoder) declareProgram(name string, body *hclsyntax.Body, origin strin
 		Tags:        d.strings(body, "tags"),
 		DependsOn:   model.Distinct(names(d.plainRefs(body, "depends_on", "program"))),
 		Path:        d.strings(body, "path"),
+		Later:       d.reason(body, "later"),
 		Origin:      origin,
 	}
 	if command := d.str(body, "version"); command != nil {
@@ -720,7 +721,7 @@ func (d *decoder) params(attr *hclsyntax.Attribute) model.Map[string] {
 var scriptSpec = spec{
 	attrs: []string{
 		"description", "file", "run", "check", "managed_by", "needs_sudo", "setup_only", "maintain_only",
-		"transitional", "spare", "updates_managed_by", "run_after",
+		"transitional", "spare", "updates_managed_by", "run_after", "later",
 	},
 	blocks: map[string][2]int{"outdated": {0, 0}, "variant": {1, 1}},
 }
@@ -739,6 +740,11 @@ func (d *decoder) declareScript(name string, body *hclsyntax.Body, origin string
 		step.Modes = []string{"setup"}
 	} else if d.isTrue(body, "maintain_only") {
 		step.Modes = []string{"maintain"}
+	}
+	step.Later = d.reason(body, "later")
+	if a := body.Attributes["later"]; a != nil && d.isTrue(body, "maintain_only") {
+		d.diags = append(d.diags, diag(a.NameRange, "Conflicting arguments",
+			"later orders a script within setup-new-machine, which a maintain_only script isn't part of: drop one."))
 	}
 
 	type source struct {

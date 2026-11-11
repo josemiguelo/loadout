@@ -66,29 +66,53 @@ type extraRow struct{ name, label string }
 // echoPlan prints the plan. extraRows count toward the column width, so
 // the table stays one table.
 func echoPlan(plan programPlan, machine string, extraRows []extraRow) {
+	echoSections(machine, []planSection{{items: plan.items, extra: extraRows}})
+}
+
+// planSection is a part of the plan under its own heading (setup's later
+// phase); the first section, untitled, is what runs first.
+type planSection struct {
+	title string
+	items []engine.PlanItem
+	extra []extraRow
+}
+
+// echoSections prints the plan as one table across sections: one column
+// width, each titled section under its heading, an empty one left out.
+func echoSections(machine string, sections []planSection) {
 	nameWidth := 1
-	for _, item := range plan.items {
-		nameWidth = max(nameWidth, runeLen(item.ProgramName()))
-	}
-	for _, row := range extraRows {
-		nameWidth = max(nameWidth, runeLen(row.name))
+	for _, s := range sections {
+		for _, item := range s.items {
+			nameWidth = max(nameWidth, runeLen(item.ProgramName()))
+		}
+		for _, row := range s.extra {
+			nameWidth = max(nameWidth, runeLen(row.name))
+		}
 	}
 	echo("")
 	echo(Style.Header("Plan for ") + Style.Machine(machine) + Style.Header(":"))
-	for _, item := range plan.items {
-		switch it := item.(type) {
-		case engine.InstallItem:
-			echo("  " + Style.Warn("+") + " " + padEnd(it.Program, nameWidth) + "  " + Style.Dim("["+it.InstallKey+"]") + " " + model.ShownLine(it.Command))
-		case engine.InstalledItem:
-			version := "installed"
-			if it.Version != nil {
-				version = *it.Version
-			}
-			echo("  " + Style.Ok("=") + " " + padEnd(it.Program, nameWidth) + "  " + Style.Dim(version))
+	for _, s := range sections {
+		if len(s.items) == 0 && len(s.extra) == 0 {
+			continue
 		}
-	}
-	for _, row := range extraRows {
-		echo("  " + Style.Accent("~") + " " + padEnd(row.name, nameWidth) + "  " + Style.Dim(row.label))
+		if s.title != "" {
+			echo(Style.Header(s.title))
+		}
+		for _, item := range s.items {
+			switch it := item.(type) {
+			case engine.InstallItem:
+				echo("  " + Style.Warn("+") + " " + padEnd(it.Program, nameWidth) + "  " + Style.Dim("["+it.InstallKey+"]") + " " + model.ShownLine(it.Command))
+			case engine.InstalledItem:
+				version := "installed"
+				if it.Version != nil {
+					version = *it.Version
+				}
+				echo("  " + Style.Ok("=") + " " + padEnd(it.Program, nameWidth) + "  " + Style.Dim(version))
+			}
+		}
+		for _, row := range s.extra {
+			echo("  " + Style.Accent("~") + " " + padEnd(row.name, nameWidth) + "  " + Style.Dim(row.label))
+		}
 	}
 }
 
@@ -138,7 +162,13 @@ func askForSudoUpfront(runner exec.ProcessRunner, needed bool) error {
 
 // installPrograms runs the plan, announcing each install as it starts.
 func installPrograms(plan programPlan, manifest model.Manifest) ([]engine.InstallOutcome, error) {
-	return plan.engine.Execute(manifest, plan.items, func(item engine.InstallItem) {
+	return installProgramsAfter(plan, manifest, nil)
+}
+
+// installProgramsAfter is installPrograms continuing earlier outcomes of the
+// same command: what depends on a failed or skipped install is skipped.
+func installProgramsAfter(plan programPlan, manifest model.Manifest, earlier []engine.InstallOutcome) ([]engine.InstallOutcome, error) {
+	return plan.engine.ExecuteAfter(manifest, plan.items, earlier, func(item engine.InstallItem) {
 		echo("\n" + Style.Accent("==> installing "+item.Program))
 	}, func(item engine.InstallItem, dependency string) {
 		echo("\n" + Style.Accent("==> skipping "+item.Program) + Style.Dim(" (needs "+dependency+", which didn't install)"))

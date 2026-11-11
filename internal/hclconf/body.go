@@ -141,6 +141,21 @@ func (d *decoder) text(body *hclsyntax.Body, name string) string {
 	return ""
 }
 
+// reason is attr's text, a why that must say something: "" when absent, and
+// an empty or blank value is refused (`later = ""` would read as unset).
+func (d *decoder) reason(body *hclsyntax.Body, name string) string {
+	s := d.str(body, name)
+	if s == nil {
+		return ""
+	}
+	if strings.TrimSpace(*s) == "" {
+		a := body.Attributes[name]
+		d.diags = append(d.diags, diag(a.Expr.Range(), "Empty reason", "%s takes why, in a few words: %s = \"a big download nothing else needs\".", name, name))
+		return ""
+	}
+	return *s
+}
+
 // boolean is attr's bool, nil when absent.
 func (d *decoder) boolean(body *hclsyntax.Body, name string) *bool {
 	attr := body.Attributes[name]

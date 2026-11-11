@@ -756,6 +756,45 @@ func validate(manifest model.Manifest) error {
 		add("ordering cycle among scripts: " + strings.Join(cycle, " -> "))
 	}
 
+	// A core step waiting on a later one would wait for the whole core phase
+	// to end: refused, never moved (later is on the declaration, so this holds
+	// on every machine). Every variant's edges count, as above. The core step
+	// is named first, `<kind> '<name>'`, so the language server puts the error
+	// on its declaration.
+	laterProgram := func(name string) bool { return manifest.Programs.Value(name).Later != "" }
+	for name, deps := range programEdges.All() {
+		if laterProgram(name) {
+			continue
+		}
+		for _, dep := range deps {
+			if manifest.Programs.Has(dep) && laterProgram(dep) {
+				add("program '" + name + "' depends on program '" + dep + "', which is later: mark " + name + " later too, or drop later from " + dep)
+			}
+		}
+	}
+	for name, s := range manifest.Scripts.All() {
+		if s.Later != "" {
+			continue
+		}
+		refs := slices.Clone(s.After)
+		for v := range s.Variants.Values() {
+			refs = append(refs, v.After...)
+		}
+		// Messages name both sides as `<kind> '<name>'`, the core one first:
+		// that's where an editor places an error without a position.
+		for _, ref := range model.Distinct(refs) {
+			kind, n := "", ""
+			if p, ok := strings.CutPrefix(ref, "programs."); ok && manifest.Programs.Has(p) && laterProgram(p) {
+				kind, n = "program", p
+			} else if sc, ok := strings.CutPrefix(ref, "scripts."); ok && manifest.Scripts.Has(sc) && manifest.Scripts.Value(sc).Later != "" {
+				kind, n = "script", sc
+			}
+			if kind != "" {
+				add("script '" + name + "' runs after " + kind + " '" + n + "', which is later: mark " + name + " later too, or drop later from " + n)
+			}
+		}
+	}
+
 	if len(errors) > 0 {
 		return invalid(errors)
 	}

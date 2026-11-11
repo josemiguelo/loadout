@@ -151,6 +151,9 @@ func (a *AppContext) Explain(names []string) ([]ExplainedName, error) {
 			if len(program.Tags) > 0 {
 				add("tags", strings.Join(program.Tags, ", "))
 			}
+			if program.Later != "" {
+				add("later", program.Later+"  (setup-new-machine installs it after everything else)")
+			}
 			if program.Install.IsEmpty() {
 				add("install", "(none — not installable anywhere)")
 			}
@@ -246,6 +249,9 @@ func (a *AppContext) Explain(names []string) ([]ExplainedName, error) {
 			}
 			if modes := script.ModeList(); !slices.Equal(modes, []string{"setup", "maintain"}) {
 				add("modes", strings.Join(modes, ", "))
+			}
+			if script.Later != "" {
+				add("later", script.Later+"  (setup-new-machine runs it after everything else)")
 			}
 			if script.Sudo {
 				add("sudo", "yes — a run that runs it asks for the password first")

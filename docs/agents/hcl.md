@@ -73,6 +73,11 @@
   never a variant. This is loadout's answer to migrations: no ledger of
   what ran, since a fresh machine's check already passes; history-only
   steps (nothing on disk can tell) stay manual instructions.
+- **`later = "why"` is in the lock, unlike `spare`**: setup-new-machine
+  reads only the lock, so the reason is written on the program or script
+  (`later`, dropped when unset, so a lock without it is byte-identical).
+  A blank reason is refused ("Empty reason"), and so is a core step that
+  waits on a later one (contract 6).
 - **A profile's long list can live beside its scripts**: a user function
   in the scripts' file (`function "omarchy_bar" { params = [] result =
   [args(script.omarchy-bar, …), …] }`), called from the profile's `run`
@@ -91,3 +96,10 @@
   in schema.go's `shapeSpecs` (schema_test fails until it has one), and
   nothing else to be completed. Keep those out of compile's path: `readRepo`'s `tolerant` is
   false there.
+- **An error without a position is placed by the name it gives**: the
+  language's own rules and assembly's refusals carry no HCL range, so the
+  language server marks every declaration of the FIRST `<kind> '<name>'`
+  in the message (`placeError`), else line 1 of the entry file. Word a new
+  one that way, the declaration to change first: `program 'tools' depends
+  on program 'openssl-1.1', which is later`, never `programs.tools …`
+  (which lands on line 1). `lsp/workspace_test` holds it.

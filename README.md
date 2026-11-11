@@ -65,7 +65,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `installers [name]` | The install mechanisms available here, built-in and your own |
 | | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `outdated` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
-| **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts |
+| **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts; what's marked `later` (slow, optional) comes after all of it (`--skip-later` stops before) |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |

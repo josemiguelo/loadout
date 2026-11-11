@@ -210,8 +210,19 @@ func (e *InstallEngine) Plan(
 // hears of each install as it starts, onSkip (nil = nothing) of each skipped
 // one with the dependency it lacks.
 func (e *InstallEngine) Execute(manifest model.Manifest, plan []PlanItem, onStart func(InstallItem), onSkip func(InstallItem, string)) ([]InstallOutcome, error) {
+	return e.ExecuteAfter(manifest, plan, nil, onStart, onSkip)
+}
+
+// ExecuteAfter is Execute continuing an earlier run in the same command
+// (setup-new-machine's later phase after its core one): an install whose
+// dependency failed or was skipped in earlier is skipped too. Only the new
+// outcomes are returned.
+func (e *InstallEngine) ExecuteAfter(manifest model.Manifest, plan []PlanItem, earlier []InstallOutcome, onStart func(InstallItem), onSkip func(InstallItem, string)) ([]InstallOutcome, error) {
 	var outcomes []InstallOutcome
 	failed := map[string]bool{}
+	for _, o := range earlier {
+		failed[o.Program] = !o.Success()
+	}
 	for _, item := range Installs(plan) {
 		key := item.InstallKey
 		missing := ""

@@ -72,14 +72,14 @@ var shapeSpecs = map[string]struct {
 		Attr{Name: "needs_sudo", Value: ValueFlag}, Attr{Name: "params", Value: ValueList})},
 	"requires": {spec: requiresSpec, values: values(refs("programs", "program"))},
 	"program": {spec: programSpec, labels: map[string]string{"via": "installer"}, values: strs(
-		"description", "version", "regex", "outdated", "upgrade", "updates_managed_by", "spare").with(
+		"description", "version", "regex", "outdated", "upgrade", "updates_managed_by", "spare", "later").with(
 		Attr{Name: "tags", Value: ValueList}, Attr{Name: "path", Value: ValueList},
 		refs("depends_on", "program"), refs("install_via", "installer"))},
 	"program/via":             {spec: variantSpec, values: variantValues},
 	"program/custom":          {spec: variantSpec, values: variantValues},
 	"program/via/provides":    {spec: providesSpec, values: strs("at")},
 	"program/custom/provides": {spec: providesSpec, values: strs("at")},
-	"script": {spec: scriptSpec, values: strs("description", "file", "managed_by", "spare", "updates_managed_by").with(
+	"script": {spec: scriptSpec, values: strs("description", "file", "managed_by", "spare", "updates_managed_by", "later").with(
 		Attr{Name: "run", Value: ValueCommands}, Attr{Name: "check", Value: ValueCommands},
 		Attr{Name: "needs_sudo", Value: ValueFlag}, Attr{Name: "setup_only", Value: ValueFlag},
 		Attr{Name: "maintain_only", Value: ValueFlag}, Attr{Name: "transitional", Value: ValueFlag},

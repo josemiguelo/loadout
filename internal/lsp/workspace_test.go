@@ -160,6 +160,21 @@ func TestAnErrorWithoutAPositionMarksWhatItNames(t *testing.T) {
 	}
 }
 
+func TestACoreStepWaitingOnALaterOneIsMarkedOnTheCoreStep(t *testing.T) {
+	dir := t.TempDir()
+	src := "program \"slow\" {\n  later       = \"a big download\"\n  install_via = [brew]\n}\n" +
+		"program \"tools\" {\n  depends_on  = [program.slow]\n  install_via = [brew]\n}\n" +
+		"program \"jq\" { install_via = [brew] }\n" // repoEntry's machine installs it
+	writeFiles(t, dir, map[string]string{"loadout.hcl": repoEntry, "programs/x.loadout.hcl": src})
+	replies, _, _ := session(t, frame(initializeIn(t, dir), didOpen(t, filepath.Join(dir, "loadout.hcl"), repoEntry), shutdown, exit))
+	got := publishedIn(t, replies)
+	// The label of tools, the step to change, not slow's.
+	want := []string{pos(4, 8) + "-" + pos(4, 15) + " program 'tools' depends on program 'slow', which is later: mark tools later too, or drop later from slow"}
+	if len(got) != 1 || got[0].uri != uriOf(filepath.Join(dir, "programs/x.loadout.hcl")) || jsonOf(t, got[0].diags) != jsonOf(t, want) {
+		t.Errorf("published: %v", got)
+	}
+}
+
 func TestColumnsAreInTheNegotiatedEncoding(t *testing.T) {
 	// "ñ" is 2 bytes and 1 UTF-16 unit; "𝄞" 4 bytes and 2 units. The
 	// diagnostic starts at ".ghost".

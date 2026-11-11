@@ -116,7 +116,8 @@ Explicit user decisions; don't "improve" them away.
    In a child repo (contract 18) a parent's declaration runs in the
    parent's checkout with the parent's `LOADOUT_REPO`/`LOADOUT_CONFIGS`,
    and every command sees `LOADOUT_PARENT` (the parent's root).
-6. **Execution order**: all programs before all scripts; programs
+6. **Execution order**: in two phases, core then later; in each, all
+   programs before all scripts; programs
    topologically by dependencies, ties broken by NAME (InstallOrder sorts;
    where a declaration sits carries no meaning: files decode in glob order,
    but a reference is an identity, never a position); scripts by
@@ -132,6 +133,21 @@ Explicit user decisions; don't "improve" them away.
    edges. An install whose dependency failed (or was itself skipped) is
    skipped, not tried (`InstallOutcome.SkippedFor`), and counts as a
    failure: the run says what it skipped and why, and exits 1.
+   **Phases**: `later = "why"` on a program or script (the declaration, so
+   every machine; never a variant) puts it in setup-new-machine's later
+   phase, after every core program and script, so a slow, optional step
+   never holds up the rest (the prompts a setup asks are all in core
+   steps). The reason is required and lands in the lock. A core step that
+   depends on or runs after a later one (any variant's edge, an
+   installer's `requires` included) is refused at assembly, never moved;
+   a later step after a core one is the point. "Programs before scripts"
+   holds within a phase only: a core script runs before every later
+   program, so a script that acts on whatever installs leave (not one
+   program) belongs in the later phase. A later install whose
+   dependency failed in the core phase is skipped
+   (`InstallEngine.ExecuteAfter`). `--skip-later` stops after the core
+   phase; `install`, `run` and `status` ignore phases. `later` on a
+   `maintain_only` script is refused: it isn't part of setup.
 7. **Script status is observation**: every refresh re-runs each `check`
    (exit 0 => `done`, else `pending`), even right after a run; `lastRun`/
    `exitCode` are only history of tool-run executions. Check-less scripts

@@ -375,3 +375,23 @@ func TestParentRootPlacesItsCheckout(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestLaterIsInTheLockOnlyWhenSet(t *testing.T) {
+	var err error
+	program := Program{Description: "Stremio", Later: "a big download"}
+	back := readProgram(program.toJSON(), "$", &err)
+	if err != nil || back.Later != "a big download" {
+		t.Fatalf("program later didn't round-trip: %q, %v", back.Later, err)
+	}
+	if (Program{Description: "git"}).toJSON().Has("later") {
+		t.Fatal("a core program writes later; the lock must stay as it was")
+	}
+	step := ScriptStep{Run: Ptr("true"), Later: "gigabytes"}
+	backStep := readScript(step.toJSON(), "$", &err)
+	if err != nil || backStep.Later != "gigabytes" {
+		t.Fatalf("script later didn't round-trip: %q, %v", backStep.Later, err)
+	}
+	if (ScriptStep{Run: Ptr("true")}).toJSON().Has("later") {
+		t.Fatal("a core script writes later")
+	}
+}
