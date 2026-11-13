@@ -20,7 +20,12 @@ Cross-compile: `bun build --compile --target=bun-<linux-x64-baseline|linux-arm64
 
 ## The design
 
-- **One executable, and it is the bun.** Manifest commands get a folder
+- **Sequencing:** until the TypeScript binary reaches parity, the port
+  reproduces the Go code as it is, the bun download (`core/bun`), the repo
+  pin (`repo({ bun })`, `meta.bun`) and the outdated bun row included, so
+  differential runs against the Go binary stay exact. The design below is
+  the cutover step, done after parity, in one change.
+- **One executable, and it is the bun** (the cutover step). Manifest commands get a folder
   first on PATH holding a `bun` wrapper (`BUN_BE_BUN=1 exec <loadout>
   "$@"`): a compiled bun executable with `BUN_BE_BUN=1` behaves as the bun
   CLI, so scripts (`#!/usr/bin/env bun`) and compile's run of loadout.ts use
@@ -180,6 +185,47 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   `\A`/`\z` as anchors; one that doesn't compile answers nothing, as Go's
   did. The app's batch-oracle regex (app/outdated.go) uses it too.
 
+## The app in TypeScript (what the CLI and the home screen build on)
+
+`src/app/index.ts` exports it all (`import * as app from …`).
+
+- **`AppContext`** (a class; `newApp(repo, machine, verbose)` is Go's
+  `app.New`, `newAppWith(…, runner, detection)` for tests): readonly
+  `repoRoot`, `machineOverride`, `verbose`, `runner`, `detection`. Go's
+  `(T, error)` methods return T and throw. Synchronous: `layout()`,
+  `stateStore()`, `parentRoot()`, `configs()` (undefined = none),
+  `hasConfigs()`, `fleetStates()`, `fleetWarnings()`, `loadManifest()`,
+  `detectSystem()`, `canonicalRoot()`, `lastConfigsDown()`,
+  `lastScriptDetail()` (a `Map`, empty before any refresh),
+  `lastToolsDown()`. Async (they run commands): `bunDir()`, `frame(system)`,
+  `statusEngine(system)`, `binaryAvailable(b)`,
+  `refreshAndWriteState(manifest, system, scriptResults)`,
+  `refreshAndWriteStateParts(…, onPart)`, `explain(names)`,
+  `outdatedReport(manifest, system, observed, freshSelfCheck)`.
+  `runCommand(closed)`, `selfArgv(self, …args)` stay synchronous.
+- **Laziness is Go's `sync.Once`**: layout, state store, parent root,
+  parent store, configs and the bun folder are computed on first use, and
+  every later use gets that value or throws that error again (a `Lazy`
+  per value; `bunDir`'s is the one promise everyone awaits).
+  `reloadLayout()` drops them all at once.
+- **`explain` throws `NoSuchItemError`** for an unknown name; its
+  `explained` is what came before it (Go returned both): print that, then
+  the `error: ` line. `ExplainRow.machine` is `""` unless it's this
+  machine's variant.
+- **`runCommand` is a `ChildCommand`** (`{ argv, cwd?, env? }`, Go's
+  exec.Cmd), which tui/term's `TermCommand` takes as it is; `undefined` =
+  nothing to run; `HandoffException` when loadout can't find its binary.
+- **The screen meets the CLI here**: `HomeAction`/`PaneKind` are Go's iota
+  numbers as constants (`ActionHandOff`, `PaneInstall`, …); `Closed` is
+  `{ action, handoff? }` and `closedCommand(c)` (Go's `Closed.Command`) is
+  `{ name, args } | undefined`. Go's `var NewScreen` is
+  `registerScreen(factory)` (the tui module calls it when imported),
+  `hasScreen()` and `newScreen(app)`; `Screen.run()` resolves to
+  `Ended { message, code }`.
+- **Self-version**: `latestRelease`, `latestBun`, `behindRelease` are async
+  (curl through the runner), the 6h cache in `$XDG_CACHE_HOME/loadout`.
+  `home()` is Go's `app.Home()`, `shQuote` Go's `ShQuote`.
+
 ## The CLI in TypeScript (what the remaining commands build on)
 
 - **The command line is cobra's, rewritten** (src/cli/args.ts, no
@@ -222,7 +268,8 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 | compile (tsmanifest) | done: Go tests ported; byte-identical to the Go binary (lock, chezmoi data, partial, SDKs, warnings, refusals) on the dotfiles, `init`/`init --configs` scaffolds and child repos. `src/compile/devcompile.ts` (the differential driver) goes at cutover |
 | engines (core/engine) | done: Go tests ported (88, same names), plus text.test.ts for the port's own helpers (goRegExp, forEach) |
 | cli: style, table, spinner, help, errors, the command line (args.ts), init + scaffolds, compile, main.ts | done: Go tests ported (cli_test.go's), plus args/scaffold tests; help screens, usage errors, `init` (plain, --configs, --parent) and `compile` byte-identical to the Go binary (styled on a terminal too); 10-init passes with the other commands through the Go binary. `ensureBun` waits for app |
-| app; cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | — (each refuses: not ported yet) |
+| app | done: Go tests ported (run, screen; same names), plus context.test.ts for what Go left untested (laziness and reloadLayout, the outdated ordering, explain, the self-version cache) |
+| cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | — (each refuses: not ported yet); `src/cli/context.ts` gives way to app's `AppContext` |
 | theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
 | tui (the home screen) | — |
 | release (workflow, install.sh unchanged names), docs, Go removed | — |
