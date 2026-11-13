@@ -106,7 +106,6 @@ func NewRoot() *cobra.Command {
 		newSelfUpgradeCmd(),
 		newInitCmd(),
 		newCompileCmd(),
-		newLspCmd(),
 	} {
 		sub.Flags().SortFlags = false
 		helpFlag(sub)

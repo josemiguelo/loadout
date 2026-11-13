@@ -47,13 +47,11 @@ ok "setup-new-machine runs eligible scripts"
 
 # --- membership: a program no machine maps ------------------------------
 # Skipped by converge, an error when explicitly requested, not observed.
-hcl_file repo/programs/never.loadout.hcl <<'HCL'
-program "never-mapped" {
-  custom "manual" {
-    command = "false"
-  }
-}
-HCL
+ts_file repo/programs/never.loadout.ts <<'TS'
+program("never-mapped", {
+  install: [custom("manual", { command: "false" })],
+});
+TS
 compile_repo repo
 OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --dry-run) || fail "converge with unmapped program should succeed"
 echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
@@ -70,23 +68,19 @@ echo "$OUT" | grep -q "machine 'ghost' is not declared in the repo" || fail "und
 ok "setup-new-machine fails for a machine the repo doesn't declare"
 
 # --- mapped pm binary not present on this machine ------------------------
-hcl_repo pmrepo
-hcl_file pmrepo/programs/tool.loadout.hcl <<'HCL'
-installer "pacman" {
-  probe   = "pacman"
-  install = "sudo pacman -S --noconfirm {pkg}"
-  check   = "pacman -Q {pkg}"
-  regex   = "([0-9.]+)"
-}
+ts_repo pmrepo
+ts_file pmrepo/programs/tool.loadout.ts <<'TS'
+const pacmanLike = installer("pacman-like", {
+  probe: "pacman",
+  install: "sudo pacman -S --noconfirm {pkg}",
+  check: "pacman -Q {pkg}",
+  regex: "([0-9.]+)",
+});
 
-program "tool" {
-  install_via = [pacman]
-}
+const tool = program("tool", { install: [pacmanLike] });
 
-machine "m1" {
-  install = [program.tool]
-}
-HCL
+machine("m1", { install: [tool] });
+TS
 compile_repo pmrepo
 if ! command -v pacman >/dev/null 2>&1; then
     OUT=$("$BIN" --repo pmrepo --machine m1 setup-new-machine --dry-run 2>&1 || true)
@@ -97,33 +91,24 @@ else
 fi
 
 # --- a probe binary the plan installs first ---------------------------------
-hcl_repo providesrepo
-hcl_file providesrepo/programs/tool.loadout.hcl <<'HCL'
-installer "flat" {
-  probe   = "loadout-test-flat"
-  install = "loadout-test-flat install {pkg}"
-  check   = "loadout-test-flat info {pkg}"
-}
+ts_repo providesrepo
+ts_file providesrepo/programs/tool.loadout.ts <<'TS'
+const flat = installer("flat", {
+  probe: "loadout-test-flat",
+  install: "loadout-test-flat install {pkg}",
+  check: "loadout-test-flat info {pkg}",
+});
 
-program "flat-runtime" {
-  custom {
-    command = "false"
-    provides "loadout-test-flat" {}
-  }
-}
+const flatRuntime = program("flat-runtime", {
+  install: [custom({ command: "false", provides: { "loadout-test-flat": {} } })],
+});
 
-requires "flat" {
-  programs = [program.flat-runtime]
-}
+requires(flat, [flatRuntime]);
 
-program "app" {
-  install_via = [flat]
-}
+const app = program("app", { install: [flat] });
 
-machine "m1" {
-  install = [program.flat-runtime, program.app]
-}
-HCL
+machine("m1", { install: [flatRuntime, app] });
+TS
 compile_repo providesrepo
 OUT=$("$BIN" --repo providesrepo --machine m1 install app --dry-run 2>&1) || fail "provided probe refused: $OUT"
 echo "$OUT" | grep -q "flat-runtime" || fail "provider not planned: $OUT"
@@ -140,45 +125,33 @@ cat >"$LANDED/loadout-test-brewish" <<'SH'
 [ "$1" = list ] && [ "$2" = app ] && echo "app 1.2.3"
 SH
 chmod +x "$LANDED/loadout-test-brewish"
-hcl_repo landedrepo
-# Unquoted: the shell puts $LANDED's path in, so HCL sees a plain string.
-hcl_file landedrepo/programs/tool.loadout.hcl <<HCL
-installer "brewish" {
-  probe   = "loadout-test-brewish"
-  install = "loadout-test-brewish install {pkg}"
-  check   = "loadout-test-brewish list {pkg}"
-}
+ts_repo landedrepo
+# Unquoted: the shell puts $LANDED's path in, so TypeScript sees a plain string.
+ts_file landedrepo/programs/tool.loadout.ts <<TS
+const brewish = installer("brewish", {
+  probe: "loadout-test-brewish",
+  install: "loadout-test-brewish install {pkg}",
+  check: "loadout-test-brewish list {pkg}",
+});
 
-program "setup-brewish" {
-  custom {
-    command = "false"
-    present = "test -x $LANDED/loadout-test-brewish"
-    provides "loadout-test-brewish" {
-      at = "$LANDED"
-    }
-  }
-}
+const setupBrewish = program("setup-brewish", {
+  install: [
+    custom({
+      command: "false",
+      present: "test -x $LANDED/loadout-test-brewish",
+      provides: { "loadout-test-brewish": { at: "$LANDED" } },
+    }),
+  ],
+});
 
-requires "brewish" {
-  programs = [program.setup-brewish]
-}
+requires(brewish, [setupBrewish]);
 
-program "app" {
-  install_via = [brewish]
-}
+const app = program("app", { install: [brewish] });
+const other = program("other", { install: [brewish] });
 
-program "other" {
-  install_via = [brewish]
-}
-
-machine "m1" {
-  install = [program.setup-brewish, program.app]
-}
-
-machine "m2" {
-  install = [program.setup-brewish, program.app, program.other]
-}
-HCL
+machine("m1", { install: [setupBrewish, app] });
+machine("m2", { install: [setupBrewish, app, other] });
+TS
 compile_repo landedrepo
 OUT=$("$BIN" --repo landedrepo --machine m1 status 2>&1) || fail "status: $OUT"
 echo "$OUT" | grep -E "app .*1\.2\.3" >/dev/null || fail "check didn't run from where the tool lands: $OUT"
@@ -202,31 +175,25 @@ ok "explain prints expanded programs and scripts (all of them with no names)"
 # a mechanism (its installer has a probe) that dies with the shell's own
 # "command not found" is a question that couldn't be asked; a check that IS
 # the program (`rg --version`, no probe) means what it says.
-hcl_repo probed
-hcl_file probed/programs/probed.loadout.hcl <<'HCL'
-installer "ghostpm" {
-  probe   = "ghostpm-definitely-not-here"
-  install = "ghostpm-definitely-not-here install {pkg}"
-  check   = "ghostpm-definitely-not-here query {pkg}"
-  regex   = "([0-9.]+)"
-}
+ts_repo probed
+ts_file probed/programs/probed.loadout.ts <<'TS'
+const ghostpm = installer("ghostpm", {
+  probe: "ghostpm-definitely-not-here",
+  install: "ghostpm-definitely-not-here install {pkg}",
+  check: "ghostpm-definitely-not-here query {pkg}",
+  regex: "([0-9.]+)",
+});
 
-program "viapm" {
-  install_via = [ghostpm]
-}
+const viapm = program("viapm", { install: [ghostpm] });
 
-program "byitself" {
-  version = "byitself-definitely-not-here --version"
-  regex   = "([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
+const byitself = program("byitself", {
+  version: "byitself-definitely-not-here --version",
+  regex: "([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
 
-machine "m1" {
-  install = [program.viapm, program.byitself]
-}
-HCL
+machine("m1", { install: [viapm, byitself] });
+TS
 compile_repo probed
 OUT=$("$BIN" --repo probed --machine m1 status) || fail "status exits 0 with an unrunnable check"
 echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
@@ -238,32 +205,22 @@ echo "$OUT" | grep -q "ghostpm-definitely-not-here is not on PATH — 1 program(
 ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'"
 
 # --- a variant's own depends-on comes only with that variant --------------
-hcl_repo vdeps
-hcl_file vdeps/programs/vdeps.loadout.hcl <<'HCL'
-program "prereq" {
-  custom "manual" {
-    command = "true"
-  }
-}
+ts_repo vdeps
+ts_file vdeps/programs/vdeps.loadout.ts <<'TS'
+const prereq = program("prereq", {
+  install: [custom("manual", { command: "true" })],
+});
 
-program "tool" {
-  custom "withprereq" {
-    command    = "true"
-    depends_on = [program.prereq]
-  }
-  custom "plain" {
-    command = "true"
-  }
-}
+const tool = program("tool", {
+  install: [
+    custom("withprereq", { command: "true", dependsOn: [prereq] }),
+    custom("plain", { command: "true" }),
+  ],
+});
 
-machine "m1" {
-  install = [variant(program.tool, "withprereq"), program.prereq]
-}
-
-machine "m2" {
-  install = [variant(program.tool, "plain")]
-}
-HCL
+machine("m1", { install: [variant(tool, "withprereq"), prereq] });
+machine("m2", { install: [variant(tool, "plain")] });
+TS
 compile_repo vdeps
 OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
 echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
@@ -275,31 +232,19 @@ ok "a variant's depends-on is planned only on machines mapping that variant"
 
 # --- a failed install skips what needs it -----------------------------------
 # (A program's command runs in its own directory: the markers land in programs/.)
-hcl_repo skipdeps
-hcl_file skipdeps/programs/tool.loadout.hcl <<'HCL'
-program "base" {
-  custom {
-    command = "false"
-  }
-}
+ts_repo skipdeps
+ts_file skipdeps/programs/tool.loadout.ts <<'TS'
+const base = program("base", { install: [custom({ command: "false" })] });
 
-program "needs-base" {
-  depends_on = [program.base]
-  custom {
-    command = "touch needs-base.ran"
-  }
-}
+const needsBase = program("needs-base", {
+  dependsOn: [base],
+  install: [custom({ command: "touch needs-base.ran" })],
+});
 
-program "alone" {
-  custom {
-    command = "touch alone.ran"
-  }
-}
+const alone = program("alone", { install: [custom({ command: "touch alone.ran" })] });
 
-machine "m1" {
-  install = [program.base, program.needs-base, program.alone]
-}
-HCL
+machine("m1", { install: [base, needsBase, alone] });
+TS
 compile_repo skipdeps
 OUT=$("$BIN" --repo skipdeps --machine m1 setup-new-machine --yes --skip-scripts 2>&1) && fail "a failed install exits non-zero: $OUT"
 [ -e skipdeps/programs/needs-base.ran ] && fail "needs-base ran after base failed"

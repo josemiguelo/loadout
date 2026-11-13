@@ -194,25 +194,21 @@ func TestSourcesHashCoversPathAndContentInPathOrder(t *testing.T) {
 }
 
 func TestMatchingFollowsTheSourceRules(t *testing.T) {
+	// As the SDK's include() (Bun.Glob with dot files): wildcards match dot
+	// entries, and ** enters dot folders.
 	yes := [][2]string{
-		{"programs/**/*.loadout.kt", "programs/a.loadout.kt"},
-		{"programs/**/*.loadout.kt", "programs/x/y/a.loadout.kt"},
-		{"programs/?.kt", "programs/a.kt"},
-		{"configs/**/.loadout.kt", "configs/private_dot_config/tmux/.loadout.kt"},
-		{"configs/**/.*/.*.loadout.kt", "configs/a/.t/.t.loadout.kt"},
-		{"configs/**/.*/.*.loadout.kt", "configs/.t/.t.loadout.kt"},
+		{"programs/**/*.loadout.ts", "programs/a.loadout.ts"},
+		{"programs/**/*.loadout.ts", "programs/x/y/a.loadout.ts"},
+		{"programs/?.ts", "programs/a.ts"},
+		{"programs/*.ts", "programs/.hidden.ts"},
+		{"loadouts/**/*.loadout.ts", "loadouts/private_dot_config/tmux/.tmux.loadout.ts"},
+		{"loadouts/**/*.loadout.ts", "loadouts/a/.t/.t.loadout.ts"},
+		{"loadouts/**/*.loadout.ts", "loadouts/.etc/t2/.t2.loadout.ts"},
 	}
 	no := [][2]string{
-		{"programs/**/*.loadout.kt", "programs/a.loadout.kt.sample"},
-		{"programs/*.kt", "programs/x/a.kt"},
-		// Wildcards never match a dot entry; spelling the dot does.
-		{"programs/*.kt", "programs/.hidden.kt"},
-		{"configs/**/*.loadout.kt", "configs/tmux/.loadout.kt"},
-		{"**/*.kt", ".git/x.kt"},
-		// ** never enters a dot folder; a manifest in one needs a glob that spells it.
-		{"configs/**/.*.loadout.kt", "configs/a/.t/.t.loadout.kt"},
-		{"configs/**/.*/.*.loadout.kt", "configs/a/.t/.loadout/.x.loadout.kt"},
-		{"configs/**/.*/.*.loadout.kt", "configs/a/.t/.loadout/x.loadout.kt"},
+		{"programs/**/*.loadout.ts", "programs/a.loadout.ts.sample"},
+		{"programs/*.ts", "programs/x/a.ts"},
+		{"loadouts/**/*.loadout.ts", "machines/a.loadout.ts"},
 	}
 	for _, c := range yes {
 		if !GlobMatches(c[0], c[1]) {
@@ -228,7 +224,7 @@ func TestMatchingFollowsTheSourceRules(t *testing.T) {
 
 func TestExpandIsPathSortedAndNeverEntersGit(t *testing.T) {
 	repo := fstest.MapFS{}
-	for _, f := range []string{"programs/b.loadout.kt", "programs/a/z.loadout.kt", "programs/a.loadout.kt", ".git/c.loadout.kt"} {
+	for _, f := range []string{"programs/b.loadout.kt", "programs/a/z.loadout.kt", "programs/a.loadout.kt", ".git/c.loadout.kt", "programs/node_modules/d.loadout.kt"} {
 		repo[f] = &fstest.MapFile{}
 	}
 	got, err := GlobExpand(repo, "programs/**/*.loadout.kt")

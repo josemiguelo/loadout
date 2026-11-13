@@ -1,5 +1,5 @@
 # sudo upfront: a run whose plan holds a step that needs sudo (declared
-# `sudo: true`, or a command that says sudo) asks for the password once,
+# `needsSudo: true`, or a command that says sudo) asks for the password once,
 # before the first step; the steps then find it cached. Nothing needing it,
 # or nothing left to run, asks nothing.
 
@@ -11,22 +11,17 @@ SH
 cat > srepo/plain.sh <<'SH'
 touch plain-ran.txt
 SH
-hcl_root srepo <<'HCL'
-script "needs" {
-  file       = "needs.sh"
-  check      = "test -f needs-ran.txt"
-  needs_sudo = true
-}
+ts_root srepo <<'TS'
+const needs = script("needs", {
+  file: "needs.sh",
+  check: "test -f needs-ran.txt",
+  needsSudo: true,
+});
 
-script "plain" {
-  file  = "plain.sh"
-  check = "test -f plain-ran.txt"
-}
+const plain = script("plain", { file: "plain.sh", check: "test -f plain-ran.txt" });
 
-machine "m1" {
-  run = [script.needs, script.plain]
-}
-HCL
+machine("m1", { run: [needs, plain] });
+TS
 compile_repo srepo
 fake_sudo
 

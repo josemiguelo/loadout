@@ -12,6 +12,7 @@ import (
 
 	"github.com/josemiguelo/loadout/internal/core/git"
 	"github.com/josemiguelo/loadout/internal/model"
+	"github.com/josemiguelo/loadout/internal/tsmanifest"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,9 @@ import (
 // and maintenance/), init-configs (everything in loadouts/, chezmoi's
 // source, each tool's manifest where its files land), child and
 // child-configs (contract 18: a parent block, no example that could clash).
-// File names and contents are text/templates over scaffoldVars.
+// File names and contents are text/templates over scaffoldVars. Every
+// scaffold gets the SDKs too (tsmanifest.SDKFile, ScriptSDKFile), so the
+// editor has the manifests' and scripts' types before the first compile.
 //
 //go:embed all:scaffold
 var scaffolds embed.FS
@@ -29,11 +32,15 @@ type scaffoldVars struct {
 	Hostname   string
 	ParentName string
 	ParentPath string
+	// ParentImport is the parent's checkout from the child's root, for
+	// tsconfig.json's "parent/*" alias.
+	ParentImport string
 }
 
-// hclString is s escaped for the inside of an HCL string literal.
-func hclString(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`, "${", "$${", "%{", "%%{").Replace(s)
+// jsString is s escaped for the inside of a double-quoted TypeScript (and
+// JSON) string literal.
+func jsString(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`).Replace(s)
 }
 
 // scaffoldFile is one file of a scaffold, rendered: its path in the repo and its content.
@@ -42,11 +49,11 @@ type scaffoldFile struct {
 	content []byte
 }
 
-// renderScaffold is the files of scaffold kind for vars. Paths take the
-// values as they are; contents take them HCL-escaped, since every value
-// lands inside a string.
+// renderScaffold is the files of scaffold kind for vars, and the SDK. Paths
+// take the values as they are; contents take them escaped, since every
+// value lands inside a string.
 func renderScaffold(kind string, vars scaffoldVars) ([]scaffoldFile, error) {
-	escaped := scaffoldVars{hclString(vars.Hostname), hclString(vars.ParentName), hclString(vars.ParentPath)}
+	escaped := scaffoldVars{jsString(vars.Hostname), jsString(vars.ParentName), jsString(vars.ParentPath), jsString(vars.ParentImport)}
 	base := "scaffold/" + kind
 	var files []scaffoldFile
 	err := fs.WalkDir(scaffolds, base, func(p string, d fs.DirEntry, err error) error {
@@ -68,7 +75,9 @@ func renderScaffold(kind string, vars scaffoldVars) ([]scaffoldFile, error) {
 		files = append(files, scaffoldFile{rel, []byte(content)})
 		return nil
 	})
-	return files, err
+	return append(files,
+		scaffoldFile{tsmanifest.SDKFile, []byte(tsmanifest.SDK)},
+		scaffoldFile{tsmanifest.ScriptSDKFile, []byte(tsmanifest.ScriptSDK)}), err
 }
 
 func fill(text string, vars scaffoldVars) (string, error) {
@@ -87,7 +96,7 @@ func newInitCmd() *cobra.Command {
 	var configs bool
 	var parent, parentName string
 	cmd := subcommand("init", commandHelp(
-		"Scaffold a new config repo (HCL manifests, machines/state/) and git init it.",
+		"Scaffold a new config repo (TypeScript manifests, machines/state/) and git init it.",
 		"[path]     where to scaffold (default: current directory)",
 		"--configs  hold your dotfiles too: chezmoi's source in loadouts/, each tool's manifest where its files land",
 		"--parent   a child repo of the compiled repo at this path: uses its declarations by name",
@@ -112,7 +121,7 @@ func newInitCmd() *cobra.Command {
 // writeScaffold refuses to overwrite anything a scaffold would write (the
 // lock included), then writes it.
 func writeScaffold(root string, files []scaffoldFile) error {
-	existing := []string{hclconfEntry, model.LockFileName}
+	existing := []string{tsmanifest.EntryFile, model.LockFileName}
 	for _, f := range files {
 		if path.Base(f.path) != ".gitkeep" && !contains(existing, f.path) {
 			existing = append(existing, f.path)
@@ -136,9 +145,6 @@ func writeScaffold(root string, files []scaffoldFile) error {
 	return nil
 }
 
-// hclconfEntry is the root manifest every scaffold writes.
-const hclconfEntry = "loadout.hcl"
-
 func initRepo(root string, configs bool) error {
 	a := appCtx
 	kind := "init"
@@ -152,13 +158,13 @@ func initRepo(root string, configs bool) error {
 	if err := writeScaffold(root, files); err != nil {
 		return err
 	}
-	example := "programs/cli.loadout.hcl"
-	parts := []string{"loadout.hcl", "programs/", "maintenance/"}
+	example := "programs/cli.loadout.ts"
+	parts := []string{"loadout.ts", "programs/", "maintenance/"}
 	if configs {
-		example = "loadouts/private_dot_config/.ripgrep.loadout.hcl"
-		parts = []string{"loadout.hcl", "loadouts/ (chezmoi's source)"}
+		example = "loadouts/private_dot_config/.ripgrep.loadout.ts"
+		parts = []string{"loadout.ts", "loadouts/ (chezmoi's source)"}
 	}
-	parts = append(parts, "machines/ (machines.loadout.hcl, state/)")
+	parts = append(parts, "machines/ (machines.loadout.ts, data.ts, state/)", "tsconfig.json")
 	echo("Created " + root + ": " + strings.Join(parts, ", "))
 
 	repo := git.New(a.Runner, root)
@@ -177,12 +183,13 @@ func initRepo(root string, configs bool) error {
 
 	echo("")
 	echo(Style.Header("Next steps:"))
-	echo("  1. Open " + root + " in your editor and add programs and scripts (*.loadout.hcl files)")
+	echo("  1. Open " + root + " in your editor (bun install there gives it bun's types) and add")
+	echo("     programs and scripts (*.loadout.ts files, beside " + example + ")")
 	if configs {
-		echo("     (a tool's file sits where its files land: " + example + ";")
-		echo("     what lands outside your home in loadouts/.etc/<concern>/, like loadouts/.etc/dnf/)")
+		echo("     (a tool's file sits where its files land; what lands outside your home")
+		echo("     in loadouts/.etc/<concern>/, like loadouts/.etc/dnf/)")
 	}
-	echo("  2. Say what this machine installs in machines/machines.loadout.hcl")
+	echo("  2. Say what this machine installs in machines/machines.loadout.ts")
 	echo("  3. loadout --repo " + root + " compile   # writes " + model.LockFileName)
 	if configs {
 		echo("     (and loadouts/.chezmoidata/loadout.json + .chezmoitemplates/loadout/machine:")
@@ -215,7 +222,21 @@ func initChild(root, parentPath, parentName string, configs bool) error {
 		kind = "child-configs"
 	}
 	hostname := a.DetectSystem().Machine
-	files, err := renderScaffold(kind, scaffoldVars{Hostname: hostname, ParentName: parentName, ParentPath: parentPath})
+	childRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	parentImport, err := filepath.Rel(childRoot, parentRoot)
+	if err != nil {
+		parentImport = parentRoot
+	}
+	// The repo's parent path is read from the child's root: a relative one
+	// given from here is rewritten from there.
+	repoParentPath := parentPath
+	if !filepath.IsAbs(parentPath) && parentPath != "~" && !strings.HasPrefix(parentPath, "~/") {
+		repoParentPath = filepath.ToSlash(parentImport)
+	}
+	files, err := renderScaffold(kind, scaffoldVars{Hostname: hostname, ParentName: parentName, ParentPath: repoParentPath, ParentImport: filepath.ToSlash(parentImport)})
 	if err != nil {
 		return err
 	}
@@ -235,7 +256,7 @@ func initChild(root, parentPath, parentName string, configs bool) error {
 	}
 	echo("")
 	echo(Style.Header("Next steps:"))
-	echo("  1. Say what this machine installs in machines/" + hostname + ".loadout.hcl (" + parentName + "'s names work as they are)")
+	echo("  1. Say what this machine installs in machines/" + hostname + ".loadout.ts (import " + parentName + "'s from \"parent/…\")")
 	echo("  2. loadout --repo " + root + " compile")
 	echo("  3. Point LOADOUT_REPO at " + root + " on this machine, then: loadout status")
 	return nil

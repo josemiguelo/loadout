@@ -17,42 +17,28 @@ import (
 
 	"github.com/josemiguelo/loadout/internal/app"
 	"github.com/josemiguelo/loadout/internal/core/coremodel"
+	ct "github.com/josemiguelo/loadout/internal/core/coretest"
 	"github.com/josemiguelo/loadout/internal/core/diff"
 	"github.com/josemiguelo/loadout/internal/core/engine"
-	"github.com/josemiguelo/loadout/internal/hclconf/hcltest"
 	"github.com/josemiguelo/loadout/internal/model"
 	"github.com/josemiguelo/loadout/internal/tui/style"
 	"github.com/josemiguelo/loadout/internal/tui/term"
 )
 
-const manifestSrc = `
-program "git" {
-  install_via = [dnf]
-}
-program "kitty" {
-  install_via = [dnf]
-}
-
-script "dotfiles" {
-  run   = "true"
-  check = "true"
-}
-script "bootstrap" {
-  run        = "true"
-  setup_only = true
-}
-
-machine "m1" {
-  via "dnf" {
-    install = [program.git, program.kitty]
-  }
-  run = [script.dotfiles, script.bootstrap]
-}
-`
 
 var system = coremodel.SystemInfo{Machine: "m1", Os: coremodel.Linux, Distro: ptr("fedora"), Arch: "x86_64"}
 
-func manifestFor(t *testing.T) model.Manifest { return hcltest.ManifestOf(t, manifestSrc) }
+// manifestFor is git and kitty through dnf, a script with a check and a
+// setup-only one, on machine m1.
+func manifestFor(t *testing.T) model.Manifest {
+	return ct.ManifestOf(t, func(b *ct.Draft) {
+		b.Program("git", model.Program{Install: ct.Via("dnf")})
+		b.Program("kitty", model.Program{Install: ct.Via("dnf")})
+		b.Script("dotfiles", model.ScriptStep{Run: ptr("true"), Check: ptr("true")})
+		b.Script("bootstrap", model.ScriptStep{Run: ptr("true"), Modes: []string{"setup"}})
+		b.Machine("m1", model.MachineConfig{PM: ct.PM("git", "dnf", "kitty", "dnf"), Scripts: []string{"dotfiles", "bootstrap"}})
+	})
+}
 
 func update(name, current, candidate string, source ...string) app.UpdateRow {
 	row := app.UpdateRow{Name: name, Current: current, Candidate: candidate, Source: "dnf"}
@@ -1347,18 +1333,11 @@ func TestTheFrameIsExactlyTheScreenInBothLayouts(t *testing.T) {
 }
 
 func TestAnObsoleteSudoOnAScriptStillLoads(t *testing.T) {
-	manifest := hcltest.ManifestOf(t, `
-script "hid" {
-  run        = "true"
-  needs_sudo = true
-}
-script "plain" {
-  run = "true"
-}
-machine "m1" {
-  run = [script.hid, script.plain]
-}
-`)
+	manifest := ct.ManifestOf(t, func(b *ct.Draft) {
+		b.Script("hid", model.ScriptStep{Run: ptr("true"), Sudo: true})
+		b.Script("plain", model.ScriptStep{Run: ptr("true")})
+		b.Machine("m1", model.MachineConfig{Scripts: []string{"hid", "plain"}})
+	})
 	var names []string
 	for _, row := range scriptRowsOf(manifest, system, nil) {
 		names = append(names, row.Name)

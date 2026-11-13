@@ -36,8 +36,8 @@ printf '.config/zsh/.zshrc\n.config/zsh/conf.d/a.zsh\n.config/tmux/tmux.conf\n.z
 printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
 
 basic_repo repo
-repo_attr repo/loadout.hcl 'configs = "configs"'
-grep -q 'configs = "configs"' repo/loadout.hcl || fail "the fixture declares configs"
+repo_opt repo/loadout.ts 'configs: "configs"'
+grep -q 'configs: "configs"' repo/loadout.ts || fail "the fixture declares configs"
 mkdir -p repo/configs
 compile_repo repo
 
@@ -156,7 +156,7 @@ git -C repo push -qu origin HEAD 2>/dev/null
 git clone -q origin.git elsewhere
 git -C elsewhere config user.email test@example.com && git -C elsewhere config user.name "Integration Test"
 git -C elsewhere mv configs dots
-sed -i.bak 's|configs = "configs"|configs = "dots"|' elsewhere/loadout.hcl && rm elsewhere/loadout.hcl.bak
+sed -i.bak 's|configs: "configs"|configs: "dots"|' elsewhere/loadout.ts && rm elsewhere/loadout.ts.bak
 compile_repo elsewhere
 git -C elsewhere add -A && git -C elsewhere commit -qm "configs is dots now" && git -C elsewhere push -q 2>/dev/null
 printf ' M .zshenv\n' > "$CZ/status"

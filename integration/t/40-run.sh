@@ -39,37 +39,38 @@ printf '#!/bin/sh\necho "$1" > arg-marker.txt\n' > repo/maintenance/args/argscri
 printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/maintenance/args/argcount.sh
 printf 'hello from greet\n' > repo/maintenance/greet/message.txt
 printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$LOADOUT_REPO" "$LOADOUT_FRAGMENT_DIR" "$LOADOUT_MACHINE" "$LOADOUT_OS" > env.txt\n' > repo/maintenance/greet/greet.sh
-hcl_file repo/maintenance/args/args.loadout.hcl <<'HCL'
-script "argscript" {
-  file  = "argscript.sh"
-  check = "test -f arg-marker.txt && grep -qx $1 arg-marker.txt"
-}
+ts_file repo/maintenance/args/args.loadout.ts <<'TS'
+import { git } from "../../root.loadout.ts";
+import { greet } from "../greet/greet.loadout.ts";
 
-script "argcount" {
-  file = "argcount.sh"
-}
+const argscript = script("argscript", {
+  file: "argscript.sh",
+  check: "test -f arg-marker.txt && grep -qx $1 arg-marker.txt",
+});
 
-machine "m3" {
-  install = [variant(program.git, "manual")]
-  run = [
-    args(script.argscript, "fedora"),
-    # A long entry may span lines: its lines are arguments, never commands.
-    # If the newline reached the shell, `touch pwned.txt` would run.
-    args(script.argcount, "one\ntouch pwned.txt"),
-  ]
-}
+const argcount = script("argcount", { file: "argcount.sh" });
 
-machine "m5" {
-  install = [variant(program.git, "manual")]
-  run     = [script.greet]
-}
-HCL
-hcl_file repo/maintenance/greet/greet.loadout.hcl <<'HCL'
-script "greet" {
-  file  = "greet.sh"
-  check = "test -f greeted.txt"
-}
-HCL
+machine("m3", {
+  install: [variant(git, "manual")],
+  run: [
+    args(argscript, "fedora"),
+    // A long entry may span lines: its lines are arguments, never commands.
+    // If the newline reached the shell, `touch pwned.txt` would run.
+    args(argcount, "one\ntouch pwned.txt"),
+  ],
+});
+
+machine("m5", {
+  install: [variant(git, "manual")],
+  run: [greet],
+});
+TS
+ts_file repo/maintenance/greet/greet.loadout.ts <<'TS'
+export const greet = script("greet", {
+  file: "greet.sh",
+  check: "test -f greeted.txt",
+});
+TS
 compile_repo repo
 "$BIN" --repo repo --machine m3 run argscript >/dev/null || fail "run with args exits 0"
 grep -qx "fedora" repo/maintenance/args/arg-marker.txt || fail "argument reached the script"
@@ -97,38 +98,33 @@ ok "a file's script and check run in its folder, with the LOADOUT_* variables"
 # A script file runs with the interpreter its #! line names, found in the
 # folder a program provides it at even when that folder isn't on PATH (bun
 # from brew on a fresh Mac); a file without #! runs with sh.
-hcl_repo interp
+ts_repo interp
 TOOLS=$(pwd -P)/interp-tools
 mkdir -p "$TOOLS"
 printf '#!/bin/sh\necho "fakeinterp: $*" >> "$LOADOUT_FRAGMENT_DIR/ran.txt"\n[ "$2" != check ] || exit 1\n' > "$TOOLS/loadout-test-interp"
 chmod +x "$TOOLS/loadout-test-interp"
-hcl_file interp/maintenance/interp.loadout.hcl <<HCL
-program "interp" {
-  custom {
-    command = "false"
-    present = "test -x $TOOLS/loadout-test-interp"
-    provides "loadout-test-interp" {
-      at = "$TOOLS"
-    }
-  }
-}
+ts_file interp/maintenance/interp.loadout.ts <<TS
+export const interp = program("interp", {
+  install: [
+    custom({
+      command: "false",
+      present: "test -x $TOOLS/loadout-test-interp",
+      provides: { "loadout-test-interp": { at: "$TOOLS" } },
+    }),
+  ],
+});
 
-script "hashbang" {
-  managed_by = "hashbang.ts"
-}
+export const hashbang = script("hashbang", { managedBy: "hashbang.ts" });
 
-script "plain" {
-  file = "plain.sh"
-}
-HCL
+export const plain = script("plain", { file: "plain.sh" });
+TS
 printf '#!/usr/bin/env loadout-test-interp\nignored by sh\n' > interp/maintenance/hashbang.ts
 printf 'echo "sh: $0" > "$LOADOUT_FRAGMENT_DIR/plain-ran.txt"\n' > interp/maintenance/plain.sh
-hcl_file interp/machines/machines.loadout.hcl <<'HCL'
-machine "m1" {
-  install = [program.interp]
-  run     = [script.hashbang, script.plain]
-}
-HCL
+ts_file interp/machines/machines.loadout.ts <<'TS'
+import { hashbang, interp, plain } from "../maintenance/interp.loadout.ts";
+
+machine("m1", { install: [interp], run: [hashbang, plain] });
+TS
 compile_repo interp
 command -v loadout-test-interp >/dev/null 2>&1 && fail "the interpreter must not be on PATH for this test" || true
 "$BIN" --repo interp --machine m1 run hashbang >/dev/null || fail "a #! script runs: $("$BIN" --repo interp --machine m1 run hashbang 2>&1)"

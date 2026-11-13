@@ -29,7 +29,16 @@ unset FORCE_COLOR CLICOLOR_FORCE LOADOUT_REPO
 XDG_CACHE_HOME=$WORK/cache
 mkdir -p "$XDG_CACHE_HOME/loadout"
 echo 0.0.1 > "$XDG_CACHE_HOME/loadout/latest-release"
-export BIN INSTALL_SH WORK XDG_CACHE_HOME
+# Its own data too: a bun loadout downloads (no LOADOUT_BUN, or a test that
+# pins one) lands here, and pruning never touches the developer's.
+XDG_DATA_HOME=$WORK/data
+export BIN INSTALL_SH WORK XDG_CACHE_HOME XDG_DATA_HOME
+# Compile runs loadout.ts with bun: the developer's or the CI runner's when
+# it's on PATH (fast, offline), else the one loadout downloads.
+if [ -z "${LOADOUT_BUN:-}" ] && command -v bun >/dev/null 2>&1; then
+    LOADOUT_BUN=$(command -v bun)
+    export LOADOUT_BUN
+fi
 
 . "$HERE/lib.sh"
 

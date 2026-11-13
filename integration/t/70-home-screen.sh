@@ -68,42 +68,34 @@ fi
 # reports a package. A tool that heads no rows hides nothing when folded,
 # so only the second may ever show a fold mark.
 fake_release_cache
-hcl_root orepo <<'HCL'
-installer "quiet" {
-  probe        = "sh"
-  install      = "echo installed-{pkg} > quiet-{pkg}.txt"
-  check        = "echo {pkg} 1.0"
-  regex        = "([0-9][0-9.]*)"
-  outdated_all = "true"
-  upgrade      = "echo swept"
-}
+ts_root orepo <<'TS'
+const quiet = installer("quiet", {
+  probe: "sh",
+  install: "echo installed-{pkg} > quiet-{pkg}.txt",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9][0-9.]*)",
+  outdatedAll: "true",
+  upgrade: "echo swept",
+});
 
-program "alpha" {
-  install_via = [quiet]
-}
+const alpha = program("alpha", { install: [quiet] });
 
-machine "m1" {
-  install = [program.alpha]
-}
-HCL
-hcl_root frepo <<'HCL'
-installer "quiet" {
-  probe        = "sh"
-  install      = "echo installed-{pkg} > quiet-{pkg}.txt"
-  check        = "echo {pkg} 1.0"
-  regex        = "([0-9][0-9.]*)"
-  outdated_all = "echo 'alpha 2.0'"
-  upgrade      = "echo swept"
-}
+machine("m1", { install: [alpha] });
+TS
+ts_root frepo <<'TS'
+const quiet = installer("quiet", {
+  probe: "sh",
+  install: "echo installed-{pkg} > quiet-{pkg}.txt",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9][0-9.]*)",
+  outdatedAll: "echo 'alpha 2.0'",
+  upgrade: "echo swept",
+});
 
-program "alpha" {
-  install_via = [quiet]
-}
+const alpha = program("alpha", { install: [quiet] });
 
-machine "m1" {
-  install = [program.alpha]
-}
-HCL
+machine("m1", { install: [alpha] });
+TS
 compile_repo orepo
 compile_repo frepo
 "$BIN" --repo orepo --machine m1 status >/dev/null
@@ -180,29 +172,25 @@ fi
 # --- the remote tree: a source's item belongs to its source ----------------
 # The live repo has a `tpack` tmux plugin AND a `tpack` package. Each
 # upgrade writes its own file: only the filesystem can say which one ran.
-hcl_root crepo <<'HCL'
-installer "quiet" {
-  probe        = "sh"
-  install      = "echo installed-{pkg} > quiet-{pkg}.txt"
-  check        = "echo {pkg} 1.0"
-  regex        = "([0-9][0-9.]*)"
-  outdated_all = "echo 'tpack 2.0'"
-  upgrade      = "echo swept > the-tool-swept.txt"
-}
+ts_root crepo <<'TS'
+const quiet = installer("quiet", {
+  probe: "sh",
+  install: "echo installed-{pkg} > quiet-{pkg}.txt",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9][0-9.]*)",
+  outdatedAll: "echo 'tpack 2.0'",
+  upgrade: "echo swept > the-tool-swept.txt",
+});
 
-program "tpack" {
-  install_via = [quiet]
-}
+const tpack = program("tpack", { install: [quiet] });
 
-outdated "tmux-plugins" {
-  command = "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'"
-  upgrade = "echo pulled > pulled-{item}.txt"
-}
+outdated("tmux-plugins", {
+  command: "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'",
+  upgrade: "echo pulled > pulled-{item}.txt",
+});
 
-machine "m1" {
-  install = [program.tpack]
-}
-HCL
+machine("m1", { install: [tpack] });
+TS
 compile_repo crepo
 "$BIN" --repo crepo --machine m1 status >/dev/null
 if has_pty; then
@@ -230,25 +218,19 @@ if has_pty; then
 fi
 
 # --- sudo asks in the run panel, and is answered there ---------------------
-hcl_root irepo <<'HCL'
-installer "fake" {
-  probe   = "sh"
-  install = "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'"
-  check   = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
-  regex   = "([0-9][0-9.]*)"
-}
+ts_root irepo <<'TS'
+const fake = installer("fake", {
+  probe: "sh",
+  install: "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'",
+  check: "test -f fake-{pkg}.txt && echo {pkg} 1.0",
+  regex: "([0-9][0-9.]*)",
+});
 
-program "alpha" {
-  install_via = [fake]
-}
-program "beta" {
-  install_via = [fake]
-}
+const alpha = program("alpha", { install: [fake] });
+const beta = program("beta", { install: [fake] });
 
-machine "m1" {
-  install = [program.alpha, program.beta]
-}
-HCL
+machine("m1", { install: [alpha, beta] });
+TS
 compile_repo irepo
 fake_sudo
 "$BIN" --repo irepo --machine m1 status >/dev/null
@@ -271,23 +253,19 @@ if has_pty; then
 fi
 
 # --- sudo called from inside a command, declared ---------------------------
-hcl_root hrepo <<'HCL'
-installer "hidden" {
-  probe      = "sh"
-  install    = "sh inner.sh {pkg}"
-  check      = "test -f fake-{pkg}.txt && echo {pkg} 1.0"
-  regex      = "([0-9][0-9.]*)"
-  needs_sudo = true
-}
+ts_root hrepo <<'TS'
+const hidden = installer("hidden", {
+  probe: "sh",
+  install: "sh inner.sh {pkg}",
+  check: "test -f fake-{pkg}.txt && echo {pkg} 1.0",
+  regex: "([0-9][0-9.]*)",
+  needsSudo: true,
+});
 
-program "gamma" {
-  install_via = [hidden]
-}
+const gamma = program("gamma", { install: [hidden] });
 
-machine "m1" {
-  install = [program.gamma]
-}
-HCL
+machine("m1", { install: [gamma] });
+TS
 cat > hrepo/inner.sh <<'SH'
 sudo sh -c "echo installed-$1 > fake-$1.txt"
 SH
@@ -308,24 +286,20 @@ fi
 # --- anything else that asks, like `omarchy update`'s "Reboot?" ------------
 # Printed through an escape (\167 = w) so waiting for it can't match text
 # the screen drew.
-hcl_root arepo <<'HCL'
-installer "asks" {
-  probe        = "sh"
-  install      = "true"
-  check        = "echo {pkg} 1.0"
-  regex        = "([0-9][0-9.]*)"
-  outdated_all = "echo 'alpha 2.0'"
-  upgrade      = "printf 'Ans\\167er me: '; read answer && echo \"answered-$answer\" > asked.txt"
-}
+ts_root arepo <<'TS'
+const asks = installer("asks", {
+  probe: "sh",
+  install: "true",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9][0-9.]*)",
+  outdatedAll: "echo 'alpha 2.0'",
+  upgrade: "printf 'Ans\\167er me: '; read answer && echo \"answered-$answer\" > asked.txt",
+});
 
-program "alpha" {
-  install_via = [asks]
-}
+const alpha = program("alpha", { install: [asks] });
 
-machine "m1" {
-  install = [program.alpha]
-}
-HCL
+machine("m1", { install: [alpha] });
+TS
 compile_repo arepo
 "$BIN" --repo arepo --machine m1 status >/dev/null
 if has_pty; then
@@ -360,24 +334,13 @@ fi
 # --- each sidebar row settles on its own ------------------------------------
 # Programs answer at once; a script's check takes seconds. The programs row
 # must stop spinning with its answer while the scripts row still spins.
-hcl_root prepo <<'HCL'
-program "fast" {
-  custom {
-    command = "true"
-    present = "true"
-  }
-}
+ts_root prepo <<'TS'
+const fast = program("fast", { install: [custom({ command: "true", present: "true" })] });
 
-script "slow" {
-  run   = "true"
-  check = "sleep 4"
-}
+const slow = script("slow", { run: "true", check: "sleep 4" });
 
-machine "m1" {
-  install = [program.fast]
-  run     = [script.slow]
-}
-HCL
+machine("m1", { install: [fast], run: [slow] });
+TS
 compile_repo prepo
 if has_pty; then
     { wait_frame tui-parts 'programs +1/1' && cp tui-parts.screen tui-parts.early
@@ -457,7 +420,7 @@ if has_pty; then
     git -C urepo remote add origin "$PWD/uorigin.git" && git -C urepo push -qu origin HEAD 2>/dev/null
     git clone -q uorigin.git uother
     git -C uother config user.email test@example.com && git -C uother config user.name "Integration Test"
-    repo_attr uother/loadout.hcl 'min_tool_version = "999.0.0"'
+    repo_opt uother/loadout.ts 'minToolVersion: "999.0.0"'
     compile_repo uother
     git -C uother add -A && git -C uother commit -qm floor && git -C uother push -q 2>/dev/null
     "$BIN" --repo urepo --machine m1 status >/dev/null

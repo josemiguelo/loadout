@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Types for the editor only (bun install): loadout runs the manifests without installing anything.",
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

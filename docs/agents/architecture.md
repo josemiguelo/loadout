@@ -4,9 +4,8 @@ One Go module (`github.com/josemiguelo/loadout`, go.mod at the root), one
 binary (`cmd/loadout`), everything else under `internal/`. Releases build
 with CGO off for linux-x64, linux-arm64, macos-arm64 and macos-x64 from one
 runner. The packages depend downwards: model ← assemble ← core and
-hclconf; core ← app ← cli and tui; hclconf ← lsp ← cli: only cli
-(`compile`) and lsp (the language server) import hclconf, and cli and tui
-never import each other (they meet in app).
+tsmanifest; core ← app ← cli and tui; only cli (`compile`) imports
+tsmanifest, and cli and tui never import each other (they meet in app).
 
 ```
 cmd/loadout/main.go  dispatch to cli.Execute; LOADOUT_THEME checked first,
@@ -21,6 +20,8 @@ internal/
                    DependenciesOf/ForMachine (variant × installer resolution),
                    ShellLine (file: + PATH prefix), ExpandFilePrefix, ScriptEntry
     lock.go        Lock, EncodeLock/DecodeLock (format check), SourcesHash
+    draft.go       EncodeDraft/DecodeDraft: a manifest before assembly in the
+                   lock's own shapes, what loadout.ts prints for compile
     codec.go json.go map.go  the lock's JSON field by field, ordered JSON and
                    an insertion-ordered Map: byte-identical to loadout 3's output
     installerlibrary.go  the built-in installers, as Go values
@@ -32,29 +33,22 @@ internal/
                InstallOrder/ScriptOrder (ties by name). AssembleWithoutFiles is
                TEST-ONLY. draftover.go: a child's draft over its parent's
                (contract 18)
-  hclconf/     the HCL front end and `loadout compile`
-    decode.go      files -> Decoded (draft + spares + transitional + the
-                   language's errors), in two passes; declarations, variants,
-                   machines and profiles
-    refs.go        reference values (kind, name, variant, args) and the
-                   functions every expression may call
-    body.go        what each block may hold; DiagnosticsError (one line each)
-    data.go        the data schema (flag/text/number/whole/list) and machine data
+  tsmanifest/  `loadout compile`: the TypeScript manifests
+    sdk/loadout.sdk.ts  the SDK (go:embed as SDK), written into every repo
+                   as loadout.sdk.ts: the manifest language, its references,
+                   the language's own rules (fail(): file, line, column), the
+                   draft repo() prints, include(), the import-graph sources
+    sdk/loadout.script.ts  the script SDK (go:embed as ScriptSDK), written
+                   beside it as loadout.script.ts, imported as "loadout/script":
+                   main/run (a managed script's check/install), oracle and
+                   programOracle (outdated rows, Row/formatRow, update), env
+                   (LOADOUT_*), clonesBehind/fastForward, Bun Shell helpers
+    compile.go     Compile: refuses an HCL or Kotlin repo by name, picks bun
+                   (bunFor), writes both SDKs, runs loadout.ts (and a child's
+                   parent as a parent), decodeDraft, DraftOver, assemble,
+                   write the lock (and, with configs, the chezmoi data and
+                   partial) only when changed; doneScripts, writeIfChanged
     unused.go      UnusedWarnings, TransitionalWarnings
-    compile.go     Compile: loadout.hcl's repo block, globs, the parent, decode,
-                   assemble, write the lock (and, with configs, the chezmoi
-                   data and partial) only when changed; refuses a Kotlin repo.
-                   readRepoFiles/repoFiles.assemble are its reading and
-                   assembling, shared with Check
-    analyze.go     for the language server: Analyze (every pass, never
-                   stopping at a mistake; every declaration with where it
-                   is, its variants or params, every diagnostic, the data
-                   schema) and Check (what compile would refuse, writing
-                   nothing, an editor's unsaved buffers over the disk)
-    schema.go      ShapeOf: what each block may hold, built from the same
-                   specs the decoder checks, plus what each attribute
-                   takes; schema_test holds every spec attribute to a value
-    hcltest/       ManifestOf for tests (TEST-ONLY)
   core/
     loader/        LoadRepo — reads the lock: missing/newer/stale/floor
                    refusals, file: paths re-checked; ReadLayout reads it
@@ -62,11 +56,13 @@ internal/
     state/         StateStore — <state>/<machine>.json; pretty JSON, stable
                    order, WriteIfChanged; LastWarnings
     coremodel/     what the binary observes: MachineState and its parts, SystemInfo
-    bun/           Ensure — the repo's pinned bun (`repo { bun = … }`): downloaded
+    bun/           Ensure — the repo's pinned bun (`repo({ bun })`): downloaded
                    by curl through the runner, checked against SHASUMS256.txt,
                    unpacked into $XDG_DATA_HOME/loadout/bun/<version>/ (the
                    -baseline build on x64 without AVX2); Asset, SumOf, Unpack,
-                   Prune. LOADOUT_BUN_DOWNLOAD_BASE serves tests (file://)
+                   Prune. LOADOUT_BUN_DOWNLOAD_BASE serves tests (file://);
+                   LOADOUT_BUN names a binary used instead of any download;
+                   DefaultVersion is what compile runs a repo without a pin with
     exec/          ProcessRunner interface + ShellRunner; ALL process use goes
                    through the interface (tests use fakeexec). Capture
                    (blocking), Inherit (sudo/progress), each taking a
@@ -105,23 +101,13 @@ internal/
                (what a confirmed action runs)
   cli/         cobra commands, one file per subcommand (status/explain/
                installers/setup-new-machine/install/upgrade/self-upgrade/
-               outdated/run/apply/diff/sync/init/compile, and the hidden
-               lsp); root.go (bare
+               outdated/run/apply/diff/sync/init/compile); root.go (bare
                invocation without a TTY prints help), home.go (starts the
                screen, prints what it ended with), style.go, table.go, spinner.go, help.go, errors.go
                (usage errors as loadout 3 printed them), converge.go;
                scaffold/ is `init`'s templates (go:embed). `self-upgrade`
                shells to version.InstallCommand and needs no repo, so it works
                under a min-tool-version refusal (which points at it)
-  lsp/         `loadout lsp`, the manifests' language server over stdio:
-               rpc.go (JSON-RPC framing), server.go (lifecycle, dispatch),
-               workspace.go (the repo root, open buffers, debounced Check,
-               diagnostics published per file), scan.go (where the cursor
-               is: block path, key or value, the attribute, object keys),
-               complete.go (what goes there: block types, attributes,
-               nested blocks, references, flags, data keys, params,
-               labels, variants), position.go (HCL <-> LSP positions,
-               UTF-8 or UTF-16)
   theme/       Tokyo Night / Day palettes, DetectDarkTerminal, ForcedDark
   tui/         the home screen; registers itself as app.NewScreen.
                homemodel.go (ALL state + the domain-facing builders, no
@@ -137,8 +123,7 @@ internal/
 ## Dependencies and encoding
 
 - **Go, per go.mod's `go` line**; deps added with `go get`, then `go mod
-  tidy`. cobra/pflag for the CLI, hashicorp/hcl v2 + go-cty for manifests,
-  x/sys + x/term for the terminal, Bubble Tea v2 / Lip Gloss v2 / Bubbles
+  tidy`. cobra/pflag for the CLI, x/sys + x/term for the terminal, Bubble Tea v2 / Lip Gloss v2 / Bubbles
   v2 (`charm.land/…`) for the home screen. Releases build with
   `CGO_ENABLED=0`: static binaries, every target cross-compiled from one
   Linux runner.

@@ -4,29 +4,26 @@ Explicit user decisions; don't "improve" them away.
 
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
    The only source of variant choice is the machine and the profiles it
-   extends (`via "dnf" { install = [program.curl] }` names a program's
-   variant key).
+   extends (`via(dnf, [curl])` in its `install` names a program's variant
+   key).
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't install is not in its loadout: converge skips it, status
    doesn't observe it, diff shows "-".
    - **Declarations** (a `machines/` folder, a file per machine and per
-     profile, or one `machines.loadout.hcl`): `profile "name" { … }` and
-     `machine "hostname" { … }`, each with two verbs.
-     `via "installer" { install = [programs…] }` maps each program to that
-     installer's variant (`install` is the block's only attribute, so a
-     line inside always installs through the block's installer; a body
-     holds any number of `via` blocks); `install = [programs…]` outside a
-     block takes programs with exactly ONE variant (more is a compile error
-     naming them: no choosing for you) and named variants
-     (`variant(program.setup-brew, "linux")`), mixed. `run = [scripts…]`
-     with `args(script.x, "a")` opts scripts in; `variant(script.x,
-     "arch")` picks a script variant. A program installed twice or a
-     script run twice in one machine is an error. A machine is named by its
+     profile, or one `machines.loadout.ts`): `profile("name", { … })` and
+     `machine("hostname", { … })`, each with two verbs. `install: [...]`
+     takes programs with exactly ONE variant (more is a compile error
+     naming them: no choosing for you), named variants (`variant(setupBrew,
+     "linux")`) and `via(installer, [programs…])`, which maps each program
+     to that installer's variant, mixed. `run: [...]` with `args(x, "a")`
+     opts scripts in; `variant(x, "arch")` picks a script variant. Lists of
+     references are flattened, so a shared list sits in either. A program
+     installed twice or a script run twice in one machine is an error. A machine is named by its
      hostname, so the lock (and chezmoi templates reading it) find it; a
      host whose hostname can't or shouldn't be the name (proot's
      `localhost`, a work laptop's asset tag) sets `LOADOUT_MACHINE`, which
      both `--machine` and the partial read first.
-   - **Profiles**: `extends = [profile.x]` names profiles only (a machine
+   - **Profiles**: `extends: [x]` names profiles only (a machine
      is never extended); profiles may extend profiles (cycles are errors).
      A machine's profiles are combined first: two of one `extends` list
      setting a program's variant, a script's arguments or variant, or a data
@@ -36,13 +33,15 @@ Explicit user decisions; don't "improve" them away.
      Profiles are flattened, validated, then dropped: never observed,
      diffed or converged. No subtraction: a profile's entry is a promise
      every machine extending it keeps.
-   - **`data`** is a typed schema: the `data { … }` block declares every key
-     with its default (`work = flag(false)`, a nested `kitty { opacity =
-     number(0.85) }` for a table; `flag/text/number/whole/list` exist only
-     there). A machine's or profile's `data = { work = true }` is checked
-     against it (an unknown key, a wrong type or a table given a non-object
-     is an error naming the machine and key) and recorded as written, which
-     keeps the profile-conflict error. Every machine ends up with all
+   - **`data`** is a typed schema: `repo({ data })` declares every key with
+     its default (`work: flag(false)`, a nested `kitty: { opacity:
+     number(0.85) }` for a table; `flag/text/number/whole/list` mark the
+     kinds). Its type (`typeof schema`) checks every `machine<Data>` and
+     `profile<Data>` in the editor, and assembly checks a machine's or
+     profile's `data: { work: true }` against the defaults again (an
+     unknown key, a wrong type or a table given a non-object is an error
+     naming the machine and key), recorded as written, which keeps the
+     profile-conflict error. Every machine ends up with all
      declared keys (model/machinedata.go; bare `explain` shows them); the
      lock holds each machine's merged table.
 
@@ -50,10 +49,10 @@ Explicit user decisions; don't "improve" them away.
    executing anything if the machine isn't declared, an EXPLICITLY
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
-   `script` fallback. A variant with `provides "flatpak" {}` vouches for
+   `script` fallback. A variant with `provides: { flatpak: {} }` vouches for
    that binary to whatever installs AFTER it in the same plan (flatpak
    before every flatpak on Omarchy); one ordered after its dependents is
-   refused, naming the fix. `provides "brew" { at = "/opt/homebrew/bin" }`
+   refused, naming the fix. `provides: { brew: { at: "/opt/homebrew/bin" } }`
    also says where it lands when a fresh shell doesn't have it on PATH:
    the probe counts as present there, and `ForMachine` records the mapped
    variants' folders in `Manifest.ToolPaths`, which `ResolveInstall`
@@ -62,36 +61,41 @@ Explicit user decisions; don't "improve" them away.
    probed through that binary. On the variant, not the program: where a
    tool lands depends on how it was installed. Declared, never inferred
    from a program's name or searched for.
-3. **Intent and observation never mix.** The HCL manifests are authored;
+3. **Intent and observation never mix.** The TypeScript manifests are authored;
    `loadout.lock.json` is generated from them and committed (`loadout
    compile` writes it, and only when its content changed); the
    state directory is generated and disposable. With configs,
    compile also writes `<configs>/.chezmoidata/loadout.json` and the
    `<configs>/.chezmoitemplates/loadout/machine` partial (contract 17),
-   generated and committed like the lock. Nothing hand-edited goes in
-   state, the lock or those two; the tool never writes authored files,
-   except `init` scaffolding.
+   generated and committed like the lock, and so are `loadout.sdk.ts`, the
+   SDK the manifests import, and `loadout.script.ts`, the one TypeScript
+   scripts import (both the compiling binary's own). Nothing
+   hand-edited goes in state, the lock or those; the tool never writes
+   authored files, except `init` scaffolding.
 4. **Scripts: exactly one of `file` (path) or `run` (inline)**, per variant
    when a script has variants. `run` and `check` take a string or a list of
    commands, joined with `&&` (allOf); one holding `||` or `;` is grouped in
    `{ …; }` first, so the join can't change what it means (a single string
    goes through the same rule). Variant commands, installer patterns,
    oracles, `outdated` commands (program and custom source) and all check
-   commands may name a repo script: `run_script("x.sh args…")` (stored with
-   the `file:` prefix; `installed_by = "x.sh"` for a variant's install, and
-   `managed_by`, `updates_managed_by` and a script's `file` imply it), so a
+   commands may name a repo script: `runScript("x.sh args…")` (stored with
+   the `file:` prefix; `installedBy: "x.sh"` for a variant's install, and
+   `managedBy`, `updatesManagedBy` and a script's `file` imply it), so a
    manifest never writes `file:` itself. Every path is relative to the
    directory of the file that declared it (its `origin`; "" = the repo
    root, also for built-in installers): a declaration's origin is its
    file's folder, so moving a file with its scripts needs no edit, and file
    names need not be unique. What must run from the repo root is declared
-   in `loadout.hcl`. Paths are kept as written, and validated at compile
+   in `loadout.ts`. Paths are kept as written, and validated at compile
    AND at every lock load to exist without leaving the repo (`..` inside
    one is fine: a shared helper). Expansion is centralized in
    model.ExpandFilePrefix/ShellLine, applied at the execution sites. Tokens
    after the first space are arguments, so script paths can't contain
    spaces. A file runs like an executable (`model.FileLine`): with the
-   interpreter its `#!` line names (`#!/usr/bin/env bun`), else `sh`. The
+   interpreter its `#!` line names (`#!/usr/bin/env bun`), else `sh`; a
+   script in TypeScript can speak loadout's protocols through
+   `"loadout/script"` (`main`, `run`, `oracle`, `programOracle`, `env`),
+   never required. The
    line is read by the shell when the command runs, never by loadout, and
    the file needn't be executable; what's shown to the user is the script
    and its arguments (`model.ShownLine`), not that launcher. Every script
@@ -99,7 +103,7 @@ Explicit user decisions; don't "improve" them away.
    folders first on PATH (`ScriptStep.Path`, set by `ForMachine`), so a
    script's interpreter is found where its program put it (bun from brew
    on a fresh Mac) before any shell profile adds that folder. A variant's param value
-   given as `file("repos/x.repo")` (`params = { repofile = file(…) }`) is a
+   given as `file("repos/x.repo")` (`params: { repofile: file(…) }`) is a
    path too, relative to the program's directory and validated the same
    way; it is substituted as `$LOADOUT_REPO/<repo path>` because the
    installer pattern it lands in runs in the installer's directory.
@@ -116,7 +120,7 @@ Explicit user decisions; don't "improve" them away.
    In a child repo (contract 18) a parent's declaration runs in the
    parent's checkout with the parent's `LOADOUT_REPO`/`LOADOUT_CONFIGS`,
    and every command sees `LOADOUT_PARENT` (the parent's root).
-   A repo that pins a bun (`repo { bun = "1.3.0" }`, `meta bun`; a child
+   A repo that pins a bun (`repo({ bun: "1.3.0" })`, `meta bun`; a child
    without one inherits its parent's) gets its folder first on PATH for
    every one of them, and in `LOADOUT_BUN_DIR`, which `model.ShellLine`
    puts ahead of the `provides … at` folders (brew's bin may hold a bun of
@@ -137,8 +141,8 @@ Explicit user decisions; don't "improve" them away.
    transitively. A program's dependencies (`Manifest.DependenciesOf`) are
    its own `depends_on`, the mapped variant's (a COPR's dnf-plugins-core
    never lands on a pacman machine), and what the variant's INSTALLER
-   `requires` of everything it installs (`requires "brew" { programs =
-   [program.setup-brew] }`; the required program is exempt from its own
+   `requires` of everything it installs (`requires(brew,
+   [setupBrew])`; the required program is exempt from its own
    installer's rule). Validation and cycle detection count every variant's
    edges. An install whose dependency failed (or was itself skipped) is
    skipped, not tried (`InstallOutcome.SkippedFor`), and counts as a
@@ -174,7 +178,7 @@ Explicit user decisions; don't "improve" them away.
    offered for install. Ceiling: a pipeline check (`tool | grep …`) exits
    with the LAST command's code and hides the tool's absence; write
    `x=$(tool …) && printf '%s\n' "$x" | grep …` so the failure propagates.
-   A **yes/no check** (`present = "…"`, `managed_by` without a `regex`)
+   A **yes/no check** (`present: "…"`, `managedBy` without a `regex`)
    has no regex: exit 0 is installed with no version recorded, so a setup
    step that is a program (setup-dnf, a flatpak remote) needs no fake
    version string.
@@ -189,61 +193,65 @@ Explicit user decisions; don't "improve" them away.
 10. **Product code loads manifests via `loader.LoadRepo`** (the lock,
     checked) and sees it through `Manifest.ForMachine` (its script
     variants picked; `AppContext.LoadManifest` does both).
-    `assemble.AssembleWithoutFiles`, `hcltest.ManifestOf` and
-    `coretest.ManifestOf` are for tests only: they skip the `file:` checks,
+    `assemble.AssembleWithoutFiles` and `coretest.ManifestOf` are for
+    tests only: they skip the `file:` checks,
     and everything else — built-ins, flattening, validation — is the
     production path.
-11. **No templates.** HCL's abstractions are the allowed ones, kept to
-    plain values: `locals` (shared lists: `everyday_cli = [program.bat,
-    program.eza]`) and user functions (`function "ssh_key"`, which saves
-    repeating two `args(…)` entries in every machine). Nothing that
-    generates programs or machines: every block is written out, so a
-    reader finds every program by name in one place.
-12. **Scripts are opt-in per machine**: `run = [script.x, args(script.x,
-    "a")]` in a machine or profile. Each argument is one or more words;
+11. **Declarations are written out, by convention.** Manifests are
+    TypeScript (loadout 5), so the language allows anything; the
+    convention is plain values: consts (shared lists: `everydayCli = [bat,
+    eza]`) and functions that build references or arguments (`sshKey(name)`,
+    which saves repeating two `args(…)` entries in every machine). Nothing
+    that generates programs or machines: every `program()`, `script()` and
+    `machine()` is written out, so a reader finds every one by name in one
+    place. A manifest reads no files, network or clock: compile runs it
+    with nothing of the caller's environment but PATH and HOME, so its
+    output doesn't depend on who compiles it; the rest is the author's
+    discipline, which bun can't enforce.
+12. **Scripts are opt-in per machine**: `run: [x, args(x, "a")]` in a
+    machine or profile. Each argument is one or more words;
     the machine's entries are "name args…", parsed by `ScriptEntry` (args
     re-joined with single spaces because they're pasted into a shell
     command line, where a newline would run the next line as a command).
     Only opted-in scripts converge and are observed; `run` errors on others.
     Args become positional params for the file script AND its check (`set
-    --`, see engine.WithArgs); `managed_by = "x.sh"` checks with `x.sh
+    --`, see engine.WithArgs); `managedBy: "x.sh"` checks with `x.sh
     check "$@"`, so a managing script gets them in both modes. Args on an
     inline script are an error. No implicit script application, no OS or
     bootc detection deciding membership (the old `os` filter is gone: the
-    machine's opt-in decides). A script's modes (`setup_only = true`,
-    `maintain_only = true`, default both) scope EXECUTION only:
+    machine's opt-in decides). A script's modes (`setupOnly: true`,
+    `maintainOnly: true`, default both) scope EXECUTION only:
     setup-new-machine converges setup-mode scripts, the home screen's
     scripts picker lists maintain-mode ones; status observes all opted-in
-    scripts and `run` ignores modes. A script may declare `variant "name" {
-    … }`s (its own file/run, check, run_after; description, modes and
-    needs_sudo shared); a machine running it must pick one, and engines
+    scripts and `run` ignores modes. A script may declare `variants: {
+    name: { … } }` (each its own file/run, check, runAfter; description,
+    modes and needsSudo shared); a machine running it must pick one, and engines
     only see the picked one (`ForMachine`).
 13. **Installers own mechanics; variants refine them.** An installer
-    (`probe`, `install`, `check`, `regex`, `outdated`, `outdated_all`,
-    `upgrade`, `needs_sudo`, `params`; `{pkg}` substituted) defines a
+    (`probe`, `install`, `check`, `regex`, `outdated`, `outdatedAll`,
+    `upgrade`, `needsSudo`, `params`; `{pkg}` substituted) defines a
     mechanism once, repo-unique. Loadout
     ships a library (`internal/model/installerlibrary.go`: dnf, dnf-repo,
     dnf-copr, brew, brew-cask, flatpak, pacman, omarchy, omarchy-aur with
-    oracles; apt install/check only) as Go values, named in manifests as
-    they are (`dnf`, `brew-cask`, or `installer.dnf`), merged UNDER the
-    repo's own at assembly: a repo installer of the same name replaces the
-    built-in outright (and the bare name then refers to it), and
+    oracles; apt install/check only) as Go values, which the SDK exports as
+    references (`dnf`, `brewCask`), merged UNDER the repo's own at
+    assembly: a repo installer of the same name replaces the built-in
+    outright, and
     `Manifest.BuiltinInstallers` records which survived so
-    `explain`/`installers` label `(built-in)` vs `(repo)`. `requires "x" {
-    programs = [...] }` adds to any installer, built-ins included, without
+    `explain`/`installers` label `(built-in)` vs `(repo)`. `requires(x,
+    [programs…])` adds to any installer, built-ins included, without
     redefining it. Knowledge, never detection: nothing probes the machine
     to pick an installer.
-    A program lists its variants as `install_via = [brew, omarchy]` (an
-    installer as it is) and `via "brew" { pkg = "vim" }` blocks (configured
-    where it's named: `via "dnf-copr" { params = { copr = "x/y" } }`, `via
-    "dnf" { managed_by = "x.sh" }`), so a variant never reads like a
-    command being run. `custom "linux" { … }` is the variant with no
-    installer: a command of its own (`custom { … }` is named "custom", for
-    a program with one). Naming an installer twice, across the list and the
-    blocks, is an error, so there is no hidden merge. Variants keep their
-    source order. Every field is optional and defaults from the installer;
-    `pkg` defaults to the program name. An installer may declare `params =
-    ["copr"]`: values a variant supplies (`params = { copr = … }`),
+    A program lists its variants in `install: [...]`: an installer as it
+    is (`brew`), `via(brew, { pkg: "vim" })` for one configured where it's
+    named (`via(dnfCopr, { params: { copr: "x/y" } })`, `via(dnf, {
+    managedBy: "x.sh" })`), so a variant never reads like a command being
+    run, and `custom("linux", { … })`, the variant with no installer: a
+    command of its own (`custom({ … })` is named "custom", for a program
+    with one). Naming an installer twice is an error, so there is no hidden
+    merge. Variants keep their order. Every field is optional and defaults from the installer;
+    `pkg` defaults to the program name. An installer may declare `params:
+    ["copr"]`: values a variant supplies (`params: { copr: … }`),
     substituted like `{pkg}`. All declared, never inferred: a missing param
     or an undeclared one is an error, so an unsubstituted `{placeholder}`
     never reaches a shell.
@@ -251,28 +259,28 @@ Explicit user decisions; don't "improve" them away.
     engine/UI): command → installer install pattern (else error); check →
     variant check → installer check (else program `version`); probe →
     installer probe (else none); outdated → variant override, else
-    installer `outdated_all` (one batch command per installer, per-program
+    installer `outdatedAll` (one batch command per installer, per-program
     regex extracts; binaries that don't know it fall back to per-pkg), else
     installer per-pkg pattern, else no oracle (`outdated` skips and says
     so). These oracles' exit codes are always ignored. A program's
-    `path = [...]` puts directories first on PATH for its commands
+    `path: [...]` puts directories first on PATH for its commands
     (`ShellLine`), so a check never needs `tool || $HOME/.local/bin/tool`.
     Repos may also declare custom `outdated` sources: on the script they're
-    about (an `outdated { }` block inside `script`, named after it unless
-    it says `name`) or alone (`outdated "name" { command = … }`). The usual
-    form is `updates_managed_by = "x.sh"`: `x.sh` lists, `x.sh update
+    about (`outdated: [{ … }]` in `script()`, named after it unless it
+    says `name`) or alone (`outdated("name", { command: … })`). The usual
+    form is `updatesManagedBy: "x.sh"`: `x.sh` lists, `x.sh update
     <item>` updates one row (on a program, `x.sh` prints the newest version
     and `x.sh update` updates it); `command`/`upgrade` is the long form for
     anything else, a read-only source included (`<item> <current>
     <candidate> [note…]` lines; a URL in the note becomes the row's link,
-    opened with `K`; `run_script(…)` allowed, repo-unique). Unlike
+    opened with `K`; `runScript(…)` allowed, repo-unique). Unlike
     installer oracles, a source's exit code is NOT ignored: non-zero
     surfaces as `outdated source [name] failed: ...`, so a crashing oracle
     can't hide updates.
     Installers may declare `upgrade`: the ONE command that moves everything
     the mechanism manages, with no `{pkgs}` placeholder (contract 15).
     Never write cross-variant `||` chains in checks.
-    `needs_sudo = true` (installer, variant, script, `outdated` source)
+    `needsSudo: true` (installer, variant, script, `outdated` source)
     declares a command that needs sudo's password without saying `sudo`
     itself (`omarchy pkg add`, a repo script); a variant's replaces its
     installer's. `setup-new-machine`, `install`, `run` and `upgrade` ask
@@ -296,7 +304,10 @@ Explicit user decisions; don't "improve" them away.
     because the lock format didn't change) and 4.0.0 (the Kotlin DSL
     removed: manifests are HCL, compiled by the binary itself, no JDK or
     Gradle; a Kotlin repo is refused by name; the lock format is
-    unchanged, so a 3.x lock still reads). A removal is decided once,
+    unchanged, so a 3.x lock still reads) and 5.0.0 (HCL removed:
+    manifests are TypeScript, run by the bun loadout brings; `loadout lsp`
+    removed, the TypeScript language server replaces it; an HCL repo is
+    refused by name; the lock format is unchanged). A removal is decided once,
     loudly, in the release notes, never silently. The manifest language
     and the binary are one version: compile is the binary's own, so a repo
     compiles against exactly the installed binary. The lock carries
@@ -304,7 +315,7 @@ Explicit user decisions; don't "improve" them away.
     newer one is refused by name before anything else is read) and the
     `toolVersion` that wrote it: a binary refuses a lock from a newer MINOR
     (patch releases never change what a lock means), naming
-    `self-upgrade`. `meta minToolVersion` (`repo { min_tool_version = … }`)
+    `self-upgrade`. `meta minToolVersion` (`repo({ minToolVersion: … })`)
     is a floor the repo declares on top.
     New lock fields are additive with defaults. State files with
     `schemaVersion > coremodel.SchemaVersion` are skipped with a warning
@@ -323,7 +334,7 @@ Explicit user decisions; don't "improve" them away.
     installer this machine doesn't map, so a repo mapping nothing to brew
     can't sweep it.
     Custom `outdated` sources upgrade per item: their update command
-    (`x.sh update <item>` under `updates_managed_by`, or `upgrade = "…
+    (`x.sh update <item>` under `updatesManagedBy`, or `upgrade: "…
     {item}"`) runs once per row (`upgrade --item <source>/<name>`),
     since items (a pin, a clone) are independent and one failure shouldn't
     stop the rest; a source without it is read-only (`[–]`). Afterwards
@@ -345,22 +356,26 @@ Explicit user decisions; don't "improve" them away.
     itself: it is the command that pulls, so it's the one that meets a
     repo moved ahead of the binary.
 16. **The repo's shape is declared, never assumed.** A config repo is
-    `loadout.hcl` at its root, always compiled, plus the files its `repo {
-    sources = [...] }` globs match, and only those (`Glob`: `*` one
-    segment, `?` one char, `**` any depth; wildcards never match a leading
-    dot, so `.tmux.loadout.hcl` compiles only when a glob spells the dot;
-    `.git` is never entered). Nothing else: no build files, no build
-    folder, nothing outside the repo. `repo { state = …, configs = … }`
-    names the state and chezmoi dirs; `state` is required, with no
-    default. The lock records the globs (`loadout.hcl` first) and a sha256
-    of the files they match (path + content); a binary that finds them
-    changed refuses with "run: loadout compile", so a lock never silently
-    lags its sources. A repo with `loadout.kt` or `build.gradle.kts` and no
-    `loadout.hcl` is a loadout 3 repo: compile refuses it by name. The suite runs with its own
+    `loadout.ts` at its root, run by compile with bun (`$LOADOUT_BUN`, else
+    the lock's `bun` pin, else the binary's `bun.DefaultVersion`), plus
+    what it imports and `include()`s (`include("loadouts/**/*.loadout.ts")`:
+    Bun.Glob, dot files included, path order), and only those; it ends
+    with `repo({ … })`, which prints the draft. Nothing else: no build
+    files, no build folder, no npm. `repo({ state, configs })` names the
+    state and chezmoi dirs; `state` is required, with no default.
+    Manifests import the SDK as `"loadout"` (tsconfig `paths` to
+    `loadout.sdk.ts`, which compile writes) and each other by relative
+    path; a declaration's origin is the file that called it. The lock
+    records the sources (every file the entry and its includes reach
+    through static imports, helpers included) and a sha256 of them (path +
+    content); a binary that finds them changed refuses with "run: loadout
+    compile", so a lock never silently lags its sources. A repo with
+    `loadout.hcl` (loadout 4), `loadout.kt` or `build.gradle.kts` (3) and
+    no `loadout.ts` is refused by name. The suite runs with its own
     XDG_CACHE_HOME (seeded with a release, so `status` doesn't ask
     GitHub), never the developer's.
-17. **Configs are chezmoi's, observed like everything else.** `repo {
-    configs = … }` names chezmoi's source directory inside the repo; unset,
+17. **Configs are chezmoi's, observed like everything else.** `repo({
+    configs })` names chezmoi's source directory inside the repo; unset,
     there is no configs concept and chezmoi is never called. Every chezmoi
     call is `chezmoi --source <repo>/<configs> --no-pager …`
     (`ConfigEngine`), so a `--repo` worktree is observed and applied from
@@ -418,7 +433,7 @@ Explicit user decisions; don't "improve" them away.
       from the repo's own templates. Every load re-renders both from the
       lock and refuses a missing or different file ("run: loadout
       compile"), so dotfiles never render from data the manifests don't
-      say. `init --configs` scaffolds such a repo (`configs =
+      say. `init --configs` scaffolds such a repo (`configs:
       "loadouts"`, a `.chezmoiroot`, `loadouts/`), every manifest in
       `loadouts/`, laid out where files land: a tool's manifest sits at its
       destination (beside its dotfiles; with none, a dot-file, or a
@@ -427,33 +442,36 @@ Explicit user decisions; don't "improve" them away.
       `$HOME`), and what lands outside `$HOME` and belongs to no tool
       (system packages, hardware) is a folder per concern in `.etc/`
       (`.etc/dnf/`).
-      No `system/` beside it: one folder holds the whole loadout. `**`
-      never enters a dot folder, so the scaffold's globs spell it
-      (`loadouts/**/.*/.*.loadout.hcl`) beside
-      `loadouts/**/.*.loadout.hcl`, and `.etc/`'s folders get
-      `loadouts/.etc/*/.*.loadout.hcl`. Plain `init` keeps `programs/` and
-      `maintenance/`.
+      No `system/` beside it: one folder holds the whole loadout, and
+      `include("loadouts/**/*.loadout.ts")` finds a manifest in any dot
+      folder. Plain `init` keeps `programs/` and `maintenance/`. Every
+      scaffold has a `tsconfig.json` (the `"loadout"` path), the SDK, and a
+      `package.json` whose `@types/bun` only the editor needs.
 
 18. **A child repo inherits a parent; nothing flows back.** A private repo
-    names a public one in its `loadout.hcl`, `repo { parent { name = …,
-    path = … } }` (`~/…`, absolute, or relative to the child), and its
-    manifests use the parent's installers, programs, scripts, outdated
-    sources, profiles and data schema by name (`program.x`, checked at
-    compile like its own). One level, one parent; any number of children,
+    names a public one in its `loadout.ts`, `repo({ parent: { name, path }
+    })` (`~/…`, absolute, or relative to the child), and its manifests
+    import the parent's installers, programs, scripts, profiles and data
+    schema from the parent's checkout (tsconfig's `"parent/*"` alias, which
+    `init --parent` writes), typed like its own. One level, one parent; any number of children,
     none of which the parent knows.
-    - **Compile** (hclconf/compile.go): the parent's own lock names its
-      globs; compile refuses a parent that has no lock, whose lock is stale
-      (its manifests' hash differs: an unknown file set), that is itself a
-      child, or whose manifests are Kotlin. It decodes the parent's files
-      as a parent (every origin `parent:`), then the child's against the
-      parent's namespace, and merges them (`assemble.DraftOver`): the
+    - **Compile** (tsmanifest/compile.go): compile refuses a parent that
+      has no lock, whose lock is stale (its sources' hash differs), that is
+      itself a child, or whose manifests aren't TypeScript. It runs the
+      parent's loadout.ts as a parent (`LOADOUT_AS_PARENT`: every origin
+      `parent:`) and the child's, whose SDK records only declarations in
+      the child's own files (what it imports from the parent are
+      references; the SDK's state is shared on `globalThis`, so the
+      parent's copy of the SDK and the child's see one set of variants),
+      and merges them (`assemble.DraftOver`): the
       parent's machines, meta and layout stay out; a name both declare, a
       machine in both and a child data schema are errors; the floor is the
-      higher `min_tool_version`. A parent's mistakes are reported prefixed
+      higher `minToolVersion`, and the bun is the child's, else the
+      parent's. A parent's mistakes are reported prefixed
       `parent <name>: `. Unused and transitional warnings are the child's
       own declarations' only.
     - **Lock**: `layout.parent` (name, path as written, state, configs,
-      globs, hash of the parent's manifests); a parent declaration's origin
+      sources, hash of the parent's manifests); a parent declaration's origin
       is `parent:<folder>` (`Origin`), its `file` values `$LOADOUT_PARENT/…`
       (a built-in installer that takes them runs in the child). A repo
       without a parent writes exactly what it did. A parent edit the child

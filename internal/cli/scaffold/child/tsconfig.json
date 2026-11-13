@@ -1,0 +1,20 @@
+{
+  // "loadout" and "loadout/script" are the SDKs loadout compile writes
+  // (loadout.sdk.ts, loadout.script.ts); "parent/…" is {{.ParentName}}'s checkout,
+  // whose modules this repo imports what it uses from. bun resolves these when
+  // it runs the manifests and scripts, and so does the editor, for types.
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["bun"],
+    "paths": { "loadout": ["./loadout.sdk.ts"], "loadout/script": ["./loadout.script.ts"], "parent/*": ["{{.ParentImport}}/*"] }
+  },
+  "include": ["**/*.ts", "**/.*.ts", "**/.*/**/*.ts", "**/.*/**/.*.ts"]
+}

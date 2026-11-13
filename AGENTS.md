@@ -1,13 +1,13 @@
 # AGENTS.md — loadout
 
-`loadout` is one static Go binary that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in HCL manifests; each machine picks its variants and scripts. `loadout compile` turns the manifests into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE Bubble Tea screen, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic. It was once `post-installer`: never reintroduce that name in code.
+`loadout` is one static Go binary that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, typed by the SDK loadout writes as `loadout.sdk.ts`); each machine picks its variants and scripts. `loadout compile` runs them with the bun loadout brings and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE Bubble Tea screen, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic. It was once `post-installer`: never reintroduce that name in code.
 
 ## Build, run, test
 
 ```sh
 go build -o build/loadout ./cmd/loadout              # the binary
 go vet ./...
-go test ./...                                        # unit tests (one package: ./internal/hclconf/...)
+go test ./...                                        # unit tests (one package: ./internal/tsmanifest/...)
 ./integration/run-tests.sh [path-to-binary] [pattern] # black-box suite; builds nothing, default build/loadout
 ```
 
@@ -27,19 +27,19 @@ Explicit user decisions, numbered (code, the wiki and `.dotfiles` cite them as "
 8. State files are this machine's only and change only when their content does.
 9. Errors are one `error: ` line; every refusal implements `model.Refusal`.
 10. Product code loads manifests only through `loader.LoadRepo` and `ForMachine`.
-11. No templates: only `locals` and user functions over plain values.
+11. Declarations are written out: consts and helper functions over plain values, by convention.
 12. Scripts are opt-in per machine.
 13. Installers own mechanics; variants refine them. Declared, never inferred.
 14. Versioning: deliberate breaks only, announced in release notes; outputs stay additive.
 15. Converge installs what's missing; `upgrade` moves a whole mechanism.
-16. The repo's shape is declared by `loadout.hcl`'s globs, never assumed.
+16. The repo's shape is declared by `loadout.ts` and what it includes, never assumed.
 17. Configs are chezmoi's, observed like everything else.
 18. A child repo inherits a parent; nothing flows back.
 
 ## More, when the task needs it
 
 - Package layout and dependency direction, byte-identical outputs: `docs/agents/architecture.md`.
-- The HCL front end, compile's warnings, the language server, HCL gotchas and house style: `docs/agents/hcl.md`.
+- The TypeScript manifests: the SDK, compile, its warnings, gotchas and house style: `docs/agents/typescript.md`.
 - CLI presentation (theme, terminal queries, boxed tables, spinner, the converge pipeline): `docs/agents/cli-output.md`.
 - The home screen, and driving it without a human: `docs/agents/home-screen.md`.
 - Unit, integration and PTY test conventions: `docs/agents/testing.md`.
@@ -53,7 +53,7 @@ Update this knowledge in the same change that makes it true. Add an entry only w
 ## Working agreements
 
 - **Everything works on Linux AND macOS** (the user runs both), the Go and the shell, here and in config repos. macOS ships BSD tools: no `\|` in a BRE (`sed -nE` with `|`); `cat -A`, bare `sed -i`, `timeout` and GNU `readlink -f` are absent or differ; `script` takes its arguments the other way round. BSD failures tend to be silent. Test here and reason about the other platform before claiming done.
-- **A change to the manifest language is a change to the language server too**, in the same commit: every new or changed attribute, block or value kind goes in `hclconf/schema.go`'s `shapeSpecs` (completion; `schema_test` and `lsp/complete_test` pin the lists), and every new compile error names what it's about as `<kind> '<name>'`, the step to fix first, so the editor marks that declaration instead of line 1 (`lsp/workspace.go`'s `placeError`; errors from the decoder carry their own position). Add an `internal/lsp` test that shows it in place. Details in `docs/agents/hcl.md`.
+- **The manifest language is the SDK** (`internal/tsmanifest/sdk/loadout.sdk.ts`): a new or changed setting is a typed field there, documented in its doc comment (that's the user's completion and hover), desugared into the draft exactly as the lock reads it, and caught where it's declared when it's a mistake (`fail()`: one line, the file, line and column). Test it end to end in the integration suite (a TS fixture, `compile_repo`). Details in `docs/agents/typescript.md`.
 - **Close your tmux test windows**: a real-terminal check is `tmux new-window -d -n ldtest` + `send-keys` + `capture-pane`, then `tmux kill-window -t ldtest`.
 - After any phase or feature, end with a **"Try it"** section: exact commands, binary path, expected output.
 - **Docs split**: README is the front door (concept, command table, quickstart, links); the GitHub wiki holds the guides, cloned at `../loadout.wiki`, a separate repo with its own commits. A change isn't done until the wiki, README and these files have been re-read against it: grep them for the screen text, keys and output the change touches. The wiki links into josemiguelo/.dotfiles, so renames there can break it.

@@ -9,6 +9,7 @@ Runners differ from a desktop: Ubuntu's `/bin/sh` is dash ("not found", not
 bash's "command not found"), and `TERM` is unset (Linux) or unusable
 (macOS), so `pty_run` sets its own.
 Reproduce the Linux job locally in an `ubuntu:24.04` container as a non-root user.
+The integration suite compiles TypeScript repos: `run-tests.sh` uses `bun` from PATH as `LOADOUT_BUN` when there is one, else loadout downloads its `bun.DefaultVersion` on the first compile (network on the runners).
 `release.yml` on `v*` tags: one ubuntu runner cross-compiles each target
 (`CGO_ENABLED=0`, `-trimpath -ldflags='-s -w'`) and tars the binary alone
 → `loadout-<tag>-{linux-x64,linux-arm64,macos-arm64,macos-x64}.tar.gz`

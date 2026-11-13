@@ -35,6 +35,14 @@ const DownloadBaseVar = "LOADOUT_BUN_DOWNLOAD_BASE"
 
 const sumsFile = "SHASUMS256.txt"
 
+// BinVar names a bun binary to use instead of any download (a CI runner's,
+// the developer's): compile and every manifest command take it as it is.
+const BinVar = "LOADOUT_BUN"
+
+// DefaultVersion is the bun compile runs manifests with in a repo whose lock
+// pins none yet (a first compile): the one this loadout was released with.
+const DefaultVersion = "1.4.3"
+
 // Home is where loadout keeps its buns: $XDG_DATA_HOME/loadout/bun, else
 // ~/.local/share/loadout/bun.
 func Home() (string, error) {
@@ -78,6 +86,12 @@ func Asset(goos, goarch string, avx2 bool) (string, error) {
 // unpacked the first time; afterwards a stat. Once it's in place, the other
 // versions there go: a repo runs one bun.
 func Ensure(runner exec.ProcessRunner, version string) (string, error) {
+	if bin, ok := platform.EnvVar(BinVar); ok && bin != "" {
+		if !isExecutable(bin) {
+			return "", errors.New(BinVar + "=" + bin + " isn't an executable bun")
+		}
+		return filepath.Dir(bin), nil
+	}
 	home, err := Home()
 	if err != nil {
 		return "", err

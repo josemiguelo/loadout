@@ -8,25 +8,25 @@ basic_repo repo
 ok "diff exits 0 when machines agree"
 
 # A program in a file of its own, installed on both machines.
-hcl_file repo/programs/missing.loadout.hcl <<'HCL'
-program "definitely-not-installed-xyz" {
-  version = "definitely-not-installed-xyz --version"
-  regex   = "([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
+ts_file repo/programs/missing.loadout.ts <<'TS'
+import { git, marker } from "../root.loadout.ts";
 
-machine "m1" {
-  install = [variant(program.git, "manual"), program.definitely-not-installed-xyz]
-  run     = [script.marker]
-}
+const missing = program("definitely-not-installed-xyz", {
+  version: "definitely-not-installed-xyz --version",
+  regex: "([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
 
-machine "m2" {
-  install = [variant(program.git, "manual"), program.definitely-not-installed-xyz]
-}
-HCL
-: > repo/machines/machines.loadout.hcl
+machine("m1", {
+  install: [variant(git, "manual"), missing],
+  run: [marker],
+});
+
+machine("m2", {
+  install: [variant(git, "manual"), missing],
+});
+TS
+: > repo/machines/machines.loadout.ts
 compile_repo repo
 "$BIN" --repo repo --machine m1 status >/dev/null
 "$BIN" --repo repo --machine m2 status >/dev/null
@@ -64,9 +64,9 @@ ok "sync ends naming what this machine still lacks"
 # Offline: a fake curl answers the release check and the install script.
 # The install replaces a copy of the binary with a stub that says how it
 # was run, which is how the second sync is seen.
-grep -q 'min_tool_version' repo/loadout.hcl && fail "fixture already declares a floor"
-repo_attr repo/loadout.hcl 'min_tool_version = "999.0.0"'
-grep -q 'min_tool_version = "999.0.0"' repo/loadout.hcl || fail "fixture floor not set"
+grep -q 'minToolVersion' repo/loadout.ts && fail "fixture already declares a floor"
+repo_opt repo/loadout.ts 'minToolVersion: "999.0.0"'
+grep -q 'minToolVersion: "999.0.0"' repo/loadout.ts || fail "fixture floor not set"
 compile_repo repo
 git -C repo add -A && git -C repo commit -qm "floor" && git -C repo push -q 2>/dev/null
 mkdir -p self fakecurl

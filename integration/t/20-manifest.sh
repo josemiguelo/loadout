@@ -3,68 +3,55 @@
 # binary reading the lock) refuses.
 
 # --- installer params ----------------------------------------------------
-hcl_repo paramrepo
-hcl_file paramrepo/programs/tool.loadout.hcl <<'HCL'
-installer "faux" {
-  params  = ["flavor"]
-  install = "echo installing {pkg} from {flavor}"
-  check   = "echo {pkg} 1.0"
-  regex   = "([0-9.]+)"
-}
+ts_repo paramrepo
+ts_file paramrepo/programs/tool.loadout.ts <<'TS'
+const faux = installer("faux", {
+  params: ["flavor"],
+  install: "echo installing {pkg} from {flavor}",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9.]+)",
+});
 
-program "tool" {
-  via "faux" {
-    params = { flavor = "vanilla" }
-  }
-}
+const tool = program("tool", {
+  install: [via(faux, { params: { flavor: "vanilla" } })],
+});
 
-machine "m1" {
-  install = [program.tool]
-}
-HCL
+machine("m1", { install: [tool] });
+TS
 compile_repo paramrepo
 OUT=$("$BIN" --repo paramrepo --machine m1 explain tool)
 echo "$OUT" | grep -q "echo installing tool from vanilla" || fail "installer params substitute"
-hcl_file paramrepo/programs/tool.loadout.hcl <<'HCL'
-installer "faux" {
-  params  = ["flavor"]
-  install = "echo {flavor}"
-}
+ts_file paramrepo/programs/tool.loadout.ts <<'TS'
+const faux = installer("faux", { params: ["flavor"], install: "echo {flavor}" });
 
-program "tool" {
-  install_via = [faux]
-}
+const tool = program("tool", { install: [faux] });
 
-machine "m1" {
-  install = [program.tool]
-}
-HCL
+machine("m1", { install: [tool] });
+TS
 OUT=$("$BIN" --repo paramrepo compile 2>&1) && fail "a missing param must fail the compile"
 echo "$OUT" | grep -q "needs a value for 'flavor'" || fail "the missing param is named: $OUT"
 ok "installers take declared params, and a missing one is a compile error"
 
-# A file: param is a path next to the program's own file, wherever the
-# installer's command runs (here: the repo root, where loadout.hcl
+# A file() param is a path next to the program's own file, wherever the
+# installer's command runs (here: the repo root, where root.loadout.ts
 # declares it).
-hcl_root fparam <<'HCL'
-installer "copyin" {
-  params  = ["src"]
-  install = "cp {src} installed-{pkg}.txt"
-  check   = "cat installed-{pkg}.txt"
-  regex   = "([0-9.]+)"
-}
-HCL
-hcl_file fparam/programs/tool/tool.loadout.hcl <<'HCL'
-program "tool" {
-  via "copyin" {
-    params = { src = file("payload.txt") }
-  }
-}
+ts_root fparam <<'TS'
+export const copyin = installer("copyin", {
+  params: ["src"],
+  install: "cp {src} installed-{pkg}.txt",
+  check: "cat installed-{pkg}.txt",
+  regex: "([0-9.]+)",
+});
+TS
+ts_file fparam/programs/tool/tool.loadout.ts <<'TS'
+import { copyin } from "../../root.loadout.ts";
 
-machine "m1" {
-  install = [program.tool]
-}
-HCL
+const tool = program("tool", {
+  install: [via(copyin, { params: { src: file("payload.txt") } })],
+});
+
+machine("m1", { install: [tool] });
+TS
 printf 'tool 4.2\n' > fparam/programs/tool/payload.txt
 compile_repo fparam
 "$BIN" --repo fparam --machine m1 install tool --yes >/dev/null 2>&1 || fail "an install with a file: param runs"
@@ -76,38 +63,36 @@ ok "a file: param resolves next to its program and is checked when the lock is r
 
 # --- programs in several files, machines in another --------------------
 basic_repo repo
-hcl_file repo/programs/split.loadout.hcl <<'HCL'
-program "splitprog" {
-  version = "git --version"
-  regex   = "git version ([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
+ts_file repo/programs/split.loadout.ts <<'TS'
+import { git } from "../root.loadout.ts";
 
-machine "m3" {
-  install = [variant(program.git, "manual"), program.splitprog]
-}
-HCL
+const splitprog = program("splitprog", {
+  version: "git --version",
+  regex: "git version ([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
+
+machine("m3", { install: [variant(git, "manual"), splitprog] });
+TS
 compile_repo repo
 "$BIN" --repo repo --machine m3 status >/dev/null || fail "status with programs in another file"
 grep -q '"splitprog"' repo/machines/state/m3.json || fail "the other file's program is checked"
 "$BIN" --repo repo --machine m3 setup-new-machine --dry-run >/dev/null || fail "its machine plans"
-rm repo/programs/split.loadout.hcl repo/machines/state/m3.json
+rm repo/programs/split.loadout.ts repo/machines/state/m3.json
 compile_repo repo
-ok "every file the sources globs match compiles into one manifest"
+ok "every manifest loadout.ts includes compiles into one manifest"
 
 # --- profiles ------------------------------------------------------------
-hcl_file repo/programs/profiles.loadout.hcl <<'HCL'
-profile "testbase" {
-  install = [variant(program.git, "manual")]
-  run     = [script.marker]
-}
+ts_file repo/programs/profiles.loadout.ts <<'TS'
+import { git, marker } from "../root.loadout.ts";
 
-machine "m9" {
-  extends = [profile.testbase]
-}
-HCL
+const testbase = profile("testbase", {
+  install: [variant(git, "manual")],
+  run: [marker],
+});
+
+machine("m9", { extends: [testbase] });
+TS
 compile_repo repo
 OUT=$("$BIN" --repo repo --machine m9 setup-new-machine --dry-run) || fail "inherited machine plans"
 echo "$OUT" | grep -q "git" || fail "the machine inherits the profile's mapping"
@@ -120,104 +105,71 @@ echo "$OUT" | grep -qE "install manual +git" || fail "explain shows what the mac
 echo "$OUT" | grep -qE "^ *run +marker" || fail "explain shows what the machine runs: $OUT"
 ok "machines extend profiles, which are never machines themselves"
 
-hcl_file repo/programs/profiles.loadout.hcl <<'HCL'
-profile "a" {
-  install = [variant(program.git, "manual")]
-}
+ts_file repo/programs/profiles.loadout.ts <<'TS'
+import { git } from "../root.loadout.ts";
 
-profile "b" {
-  via "dnf" {
-    install = [program.git]
-  }
-}
+const a = profile("a", { install: [variant(git, "manual")] });
+const b = profile("b", { install: [via(dnf, [git])] });
 
-machine "m9" {
-  extends = [profile.a, profile.b]
-}
-HCL
+machine("m9", { extends: [a, b] });
+TS
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "two profiles mapping a program differently must fail"
 echo "$OUT" | grep -q "machine 'm9': profiles 'a' and 'b' map 'git' differently ('manual' vs 'dnf')" || fail "the disagreement is named: $OUT"
 ok "two profiles of one machine that disagree are a compile error"
 
-hcl_file repo/programs/profiles.loadout.hcl <<'HCL'
-machine "m9" {
-  install = [variant(program.git, "manual")]
-  via "dnf" {
-    install = [program.git]
-  }
-}
-HCL
+ts_file repo/programs/profiles.loadout.ts <<'TS'
+import { git } from "../root.loadout.ts";
+
+machine("m9", { install: [variant(git, "manual"), via(dnf, [git])] });
+TS
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a program installed twice must be refused"
-echo "$OUT" | grep -q "machine 'm9' installs 'git' twice" || fail "the double mapping is named: $OUT"
-hcl_file repo/programs/profiles.loadout.hcl <<'HCL'
-machine "m9" {
-  install = [program.ghost-program]
-}
-HCL
+echo "$OUT" | grep -qE "^error: programs/profiles\.loadout\.ts:5,[0-9]+: machine 'm9' installs 'git' twice" || fail "the double mapping is named with its file, line and column: $OUT"
+# A reference is an import: one the declaring file doesn't export stops
+# the compile, naming the module it was looked for in.
+ts_file repo/programs/profiles.loadout.ts <<'TS'
+import { ghostProgram } from "../root.loadout.ts";
+
+machine("m9", { install: [ghostProgram] });
+TS
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "an unknown program must not compile"
-echo "$OUT" | grep -qE '^error: ([^ ]*/)?programs/profiles\.loadout\.hcl:2,[0-9]+: Unsupported attribute; This object does not have an attribute named "ghost-program"' ||
-    fail "the unknown program is named with its file, line and column: $OUT"
-rm repo/programs/profiles.loadout.hcl
+echo "$OUT" | grep -qE "^error: .*'ghostProgram' not found in module 'root\.loadout\.ts'" ||
+    fail "the unknown program is named with the module it isn't in: $OUT"
+# A name never imported is a ReferenceError, with its file, line and column.
+ts_file repo/programs/profiles.loadout.ts <<'TS'
+machine("m9", {
+  install: [ghostProgram],
+});
+TS
+OUT=$("$BIN" --repo repo compile 2>&1) && fail "an undefined name must not compile"
+echo "$OUT" | grep -qE "^error: programs/profiles\.loadout\.ts:4,[0-9]+: ReferenceError: ghostProgram is not defined$" ||
+    fail "the undefined name is named, with its file, line and column, on one line: $OUT"
+[ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" = 1 ] || fail "one line: $OUT"
+echo "$OUT" | grep -qE '^panic:|goroutine [0-9]+' && fail "a broken manifest must not crash: $OUT"
+rm repo/programs/profiles.loadout.ts
 compile_repo repo
 ok "a program installed twice, or one that doesn't exist, doesn't compile"
 
-# Every diagnostic is reported, one line each, before the exit: two
-# unknown names in one file. A syntax error is reported the same way.
-hcl_file repo/programs/profiles.loadout.hcl <<'HCL'
-machine "m9" {
-  install = [program.ghost-program]
-  run     = [script.ghost-script]
-}
-HCL
-OUT=$("$BIN" --repo repo compile 2>&1) && fail "unknown names must not compile"
-echo "$OUT" | grep -qE '^error: ([^ ]*/)?programs/profiles\.loadout\.hcl:2,[0-9]+: .*"ghost-program"' || fail "the first unknown name is reported: $OUT"
-echo "$OUT" | grep -qE '^error: ([^ ]*/)?programs/profiles\.loadout\.hcl:3,[0-9]+: .*"ghost-script"' || fail "and the second: $OUT"
-rm repo/programs/profiles.loadout.hcl
-hcl_file repo/maintenance/broken.loadout.hcl <<'HCL'
-script "broken" {
-  run = "true"
-  check = [
-}
-HCL
-OUT=$("$BIN" --repo repo compile 2>&1) && fail "a syntax error must not compile"
-echo "$OUT" | grep -qE '^error: ([^ ]*/)?maintenance/broken\.loadout\.hcl:[0-9]+,[0-9]+: ' || fail "the syntax error is reported with its file, line and column: $OUT"
-echo "$OUT" | grep -qE '^panic:|goroutine [0-9]+' && fail "a broken manifest must not crash: $OUT"
-rm repo/maintenance/broken.loadout.hcl
-OUT=$("$BIN" --repo repo compile 2>&1) || fail "the repo compiles again: $OUT"
-ok "every HCL diagnostic is reported as error: <file>:<line>,<col>, and the compile fails"
-
 # --- data: declared once, overridden per profile and machine --------------
-hcl_root datarepo <<'HCL'
-data {
-  omarchy = flag(false)
-  kitty {
-    opacity = number(0.85)
-  }
-}
+ts_root datarepo 'data: { omarchy: flag(false), kitty: { opacity: number(0.85) } }' <<'TS'
+export const git = program("git", {
+  version: "git --version",
+  regex: "git version ([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
+TS
+ts_file datarepo/machines/machines.loadout.ts <<'TS'
+import { git } from "../root.loadout.ts";
 
-program "git" {
-  version = "git --version"
-  regex   = "git version ([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
-HCL
-hcl_file datarepo/machines/machines.loadout.hcl <<'HCL'
-profile "omarchy" {
-  data = { omarchy = true }
-}
+const omarchyProfile = profile("omarchy", { data: { omarchy: true } });
 
-machine "m9" {
-  extends = [profile.omarchy]
-  install = [program.git]
-  data    = { kitty = { opacity = 0.99 } }
-}
+machine("m9", {
+  extends: [omarchyProfile],
+  install: [git],
+  data: { kitty: { opacity: 0.99 } },
+});
 
-machine "m2" {
-  install = [program.git]
-}
-HCL
+machine("m2", { install: [git] });
+TS
 compile_repo datarepo
 OUT=$("$BIN" --repo datarepo --machine m9 explain) || fail "explain shows a machine with data"
 echo "$OUT" | grep -qE "data.kitty.opacity +0.99" || fail "the machine's own value wins: $OUT"
@@ -225,60 +177,47 @@ echo "$OUT" | grep -qE "data.omarchy +true" || fail "the profile's value comes t
 OUT=$("$BIN" --repo datarepo --machine m2 explain)
 echo "$OUT" | grep -qE "data.omarchy +false" || fail "a machine without data gets the defaults: $OUT"
 grep -q '"opacity": 0.99' datarepo/loadout.lock.json || fail "the lock carries each machine's merged data"
-hcl_file datarepo/machines/machines.loadout.hcl <<'HCL'
-machine "m9" {
-  install = [program.git]
-  data    = { kitty = { opacty = 0.5 } }
-}
-HCL
+ts_file datarepo/machines/machines.loadout.ts <<'TS'
+import { git } from "../root.loadout.ts";
+
+machine("m9", { install: [git], data: { kitty: { opacty: 0.5 } } });
+TS
 OUT=$("$BIN" --repo datarepo compile 2>&1) && fail "an undeclared data key must not compile"
 echo "$OUT" | grep -q "machine 'm9': data key 'kitty.opacty' is not declared in the data schema" || fail "the typo is named: $OUT"
 ok "data defaults, profile and machine values merge, and explain shows them; a typo doesn't compile"
 
 # --- script file that doesn't exist ----------------------------------------
-hcl_file repo/maintenance/ghost.loadout.hcl <<'HCL'
-script "ghost-script" {
-  file = "scripts/does-not-exist.sh"
-}
-HCL
+ts_file repo/maintenance/ghost.loadout.ts <<'TS'
+script("ghost-script", { file: "scripts/does-not-exist.sh" });
+TS
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a missing script file must fail the compile"
 echo "$OUT" | grep -q "file 'scripts/does-not-exist.sh' not found" || fail "the missing file is named: $OUT"
-rm repo/maintenance/ghost.loadout.hcl
+rm repo/maintenance/ghost.loadout.ts
 ok "a script file that doesn't exist is caught at compile"
 
 # --- installing through a variant the program doesn't have -------------------
-hcl_repo badmap
-hcl_file badmap/programs/tool.loadout.hcl <<'HCL'
-program "tool" {
-  via "dnf" {
-    command = "sudo dnf install -y tool"
-  }
-}
+ts_repo badmap
+ts_file badmap/programs/tool.loadout.ts <<'TS'
+const tool = program("tool", {
+  install: [via(dnf, { command: "sudo dnf install -y tool" })],
+});
 
-machine "m1" {
-  via "brew" {
-    install = [program.tool]
-  }
-}
-HCL
+machine("m1", { install: [via(brew, [tool])] });
+TS
 OUT=$("$BIN" --repo badmap compile 2>&1) && fail "a variant the program lacks must fail the compile"
 echo "$OUT" | grep -q "machine 'm1' installs 'tool' via 'brew', but it can't be installed that way (it can via: dnf)" || fail "bad-mapping message: $OUT"
 ok "a machine can't install a program through a variant it doesn't have"
 
 # --- file: install values run as repo scripts, repo-root cwd, from anywhere
-hcl_root filerepo <<'HCL'
-program "filetool" {
-  version = "test -f installed-marker.txt && echo filetool 1.0"
-  regex   = "filetool ([0-9.]+)"
-  custom "script" {
-    installed_by = "scripts/install-filetool.sh install"
-  }
-}
+ts_root filerepo <<'TS'
+const filetool = program("filetool", {
+  version: "test -f installed-marker.txt && echo filetool 1.0",
+  regex: "filetool ([0-9.]+)",
+  install: [custom("script", { installedBy: "scripts/install-filetool.sh install" })],
+});
 
-machine "m1" {
-  install = [program.filetool]
-}
-HCL
+machine("m1", { install: [filetool] });
+TS
 mkdir -p filerepo/scripts
 # Requires the "install" argument and writes relative to cwd — proves both
 # argument passing and repo-root cwd.
@@ -295,20 +234,20 @@ OUT=$("$BIN" --repo filerepo --machine m1 status 2>&1 || true)
 echo "$OUT" | grep -q "file 'scripts/install-filetool.sh' not found" || fail "missing file: script should error at load: $OUT"
 ok "a file: install script deleted after compile is caught when the lock is read"
 
-# file: works in check commands too.
-hcl_root filerepo <<'HCL'
-program "filetool" {
-  custom "script" {
-    command = "true"
-    version = run_script("scripts/check-filetool.sh")
-    regex   = "(done)"
-  }
-}
+# runScript() works in check commands too.
+ts_root filerepo <<'TS'
+const filetool = program("filetool", {
+  install: [
+    custom("script", {
+      command: "true",
+      version: runScript("scripts/check-filetool.sh"),
+      regex: "(done)",
+    }),
+  ],
+});
 
-machine "m1" {
-  install = [program.filetool]
-}
-HCL
+machine("m1", { install: [filetool] });
+TS
 printf '#!/bin/sh\necho done\n' > filerepo/scripts/check-filetool.sh
 compile_repo filerepo
 "$BIN" --repo filerepo --machine m1 status >/dev/null || fail "file: check runs"
@@ -316,17 +255,13 @@ grep -q '"version": "done"' filerepo/machines/state/m1.json || fail "file: check
 ok "file: works in check commands"
 
 # --- a yes/no check: installed, no version ----------------------------------
-hcl_root yesno <<'HCL'
-program "setup-thing" {
-  custom {
-    managed_by = "setup-thing.sh"
-  }
-}
+ts_root yesno <<'TS'
+const setupThing = program("setup-thing", {
+  install: [custom({ managedBy: "setup-thing.sh" })],
+});
 
-machine "m1" {
-  install = [program.setup-thing]
-}
-HCL
+machine("m1", { install: [setupThing] });
+TS
 printf '#!/bin/sh\ncase "${1:-}" in check) test -f configured.txt ;; install) touch configured.txt ;; esac\n' > yesno/setup-thing.sh
 compile_repo yesno
 OUT=$("$BIN" --repo yesno --machine m1 explain setup-thing)
@@ -341,18 +276,16 @@ ok "a yes/no check reports installed without a version"
 # --- a declaration's folder is its file's -----------------------------------
 # Paths are relative to the file a script is declared in, so moving the file
 # (with its scripts) to another folder needs no edit.
-hcl_repo moved
-hcl_file moved/maintenance/hello/hello.loadout.hcl <<'HCL'
-script "hello" {
-  description = "says hello"
-  file        = "hello.sh"
-  check       = "test -f hello-ran.txt"
-}
+ts_repo moved
+ts_file moved/maintenance/hello/hello.loadout.ts <<'TS'
+const hello = script("hello", {
+  description: "says hello",
+  file: "hello.sh",
+  check: "test -f hello-ran.txt",
+});
 
-machine "m1" {
-  run = [script.hello]
-}
-HCL
+machine("m1", { run: [hello] });
+TS
 printf '#!/bin/sh\ntouch hello-ran.txt\n' > moved/maintenance/hello/hello.sh
 compile_repo moved
 "$BIN" --repo moved --machine m1 run hello >/dev/null || fail "the script runs where it's declared"
@@ -367,49 +300,25 @@ echo "$OUT" | grep -qE "file +hello.sh" || fail "explain shows the path as writt
 ok "a file's declarations take its folder, so moving it needs no edit"
 
 # --- script variants: the machine picks one ---------------------------------
-hcl_repo variants
-hcl_file variants/maintenance/keyboard.loadout.hcl <<'HCL'
-script "keyboard" {
-  description = "fn/ctrl swap"
-  variant "arch" {
-    file  = "arch.sh"
-    check = "test -f arch-ran.txt"
-  }
-  variant "fedora" {
-    file  = "fedora.sh"
-    check = "test -f fedora-ran.txt"
-  }
-}
+ts_repo variants
+ts_file variants/maintenance/keyboard.loadout.ts <<'TS'
+const keyboard = script("keyboard", {
+  description: "fn/ctrl swap",
+  variants: {
+    arch: { file: "arch.sh", check: "test -f arch-ran.txt" },
+    fedora: { file: "fedora.sh", check: "test -f fedora-ran.txt" },
+  },
+});
 
-machine "m1" {
-  run = [variant(script.keyboard, "fedora")]
-}
+machine("m1", { run: [variant(keyboard, "fedora")] });
 
-machine "m2" {
-  run = [script.keyboard]
-}
-HCL
+machine("m2", { run: [keyboard] });
+TS
 printf '#!/bin/sh\ntouch arch-ran.txt\n' > variants/maintenance/arch.sh
 printf '#!/bin/sh\ntouch fedora-ran.txt\n' > variants/maintenance/fedora.sh
 OUT=$("$BIN" --repo variants compile 2>&1) && fail "running a script with variants without picking one must fail"
 echo "$OUT" | grep -q "machine 'm2' runs 'keyboard' without saying which variant (has: arch, fedora)" || fail "the missing pick is named: $OUT"
-hcl_file variants/maintenance/keyboard.loadout.hcl <<'HCL'
-script "keyboard" {
-  description = "fn/ctrl swap"
-  variant "arch" {
-    file  = "arch.sh"
-    check = "test -f arch-ran.txt"
-  }
-  variant "fedora" {
-    file  = "fedora.sh"
-    check = "test -f fedora-ran.txt"
-  }
-}
-
-machine "m1" {
-  run = [variant(script.keyboard, "fedora")]
-}
-HCL
+sed -i.bak '/^machine("m2"/d' variants/maintenance/keyboard.loadout.ts && rm variants/maintenance/keyboard.loadout.ts.bak
 compile_repo variants
 OUT=$("$BIN" --repo variants --machine m1 explain keyboard)
 echo "$OUT" | grep -qE "file +fedora.sh" || fail "explain shows the machine's variant: $OUT"
@@ -425,82 +334,47 @@ OUT=$("$BIN" --repo /nonexistent status 2>&1 || true)
 echo "$OUT" | grep -qx "error: no loadout.lock.json in /nonexistent — run: loadout compile" || fail "clean missing-lock error: $OUT"
 ok "a repo without a lock gives one clean line"
 
-hcl_file custom/loadout.hcl <<'HCL'
-repo {
-  name    = "test"
-  state   = "observed"
-  sources = ["programs/**/*.loadout.hcl", "maintenance/**/*.loadout.hcl", "machines/**/*.loadout.hcl"]
-}
+ts_root custom <<'TS'
+const git = program("git", {
+  version: "git --version",
+  regex: "git version ([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
 
-program "git" {
-  version = "git --version"
-  regex   = "git version ([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
-
-machine "m1" {
-  install = [program.git]
-}
-HCL
-rm -rf custom/state
+machine("m1", { install: [git] });
+TS
+sed -i.bak 's|state: "machines/state"|state: "observed"|' custom/loadout.ts && rm custom/loadout.ts.bak
+rm -rf custom/state custom/machines/state
 compile_repo custom
 "$BIN" --repo custom --machine m1 status >/dev/null || fail "a custom state dir loads"
 [ -f custom/observed/m1.json ] || fail "state lands in the repo's state directory"
-[ -d custom/state ] && fail "nothing is written to a default state dir" || true
+[ -d custom/machines/state ] && fail "nothing is written to a default state dir" || true
 ok "state goes where the repo says"
 
 # --- compile warns about what no machine uses -------------------------------
-hcl_repo unused
-hcl_file unused/programs/tools.loadout.hcl <<'HCL'
-program "tool" {
-  install_via = [dnf, brew]
-}
+ts_repo unused
+ts_file unused/programs/tools.loadout.ts <<'TS'
+const tool = program("tool", { install: [dnf, brew] });
 
-program "orphan" {
-  install_via = [dnf]
-}
+program("orphan", { install: [dnf] });
 
-program "jq" {
-  install_via = [brew]
-}
+const jq = program("jq", { install: [brew] });
 
-machine "m1" {
-  via "dnf" {
-    install = [program.tool]
-  }
-  install = [program.jq]
-}
-HCL
+machine("m1", { install: [via(dnf, [tool]), jq] });
+TS
 OUT=$("$BIN" --repo unused compile 2>&1) || fail "warnings don't fail the compile: $OUT"
 echo "$OUT" | grep -q "wrote loadout.lock.json" || fail "the lock is written anyway: $OUT"
 echo "$OUT" | grep -q "program 'orphan' isn't installed on any machine" || fail "an unused program is named: $OUT"
 echo "$OUT" | grep -q "program 'tool': machine 'm1' installs other programs via 'brew', but not tool" || fail "an unpicked way through an installer in use is named: $OUT"
-hcl_file unused/programs/tools.loadout.hcl <<'HCL'
-program "tool" {
-  install_via = [dnf]
-  via "brew" {
-    spare = "for macOS"
-  }
-}
+ts_file unused/programs/tools.loadout.ts <<'TS'
+const tool = program("tool", { install: [dnf, via(brew, { spare: "for macOS" })] });
 
-program "orphan" {
-  spare       = "for later"
-  install_via = [dnf]
-}
+const orphan = program("orphan", { spare: "for later", install: [dnf] });
 
-program "jq" {
-  install_via = [brew]
-}
+const jq = program("jq", { install: [brew] });
 
-machine "m1" {
-  via "dnf" {
-    install = [program.tool, program.orphan]
-  }
-  install = [program.jq]
-}
-HCL
+machine("m1", { install: [via(dnf, [tool, orphan]), jq] });
+TS
 OUT=$("$BIN" --repo unused compile 2>&1) || fail "spare marks compile: $OUT"
 echo "$OUT" | grep -q "tool" && fail "a spare variant isn't warned about: $OUT"
 echo "$OUT" | grep -q "program 'orphan' is marked spare, but machine 'm1' uses it" || fail "a stale spare mark is named: $OUT"
@@ -508,22 +382,20 @@ ok "compile warns about what no machine uses, unless it's marked spare"
 
 # A transitional script is named for deletion once every machine that runs
 # it reports it done, read from their state files.
-hcl_root transit <<'HCL'
-script "cleanup" {
-  run          = "rm -f old.txt"
-  check        = "test ! -e old.txt"
-  transitional = true
-}
-HCL
-hcl_file transit/machines/machines.loadout.hcl <<'HCL'
-machine "m1" {
-  run = [script.cleanup]
-}
+ts_root transit <<'TS'
+export const cleanup = script("cleanup", {
+  run: "rm -f old.txt",
+  check: "test ! -e old.txt",
+  transitional: true,
+});
+TS
+ts_file transit/machines/machines.loadout.ts <<'TS'
+import { cleanup } from "../root.loadout.ts";
 
-machine "m2" {
-  run = [script.cleanup]
-}
-HCL
+machine("m1", { run: [cleanup] });
+
+machine("m2", { run: [cleanup] });
+TS
 touch transit/old.txt
 OUT=$("$BIN" --repo transit compile 2>&1) || fail "a transitional script compiles: $OUT"
 OUT=$("$BIN" --repo transit --machine m1 status 2>&1 || true)
@@ -539,3 +411,17 @@ OUT=$("$BIN" --repo transit compile 2>&1)
 echo "$OUT" | grep -q "script 'cleanup' is done on every machine that runs it (m1, m2): it's transitional, so delete it" ||
     fail "done everywhere, it's named for deletion: $OUT"
 ok "compile names a transitional script every machine has done"
+
+# --- a syntax error ----------------------------------------------------------
+# One line, with its file, line and column, like every manifest mistake.
+ts_repo syntax
+ts_file syntax/maintenance/broken.loadout.ts <<'TS'
+script("broken", {
+  run: "true",
+  check: [
+});
+TS
+OUT=$("$BIN" --repo syntax compile 2>&1) && fail "a syntax error must not compile"
+echo "$OUT" | grep -qE '^panic:|goroutine [0-9]+' && fail "a broken manifest must not crash: $OUT"
+echo "$OUT" | grep -qE '^error: maintenance/broken\.loadout\.ts:[0-9]+,[0-9]+: ' || fail "the syntax error is reported with its file, line and column: $OUT"
+ok "a syntax error is reported as error: <file>:<line>,<col>, and the compile fails"

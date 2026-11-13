@@ -1,16 +1,14 @@
 # Version floors, newer locks and state files, and install.sh (the release
 # bootstrap).
 
-hcl_root verrepo <<'HCL'
-program "git" {
-  version = "git --version"
-  regex   = "git version ([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
-HCL
-repo_attr verrepo/loadout.hcl 'min_tool_version = "999.0.0"'
+ts_root verrepo <<'TS'
+program("git", {
+  version: "git --version",
+  regex: "git version ([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
+TS
+repo_opt verrepo/loadout.ts 'minToolVersion: "999.0.0"'
 compile_repo verrepo
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
@@ -20,19 +18,15 @@ ok "a repo's min-tool-version blocks an outdated binary with recovery hint"
 
 # A lock compiled by a newer minor's loadout is refused the same way: it
 # may say what this binary would misread.
-hcl_root verrepo <<'HCL'
-program "git" {
-  version = "git --version"
-  regex   = "git version ([0-9.]+)"
-  custom "manual" {
-    command = "false"
-  }
-}
+ts_root verrepo <<'TS'
+const git = program("git", {
+  version: "git --version",
+  regex: "git version ([0-9.]+)",
+  install: [custom("manual", { command: "false" })],
+});
 
-machine "m1" {
-  install = [program.git]
-}
-HCL
+machine("m1", { install: [git] });
+TS
 compile_repo verrepo
 cp verrepo/loadout.lock.json lock.good
 sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/' lock.good > verrepo/loadout.lock.json

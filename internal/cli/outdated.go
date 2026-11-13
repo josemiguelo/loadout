@@ -46,10 +46,10 @@ func runOutdated(a *app.AppContext) error {
 		return err
 	}
 	updates := report.Updates
-	// The repo's bun is a row here only: moving it is an edit to loadout.hcl.
+	// The repo's bun is a row here only: moving it is an edit to loadout.ts.
 	if b := report.Bun; b != nil {
 		updates = append(updates, app.UpdateRow{Name: "bun", Current: b.Pinned, Candidate: b.Latest, Source: "repo.bun",
-			Note: "the bun scripts run with: move `bun` in loadout.hcl, then loadout compile"})
+			Note: "the bun scripts run with: move `bun` in loadout.ts, then loadout compile"})
 	}
 
 	// The doctor's line per tool first: what upgrading it would mean,

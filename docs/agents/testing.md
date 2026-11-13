@@ -18,14 +18,21 @@
 - Integration = `integration/run-tests.sh`: black-box, real binary. The
   runner sources `lib.sh` (ok/fail, fixtures, `has_pty`/`pty_run`), then
   every `t/NN-*.sh` in name order, each in its OWN fresh directory: a file
-  builds its fixtures (`basic_repo`, `scripts_repo`, `scaffold_repo`, or
+  builds its fixtures (`basic_repo`, `scripts_repo`, `worktree_repo`, or
   inline) and never depends on another file; the numbers only fix the
-  order. Fixtures are HCL repos: `hcl_root <dir>` (loadout.hcl with the
-  repo block over init's plain layout, stdin as declarations at the root),
-  `hcl_repo <dir>` (the same, nothing at the root), `hcl_file <path>`
-  (stdin as one manifest), `repo_attr <loadout.hcl> '<attr>'` (a line
-  added to the repo block: `configs = "configs"`), then `compile_repo`,
-  which compiles with the real binary (milliseconds: no cache). A `manual`
+  order. Fixtures are TypeScript repos: `ts_root <dir> [option…]`
+  (tsconfig.json mapping "loadout" to the SDK, and loadout.ts including
+  `*.loadout.ts` at the root and in programs/, maintenance/, machines/;
+  each option is a line of `repo({…})`; stdin, if any, is
+  root.loadout.ts, declarations at the root), `ts_repo <dir>` (the same,
+  nothing at the root), `ts_file <path>` (stdin as one fragment, after
+  `TS_PRELUDE`, which imports every SDK name: a fixture never imports
+  "loadout" itself, only other fragments, by relative path),
+  `repo_opt <loadout.ts> '<option>'` (an option added to `repo({…})`:
+  `configs: "configs"`), then `compile_repo`, which compiles with the real
+  binary. run-tests.sh exports `LOADOUT_BUN` as the `bun` on PATH when it's
+  unset, so compiles take milliseconds and need no network;
+  `t/42-bun.sh`'s download tests clear it per command (`bl`). A `manual`
   custom variant with a failing command keeps tests off the host's
   package managers. Add an `ok "..."` test for every user-visible
   behavior change, in the file whose subject it is (new subject = new

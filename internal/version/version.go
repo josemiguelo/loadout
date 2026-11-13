@@ -8,7 +8,7 @@ import (
 
 // Version is this binary's version; release builds may override it with
 // -ldflags "-X github.com/josemiguelo/loadout/internal/version.Version=…".
-var Version = "4.5.0"
+var Version = "5.0.0"
 
 // InstallCommand is the curl|sh bootstrap — used by `loadout self-upgrade`
 // and the floor refusal.

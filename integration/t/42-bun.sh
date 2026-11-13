@@ -1,5 +1,7 @@
-# The repo's bun (`repo { bun = "…" }`): downloaded on first use, checked,
+# The repo's bun (`repo({ bun: "…" })`): downloaded on first use, checked,
 # first on PATH for every manifest command, ahead of a `provides … at` folder.
+# Compiles run with the suite's LOADOUT_BUN (run-tests.sh); what tests the
+# download runs through bl, without it.
 
 # sha256 <file>: its hex digest (GNU sha256sum, or macOS's shasum).
 sha256() {
@@ -21,11 +23,12 @@ bun_release() {
 }
 
 # bl <release dir> <args…>: loadout with its buns in ./data, downloaded
-# from the release dir. Per command, never exported: the test files share one shell.
+# from the release dir: LOADOUT_BUN emptied, so it names no bun of its own.
+# Per command, never exported: the test files share one shell.
 bl() {
     rel=$1
     shift
-    XDG_DATA_HOME="$PWD/data" LOADOUT_BUN_DOWNLOAD_BASE="file://$PWD/$rel" "$BIN" "$@"
+    LOADOUT_BUN= XDG_DATA_HOME="$PWD/data" LOADOUT_BUN_DOWNLOAD_BASE="file://$PWD/$rel" "$BIN" "$@"
 }
 
 bun_release rel130 1.3.0
@@ -34,36 +37,26 @@ mkdir -p otherbin
 printf '#!/bin/sh\necho "the other bun ran"\n' > otherbin/bun
 chmod +x otherbin/bun
 
-hcl_root repo <<HCL
-# A program whose provides folder holds a bun of its own, as brew's bin can.
-program "brewish" {
-  custom {
-    command = "true"
-    provides "brewish" { at = "$PWD/otherbin" }
-  }
-  version = "echo 1.0"
-}
+ts_root repo <<TS
+// A program whose provides folder holds a bun of its own, as brew's bin can.
+const brewish = program("brewish", {
+  install: [custom({ command: "true", provides: { brewish: { at: "$PWD/otherbin" } } })],
+  version: "echo 1.0",
+});
 
-script "hello" {
-  file = "hello.ts"
-}
+const hello = script("hello", { file: "hello.ts" });
 
-script "inline" {
-  run = "bun inline.ts"
-}
+const inline = script("inline", { run: "bun inline.ts" });
 
-machine "m1" {
-  install = [program.brewish]
-  run     = [script.hello, script.inline]
-}
-HCL
+machine("m1", { install: [brewish], run: [hello, inline] });
+TS
 printf '#!/usr/bin/env bun\nconsole.log("hi")\n' > repo/hello.ts
-repo_attr repo/loadout.hcl 'bun = "latest"'
+repo_opt repo/loadout.ts 'bun: "latest"'
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a bun that isn't a version compiles: $OUT"
 echo "$OUT" | grep -q "meta bun 'latest' is not a dotted version number" || fail "the refusal names it: $OUT"
 ok "compile refuses a bun pin that isn't a dotted version"
 
-sed -i.bak 's/bun = "latest"/bun = "1.3.0"/' repo/loadout.hcl && rm repo/loadout.hcl.bak
+sed -i.bak 's/bun: "latest"/bun: "1.3.0"/' repo/loadout.ts && rm repo/loadout.ts.bak
 compile_repo repo
 grep -q '"bun": "1.3.0"' repo/loadout.lock.json || fail "the lock records the pin"
 OUT=$(bl rel130 --repo repo --machine m1 run hello 2>&1) || fail "run with the repo's bun: $OUT"
@@ -83,7 +76,7 @@ OUT=$(bl rel130 --repo repo --machine m1 status 2>&1) || fail "status: $OUT"
 echo "$OUT" | grep -q "scripts run with bun 1.3.0" || fail "status names the scripts' bun: $OUT"
 ok "status says which bun scripts run with"
 
-sed -i.bak 's/bun = "1.3.0"/bun = "1.3.1"/' repo/loadout.hcl && rm repo/loadout.hcl.bak
+sed -i.bak 's/bun: "1.3.0"/bun: "1.3.1"/' repo/loadout.ts && rm repo/loadout.ts.bak
 compile_repo repo
 OUT=$(bl rel131 --repo repo --machine m1 run hello 2>&1) || fail "run after moving the pin: $OUT"
 echo "$OUT" | grep -q "bun 1.3.1 ran" || fail "the new pin runs: $OUT"
@@ -95,7 +88,7 @@ echo "0000000000000000000000000000000000000000000000000000000000000000  bun-linu
 for asset in bun-linux-x64-baseline bun-linux-aarch64 bun-darwin-aarch64 bun-darwin-x64 bun-darwin-x64-baseline; do
     echo "0000000000000000000000000000000000000000000000000000000000000000  $asset.zip" >> rel132/SHASUMS256.txt
 done
-sed -i.bak 's/bun = "1.3.1"/bun = "1.3.2"/' repo/loadout.hcl && rm repo/loadout.hcl.bak
+sed -i.bak 's/bun: "1.3.1"/bun: "1.3.2"/' repo/loadout.ts && rm repo/loadout.ts.bak
 compile_repo repo
 OUT=$(bl rel132 --repo repo --machine m1 run hello 2>&1) && fail "a download that doesn't match its checksum runs: $OUT"
 echo "$OUT" | grep -q "error: couldn't install bun 1.3.2: bun-.*\.zip doesn't match its checksum in SHASUMS256.txt" || fail "the error says why: $OUT"
@@ -103,7 +96,7 @@ echo "$OUT" | grep -q "error: couldn't install bun 1.3.2: bun-.*\.zip doesn't ma
 [ -x data/loadout/bun/1.3.1/bun ] || fail "the working bun stays when the new one is refused"
 ok "a bun that doesn't match its checksum is refused, keeping nothing"
 
-sed -i.bak 's/bun = "1.3.2"/bun = "1.3.1"/' repo/loadout.hcl && rm repo/loadout.hcl.bak
+sed -i.bak 's/bun: "1.3.2"/bun: "1.3.1"/' repo/loadout.ts && rm repo/loadout.ts.bak
 compile_repo repo
 mkdir -p fakecurl
 cat > fakecurl/curl <<'EOF'
@@ -119,15 +112,11 @@ OUT=$(PATH="$PWD/fakecurl:$PATH" bl rel131 --repo repo --machine m1 outdated 2>&
 echo "$OUT" | grep "bun" | grep "1.3.1" | grep "1.4.0" | grep -q "repo.bun" || fail "outdated shows the pin behind bun's latest: $OUT"
 ok "outdated says when the repo's bun is behind bun's latest release"
 
-hcl_root plain <<'HCL'
-script "env" {
-  run = "echo \"bun dir=[$LOADOUT_BUN_DIR]\""
-}
+ts_root plain <<'TS'
+const env = script("env", { run: "echo \"bun dir=[$LOADOUT_BUN_DIR]\"" });
 
-machine "m1" {
-  run = [script.env]
-}
-HCL
+machine("m1", { run: [env] });
+TS
 compile_repo plain
 OUT=$(bl rel131 --repo plain --machine m1 run env 2>&1) || fail "a repo without a pin runs: $OUT"
 echo "$OUT" | grep -q "bun dir=\[\]" || fail "a repo without a pin sets no bun folder: $OUT"

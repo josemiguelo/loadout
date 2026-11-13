@@ -2,22 +2,18 @@
 # custom outdated source; status reports script checks with detail.
 
 # --- {pkg} substitution in install + check, probe, via shorthand ---------
-hcl_root instrepo <<'HCL'
-installer "fake" {
-  probe   = "sh"
-  install = "echo installed-{pkg} > fake-install.txt"
-  check   = "test -f fake-install.txt && echo mytool 1.0"
-  regex   = "mytool ([0-9.]+)"
-}
+ts_root instrepo <<'TS'
+const fake = installer("fake", {
+  probe: "sh",
+  install: "echo installed-{pkg} > fake-install.txt",
+  check: "test -f fake-install.txt && echo mytool 1.0",
+  regex: "mytool ([0-9.]+)",
+});
 
-program "mytool" {
-  install_via = [fake]
-}
+const mytool = program("mytool", { install: [fake] });
 
-machine "m1" {
-  install = [program.mytool]
-}
-HCL
+machine("m1", { install: [mytool] });
+TS
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
 echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
@@ -27,49 +23,39 @@ grep -q '"version": "1.0"' instrepo/machines/state/m1.json || fail "installer ch
 ok "installers supply install/check/probe mechanics via {pkg}"
 
 # --- outdated: each installer's oracle reports the remote candidate ------
-hcl_root instrepo <<'HCL'
-installer "fake" {
-  probe    = "sh"
-  install  = "echo installed-{pkg} > fake-install.txt"
-  check    = "test -f fake-install.txt && echo mytool 1.0"
-  outdated = "echo 2.0"
-  regex    = "([0-9][0-9.]*)"
-}
+ts_root instrepo <<'TS'
+const fake = installer("fake", {
+  probe: "sh",
+  install: "echo installed-{pkg} > fake-install.txt",
+  check: "test -f fake-install.txt && echo mytool 1.0",
+  outdated: "echo 2.0",
+  regex: "([0-9][0-9.]*)",
+});
 
-installer "fake2" {
-  probe    = "sh"
-  install  = "true"
-  check    = "echo other 1.0"
-  outdated = "true"
-  regex    = "([0-9][0-9.]*)"
-}
+const fake2 = installer("fake2", {
+  probe: "sh",
+  install: "true",
+  check: "echo other 1.0",
+  outdated: "true",
+  regex: "([0-9][0-9.]*)",
+});
 
-installer "fake3" {
-  probe        = "sh"
-  install      = "true"
-  check        = "echo batchtool 1.0"
-  outdated_all = "printf 'batchtool 3.0\\nuptodate 1.0\\n'"
-  upgrade      = run_script("upgrade-fake3.sh --all")
-  regex        = "([0-9][0-9.]*)"
-}
+const fake3 = installer("fake3", {
+  probe: "sh",
+  install: "true",
+  check: "echo batchtool 1.0",
+  outdatedAll: "printf 'batchtool 3.0\\nuptodate 1.0\\n'",
+  upgrade: runScript("upgrade-fake3.sh --all"),
+  regex: "([0-9][0-9.]*)",
+});
 
-program "mytool" {
-  install_via = [fake]
-}
-program "othertool" {
-  install_via = [fake2]
-}
-program "batchtool" {
-  install_via = [fake3]
-}
-program "uptodate" {
-  install_via = [fake3]
-}
+const mytool = program("mytool", { install: [fake] });
+const othertool = program("othertool", { install: [fake2] });
+const batchtool = program("batchtool", { install: [fake3] });
+const uptodate = program("uptodate", { install: [fake3] });
 
-machine "m1" {
-  install = [program.mytool, program.othertool, program.batchtool, program.uptodate]
-}
-HCL
+machine("m1", { install: [mytool, othertool, batchtool, uptodate] });
+TS
 printf '#!/bin/sh\necho upgraded\n' > instrepo/upgrade-fake3.sh
 compile_repo instrepo
 "$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
@@ -89,7 +75,7 @@ ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 # No pacman installer in the repo — this exercises the built-in's own
 # awk against checkupdates' "<pkg> <installed> -> <candidate>" lines
 # (epochs and pkgrels included), with both tools faked on PATH.
-hcl_repo pacrepo
+ts_repo pacrepo
 mkdir -p pacbin
 cat > pacbin/pacman <<'SH'
 #!/bin/sh
@@ -102,18 +88,12 @@ cat > pacbin/checkupdates <<'SH'
 printf 'fooapp 1:1.2.0-1 -> 1:1.3.0-2\nnotmine 5.1-1 -> 5.2-1\n'
 SH
 chmod +x pacbin/pacman pacbin/checkupdates
-hcl_file pacrepo/programs/pac.loadout.hcl <<'HCL'
-program "fooapp" {
-  install_via = [pacman]
-}
-program "barapp" {
-  install_via = [pacman]
-}
+ts_file pacrepo/programs/pac.loadout.ts <<'TS'
+const fooapp = program("fooapp", { install: [pacman] });
+const barapp = program("barapp", { install: [pacman] });
 
-machine "m1" {
-  install = [program.fooapp, program.barapp]
-}
-HCL
+machine("m1", { install: [fooapp, barapp] });
+TS
 compile_repo pacrepo
 PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
 grep -q '"version": "1.2.0"' pacrepo/machines/state/m1.json || fail "pacman -Q's version is observed past the epoch"
@@ -124,11 +104,9 @@ echo "$OUT" | grep -qE "pacman +2 updates · 1 in your loadout" || fail "the pac
 ok "the built-in pacman installer checks with pacman -Q and asks checkupdates for updates"
 
 # --- custom outdated sources: arbitrary rows, the source as the tag -------
-hcl_file instrepo/programs/sources.loadout.hcl <<'HCL'
-outdated "plugin-pins" {
-  command = "printf 'javaplug aaa1111 bbb2222\\n'"
-}
-HCL
+ts_file instrepo/programs/sources.loadout.ts <<'TS'
+outdated("plugin-pins", { command: "printf 'javaplug aaa1111 bbb2222\\n'" });
+TS
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with custom source exits 0"
 echo "$OUT" | grep -qE "javaplug +aaa1111 +-> bbb2222" || fail "custom source rows appear"
@@ -140,15 +118,11 @@ ok "outdated includes custom outdated source rows, ordered after installers"
 
 # A custom source that FAILS (non-zero exit) must fail LOUD, never masquerade
 # as "nothing outdated" — loadout can't tell a crash from an empty result.
-hcl_file instrepo/programs/sources.loadout.hcl <<'HCL'
-outdated "plugin-pins" {
-  command = "printf 'javaplug aaa1111 bbb2222\\n'"
-}
+ts_file instrepo/programs/sources.loadout.ts <<'TS'
+outdated("plugin-pins", { command: "printf 'javaplug aaa1111 bbb2222\\n'" });
 
-outdated "flaky" {
-  command = "echo boom >&2; exit 3"
-}
-HCL
+outdated("flaky", { command: "echo boom >&2; exit 3" });
+TS
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a failing source still exits 0"
 echo "$OUT" | grep -qE "outdated source \[flaky\] failed: exited 3" || fail "failing custom source is surfaced loud"
@@ -159,19 +133,15 @@ ok "outdated surfaces a failing custom outdated source instead of silence"
 # A URL in a row's trailing note is lifted out as that row's PAGE — the
 # home screen marks it ↗ and K opens it; here it must reach the output
 # without eating the rest of the note.
-hcl_file instrepo/programs/sources.loadout.hcl <<'HCL'
-outdated "plugin-pins" {
-  command = "printf 'javaplug aaa1111 bbb2222\\n'"
-}
+ts_file instrepo/programs/sources.loadout.ts <<'TS'
+outdated("plugin-pins", { command: "printf 'javaplug aaa1111 bbb2222\\n'" });
 
-outdated "flaky" {
-  command = "echo boom >&2; exit 3"
-}
+outdated("flaky", { command: "echo boom >&2; exit 3" });
 
-outdated "linked-pins" {
-  command = "printf 'jsplug aaa1111 bbb2222 1 commit behind https://example.test/compare/aaa1111...bbb2222\\n'"
-}
-HCL
+outdated("linked-pins", {
+  command: "printf 'jsplug aaa1111 bbb2222 1 commit behind https://example.test/compare/aaa1111...bbb2222\\n'",
+});
+TS
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a linked source exits 0"
 echo "$OUT" | grep -q "1 commit behind" || fail "the note survives having its URL lifted out"

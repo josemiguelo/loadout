@@ -38,7 +38,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   unit-tested; view.go draws). Layout B, master–detail, in Crush's style
   (user decisions): the sidebar LEFT (32 cols) and the main pane right of
   it, which shows one subject (programs, scripts, configs — only with
-  `repo { configs = … }` —, remote, fleet) under a plain title row
+  `repo({ configs })` —, remote, fleet) under a plain title row
   (`Programs` bold in primary, its summary at the right), a filter line and
   the subject's list. Plain, styled text only: no `╱` hatch, no block-letter
   logo (the user removed both). The sidebar has the brand line (`loadout`

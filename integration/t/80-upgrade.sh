@@ -1,41 +1,33 @@
 # upgrade: whole mechanisms only, deduped by command; converge never upgrades.
 
-hcl_repo uprepo
-hcl_file uprepo/programs/up.loadout.hcl <<'HCL'
-installer "pm" {
-  install = "echo installing {pkg}"
-  upgrade = "echo upgrading all pm"
-  check   = "echo {pkg} 1.0"
-  regex   = "([0-9.]+)"
-}
+ts_repo uprepo
+ts_file uprepo/programs/up.loadout.ts <<'TS'
+const pm = installer("pm", {
+  install: "echo installing {pkg}",
+  upgrade: "echo upgrading all pm",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9.]+)",
+});
 
-installer "pm-extra" {
-  install = "echo installing {pkg}"
-  upgrade = "echo upgrading all pm"
-  check   = "echo {pkg} 1.0"
-  regex   = "([0-9.]+)"
-}
+const pmExtra = installer("pm-extra", {
+  install: "echo installing {pkg}",
+  upgrade: "echo upgrading all pm",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9.]+)",
+});
 
-installer "byhand" {
-  install = "echo installing {pkg}"
-  check   = "echo {pkg} 1.0"
-  regex   = "([0-9.]+)"
-}
+const byhand = installer("byhand", {
+  install: "echo installing {pkg}",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9.]+)",
+});
 
-program "alpha" {
-  install_via = [pm]
-}
-program "bravo" {
-  install_via = [pm-extra]
-}
-program "charlie" {
-  install_via = [byhand]
-}
+const alpha = program("alpha", { install: [pm] });
+const bravo = program("bravo", { install: [pmExtra] });
+const charlie = program("charlie", { install: [byhand] });
 
-machine "m1" {
-  install = [program.alpha, program.bravo, program.charlie]
-}
-HCL
+machine("m1", { install: [alpha, bravo, charlie] });
+TS
 compile_repo uprepo
 OUT=$("$BIN" --repo uprepo --machine m1 upgrade --all --dry-run)
 # Mechanisms sharing a command are ONE transaction, not one per installer.
@@ -54,31 +46,25 @@ ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 # --item: one item of a custom outdated source at a time — what the home
 # screen hands off when you tick a tmux plugin or a pinned tool. Alone, or
 # beside whole mechanisms in the same run.
-hcl_root irepo <<'HCL'
-installer "pm" {
-  install = "echo installing {pkg}"
-  upgrade = "echo swept > swept.txt"
-  check   = "echo {pkg} 1.0"
-  regex   = "([0-9.]+)"
-}
+ts_root irepo <<'TS'
+const pm = installer("pm", {
+  install: "echo installing {pkg}",
+  upgrade: "echo swept > swept.txt",
+  check: "echo {pkg} 1.0",
+  regex: "([0-9.]+)",
+});
 
-program "alpha" {
-  install_via = [pm]
-}
+const alpha = program("alpha", { install: [pm] });
 
-outdated "plugins" {
-  command = "echo 'tpack aaa bbb'"
-  upgrade = "echo pulled > pulled-{item}.txt"
-}
+outdated("plugins", {
+  command: "echo 'tpack aaa bbb'",
+  upgrade: "echo pulled > pulled-{item}.txt",
+});
 
-outdated "readonly" {
-  command = "echo 'x 1 2'"
-}
+outdated("readonly", { command: "echo 'x 1 2'" });
 
-machine "m1" {
-  install = [program.alpha]
-}
-HCL
+machine("m1", { install: [alpha] });
+TS
 compile_repo irepo
 "$BIN" --repo irepo --machine m1 upgrade --item plugins/tpack --item plugins/other --yes >/dev/null
 [ -f irepo/pulled-tpack.txt ] && [ -f irepo/pulled-other.txt ] || fail "--item upgrades each named item of its source"

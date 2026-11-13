@@ -7,11 +7,12 @@ import (
 	"strings"
 )
 
-// The manifest source globs (`repo { sources = […] }`), on `/`-separated
-// paths relative to the repo root. `*` matches within one segment, `?` one
-// character, `**` any number of segments. Wildcards never match a segment
-// starting with `.`: a dot entry (`.loadout.hcl`, `.chezmoitemplates`)
-// matches only when the pattern spells the dot. `.git` is never entered.
+// The manifest sources (`layout.sources`): the files loadout.ts reaches and
+// the globs it includes, on `/`-separated paths relative to the repo root,
+// matched as the SDK's include() matches them (Bun.Glob with dot files): `*`
+// matches within one segment, dot entries too (`.tmux.loadout.ts`), `?` one
+// character, `**` any number of segments, dot folders included. `.git` and
+// `node_modules` are never entered.
 
 // GlobProblem is why pattern can't be a layout path or glob, or "" when it can.
 func GlobProblem(pattern string) string {
@@ -82,7 +83,7 @@ func walk(repo fs.FS, dir string, out *[]string) error {
 		child := path.Join(dir, e.Name())
 		switch t := e.Type(); {
 		case t.IsDir():
-			if e.Name() != ".git" {
+			if e.Name() != ".git" && e.Name() != "node_modules" {
 				if err := walk(repo, child, out); err != nil {
 					return err
 				}
@@ -100,9 +101,8 @@ func matchSegments(pattern, p []string) bool {
 	}
 	head := pattern[0]
 	if head == "**" {
-		// Zero segments, or one more (never a dot entry) and try again.
-		return matchSegments(pattern[1:], p) ||
-			(len(p) > 0 && !strings.HasPrefix(p[0], ".") && matchSegments(pattern, p[1:]))
+		// Zero segments, or one more and try again.
+		return matchSegments(pattern[1:], p) || (len(p) > 0 && matchSegments(pattern, p[1:]))
 	}
 	if len(p) == 0 {
 		return false
@@ -111,9 +111,6 @@ func matchSegments(pattern, p []string) bool {
 }
 
 func matchSegment(pattern, segment string) bool {
-	if strings.HasPrefix(segment, ".") && !strings.HasPrefix(pattern, ".") {
-		return false
-	}
 	return wildcard([]rune(pattern), []rune(segment))
 }
 

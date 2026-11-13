@@ -5,39 +5,43 @@
 # Every step appends its name to order.log in the repo root and leaves a
 # .done file its check looks for.
 later_repo() {
-    hcl_root "$1" <<'HCL'
-program "core-prog" {
-  custom "manual" {
-    command = "echo core-prog >> order.log && touch core-prog.done"
-    present = "test -f core-prog.done"
-  }
-}
+    ts_root "$1" <<'TS'
+const coreProg = program("core-prog", {
+  install: [
+    custom("manual", {
+      command: "echo core-prog >> order.log && touch core-prog.done",
+      present: "test -f core-prog.done",
+    }),
+  ],
+});
 
-program "later-prog" {
-  later = "a big download"
-  custom "manual" {
-    command = "echo later-prog >> order.log && touch later-prog.done"
-    present = "test -f later-prog.done"
-  }
-}
+const laterProg = program("later-prog", {
+  later: "a big download",
+  install: [
+    custom("manual", {
+      command: "echo later-prog >> order.log && touch later-prog.done",
+      present: "test -f later-prog.done",
+    }),
+  ],
+});
 
-script "core-script" {
-  run   = "echo core-script >> order.log && touch core-script.done"
-  check = "test -f core-script.done"
-}
+const coreScript = script("core-script", {
+  run: "echo core-script >> order.log && touch core-script.done",
+  check: "test -f core-script.done",
+});
 
-script "later-script" {
-  later     = "gigabytes of models"
-  run       = "echo later-script >> order.log && touch later-script.done"
-  check     = "test -f later-script.done"
-  run_after = [script.core-script]
-}
+const laterScript = script("later-script", {
+  later: "gigabytes of models",
+  run: "echo later-script >> order.log && touch later-script.done",
+  check: "test -f later-script.done",
+  runAfter: [coreScript],
+});
 
-machine "m1" {
-  install = [program.core-prog, program.later-prog]
-  run     = [script.core-script, script.later-script]
-}
-HCL
+machine("m1", {
+  install: [coreProg, laterProg],
+  run: [coreScript, laterScript],
+});
+TS
     compile_repo "$1"
 }
 
@@ -77,27 +81,19 @@ rm -f repo/order.log repo/later-script.done
 ok "running setup again finishes what the later phase left"
 
 # --- a later program whose core dependency failed is skipped ---------------
-hcl_root dep <<'HCL'
-program "base" {
-  custom "manual" {
-    command = "false"
-    present = "test -f base.done"
-  }
-}
+ts_root dep <<'TS'
+const base = program("base", {
+  install: [custom("manual", { command: "false", present: "test -f base.done" })],
+});
 
-program "big" {
-  later      = "large"
-  depends_on = [program.base]
-  custom "manual" {
-    command = "touch big.done"
-    present = "test -f big.done"
-  }
-}
+const big = program("big", {
+  later: "large",
+  dependsOn: [base],
+  install: [custom("manual", { command: "touch big.done", present: "test -f big.done" })],
+});
 
-machine "m1" {
-  install = [program.base, program.big]
-}
-HCL
+machine("m1", { install: [base, big] });
+TS
 compile_repo dep
 OUT=$("$BIN" --repo dep --machine m1 setup-new-machine --yes 2>&1) && { echo "$OUT"; fail "a failed install exits 1"; }
 echo "$OUT" | grep -q "skipping big" || { echo "$OUT"; fail "the later phase skips what the core phase failed"; }
@@ -109,25 +105,16 @@ ok "a later install whose dependency failed in the core phase is skipped"
 "$BIN" --repo repo --machine m1 explain later-script | grep -q "later .*gigabytes of models" || fail "explain shows a script's later"
 ok "explain shows why a step is later"
 
-hcl_root bad <<'HCL'
-program "slow" {
-  later = "slow"
-  custom "manual" {
-    command = "true"
-    present = "true"
-  }
-}
+ts_root bad <<'TS'
+const slow = program("slow", {
+  later: "slow",
+  install: [custom("manual", { command: "true", present: "true" })],
+});
 
-script "eager" {
-  run       = "true"
-  run_after = [program.slow]
-}
+const eager = script("eager", { run: "true", runAfter: [slow] });
 
-machine "m1" {
-  install = [program.slow]
-  run     = [script.eager]
-}
-HCL
+machine("m1", { install: [slow], run: [eager] });
+TS
 OUT=$("$BIN" --repo bad compile 2>&1) && fail "compile refuses a core step after a later one"
 echo "$OUT" | grep -q "script 'eager' runs after program 'slow', which is later" || { echo "$OUT"; fail "compile names the step and the fix"; }
 [ ! -f bad/loadout.lock.json ] || fail "nothing is written when compile refuses"

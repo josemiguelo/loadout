@@ -14,7 +14,7 @@ import (
 	"github.com/josemiguelo/loadout/internal/version"
 )
 
-// The manifests themselves are HCL, compiled by `loadout compile`; the lock
+// The manifests themselves are TypeScript, run by `loadout compile`; the lock
 // is refused when it's missing, written by a newer loadout, below the
 // repo's version floor, or older than the sources it was compiled from, and
 // so is a repo whose chezmoi data or partial (model.ChezmoiDataFiles)
@@ -104,7 +104,7 @@ func ParentRoot(repoRoot string, layout model.RepoLayout, home string) (string, 
 	}
 	missing := func() error {
 		return model.NewManifestException("parent " + parent.Name + " is not at " + parent.Path +
-			" — clone it there, or change the parent block's path in loadout.hcl and compile")
+			" — clone it there, or change repo({ parent }) in loadout.ts and compile")
 	}
 	if _, err := os.Stat(root); err != nil {
 		return "", missing()

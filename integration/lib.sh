@@ -8,44 +8,69 @@ fail() { echo "FAIL - $1"; exit 1; }
 # A fresh working directory for one test file: nothing leaks between files.
 new_work() { mktemp -d -p "$WORK"; }
 
-# A config repo is HCL compiled to loadout.lock.json: loadout.hcl at the
-# root (the repo block, always compiled) and the *.loadout.hcl files its
-# sources globs match. A declaration's folder is its file's, so what must
-# run from the repo root (scripts beside loadout.hcl, files a command
-# writes there) is declared in loadout.hcl itself.
+# A config repo is TypeScript compiled to loadout.lock.json: loadout.ts at
+# the root includes every *.loadout.ts fragment (at the root, in programs/,
+# maintenance/ and machines/) and ends with repo({...}). A declaration's
+# folder is its file's, so what must run from the repo root (scripts beside
+# loadout.ts, files a command writes there) is declared in root.loadout.ts.
+# Fragments reach each other's declarations by importing them by relative
+# path (`import { git } from "../root.loadout.ts";`).
 
-# loadout.hcl in <dir>: a repo named test, its state in machines/state/,
-# globbing init's plain layout (programs/, maintenance/, machines/); stdin
-# follows the repo block, as declarations at the repo root.
-hcl_root() {
-    mkdir -p "$1/machines/state"
-    {
-        cat <<'HCL'
-repo {
-  name    = "test"
-  state   = "machines/state"
-  sources = ["programs/**/*.loadout.hcl", "maintenance/**/*.loadout.hcl", "machines/**/*.loadout.hcl"]
-}
-HCL
-        printf '\n'
-        cat
-    } > "$1/loadout.hcl"
-}
+# What every fragment ts_file writes imports from the SDK: fixtures use these
+# names as they are and never import "loadout" themselves (a second import of
+# one name is a syntax error).
+TS_PRELUDE='import { apt, args, brew, brewCask, custom, dnf, dnfCopr, dnfRepo, file, flag, flatpak, installer, list, machine, number, omarchy, omarchyAur, outdated, pacman, profile, program, requires, runScript, script, text, variant, via, whole } from "loadout";'
 
-# hcl_root with nothing at the root: fixtures add manifests with hcl_file.
-hcl_repo() { hcl_root "$1" </dev/null; }
-
-# stdin as the manifest file <path>.
-hcl_file() {
+# stdin as the fragment <path>, after TS_PRELUDE.
+ts_file() {
     mkdir -p "$(dirname "$1")"
-    cat > "$1"
+    { printf '%s\n\n' "$TS_PRELUDE"; cat; } > "$1"
 }
 
-# Adds the attribute line <attr> (`configs = "configs"`) to the repo block
-# of loadout.hcl <file>, as its first line. awk, not sed: BSD and GNU sed
+# The repo <dir>: tsconfig.json (mapping "loadout" to the SDK compile writes
+# beside it) and loadout.ts, a repo named test with its state in
+# machines/state/; each [option] is one more line of repo({...})
+# (`'configs: "configs"'`). stdin, when there is any, is root.loadout.ts:
+# declarations at the repo root.
+ts_root() {
+    dir=$1; shift
+    mkdir -p "$dir/machines/state"
+    cat > "$dir/tsconfig.json" <<'JSON'
+{
+  "compilerOptions": {
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "paths": { "loadout": ["./loadout.sdk.ts"], "loadout/script": ["./loadout.script.ts"] }
+  }
+}
+JSON
+    {
+        cat <<'TS'
+import { flag, include, list, number, repo, text, whole } from "loadout";
+
+await include("*.loadout.ts", "programs/**/*.loadout.ts", "maintenance/**/*.loadout.ts", "machines/**/*.loadout.ts");
+
+repo({
+  name: "test",
+  state: "machines/state",
+TS
+        for option in "$@"; do printf '  %s,\n' "$option"; done
+        printf '});\n'
+    } > "$dir/loadout.ts"
+    body=$(cat)
+    [ -z "$body" ] || printf '%s\n' "$body" | ts_file "$dir/root.loadout.ts"
+}
+
+# ts_root with nothing at the root: fixtures add fragments with ts_file.
+ts_repo() { ts_root "$@" </dev/null; }
+
+# Adds the option <option> (`'configs: "configs"'`) to the repo({...}) call
+# of loadout.ts <file>, as its first line. awk, not sed: BSD and GNU sed
 # disagree on inserting a line.
-repo_attr() {
-    awk -v line="$2" '{ print } /^repo \{/ { print "  " line }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+repo_opt() {
+    awk -v line="$2" '{ print } /^repo\(\{/ { print "  " line "," }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
 }
 
 # `loadout compile` repo <dir>, failing the test with its output when it
@@ -54,50 +79,49 @@ compile_repo() {
     out=$("$BIN" --repo "$1" compile 2>&1) || { echo "$out"; fail "fixture $1 compiles"; }
 }
 
-# `loadout init` scaffold with a git identity so sync/commit tests can run.
-scaffold_repo() {
-    "$BIN" init "$1" >/dev/null || fail "init exits 0"
+# git init <dir> with an identity, so sync/commit tests can run.
+git_repo() {
+    git init -q "$1"
     git -C "$1" config user.email test@example.com
     git -C "$1" config user.name "Integration Test"
 }
 
-# The workhorse fixture: git (installed everywhere) plus a marker script.
+# The workhorse fixture: git (installed everywhere) plus a marker script,
+# both in root.loadout.ts (the script runs, and writes, at the repo root).
 # "manual" is a variant of git's own so the tests don't depend on which
 # package manager the host actually has. m1 runs the marker script; m2
-# deliberately does NOT.
+# deliberately does NOT. A git repo, with an identity.
 basic_repo() {
-    scaffold_repo "$1"
-    rm -f "$1/programs/cli.loadout.hcl"
-    cat >> "$1/loadout.hcl" <<'HCL'
+    ts_root "$1" <<'TS'
+export const git = program("git", {
+  version: "git --version",
+  regex: "git version ([0-9.]+)",
+  install: [
+    via(dnf, { command: "sudo dnf install -y git" }),
+    custom("manual", { command: "echo install git yourself && false" }),
+  ],
+});
 
-program "git" {
-  version = "git --version"
-  regex   = "git version ([0-9.]+)"
-  via "dnf" {
-    command = "sudo dnf install -y git"
-  }
-  custom "manual" {
-    command = "echo install git yourself && false"
-  }
-}
+export const marker = script("marker", {
+  file: "scripts/marker.sh",
+  check: "test -f marker.txt",
+});
+TS
+    ts_file "$1/machines/machines.loadout.ts" <<'TS'
+import { git, marker } from "../root.loadout.ts";
 
-script "marker" {
-  file  = "scripts/marker.sh"
-  check = "test -f marker.txt"
-}
-HCL
-    hcl_file "$1/machines/machines.loadout.hcl" <<'HCL'
-machine "m1" {
-  install = [variant(program.git, "manual")]
-  run     = [script.marker]
-}
+machine("m1", {
+  install: [variant(git, "manual")],
+  run: [marker],
+});
 
-machine "m2" {
-  install = [variant(program.git, "manual")]
-}
-HCL
+machine("m2", {
+  install: [variant(git, "manual")],
+});
+TS
     mkdir -p "$1/scripts"
     printf '#!/bin/sh\necho created > marker.txt\n' > "$1/scripts/marker.sh"
+    git_repo "$1"
     compile_repo "$1"
 }
 
@@ -127,40 +151,34 @@ worktree_repo() {
 # package manager involved) and whose scripts cover every verdict: one
 # passing, one whose check keeps failing, one setup-only.
 scripts_repo() {
-    hcl_root "$1" <<'HCL'
-installer "fake" {
-  probe   = "sh"
-  install = "echo installed-{pkg} > fake-install.txt"
-  check   = "test -f fake-install.txt && echo mytool 1.0"
-  regex   = "mytool ([0-9.]+)"
-}
+    ts_root "$1" <<'TS'
+const fake = installer("fake", {
+  probe: "sh",
+  install: "echo installed-{pkg} > fake-install.txt",
+  check: "test -f fake-install.txt && echo mytool 1.0",
+  regex: "mytool ([0-9.]+)",
+});
 
-program "mytool" {
-  install_via = [fake]
-}
+const mytool = program("mytool", { install: [fake] });
 
-script "healthy" {
-  run   = "true"
-  check = "true"
-}
+const healthy = script("healthy", { run: "true", check: "true" });
 
-script "drifted" {
-  run   = "true"
-  check = "echo missing: nodejs 16 npm firebase-tools; false"
-}
+const drifted = script("drifted", {
+  run: "true",
+  check: "echo missing: nodejs 16 npm firebase-tools; false",
+});
 
-script "bootstrap-only" {
-  run        = "echo bootstrapped > bootstrap-marker.txt"
-  check      = "test -f bootstrap-marker.txt"
-  setup_only = true
-}
-HCL
-    hcl_file "$1/machines/machines.loadout.hcl" <<'HCL'
-machine "m1" {
-  install = [program.mytool]
-  run     = [script.healthy, script.drifted, script.bootstrap-only]
-}
-HCL
+const bootstrapOnly = script("bootstrap-only", {
+  run: "echo bootstrapped > bootstrap-marker.txt",
+  check: "test -f bootstrap-marker.txt",
+  setupOnly: true,
+});
+
+machine("m1", {
+  install: [mytool],
+  run: [healthy, drifted, bootstrapOnly],
+});
+TS
     compile_repo "$1"
 }
 

@@ -6,10 +6,11 @@ loadout makes it explicit: **declared** once in a shared git repo,
 **converged** on every machine, **observed** continuously, and **compared**
 across the fleet.
 
-One static binary (Go, no runtime dependencies) that shells out to your
-package managers and `git`. Linux and macOS. You write the manifests in
-HCL; `loadout compile` turns them into a committed lock file, which every
-other command reads.
+One static binary (Go) that shells out to your package managers and
+`git`. Linux and macOS. You write the manifests in TypeScript; `loadout
+compile` runs them with the bun loadout downloads for itself (nothing to
+install) and turns them into a committed lock file, which every other
+command reads.
 
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
@@ -17,22 +18,23 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 
 ## How it thinks
 
-- **You declare intent** in HCL: programs with their install mechanics,
-  scripts with idempotency checks, and an explicit per-machine list of what
-  each one installs and runs. Everything refers to everything else by name
-  (`program.ripgrep`), and a typo in a name doesn't compile: the error
-  names the file, line and column. Machines share small *profiles*; a
-  standard machine is one line
-  (`machine "laptop" { extends = [profile.macos, profile.work] }`).
-- **One repo, laid out the way you choose.** `loadout.hcl` at its root
-  holds the `repo` block, whose `sources` globs name the other manifest
-  files. A tool's file can sit beside its dotfiles
-  (`loadouts/.config/tmux/.tmux.loadout.hcl` next to `tmux.conf`), and
+- **You declare intent** in TypeScript: programs with their install
+  mechanics, scripts with idempotency checks, and an explicit per-machine
+  list of what each one installs and runs. Every declaration is a typed
+  reference other files import (`ripgrep`), so a typo in a name is an
+  error in your editor, and go to definition finds it; the language's own
+  mistakes name the file, line and column. Machines share small
+  *profiles*; a standard machine is one line
+  (`machine("laptop", { extends: [macos, work] })`).
+- **One repo, laid out the way you choose.** `loadout.ts` at its root
+  includes the other manifests (`include("loadouts/**/*.loadout.ts")`)
+  and ends with `repo({ … })`. A tool's file can sit beside its dotfiles
+  (`loadouts/.config/tmux/.tmux.loadout.ts` next to `tmux.conf`), and
   every path in it is relative to its folder. `init
   --configs` lays a repo out that way: everything in `loadouts/`, each
   tool where its files land, and what lands outside your home (system
   packages, hardware) in `loadouts/.etc/<concern>/`.
-- **Your dotfiles are part of the loadout.** With `configs = …` in the `repo` block, the
+- **Your dotfiles are part of the loadout.** With `configs: …` in `repo()`, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
@@ -44,8 +46,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   step of a new machine, before anything is installed. Your own bun, if
   any, stays yours. `outdated` says when the pin is behind bun's latest.
 - **A private repo can build on a public one.** A child repo names its
-  parent in its `repo` block (`parent { name = …, path = … }`) and uses the parent's
-  programs, scripts and profiles by name, adding its own machines,
+  parent in `repo({ parent: { name, path } })` and imports the parent's
+  programs, scripts and profiles from its checkout, adding its own machines,
   programs and dotfiles; nothing of it is ever written into the parent. A
   work laptop's employer-specific setup stays out of your public dotfiles.
 - **Checks are the truth.** Every piece of a loadout has a re-askable check
@@ -59,7 +61,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
   pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
-  so `install_via = [dnf]` works in an empty repo. `loadout installers` shows
+  so `install: [dnf]` works in an empty repo. `loadout installers` shows
   them, and an installer of your own with the same name replaces one.
 
 ## Commands
@@ -79,8 +81,8 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
-| | `compile` | Turn the repo's HCL manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `transitional` scripts every machine has done |
-| | `init` | Scaffold a new config repo (`loadout.hcl` and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
+| | `compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `transitional` scripts every machine has done |
+| | `init` | Scaffold a new config repo (`loadout.ts`, a tsconfig and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
 
 ## Quickstart
 
@@ -93,35 +95,42 @@ $ loadout setup-new-machine                  # converge
 $ loadout sync                               # publish (after adding a git remote)
 ```
 
-```hcl
-# programs/cli.loadout.hcl
-program "ripgrep" {
-  description = "fast grep"
-  install_via = [dnf, pacman, brew]
-}
+```ts
+// programs/cli.loadout.ts
+import { brew, dnf, pacman, program } from "loadout";
 
-# machines/machines.loadout.hcl
-machine "laptop" {
-  via "dnf" {
-    install = [program.ripgrep]
-  }
-}
+export const ripgrep = program("ripgrep", {
+  description: "fast grep",
+  install: [dnf, pacman, brew],
+});
+
+// machines/machines.loadout.ts
+import { dnf, machine, via } from "loadout";
+import { ripgrep } from "../programs/cli.loadout.ts";
+
+machine("laptop", { install: [via(dnf, [ripgrep])] });
 ```
 
 ## Editor support
 
-`loadout lsp` is a language server for the manifests: your editor shows
-what `loadout compile` would refuse as you type, unsaved buffers
-included, and completes everything a manifest names: block types,
-attributes, `program.`/`script.`/… references from anywhere in the repo,
-installers, data settings and variants. Setup is in
-[Writing your manifest](../../wiki/Writing-Your-Manifest#8-your-editor-knows-your-manifest).
+Scripts can be TypeScript too: `import { main } from "loadout/script"`
+gives a managed script loadout's `check`/`install` protocol, `oracle()` an
+outdated source's rows and `update`, and `env` the variables loadout sets
+(`loadout.script.ts`, which compile writes beside the manifests' SDK).
+
+Manifests are plain TypeScript, so any editor with TypeScript support
+works: completion of every setting (with the SDK's docs on hover),
+references imported from the files that declare them, go to definition,
+and a typo or a wrong type underlined as you type. `loadout compile`
+writes the SDK beside your manifests (`loadout.sdk.ts`, which tsconfig's
+`paths` maps to `"loadout"`); `bun install` gives the editor bun's own
+types. See [Writing your manifest](../../wiki/Writing-Your-Manifest).
 
 ## Learn more
 
 - **[Writing your manifest](../../wiki/Writing-Your-Manifest)**: from a
   three-line loadout to installers, variants, scripts and profiles.
-- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.hcl`, manifest
+- **[Repo layout](../../wiki/Repo-Layout)**: `loadout.ts`, manifest
   files beside their dotfiles, machines, profiles, the lock and configs.
 - **[A day with loadout](../../wiki/A-Day-With-Loadout)**: the whole loop in
   practice: observing drift, maintaining, adding gear, new-machine day.
@@ -148,7 +157,7 @@ tarball for each (the binary alone), which the install one-liner and
 `loadout self-upgrade` download.
 
 Stack: [cobra](https://github.com/spf13/cobra) ·
-[HCL](https://github.com/hashicorp/hcl) ·
+[Bun](https://bun.sh) (the manifests) ·
 [Bubble Tea](https://github.com/charmbracelet/bubbletea),
 [Lip Gloss](https://github.com/charmbracelet/lipgloss) and
 [Bubbles](https://github.com/charmbracelet/bubbles) (the home screen, in

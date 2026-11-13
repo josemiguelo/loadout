@@ -94,8 +94,8 @@ func TestUnsettledRowsShareOneBoxThatIsSevereIfAnyRowIs(t *testing.T) {
 	}
 }
 
-func TestScaffoldValuesAreEscapedInsideHclStrings(t *testing.T) {
-	files, err := renderScaffold("child", scaffoldVars{Hostname: "box", ParentName: `my "pub"`, ParentPath: "~/${x}"})
+func TestScaffoldValuesAreEscapedInsideTypeScriptStrings(t *testing.T) {
+	files, err := renderScaffold("child", scaffoldVars{Hostname: "box", ParentName: `my "pub"`, ParentPath: `~/a\b`, ParentImport: "../dots"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,16 +103,22 @@ func TestScaffoldValuesAreEscapedInsideHclStrings(t *testing.T) {
 	for _, f := range files {
 		paths[f.path] = string(f.content)
 	}
-	if _, ok := paths["machines/box.loadout.hcl"]; !ok {
+	if _, ok := paths["machines/box.loadout.ts"]; !ok {
 		t.Fatalf("the machine file is named by its hostname: %v", paths)
 	}
-	root := paths["loadout.hcl"]
-	if !strings.Contains(root, `name = "my \"pub\""`) || !strings.Contains(root, `path = "~/$${x}"`) {
-		t.Errorf("the parent block escapes its values:\n%s", root)
+	root := paths["loadout.ts"]
+	if !strings.Contains(root, `name: "my \"pub\""`) || !strings.Contains(root, `path: "~/a\\b"`) {
+		t.Errorf("the parent escapes its values:\n%s", root)
+	}
+	if !strings.Contains(paths["tsconfig.json"], `"parent/*": ["../dots/*"]`) {
+		t.Errorf("the parent alias points at its checkout:\n%s", paths["tsconfig.json"])
+	}
+	if paths["loadout.sdk.ts"] == "" {
+		t.Error("the SDK comes with the scaffold")
 	}
 	for p := range paths {
-		if strings.Contains(p, "gradle") || strings.HasSuffix(p, ".kt") {
-			t.Errorf("no Kotlin or Gradle file: %s", p)
+		if strings.HasSuffix(p, ".hcl") || strings.HasSuffix(p, ".kt") {
+			t.Errorf("no HCL or Kotlin file: %s", p)
 		}
 	}
 }

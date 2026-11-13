@@ -15,7 +15,7 @@ import (
 
 // ManifestDraft is what a config repo declares, before it becomes a
 // model.Manifest: the repo's own installers (built-ins not merged yet), and
-// machines and profiles unflattened. The HCL front end fills one; Assemble
+// machines and profiles unflattened. loadout.ts prints one; Assemble
 // turns it into what the lock holds.
 //
 // In Manifest, machines and profiles carry their own settings only (their
@@ -762,8 +762,7 @@ func validate(manifest model.Manifest) error {
 	// A core step waiting on a later one would wait for the whole core phase
 	// to end: refused, never moved (later is on the declaration, so this holds
 	// on every machine). Every variant's edges count, as above. The core step
-	// is named first, `<kind> '<name>'`, so the language server puts the error
-	// on its declaration.
+	// is named first, `<kind> '<name>'`: the declaration to change.
 	laterProgram := func(name string) bool { return manifest.Programs.Value(name).Later != "" }
 	for name, deps := range programEdges.All() {
 		if laterProgram(name) {
