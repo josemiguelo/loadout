@@ -4,15 +4,17 @@
 // pipeline. The command line is read as the Go binary's cobra read it
 // (args.ts). The services they share with the home screen live in src/app.
 
+import { type AppContext, hasScreen, newApp } from "../app/index.ts";
 import { envVar, isStdoutTty } from "../core/platform/platform.ts";
+import { Refusal } from "../model/index.ts";
 import { VERSION } from "../version.ts";
 import { type ArgSpec, Command, executeCommand, type Run } from "./args.ts";
 import { newApplyCmd } from "./apply.ts";
 import { newCompileCmd } from "./compile.ts";
-import { type CliContext, newContext, NotPortedYet } from "./context.ts";
 import { newDiffCmd } from "./diff.ts";
 import { argsAtMost, exitWith, flagError, noSuchSubcommand, setRoot } from "./errors.ts";
 import { newExplainCmd } from "./explain.ts";
+import { home } from "./home.ts";
 import { boolFlag, helpFlag, printHelp, stringFlag } from "./help.ts";
 import { newInitCmd } from "./init.ts";
 import { newInstallCmd } from "./install.ts";
@@ -31,10 +33,10 @@ import { newStatusCmd } from "./status.ts";
  * ctx is the shared services, built by the root command before any
  * subcommand runs (Go's appCtx).
  */
-let ctx: CliContext | undefined;
+let ctx: AppContext | undefined;
 
 /** appCtx is the shared services; only a command's run may ask for them. */
-export function appCtx(): CliContext {
+export function appCtx(): AppContext {
   if (ctx === undefined) throw new Error("the command line hasn't been read yet");
   return ctx;
 }
@@ -62,15 +64,17 @@ export function newRoot(): Command {
       echo("loadout version " + VERSION);
       throw exitWith(0);
     }
-    ctx = newContext(flags.string("repo"), flags.string("machine"), flags.bool("verbose"));
+    ctx = newApp(flags.string("repo"), flags.string("machine"), flags.bool("verbose"));
   };
   root.run = async (cmd) => {
     if (!isStdoutTty()) {
       printHelp(cmd);
       return;
     }
-    // TODO(port): the home screen (src/tui), once app is ported.
-    throw new NotPortedYet("the home screen is not ported to TypeScript yet (use the Go binary)");
+    // TODO(port): once src/tui registers the home screen, no screen prints
+    // help, as Go's did (`|| app.NewScreen == nil`).
+    if (!hasScreen()) throw new NoHomeScreen("the home screen is not ported to TypeScript yet (use the Go binary)");
+    return home(appCtx());
   };
   setRoot(root);
   root.help = "Set up a machine from a shared config repo and track installed program versions. v" + VERSION;
@@ -116,6 +120,9 @@ export function newRoot(): Command {
   root.addCommand(noHelp);
   return root;
 }
+
+/** NoHomeScreen refuses bare `loadout` on a terminal while no home screen is registered. */
+class NoHomeScreen extends Refusal {}
 
 /**
  * subcommand is a subcommand named name with help (commandHelp's) and its

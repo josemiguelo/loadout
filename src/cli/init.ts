@@ -5,7 +5,7 @@ import { newGitClient } from "../core/git/git.ts";
 import { envVar } from "../core/platform/platform.ts";
 import { cleanPath, compareStrings, goPathError, isAbsPath, joinPath, lockFileName } from "../model/index.ts";
 import type { Command } from "./args.ts";
-import { type CliContext, detectSystem } from "./context.ts";
+import type { AppContext } from "../app/index.ts";
 import { exitWith } from "./errors.ts";
 import { boolFlag, commandHelp, stringFlag } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
@@ -187,9 +187,9 @@ export function writeScaffold(root: string, files: readonly ScaffoldFile[]): voi
 }
 
 /** initRepo scaffolds a config repo at root and git inits it. */
-export async function initRepo(a: CliContext, root: string, configs: boolean): Promise<void> {
+export async function initRepo(a: AppContext, root: string, configs: boolean): Promise<void> {
   const kind = configs ? "init-configs" : "init";
-  const files = renderScaffold(kind, { hostname: detectSystem(a).machine, parentName: "", parentPath: "", parentImport: "" });
+  const files = renderScaffold(kind, { hostname: a.detectSystem().machine, parentName: "", parentPath: "", parentImport: "" });
   writeScaffold(root, files);
   let example = "programs/cli.loadout.ts";
   let parts = ["loadout.ts", "programs/", "maintenance/"];
@@ -259,14 +259,14 @@ function relPath(base: string, target: string): string {
  * repo block names the parent, its machine uses the parent's names as they
  * are, and it has no example program that could clash.
  */
-export async function initChild(a: CliContext, root: string, parentPath: string, parentName: string, configs: boolean): Promise<void> {
+export async function initChild(a: AppContext, root: string, parentPath: string, parentName: string, configs: boolean): Promise<void> {
   const parentRoot = isAbsPath(parentPath) ? parentPath : joinPath(getwd(), parentPath);
   if (!exists(joinPath(parentRoot, lockFileName))) {
     echo("error: parent " + parentPath + " has no " + lockFileName + " — compile it first");
     throw exitWith(1);
   }
   const kind = configs ? "child-configs" : "child";
-  const hostname = detectSystem(a).machine;
+  const hostname = a.detectSystem().machine;
   const childRoot = absPath(root);
   const parentImport = relPath(childRoot, cleanPath(parentRoot));
   // The repo's parent path is read from the child's root: a relative one

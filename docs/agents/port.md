@@ -246,10 +246,14 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   async work)` draws from a timer, so the work must be async to animate.
 - **`UsageError`/`usageErr`, `ExitError`/`exitWith`** are thrown;
   src/main.ts reports them as cmd/loadout/main.go did.
-- **Until src/app exists**, `src/cli/context.ts` (`CliContext`, `appCtx()`
-  in root.ts) is the slice init and compile need; it goes when app lands.
-  Every command not yet ported has its file with Go's help, flags and
-  arguments, and runs `notPorted(…)`: fill in its run.
+- **The commands take app's `AppContext`** (`appCtx()` in root.ts, built
+  by the root's persistentPreRun as Go's `app.New`). `ensureBun(a,
+  manifest)` (spinner.ts) gets the repo's pinned bun before a command runs
+  manifest commands. converge.ts is the program half of `install` and
+  `setup-new-machine`. Bare `loadout` on a terminal starts the screen
+  through `app.newScreen` (home.ts) once src/tui registers one; until
+  src/main.ts imports `./tui/index.ts`, it refuses (Go printed help when
+  no screen was linked in).
 - **The scaffolds** are imported as text from internal/cli/scaffold
   (src/cli/scaffold.ts, checked against the folder by scaffold.test.ts).
   tsconfig maps `loadout`/`loadout/script` to the SDKs, because tsc follows
@@ -267,9 +271,9 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 | core (exec + fakeexec, detect, git, loader, state, diff, bun wrapper) | done: Go tests ported; state's testdata re-encodes byte for byte; nowIso reads nanoseconds (clock_gettime through bun:ffi), as Go's time.Now |
 | compile (tsmanifest) | done: Go tests ported; byte-identical to the Go binary (lock, chezmoi data, partial, SDKs, warnings, refusals) on the dotfiles, `init`/`init --configs` scaffolds and child repos. `src/compile/devcompile.ts` (the differential driver) goes at cutover |
 | engines (core/engine) | done: Go tests ported (88, same names), plus text.test.ts for the port's own helpers (goRegExp, forEach) |
-| cli: style, table, spinner, help, errors, the command line (args.ts), init + scaffolds, compile, main.ts | done: Go tests ported (cli_test.go's), plus args/scaffold tests; help screens, usage errors, `init` (plain, --configs, --parent) and `compile` byte-identical to the Go binary (styled on a terminal too); 10-init passes with the other commands through the Go binary. `ensureBun` waits for app |
+| cli: style, table, spinner, help, errors, the command line (args.ts), init + scaffolds, compile, main.ts | done: Go tests ported (cli_test.go's), plus args/scaffold tests; help screens, usage errors, `init` (plain, --configs, --parent) and `compile` byte-identical to the Go binary (styled on a terminal too); 10-init passes |
 | app | done: Go tests ported (run, screen; same names), plus context.test.ts for what Go left untested (laziness and reloadLayout, the outdated ordering, explain, the self-version cache) |
-| cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | — (each refuses: not ported yet); `src/cli/context.ts` gives way to app's `AppContext` |
+| cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | done: every integration file but 70-home-screen passes against build/loadout-ts (55-configs up to its home-screen part); `status --json`, `status`, `explain`, `diff`, `outdated`, `setup-new-machine --dry-run`, `install --dry-run`, `upgrade --dry-run`, `installers` byte-identical to the Go binary on the dotfiles (styled on a terminal too, spinner frames aside); `src/cli/context.ts` is gone. cli_test.go was already ported; converge.test.ts adds the plan table, install tallies and sync's summary. The home screen's entry waits for src/tui/index.ts (main.ts imports it) |
 | theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
 | tui (the home screen) | — |
 | release (workflow, install.sh unchanged names), docs, Go removed | — |

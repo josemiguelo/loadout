@@ -10,6 +10,10 @@ import { fdWriter } from "./cli/spinner.ts";
 import { InterruptedByUser } from "./core/exec/exec.ts";
 import { envVar, trapInterrupts } from "./core/platform/platform.ts";
 import { forcedDark } from "./theme/theme.ts";
+// TODO(port): `import "./tui/index.ts";` once src/tui/index.ts exists: the
+// home screen registers itself (app.registerScreen) when imported, as Go's
+// tui package did from its init. Until then bare `loadout` on a terminal
+// refuses (cli/root.ts).
 
 /** interrupted is the exit a shell reports for a command stopped by Ctrl-C (128 + SIGINT). */
 const interrupted = 130;

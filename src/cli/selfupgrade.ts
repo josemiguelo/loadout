@@ -1,18 +1,31 @@
+import { latestRelease } from "../app/index.ts";
+import { line } from "../core/exec/index.ts";
+import { atLeast, installCommand, VERSION } from "../version.ts";
 import type { Command } from "./args.ts";
-import { notPorted } from "./context.ts";
+import { exitWith } from "./errors.ts";
 import { commandHelp } from "./help.ts";
-import { subcommand } from "./root.ts";
+import { appCtx, subcommand } from "./root.ts";
+import { echo } from "./spinner.ts";
 
-// TODO(port): self-upgrade (internal/cli/selfupgrade.go) runs once src/app exists (app.LatestRelease).
-/** newSelfUpgradeCmd is `loadout self-upgrade`: its help, flags and arguments as the Go binary's. */
+/** newSelfUpgradeCmd is `loadout self-upgrade`: install.sh, unless already on the latest release. */
 export function newSelfUpgradeCmd(): Command {
-  const cmd = subcommand(
+  return subcommand(
     "self-upgrade",
     commandHelp(
       "Replace the loadout binary with the latest release. Needs no config repo, so it works even under a min-tool-version refusal (`upgrade` is for programs).",
     ),
     [],
-    notPorted("self-upgrade"),
+    async () => {
+      const a = appCtx();
+      const latest = await latestRelease(a.runner, false);
+      if (latest !== "" && atLeast(VERSION, latest)) {
+        echo("already on the latest release (v" + VERSION + ")");
+        return;
+      }
+      const target = latest !== "" ? "v" + latest : "the latest release";
+      echo("current: v" + VERSION + " — installing " + target + "…");
+      const code = await a.runner.inherit(line(installCommand, ""));
+      if (code !== 0) throw exitWith(code);
+    },
   );
-  return cmd;
 }
