@@ -8,7 +8,7 @@ import { exitWith, usageErr } from "./errors.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { exitText } from "./setup.ts";
-import { echo, ensureBun, spinning } from "./spinner.ts";
+import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newRunCmd is `loadout run`. */
@@ -32,7 +32,6 @@ export function newRunCmd(): Command {
 async function runScripts(names: string[], all: boolean, force: boolean): Promise<void> {
   const a = appCtx();
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
   if (all && names.length > 0) throw usageErr("Give script names or --all, not both");
   if (!all && names.length === 0) throw usageErr("Give at least one script, or --all");

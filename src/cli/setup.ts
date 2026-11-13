@@ -19,7 +19,7 @@ import {
 import { exitWith } from "./errors.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, ensureBun, spin } from "./spinner.ts";
+import { echo, spin } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newSetupCmd is `loadout setup-new-machine`. */
@@ -52,7 +52,6 @@ export function newSetupCmd(): Command {
 async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, skipLater: boolean): Promise<void> {
   const a = appCtx();
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
 
   const plan = await planPrograms(a, manifest, system, undefined);

@@ -5,7 +5,7 @@ import type { Command } from "./args.ts";
 import { exitWith, usageErr } from "./errors.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, ensureBun, spinning } from "./spinner.ts";
+import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newApplyCmd is `loadout apply`. */
@@ -29,7 +29,6 @@ async function runApply(names: string[], force: boolean): Promise<void> {
   const configs = a.configs();
   if (configs === undefined) throw new engine.ConfigException("this repo has no configs (layout configs)");
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
 
   const units = await configs.units();

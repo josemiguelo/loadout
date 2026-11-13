@@ -142,7 +142,8 @@ export function usageLine(cmd: Command): string {
   if (!cmd.hasParent()) {
     return s.helpTitle("Usage:") + " loadout " + s.helpMuted("[<options>]") + " " + s.helpMuted("<command> [<args>]...");
   }
-  let line = s.helpTitle("Usage:") + " loadout " + cmd.name + " " + s.helpMuted("[<options>]");
+  let line = s.helpTitle("Usage:") + " loadout " + cmd.name;
+  if (cmd.opts.length > 0) line += " " + s.helpMuted("[<options>]");
   for (const a of cmd.args) line += " " + s.helpMuted(argUsage(a));
   return line;
 }
@@ -159,13 +160,16 @@ export function renderHelp(cmd: Command): string {
   let b = usageLine(cmd) + "\n\n";
   for (const line of wrap(cmd.help, width - 2)) b += "  " + line + "\n";
 
-  b += "\n" + s.helpTitle("Options:") + "\n";
-  b += definitionList(
-    cmd.opts.map((o) => optTerm(o, (x) => s.helpName(x), (x) => s.helpMuted(x))),
-    cmd.opts.map((o) => optTerm(o, plain, plain)),
-    cmd.opts.map((o) => o.help),
-    width,
-  );
+  // A command without options of its own (one passing its arguments on) has no Options.
+  if (cmd.opts.length > 0) {
+    b += "\n" + s.helpTitle("Options:") + "\n";
+    b += definitionList(
+      cmd.opts.map((o) => optTerm(o, (x) => s.helpName(x), (x) => s.helpMuted(x))),
+      cmd.opts.map((o) => optTerm(o, plain, plain)),
+      cmd.opts.map((o) => o.help),
+      width,
+    );
+  }
 
   if (!cmd.hasParent()) {
     const subs = cmd.commands.filter((sub) => !sub.hidden);

@@ -482,17 +482,14 @@ export function scriptEntry(entry: string): [name: string, args: string] {
   return [words[0]!, words.slice(1).join(" ")];
 }
 
-/** Meta is the repo's name, the loadout it needs and the bun its scripts run with. */
+/**
+ * Meta is the repo's name and the loadout it needs. Its scripts run with
+ * the bun loadout was built with (core/bun), never one the repo pins.
+ */
 export interface Meta {
   name: string;
   /** minToolVersion is the oldest loadout that may read the lock (`min-tool-version`). */
   minToolVersion?: string;
-  /**
-   * bun is the bun version loadout downloads and puts first on PATH for
-   * every manifest command (`bun`), so a `#!/usr/bin/env bun` script runs
-   * before anything is installed; undefined = none, the machine's own PATH.
-   */
-  bun?: string;
 }
 
 /** newMeta is a Meta with every field not given at its zero value. */
@@ -629,27 +626,27 @@ const fileLineShape =
 
 /**
  * shownLine is line as a user reads it: every fileLine back to the script
- * it runs and its arguments (`.loadout/x.ts check`), and no repo bun folder
- * in its PATH (shellLine's, set only while it runs).
+ * it runs and its arguments (`.loadout/x.ts check`), and no bun folder in
+ * its PATH (shellLine's, set only while it runs).
  */
 export function shownLine(line: string): string {
   return line.replace(fileLineShape, "$1$2").replaceAll(bunFirst, "");
 }
 
 /**
- * bunDirVar is the folder of the repo's bun (`repo { bun = … }`), set by
- * the frame of every manifest command; unset when the repo pins none.
+ * bunDirVar is the folder of the `bun` manifest commands run (loadout's
+ * wrapper, core/bun), set by the frame of every manifest command.
  */
 export const bunDirVar = "LOADOUT_BUN_DIR";
 
-/** bunFirst is the repo's bun folder and a colon, or nothing when unset. */
+/** bunFirst is the bun folder and a colon, or nothing when unset. */
 const bunFirst = "${" + bunDirVar + ":+$" + bunDirVar + ":}";
 
 /**
  * shellLine is the shell line for command: `file:` expanded, and path put
- * first on PATH, after the repo's bun folder when the frame sets one: a
+ * first on PATH, after the bun folder when the frame sets one: a
  * `provides … at` folder (brew's bin) may hold a bun of its own, and a
- * `#!/usr/bin/env bun` script runs with the repo's. The directories are
+ * `#!/usr/bin/env bun` script runs with loadout's. The directories are
  * expanded by the shell, so `$HOME` works.
  */
 export function shellLine(command: string, path: readonly string[] | undefined): string {

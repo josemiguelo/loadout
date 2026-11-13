@@ -79,17 +79,17 @@ afterEach(() => {
   process.env["PATH"] = savedPath;
 });
 
-test("the repo bun goes first on PATH for every command of a child and its parent", async () => {
+test("the bun folder goes first on PATH for every command of a child and its parent", async () => {
   process.env["PATH"] = "/usr/bin";
   const fake = newRunner().onCommand(fileLine("helper.sh", "")).onCommand(fileLine("mine.sh", ""));
   const system: SystemInfo = { machine: "work", os: "linux", arch: "x86_64" };
-  const frame = frameOf("/child", system, undefined, "/parent", undefined, "/data/loadout/bun/1.3.0");
+  const frame = frameOf("/child", system, undefined, "/parent", undefined, "/data/loadout/bin");
 
   await newScriptRunner(fake, frame).run(newScriptStep({ file: "helper.sh", origin: "parent:lib" }), false, "");
   await newScriptRunner(fake, frame).run(newScriptStep({ file: "mine.sh", origin: "scripts" }), false, "");
   for (const command of fake.received()) {
-    expect(command.env?.["PATH"]).toBe("/data/loadout/bun/1.3.0:/usr/bin");
-    expect(command.env?.[bunDirVar]).toBe("/data/loadout/bun/1.3.0");
+    expect(command.env?.["PATH"]).toBe("/data/loadout/bin:/usr/bin");
+    expect(command.env?.[bunDirVar]).toBe("/data/loadout/bin");
   }
 });
 

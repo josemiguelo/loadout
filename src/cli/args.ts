@@ -53,6 +53,11 @@ export class Command {
   run: Run | undefined;
   /** persistentPreRun runs before this command or any below it runs. */
   persistentPreRun: Run | undefined;
+  /**
+   * passArgs hands every argument after the command's name to run as it is,
+   * flags and `--help` included (cobra's DisableFlagParsing).
+   */
+  passArgs = false;
 
   constructor(readonly name: string) {}
 
@@ -248,6 +253,24 @@ function argsMinusFirstX(args: readonly string[], c: Command, x: string): string
   return [...args];
 }
 
+/**
+ * argsAfterFirstX is what follows the first command word x in args: a
+ * passArgs command's own arguments, without the flags before its name.
+ */
+function argsAfterFirstX(args: readonly string[], c: Command, x: string): string[] {
+  const set = c.flagSet();
+  for (let pos = 0; pos < args.length; pos++) {
+    const s = args[pos]!;
+    if (s === "--") break;
+    if (takesNext(s, set)) {
+      pos++;
+      continue;
+    }
+    if (!s.startsWith("-") && s === x) return args.slice(pos + 1);
+  }
+  return [...args];
+}
+
 /** find is the command args name, and the arguments left for it (cobra's Find). */
 export function find(root: Command, args: readonly string[]): [Command, string[]] {
   let c = root;
@@ -374,6 +397,18 @@ export interface Hooks {
 export async function executeCommand(root: Command, args: readonly string[], hooks: Hooks): Promise<void> {
   const [cmd, rest] = find(root, args);
   let parsed: { flags: Flags; args: string[] };
+  if (cmd.passArgs && cmd.run !== undefined && cmd.parent !== undefined) {
+    const own = cmd.parent === root ? argsAfterFirstX(args, root, cmd.name) : rest;
+    const flags = new Flags(cmd.flagSet());
+    for (let c: Command | undefined = cmd; c !== undefined; c = c.parent) {
+      if (c.persistentPreRun !== undefined) {
+        await c.persistentPreRun(cmd, own, flags);
+        break;
+      }
+    }
+    await cmd.run(cmd, own, flags);
+    return;
+  }
   try {
     parsed = parseFlags(cmd, rest);
   } catch (e) {

@@ -8,9 +8,9 @@ across the fleet.
 
 One static binary (Go) that shells out to your package managers and
 `git`. Linux and macOS. You write the manifests in TypeScript; `loadout
-compile` runs them with the bun loadout downloads for itself (nothing to
-install) and turns them into a committed lock file, which every other
-command reads.
+compile` runs them with the bun built into loadout (nothing to install)
+and turns them into a committed lock file, which every other command
+reads.
 
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
@@ -38,13 +38,12 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
-- **Scripts in TypeScript, on a bare machine.** `bun = "1.3.0"` in the
-  `repo` block pins a bun: loadout downloads it the first time a command
-  needs it (checked against the release's checksums, kept in
-  `~/.local/share/loadout/bun/`) and puts it first on PATH for every
-  command it runs, so a `#!/usr/bin/env bun` script works from the first
-  step of a new machine, before anything is installed. Your own bun, if
-  any, stays yours. `outdated` says when the pin is behind bun's latest.
+- **Scripts in TypeScript, on a bare machine.** loadout is a bun: every
+  command it runs finds `bun` first on PATH, and that bun is loadout
+  itself, so a `#!/usr/bin/env bun` script works from the first step of a
+  new machine, before anything is installed. Your own bun, if any, stays
+  yours. `loadout bun --version` says which bun that is; a new loadout
+  brings a new bun.
 - **A private repo can build on a public one.** A child repo names its
   parent in `repo({ parent: { name, path } })` and imports the parent's
   programs, scripts and profiles from its checkout, adding its own machines,
@@ -83,6 +82,7 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
 | | `compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `transitional` scripts every machine has done |
 | | `init` | Scaffold a new config repo (`loadout.ts`, a tsconfig and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
+| | `bun [args…]` | The bun built into loadout, the one scripts run with: `loadout bun --version`, `loadout bun run x.ts`; needs no repo |
 
 ## Quickstart
 

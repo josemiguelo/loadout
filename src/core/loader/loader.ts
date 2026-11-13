@@ -19,7 +19,6 @@ import {
   lockFileName,
   ManifestException,
   type Manifest,
-  type Meta,
   parentRoot as placeParent,
   type RepoFS,
   type RepoLayout,
@@ -31,14 +30,6 @@ import { atLeast, VERSION } from "../../version.ts";
 /** readLayout is the repo's layout, from the lock alone (no staleness or file checks). */
 export function readLayout(repoRoot: string): RepoLayout {
   return readLock(repoRoot).manifest.layout;
-}
-
-/**
- * readMeta is the lock's meta (its name, the loadout it needs, its bun),
- * read without the checks a full load makes, like readLayout.
- */
-export function readMeta(repoRoot: string): Meta {
-  return readLock(repoRoot).manifest.meta;
 }
 
 /**

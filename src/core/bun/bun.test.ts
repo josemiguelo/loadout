@@ -1,93 +1,101 @@
-import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, statSync, utimesSync } from "node:fs";
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { deflateRawSync } from "node:zlib";
-import { asset, prune, sumOf, unpack } from "./bun.ts";
+import { binary, binVar, ensure, home, preload, preloadFile, version, wrapper } from "./bun.ts";
 
-const tempDir = () => mkdtempSync(tmpdir() + "/loadout-bun-");
+const saved = { data: process.env.XDG_DATA_HOME, bin: process.env[binVar] };
+let data: string;
 
-test("asset is bun's release zip for the os and arch", () => {
-  const cases: [string, string, boolean, string][] = [
-    ["linux", "amd64", true, "bun-linux-x64.zip"],
-    ["linux", "amd64", false, "bun-linux-x64-baseline.zip"],
-    ["linux", "arm64", false, "bun-linux-aarch64.zip"],
-    ["darwin", "arm64", false, "bun-darwin-aarch64.zip"],
-    ["darwin", "amd64", true, "bun-darwin-x64.zip"],
-  ];
-  for (const [goos, goarch, avx2, want] of cases) expect(asset(goos, goarch, avx2)).toBe(want);
-  expect(() => asset("windows", "amd64", true)).toThrow("bun has no build for windows");
-  expect(() => asset("linux", "riscv64", true)).toThrow("bun has no build for linux/riscv64");
+beforeEach(() => {
+  data = mkdtempSync(tmpdir() + "/loadout-bun-");
+  process.env.XDG_DATA_HOME = data;
+  delete process.env[binVar];
 });
 
-test("sumOf reads SHASUMS lines", () => {
-  const a = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-  const b = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
-  const sums = a + "  bun-linux-x64.zip\n" + b + "  bun-linux-x64-baseline.zip\n";
-  expect(sumOf(sums, "bun-linux-x64-baseline.zip")).toBe(b);
-  expect(sumOf(sums, "bun-darwin-x64.zip")).toBeUndefined();
-});
-
-/** zipOf is a zip of files, as Go's zip.Writer.Create writes them (deflated). */
-function zipOf(files: Record<string, string>): Uint8Array {
-  const locals: Uint8Array[] = [];
-  const centrals: Uint8Array[] = [];
-  let offset = 0;
-  for (const [name, content] of Object.entries(files)) {
-    const nameBytes = new TextEncoder().encode(name);
-    const data = new TextEncoder().encode(content);
-    const packed = new Uint8Array(deflateRawSync(data));
-    const crc = Bun.hash.crc32(data) >>> 0;
-    const local = new Uint8Array(30 + nameBytes.length + packed.length);
-    const l = new DataView(local.buffer);
-    l.setUint32(0, 0x04034b50, true);
-    l.setUint16(4, 20, true);
-    l.setUint16(8, 8, true);
-    l.setUint32(14, crc, true);
-    l.setUint32(18, packed.length, true);
-    l.setUint32(22, data.length, true);
-    l.setUint16(26, nameBytes.length, true);
-    local.set(nameBytes, 30);
-    local.set(packed, 30 + nameBytes.length);
-    const central = new Uint8Array(46 + nameBytes.length);
-    const c = new DataView(central.buffer);
-    c.setUint32(0, 0x02014b50, true);
-    c.setUint16(4, 20, true);
-    c.setUint16(6, 20, true);
-    c.setUint16(10, 8, true);
-    c.setUint32(16, crc, true);
-    c.setUint32(20, packed.length, true);
-    c.setUint32(24, data.length, true);
-    c.setUint16(28, nameBytes.length, true);
-    c.setUint32(42, offset, true);
-    central.set(nameBytes, 46);
-    locals.push(local);
-    centrals.push(central);
-    offset += local.length;
+afterEach(() => {
+  for (const [k, v] of [
+    ["XDG_DATA_HOME", saved.data],
+    [binVar, saved.bin],
+  ] as const) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
   }
-  const dirSize = centrals.reduce((n, c) => n + c.length, 0);
-  const end = new Uint8Array(22);
-  const e = new DataView(end.buffer);
-  e.setUint32(0, 0x06054b50, true);
-  e.setUint16(8, centrals.length, true);
-  e.setUint16(10, centrals.length, true);
-  e.setUint32(12, dirSize, true);
-  e.setUint32(16, offset, true);
-  return new Uint8Array(Buffer.concat([...locals, ...centrals, end]));
-}
-
-test("unpack writes the binary executable", () => {
-  const dir = tempDir() + "/out";
-  unpack(zipOf({ "bun-linux-x64/": "", "bun-linux-x64/bun": "#!/bin/sh\n", "bun-linux-x64/LICENSE": "MIT" }), dir);
-  expect(statSync(dir + "/bun").mode & 0o111).not.toBe(0);
-  expect(() => unpack(zipOf({ "x/README": "" }), tempDir())).toThrow("no bun binary in it");
-  expect(() => unpack(new Uint8Array([1, 2, 3]), tempDir())).toThrow("zip: not a valid zip file");
 });
 
-test("prune keeps the version in use and fresh work folders", () => {
-  const home = tempDir();
-  for (const d of ["1.2.0", "1.3.0", ".1.3.0-fresh", ".1.1.0-stale"]) mkdirSync(home + "/" + d);
-  const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
-  utimesSync(home + "/.1.1.0-stale", old, old);
-  prune(home, "1.3.0");
-  expect(readdirSync(home).sort()).toEqual([".1.3.0-fresh", "1.3.0"]);
+test("version is the bun loadout was built with", () => {
+  expect(version).toBe(Bun.version);
+});
+
+test("home is loadout's bin folder under the data folder", () => {
+  expect(home()).toBe(data + "/loadout/bin");
+});
+
+test("the wrapper runs the executable as bun, quoted, preloading for a file", () => {
+  expect(wrapper("/opt/it's/loadout", "/d")).toBe(
+    "#!/bin/sh\n" +
+      'if [ "$1" = run ] && [ -f "$2" ]; then shift; set -- run --preload \'/d/.preload.js\' "$@"\n' +
+      'elif [ -f "$1" ]; then set -- --preload \'/d/.preload.js\' "$@"\n' +
+      "fi\n" +
+      "BUN_BE_BUN=1 exec '/opt/it'\\''s/loadout' \"$@\"\n",
+  );
+});
+
+test("ensure writes the wrapper executable, and rewrites it only when it differs", () => {
+  const folder = ensure("/opt/loadout");
+  expect(folder).toBe(data + "/loadout/bin");
+  const bun = folder + "/bun";
+  expect(readFileSync(bun, "utf8")).toBe(wrapper("/opt/loadout", folder));
+  expect(statSync(bun).mode & 0o777).toBe(0o755);
+  const before = statSync(bun).ino;
+  ensure("/opt/loadout");
+  expect(statSync(bun).ino).toBe(before); // left alone
+  ensure("/usr/local/bin/loadout");
+  expect(readFileSync(bun, "utf8")).toBe(wrapper("/usr/local/bin/loadout", folder));
+  expect(readFileSync(folder + "/" + preloadFile, "utf8")).toBe(preload);
+  expect(statSync(folder + "/" + preloadFile).mode & 0o111).toBe(0); // not a command on PATH
+  expect(readdirSync(folder).sort()).toEqual([".preload.js", "bun"]); // no temp file left behind
+});
+
+test("ensure makes a wrapper that lost its executable bit executable again", () => {
+  const bun = ensure("/opt/loadout") + "/bun";
+  chmodSync(bun, 0o644);
+  ensure("/opt/loadout");
+  expect(statSync(bun).mode & 0o777).toBe(0o755);
+});
+
+test("the wrapper runs the executable with BUN_BE_BUN set and the arguments as given", async () => {
+  const fake = data + "/fake";
+  writeFileSync(fake, '#!/bin/sh\necho "$BUN_BE_BUN" "$@"\n', { mode: 0o755 });
+  const bun = ensure(fake) + "/bun";
+  const proc = Bun.spawn([bun, "run", "a b.ts"], { stdout: "pipe" });
+  expect(await new Response(proc.stdout).text()).toBe("1 run a b.ts\n");
+});
+
+test("the wrapper preloads the module that drops BUN_BE_BUN when it runs a file", async () => {
+  const fake = data + "/fake";
+  writeFileSync(fake, '#!/bin/sh\necho "$@"\n', { mode: 0o755 });
+  const folder = ensure(fake);
+  const script = data + "/x.ts";
+  writeFileSync(script, "");
+  const out = async (...args: string[]) => new Response(Bun.spawn([folder + "/bun", ...args], { stdout: "pipe" }).stdout).text();
+  const pre = folder + "/" + preloadFile;
+  expect(await out(script, "a")).toBe(`--preload ${pre} ${script} a\n`);
+  expect(await out("run", script)).toBe(`run --preload ${pre} ${script}\n`);
+  expect(await out("install")).toBe("install\n");
+});
+
+test("LOADOUT_BUN overrides the wrapper: its folder, its binary, nothing written", () => {
+  const fake = data + "/tools/bun";
+  Bun.spawnSync(["mkdir", "-p", data + "/tools"]);
+  writeFileSync(fake, "#!/bin/sh\n", { mode: 0o755 });
+  process.env[binVar] = fake;
+  expect(ensure("/opt/loadout")).toBe(data + "/tools");
+  expect(binary(data + "/tools")).toBe(fake);
+  expect(readdirSync(data)).toEqual(["tools"]);
+  process.env[binVar] = data + "/nope";
+  expect(() => ensure()).toThrow("LOADOUT_BUN=" + data + "/nope isn't an executable bun");
+});
+
+test("binary is the wrapper in the folder without LOADOUT_BUN", () => {
+  expect(binary("/x/loadout/bin")).toBe("/x/loadout/bin/bun");
 });

@@ -5,7 +5,6 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
@@ -15,10 +14,9 @@
     "noImplicitOverride": true,
     "types": ["bun"],
     "paths": {
-      "react-devtools-core": ["./src/stubs/react-devtools-core.ts"],
       "loadout": ["./internal/tsmanifest/sdk/loadout.sdk.ts"],
       "loadout/script": ["./internal/tsmanifest/sdk/loadout.script.ts"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts"]
 }

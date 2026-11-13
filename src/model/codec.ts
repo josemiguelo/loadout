@@ -70,7 +70,7 @@ function objectsOf<V>(m: ReadonlyMap<string, V>, f: (v: V) => JSONObject): JSONO
 /** manifestToJSON is the manifest as the lock writes it. */
 export function manifestToJSON(m: Manifest): JSONObject {
   const w = new ObjWriter();
-  if (m.meta.name !== "" || m.meta.minToolVersion !== undefined || m.meta.bun !== undefined) {
+  if (m.meta.name !== "" || m.meta.minToolVersion !== undefined) {
     w.any("meta", metaToJSON(m.meta));
   }
   if (!layoutIsDefault(m.layout)) w.any("layout", layoutToJSON(m.layout));
@@ -88,7 +88,6 @@ function metaToJSON(m: Meta): JSONObject {
   const w = new ObjWriter();
   w.strIf("name", m.name);
   w.ptr("min-tool-version", m.minToolVersion);
-  w.ptr("bun", m.bun);
   return w.obj;
 }
 
@@ -415,7 +414,7 @@ export function readManifest(v: JSONValue | undefined, path: string, errs: Errs)
   const meta = r.get("meta");
   if (meta !== undefined) {
     const mr = new ObjReader(meta, r.at("meta"), "loadout.core.model.Meta", errs);
-    m.meta = newMeta({ name: mr.str("name"), minToolVersion: mr.ptr("min-tool-version"), bun: mr.ptr("bun") });
+    m.meta = newMeta({ name: mr.str("name"), minToolVersion: mr.ptr("min-tool-version") });
     mr.done();
   }
   const layout = r.get("layout");

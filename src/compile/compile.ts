@@ -5,8 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { assemble, declaredNames, draftOver, invalid, type ManifestDraft } from "../assemble/index.ts";
-import { defaultVersion, ensure } from "../core/bun/bun.ts";
-import type { ProcessRunner } from "../core/exec/exec.ts";
+import * as bun from "../core/bun/bun.ts";
 import {
   chezmoiDataFiles,
   cleanPath,
@@ -98,7 +97,7 @@ export interface ParentRef {
  * every machine has done) come back without their "warning: " prefix; they
  * never stop a compile. Throws a refusal (ManifestException) or an I/O error.
  */
-export async function compile(root: string, runner: ProcessRunner): Promise<string[]> {
+export async function compile(root: string): Promise<string[]> {
   root = path.resolve(root);
   try {
     root = fs.realpathSync(root);
@@ -112,19 +111,20 @@ export async function compile(root: string, runner: ProcessRunner): Promise<stri
     }
     throw new ManifestException(root + " has no " + entryFile + " — a config repo starts there (see: loadout init)");
   }
-  const bunBin = await bunFor(root, runner);
+  const bunDir = bun.ensure();
+  const bunBin = bun.binary(bunDir);
   for (const [file, text] of [
     [sdkFile, sdk],
     [scriptSDKFile, scriptSDK],
   ] as const) {
     writeIfChanged(root, path.join(root, file), text);
   }
-  const d = await run(bunBin, root, false);
+  const d = await run(bunBin, bunDir, root, false);
   let draft: ManifestDraft = { manifest: d.manifest, profiles: d.profiles, requires: d.requires };
   let parentFS: RepoFS | undefined;
   let inherited: string[] = [];
   if (d.parent !== undefined) {
-    const parent = await loadParent(bunBin, d.parent, root);
+    const parent = await loadParent(bunBin, bunDir, d.parent, root);
     const [over, errs] = draftOver(draft, parent.draft, d.parent.name);
     if (errs.length > 0) throw invalid(distinct(errs));
     const layout = parent.draft.manifest.layout;
@@ -168,39 +168,17 @@ export async function compile(root: string, runner: ProcessRunner): Promise<stri
 }
 
 /**
- * bunFor is the bun that runs root's manifests: $LOADOUT_BUN, else the one
- * its lock pins (downloaded as for its scripts), else defaultVersion.
- */
-export async function bunFor(root: string, runner: ProcessRunner): Promise<string> {
-  let version = defaultVersion;
-  let text: string | undefined;
-  try {
-    text = fs.readFileSync(path.join(root, lockFileName), "utf8");
-  } catch {
-    text = undefined;
-  }
-  if (text !== undefined) {
-    try {
-      const lock = decodeLock(text, "");
-      if (lock.manifest.meta.bun !== undefined) version = lock.manifest.meta.bun;
-    } catch {
-      // A lock this binary can't read pins nothing.
-    }
-  }
-  const dir = await ensure(runner, version);
-  return path.join(dir, "bun");
-}
-
-/**
- * run is the draft root's loadout.ts prints, run by bunBin with nothing of
- * the caller's environment but PATH and HOME: a manifest's output must not
- * depend on who compiles it. asParent marks every origin as the parent's.
+ * run is the draft root's loadout.ts prints, run by bunBin (loadout itself
+ * as bun, through the wrapper in bunDir, unless $LOADOUT_BUN names one)
+ * with nothing of the caller's environment but PATH, bunDir first, and
+ * HOME: a manifest's output must not depend on who compiles it. asParent
+ * marks every origin as the parent's.
  * Like Go's, it runs the process itself rather than through the
  * ProcessRunner: an argv with a cleared environment, not a shell line.
  */
-async function run(bunBin: string, root: string, asParent: boolean): Promise<Draft> {
+async function run(bunBin: string, bunDir: string, root: string, asParent: boolean): Promise<Draft> {
   const env: Record<string, string> = {
-    PATH: process.env.PATH ?? "",
+    PATH: bunDir + ":" + (process.env.PATH ?? ""),
     HOME: process.env.HOME ?? "",
     LOADOUT_COMPILE: "1",
   };
@@ -460,7 +438,7 @@ interface ParentRepo {
  * be current and have no parent of its own: the child's lock records the
  * parent's sources as that lock names them.
  */
-async function loadParent(bunBin: string, ref: ParentRef, childRoot: string): Promise<ParentRepo> {
+async function loadParent(bunBin: string, bunDir: string, ref: ParentRef, childRoot: string): Promise<ParentRepo> {
   const root = parentRoot(newParentLayout({ name: ref.name, path: ref.path }), process.env.HOME ?? "", childRoot);
   let isDir = false;
   try {
@@ -494,7 +472,7 @@ async function loadParent(bunBin: string, ref: ParentRef, childRoot: string): Pr
   }
   let d: Draft;
   try {
-    d = await run(bunBin, root, true);
+    d = await run(bunBin, bunDir, root, true);
   } catch (e) {
     throw new ManifestException("parent " + ref.name + ": " + (e as Error).message);
   }

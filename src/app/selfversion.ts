@@ -11,12 +11,10 @@ import { joinPath, trimSpace } from "../model/index.ts";
 import { atLeast, VERSION } from "../version.ts";
 
 const selfAPI = "https://api.github.com/repos/josemiguelo/loadout/releases/latest";
-const bunAPI = "https://api.github.com/repos/oven-sh/bun/releases/latest";
 /** selfCache is how long a cached answer stands: 6h. */
 const selfCache = 6 * 60 * 60 * 1000;
 
 const tagName = /"tag_name": *"v([0-9][0-9.]*)"/;
-const bunTagName = /"tag_name": *"bun-v([0-9][0-9.]*)"/;
 
 /**
  * latestRelease is the latest published release ("0.4.0"), or "" when
@@ -25,15 +23,6 @@ const bunTagName = /"tag_name": *"bun-v([0-9][0-9.]*)"/;
  */
 export function latestRelease(runner: ProcessRunner, cached: boolean): Promise<string> {
   return latestOf(runner, selfAPI, tagName, "latest-release", cached);
-}
-
-/**
- * latestBun is bun's latest release ("1.3.1"), or "" when unknown; cached
- * as latestRelease is. A repo's pin (`repo { bun = … }`) moves only when its
- * author edits it, so this is news, never an upgrade.
- */
-export function latestBun(runner: ProcessRunner, cached: boolean): Promise<string> {
-  return latestOf(runner, bunAPI, bunTagName, "latest-bun", cached);
 }
 
 /**

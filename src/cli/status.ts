@@ -15,7 +15,7 @@ import { VERSION } from "../version.ts";
 import type { Command } from "./args.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, echoErr, ensureBun, spinning } from "./spinner.ts";
+import { echo, echoErr, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 import { attention, echoRows, padEnd, runeCount, severe, type TableRow } from "./table.ts";
 
@@ -46,7 +46,6 @@ interface Observed {
 
 async function runStatus(a: AppContext, jsonOut: boolean, noWrite: boolean): Promise<void> {
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
   const store = a.stateStore();
   const subjects = a.configs() !== undefined ? "programs, scripts and configs" : "programs and scripts";
@@ -75,18 +74,6 @@ async function runStatus(a: AppContext, jsonOut: boolean, noWrite: boolean): Pro
   if (seen.configsDown !== undefined) {
     echo("");
     echo(" " + Style.warn("⚠") + "  " + Style.warn("configs not checked: " + seen.configsDown));
-  }
-  if (manifest.meta.bun !== undefined) {
-    let dir: string | undefined;
-    try {
-      dir = await a.bunDir();
-    } catch {
-      dir = undefined;
-    }
-    if (dir !== undefined) {
-      echo("");
-      echo(Style.dim(" ·  scripts run with bun " + manifest.meta.bun + " (" + dir + ")"));
-    }
   }
   // The one self-knowledge carve-out: is this binary itself behind?
   const latest = await behindRelease(a.runner, true);

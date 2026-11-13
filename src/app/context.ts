@@ -54,7 +54,6 @@ class FromLayout {
   readonly parentRoot = new Lazy<string>();
   readonly parentStore = new Lazy<StateStore | undefined>();
   readonly configs = new Lazy<engine.ConfigEngine | undefined>();
-  readonly bunDir = new Lazy<Promise<string>>();
 }
 
 /**
@@ -68,6 +67,8 @@ export class AppContext {
   // What the last refreshAndWriteState left unanswered.
   private configsDownLast: string | undefined;
   private scriptDetailLast = new Map<string, string>();
+  // The bun folder, the same whatever the layout.
+  private readonly bunFolder = new Lazy<string>();
   private toolsDownLast: engine.ToolDown[] = [];
 
   constructor(
@@ -189,21 +190,16 @@ export class AppContext {
     const layout = this.layout();
     const parentRoot = this.parentRoot();
     const parentConfigs = layout.parent?.configs;
-    const bunDir = await this.bunDir();
-    return frameOf(root, system, layout.configs, parentRoot, parentConfigs, bunDir);
+    return frameOf(root, system, layout.configs, parentRoot, parentConfigs, this.bunDir());
   }
 
   /**
-   * bunDir is the folder of the bun the repo pins (`repo { bun = … }`),
-   * downloaded the first time any command needs a frame, or "" when it pins
-   * none.
+   * bunDir is the folder first on every manifest command's PATH: its `bun`
+   * is loadout itself (core/bun's wrapper, written the first time any
+   * command needs a frame), or $LOADOUT_BUN.
    */
-  bunDir(): Promise<string> {
-    return this.current().bunDir.get(async () => {
-      const meta = loader.readMeta(this.repoRoot);
-      if (meta.bun === undefined) return "";
-      return bun.ensure(this.runner, meta.bun);
-    });
+  bunDir(): string {
+    return this.bunFolder.get(() => bun.ensure());
   }
 
   /**

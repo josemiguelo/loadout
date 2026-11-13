@@ -475,10 +475,6 @@ function validate(manifest: Manifest): void {
   if (minToolVersion !== undefined && !dottedVersion.test(minToolVersion)) {
     add("meta min-tool-version '" + minToolVersion + "' is not a dotted version number (e.g. \"0.2.0\")");
   }
-  const bun = manifest.meta.bun;
-  if (bun !== undefined && !dottedVersion.test(bun)) {
-    add("meta bun '" + bun + "' is not a dotted version number (e.g. \"1.3.0\")");
-  }
 
   for (const [name, installer] of manifest.installers) {
     if (installer.check !== undefined && installer.regex === undefined) add("installers." + name + " has a check but no regex");

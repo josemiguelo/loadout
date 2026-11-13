@@ -1,7 +1,5 @@
 import { readSync, writeSync } from "node:fs";
-import type { AppContext } from "../app/index.ts";
 import { isStdoutTty } from "../core/platform/platform.ts";
-import type { Manifest } from "../model/index.ts";
 
 /** Writer is where commands write: a file descriptor, or a test's buffer. */
 export interface Writer {
@@ -118,14 +116,4 @@ export async function spinning<T>(message: string, work: () => Promise<T>): Prom
 /** spin is spinning for work with no result. */
 export function spin(message: string, work: () => Promise<void>): Promise<void> {
   return spinning(message, work);
-}
-
-/**
- * ensureBun gets the bun the repo pins (`repo { bun = … }`) before a command
- * runs manifest commands, under a spinner of its own: the first time, it's
- * a download. Afterwards a stat.
- */
-export async function ensureBun(a: AppContext, manifest: Manifest): Promise<void> {
-  if (manifest.meta.bun === undefined) return;
-  await spinning("getting bun " + manifest.meta.bun + "…", () => a.bunDir());
 }

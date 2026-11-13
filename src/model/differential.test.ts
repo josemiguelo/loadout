@@ -1,7 +1,9 @@
 // The differential check: every lock this repo holds as testdata, and the
 // real config repos' locks on this machine, decode and re-encode to the same
 // bytes, and their chezmoi data and partial render as the Go compile wrote
-// them. A real repo that isn't on this machine is skipped. Read-only: nothing
+// them. A real repo that isn't on this machine is skipped, and so is one
+// whose lock still pins a bun (`meta.bun`, gone at the cutover: such a lock
+// is refused until the repo drops the pin and compiles). Read-only: nothing
 // here writes. Add a lock to `locks` to check it too.
 
 import { expect, test } from "bun:test";
@@ -25,8 +27,17 @@ function firstDiff(a: string, b: string): string {
   return `at ${i}:\n--- got\n${a.slice(Math.max(0, i - 80), i + 80)}\n--- want\n${b.slice(Math.max(0, i - 80), i + 80)}`;
 }
 
+/** pinsBun says whether the lock at path still carries the removed `meta.bun`. */
+function pinsBun(path: string): boolean {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"))?.manifest?.meta?.bun !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 for (const path of locks) {
-  const present = existsSync(path);
+  const present = existsSync(path) && !pinsBun(path);
   test.skipIf(!present)(`${path} re-encodes byte for byte`, () => {
     const text = readFileSync(path, "utf8");
     const got = encodeLock(decodeLock(text));

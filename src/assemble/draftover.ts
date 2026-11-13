@@ -46,8 +46,7 @@ export function draftOver(child: ManifestDraft, parent: ManifestDraft, parentNam
     ...child,
     manifest: {
       ...c,
-      // The child's own bun, else the parent's: its scripts run with one bun.
-      meta: { ...c.meta, minToolVersion: floor, bun: c.meta.bun ?? p.meta.bun },
+      meta: { ...c.meta, minToolVersion: floor },
       installers: plus(p.installers, c.installers),
       programs: plus(p.programs, c.programs),
       scripts: plus(p.scripts, c.scripts),

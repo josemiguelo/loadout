@@ -120,16 +120,15 @@ Explicit user decisions; don't "improve" them away.
    In a child repo (contract 18) a parent's declaration runs in the
    parent's checkout with the parent's `LOADOUT_REPO`/`LOADOUT_CONFIGS`,
    and every command sees `LOADOUT_PARENT` (the parent's root).
-   A repo that pins a bun (`repo({ bun: "1.3.0" })`, `meta bun`; a child
-   without one inherits its parent's) gets its folder first on PATH for
-   every one of them, and in `LOADOUT_BUN_DIR`, which `model.ShellLine`
-   puts ahead of the `provides … at` folders (brew's bin may hold a bun of
-   its own); `model.ShownLine` leaves it out. `AppContext.BunDir` gets it
-   once per process (`core/bun.Ensure`: curl, the release's
-   SHASUMS256.txt, unpacked whole into `$XDG_DATA_HOME/loadout/bun/<v>/`,
-   the other versions removed); the CLI commands that run manifest
-   commands call it first under a spinner (`ensureBun`). Without a pin,
-   nothing is set: the machine's own PATH.
+   Every one of them gets loadout's bun folder first on PATH, and in
+   `LOADOUT_BUN_DIR`, which `model.shellLine` puts ahead of the `provides
+   … at` folders (brew's bin may hold a bun of its own);
+   `model.shownLine` leaves it out. The folder holds a `bun` wrapper
+   (`BUN_BE_BUN=1 exec <loadout> "$@"`): loadout is the bun its scripts
+   run with, the one it was built with. `AppContext.bunDir` writes it once
+   per process (`core/bun` `ensure`: `$XDG_DATA_HOME/loadout/bin`, only
+   when missing or different, through a rename); `$LOADOUT_BUN` (a bun
+   binary) puts its own folder there instead. A repo pins no bun.
 6. **Execution order**: in two phases, core then later; in each, all
    programs before all scripts; programs
    topologically by dependencies, ties broken by NAME (InstallOrder sorts;
@@ -305,7 +304,8 @@ Explicit user decisions; don't "improve" them away.
     removed: manifests are HCL, compiled by the binary itself, no JDK or
     Gradle; a Kotlin repo is refused by name; the lock format is
     unchanged, so a 3.x lock still reads) and 5.0.0 (HCL removed:
-    manifests are TypeScript, run by the bun loadout brings; `loadout lsp`
+    manifests are TypeScript, run by loadout itself as bun (no
+    pin: `repo({ bun })` is refused); `loadout lsp`
     removed, the TypeScript language server replaces it; an HCL repo is
     refused by name; the lock format is unchanged). A removal is decided once,
     loudly, in the release notes, never silently. The manifest language
@@ -356,8 +356,8 @@ Explicit user decisions; don't "improve" them away.
     itself: it is the command that pulls, so it's the one that meets a
     repo moved ahead of the binary.
 16. **The repo's shape is declared, never assumed.** A config repo is
-    `loadout.ts` at its root, run by compile with bun (`$LOADOUT_BUN`, else
-    the lock's `bun` pin, else the binary's `bun.DefaultVersion`), plus
+    `loadout.ts` at its root, run by compile with loadout itself as bun
+    (`$LOADOUT_BUN` overrides it), plus
     what it imports and `include()`s (`include("loadouts/**/*.loadout.ts")`:
     Bun.Glob, dot files included, path order), and only those; it ends
     with `repo({ … })`, which prints the draft. Nothing else: no build

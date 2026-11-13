@@ -12,7 +12,7 @@ import {
 } from "../model/index.ts";
 import { atLeast, VERSION } from "../version.ts";
 import type { AppContext } from "./context.ts";
-import { behindRelease, latestBun } from "./selfversion.ts";
+import { behindRelease } from "./selfversion.ts";
 
 /**
  * UpdateRow is one "something newer exists" row, shared by `outdated` and
@@ -26,15 +26,6 @@ export interface UpdateRow {
   note: string;
   /** link is a page about the change: the source printed a URL in its note tail. */
   link?: string;
-}
-
-/**
- * BunUpdate is a newer bun than the one the repo pins: its scripts' bun
- * moves when the author edits `repo { bun = … }`, nothing upgrades it.
- */
-export interface BunUpdate {
-  pinned: string;
-  latest: string;
 }
 
 /**
@@ -75,8 +66,6 @@ export interface OutdatedReport {
   errors: SourceError[];
   /** unchecked is the installed programs no oracle can answer for, in mapping order. */
   unchecked: string[];
-  /** bun is a newer bun than the repo pins; undefined when it pins none or it's current. */
-  bun?: BunUpdate;
 }
 
 /** last is Go's math.MaxInt: after every declared position. */
@@ -241,11 +230,5 @@ export async function outdatedReport(
     if (a2 !== b2) return a2 - b2;
     return compareStrings(x.name, y.name);
   });
-  let bunUpdate: BunUpdate | undefined;
-  const pinned = manifest.meta.bun;
-  if (pinned !== undefined) {
-    const latestOfBun = await latestBun(a.runner, !freshSelfCheck);
-    if (latestOfBun !== "" && !atLeast(pinned, latestOfBun)) bunUpdate = { pinned, latest: latestOfBun };
-  }
-  return { updates: rows, tools, errors, unchecked, bun: bunUpdate };
+  return { updates: rows, tools, errors, unchecked };
 }

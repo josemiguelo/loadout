@@ -8,7 +8,7 @@ Read this before porting any package.
 ## Build, run, test
 
 ```sh
-bun install                                   # deps (ink, react, @xterm/headless; types, typescript)
+bun install                                   # deps (@xterm/headless; types, typescript)
 bun run build                                 # build/loadout-ts, this host's executable
 bun test src                                  # unit tests (*.test.ts beside the code)
 bunx tsc --noEmit -p .                        # types
@@ -20,12 +20,12 @@ Cross-compile: `bun build --compile --target=bun-<linux-x64-baseline|linux-arm64
 
 ## The design
 
-- **Sequencing:** until the TypeScript binary reaches parity, the port
-  reproduces the Go code as it is, the bun download (`core/bun`), the repo
-  pin (`repo({ bun })`, `meta.bun`) and the outdated bun row included, so
-  differential runs against the Go binary stay exact. The design below is
-  the cutover step, done after parity, in one change.
-- **One executable, and it is the bun** (the cutover step). Manifest commands get a folder
+- **Sequencing:** until parity the port reproduced the Go code as it was,
+  bun download and repo pin included, so differential runs stayed exact.
+  Parity reached, the cutover (below) left that behind in one change: from
+  here on the TypeScript binary is the reference, and where it differs from
+  the Go binary on the bun, it's on purpose.
+- **One executable, and it is the bun** (done: the cutover). Manifest commands get a folder
   first on PATH holding a `bun` wrapper (`BUN_BE_BUN=1 exec <loadout>
   "$@"`): a compiled bun executable with `BUN_BE_BUN=1` behaves as the bun
   CLI, so scripts (`#!/usr/bin/env bun`) and compile's run of loadout.ts use
@@ -45,11 +45,10 @@ Cross-compile: `bun build --compile --target=bun-<linux-x64-baseline|linux-arm64
   re-tokenizes every styled cell of a frame on each render (60–130 ms for
   140×40) and the busy spinner redraws twelve times a second, which kept the
   screen at a full core and made the run panel answer a command's terminal
-  queries too late (sudo read the late replies as a password). Ink and React
-  stay dependencies until the cutover decides on them. Its run panel runs a
+  queries too late (sudo read the late replies as a password). Ink, React
+  and the `react-devtools-core` stub went at the cutover. Its run panel runs a
   command in a PTY (`Bun.spawn({ terminal })` / `Bun.Terminal`) and keeps
-  the screen in `@xterm/headless`. `react-devtools-core` is stubbed
-  (src/stubs, tsconfig paths) so Ink bundles.
+  the screen in `@xterm/headless`.
 
 ## Layout: one folder per Go package
 
@@ -91,7 +90,7 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 - **Errors**: `Refusal` (an `Error` subclass) and its kinds
   (`ManifestException`, `ToolTooOldException`, …); src/main.ts prints any
   error as one `error: ` line, exit 1; Ctrl-C exits 130 (contract 9).
-- **Dependencies**: ink, react, @xterm/headless only. Ask before adding one.
+- **Dependencies**: @xterm/headless only. Ask before adding one.
 - **Linux and macOS**, as AGENTS.md's working agreements say.
 
 ## The model in TypeScript
@@ -127,7 +126,7 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   `InterruptedByUser` (a Refusal, "interrupted"), so the result of an
   interrupted capture is gone: Go's callers returned the error anyway.
   Anything that runs a command is async in turn (`Detection.isBinaryAvailable`,
-  every `GitClient` method, `bun.ensure`); file work stays synchronous
+  every `GitClient` method); file work stays synchronous (`bun.ensure` too)
   (`StateStore`, `loader`, `writeIfChanged`) and throws.
 - **`ShellCommand`** is `{ line, cwd, env? }`: `env` a plain
   `Record<string, string>` (Go's unordered map), `undefined` = nil.
@@ -204,16 +203,17 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   `hasConfigs()`, `fleetStates()`, `fleetWarnings()`, `loadManifest()`,
   `detectSystem()`, `canonicalRoot()`, `lastConfigsDown()`,
   `lastScriptDetail()` (a `Map`, empty before any refresh),
-  `lastToolsDown()`. Async (they run commands): `bunDir()`, `frame(system)`,
+  `lastToolsDown()`, `bunDir()` (the wrapper's folder, written once per
+  process, the same whatever the layout). Async (they run commands): `frame(system)`,
   `statusEngine(system)`, `binaryAvailable(b)`,
   `refreshAndWriteState(manifest, system, scriptResults)`,
   `refreshAndWriteStateParts(…, onPart)`, `explain(names)`,
   `outdatedReport(manifest, system, observed, freshSelfCheck)`.
   `runCommand(closed)`, `selfArgv(self, …args)` stay synchronous.
 - **Laziness is Go's `sync.Once`**: layout, state store, parent root,
-  parent store, configs and the bun folder are computed on first use, and
-  every later use gets that value or throws that error again (a `Lazy`
-  per value; `bunDir`'s is the one promise everyone awaits).
+  parent store and configs are computed on first use, and every later use
+  gets that value or throws that error again (a `Lazy` per value; an
+  async one is one promise everyone awaits).
   `reloadLayout()` drops them all at once.
 - **`explain` throws `NoSuchItemError`** for an unknown name; its
   `explained` is what came before it (Go returned both): print that, then
@@ -229,7 +229,7 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   `registerScreen(factory)` (the tui module calls it when imported),
   `hasScreen()` and `newScreen(app)`; `Screen.run()` resolves to
   `Ended { message, code }`.
-- **Self-version**: `latestRelease`, `latestBun`, `behindRelease` are async
+- **Self-version**: `latestRelease`, `behindRelease` are async
   (curl through the runner), the 6h cache in `$XDG_CACHE_HOME/loadout`.
   `home()` is Go's `app.Home()`, `shQuote` Go's `ShQuote`.
 
@@ -247,16 +247,16 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   `(cmd, args, flags)`, flags read as `flags.bool("yes")`,
   `flags.string(…)`, `flags.strings(…)`, `flags.changed(…)`. The hidden
   `no-help-command` stays (it shows its help, as Go's); cobra's
-  `__complete` doesn't.
+  `__complete` doesn't. A `passArgs` command (cobra's DisableFlagParsing:
+  `loadout bun`) gets every argument after its name as it is, `--help`
+  included, and no help flag of its own.
 - **Writes go through `echo`/`echoNoNewline`/`echoErr`** (spinner.ts),
   synchronous on fds 1 and 2 (`streams`, swapped by tests); `spinning(msg,
   async work)` draws from a timer, so the work must be async to animate.
 - **`UsageError`/`usageErr`, `ExitError`/`exitWith`** are thrown;
   src/main.ts reports them as cmd/loadout/main.go did.
 - **The commands take app's `AppContext`** (`appCtx()` in root.ts, built
-  by the root's persistentPreRun as Go's `app.New`). `ensureBun(a,
-  manifest)` (spinner.ts) gets the repo's pinned bun before a command runs
-  manifest commands. converge.ts is the program half of `install` and
+  by the root's persistentPreRun as Go's `app.New`). converge.ts is the program half of `install` and
   `setup-new-machine`. Bare `loadout` on a terminal starts the screen
   through `app.newScreen` (home.ts) once src/tui registers one; until
   src/main.ts imports `./tui/index.ts`, it refuses (Go printed help when
@@ -305,19 +305,66 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   point is its own grapheme; ~1.5 ms a 197×51 frame, ~4% CPU while a run
   spins.
 
+## The cutover: loadout is the bun
+
+Done in one change after parity; the Go binary still downloads and pins,
+and is no longer the reference for any of this.
+
+- **src/core/bun** is the wrapper alone: `wrapperDir()` writes `bun`
+  (`#!/bin/sh` + `BUN_BE_BUN=1 exec '<process.execPath>' "$@"`, with
+  `--preload <folder>/.preload.js` when it runs a file) and that preload
+  into `home()` (`$XDG_DATA_HOME/loadout/bin`, else
+  `~/.local/share/loadout/bin`) when missing, not executable or different,
+  through a temp file and a rename, and returns the folder; `ensure()` is
+  that folder unless `$LOADOUT_BUN` names a bun; `$LOADOUT_BUN` returns that binary's
+  folder instead and writes nothing. `AppContext.bunDir()` (synchronous,
+  once per process) feeds it to `frameOf`, which sets PATH and
+  `LOADOUT_BUN_DIR` as before; `model.shellLine` still puts that folder
+  ahead of a `provides … at` one.
+- **compile** runs `bun.binary(dir)` (the wrapper, or `$LOADOUT_BUN`) with
+  the cleared environment plus that folder first on PATH: the wrapper sets
+  `BUN_BE_BUN` itself, so the child is loadout as bun.
+- **The pin is gone**: `RepoSpec.bun` is `never` in the SDK, documented as
+  gone, and `repo()` fails where it's called ("repo's bun is gone: scripts
+  run with the bun loadout is built with (<Bun.version>), so drop it").
+  `Meta` has no `bun`, so a lock that still carries `meta.bun` is refused as
+  any unknown key is ("loadout.lock.json can't be read (Encountered an
+  unknown key 'bun' at path: $.manifest.meta) — run: loadout compile"),
+  and the compile it asks for meets the SDK's refusal. The download, the
+  zip reader, `ensureBun`, `latestBun`, the outdated bun row, status's
+  "scripts run with bun" line, assemble's version check and draftOver's
+  inheritance went with it; differential.test.ts skips a real lock that
+  still pins one.
+- **`loadout bun [args…]`** (src/cli/bun.ts) runs the wrapper (never
+  `$LOADOUT_BUN`) through the ShellRunner (`exec`, stdio inherited), exits
+  with its code, and needs no repo (a no-op persistentPreRun); bare, it
+  prints its help.
+- **`BUN_BE_BUN` doesn't reach what a script starts**: bun leaves it set,
+  so a bun-compiled executable a script starts (loadout itself, any other)
+  would act as bun. The wrapper's preload (`delete
+  process.env.BUN_BE_BUN`) drops it when bun runs a file (`bun x.ts`, a
+  shebang, `bun run x.ts`). Not in `BUN_OPTIONS`: a `--preload` there makes
+  every subcommand parse as `bun run` (`bun install` becomes "Script not
+  found"). Other subcommands (`bun test`, `bun install`'s lifecycle
+  scripts) still pass it on.
+- **The suite runs it**: run-tests.sh unsets `LOADOUT_BUN`, so every
+  compile and script in it runs the binary as bun; 42-bun sets the override
+  per command.
+
 ## Status
 
 | Part | State |
 |---|---|
-| skeleton, build, Ink + xterm in a compiled binary | done |
+| skeleton, build, xterm in a compiled binary | done (Ink and React dropped at the cutover) |
 | model, assemble, coremodel, coretest, version | done: Go tests ported; every testdata and real lock re-encodes byte for byte (src/model/differential.test.ts) |
 | core/platform | done (termios through bun:ffi for the OSC 11 query) |
-| core (exec + fakeexec, detect, git, loader, state, diff, bun wrapper) | done: Go tests ported; state's testdata re-encodes byte for byte; nowIso reads nanoseconds (clock_gettime through bun:ffi), as Go's time.Now |
-| compile (tsmanifest) | done: Go tests ported; byte-identical to the Go binary (lock, chezmoi data, partial, SDKs, warnings, refusals) on the dotfiles, `init`/`init --configs` scaffolds and child repos. `src/compile/devcompile.ts` (the differential driver) goes at cutover |
+| core (exec + fakeexec, detect, git, loader, state, diff, bun) | done: Go tests ported (bun's download tests replaced by the wrapper's at the cutover); state's testdata re-encodes byte for byte; nowIso reads nanoseconds (clock_gettime through bun:ffi), as Go's time.Now |
+| compile (tsmanifest) | done: Go tests ported; byte-identical to the Go binary (lock, chezmoi data, partial, SDKs, warnings, refusals) on the dotfiles, `init`/`init --configs` scaffolds and child repos, before the cutover; `src/compile/devcompile.ts` (the differential driver) went at the cutover |
 | engines (core/engine) | done: Go tests ported (88, same names), plus text.test.ts for the port's own helpers (goRegExp, forEach) |
 | cli: style, table, spinner, help, errors, the command line (args.ts), init + scaffolds, compile, main.ts | done: Go tests ported (cli_test.go's), plus args/scaffold tests; help screens, usage errors, `init` (plain, --configs, --parent) and `compile` byte-identical to the Go binary (styled on a terminal too); 10-init passes |
 | app | done: Go tests ported (run, screen; same names), plus context.test.ts for what Go left untested (laziness and reloadLayout, the outdated ordering, explain, the self-version cache) |
 | cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | done: every integration file but 70-home-screen passes against build/loadout-ts (55-configs up to its home-screen part); `status --json`, `status`, `explain`, `diff`, `outdated`, `setup-new-machine --dry-run`, `install --dry-run`, `upgrade --dry-run`, `installers` byte-identical to the Go binary on the dotfiles (styled on a terminal too, spinner frames aside); `src/cli/context.ts` is gone. cli_test.go was already ported; converge.test.ts adds the plan table, install tallies and sync's summary. src/main.ts imports src/tui/index.ts, which registers the screen |
 | theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
 | tui (the home screen) | done: homemodel_test.go ported (66 cases, same names); 70-home-screen, 71-terminal and 55-configs pass against build/loadout-ts; frames and colours identical to the Go binary's in tmux (wide and stacked, dialogs, the palette, a finished run) |
+| the cutover (loadout is the bun, `loadout bun`, no pin, no Ink) | done: unit tests, tsc, build and all 169 integration tests green against build/loadout-ts with no `LOADOUT_BUN` |
 | release (workflow, install.sh unchanged names), docs, Go removed | — |

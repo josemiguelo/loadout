@@ -8,8 +8,8 @@ import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /**
- * newCompileCmd runs the repo's TypeScript manifests (loadout.ts, with the
- * bun loadout brings) into loadout.lock.json, the one thing every other
+ * newCompileCmd runs the repo's TypeScript manifests (loadout.ts, run by
+ * loadout as bun) into loadout.lock.json, the one thing every other
  * command reads.
  */
 export function newCompileCmd(): Command {
@@ -27,7 +27,7 @@ export function newCompileCmd(): Command {
  * `sync` runs it too, for a child whose parent's manifests changed.
  */
 export async function compileRepo(a: AppContext): Promise<void> {
-  const warnings = await spinning("compiling manifests…", () => compile(a.repoRoot, a.runner));
+  const warnings = await spinning("compiling manifests…", () => compile(a.repoRoot));
   echo(" " + Style.ok("✔") + "  wrote " + lockFileName);
   // What the manifests declare but no machine uses.
   for (const w of warnings) echo(" " + Style.warn("!") + "  " + w);

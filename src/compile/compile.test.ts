@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { assembleWithoutFiles, type ManifestDraft, newManifestDraft } from "../assemble/index.ts";
-import { newRunner } from "../core/exec/fakeexec/fakeexec.ts";
 import { type Manifest, mapOf, newMachineConfig, newProgram, newScriptStep } from "../model/index.ts";
 import { via, pm } from "../assemble/testhelpers.ts";
 import { compile, decodeDraft, doneScripts, writeIfChanged } from "./compile.ts";
@@ -74,9 +73,9 @@ describe("compile, before bun runs", () => {
     ]) {
       const root = tempDir();
       fs.writeFileSync(path.join(root, file!), "");
-      await expect(compile(root, newRunner())).rejects.toThrow(want);
+      await expect(compile(root)).rejects.toThrow(want);
     }
-    await expect(compile(tempDir(), newRunner())).rejects.toThrow("has no loadout.ts");
+    await expect(compile(tempDir())).rejects.toThrow("has no loadout.ts");
   });
 
   test("compile writes only under the root and only what changed", () => {

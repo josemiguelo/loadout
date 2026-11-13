@@ -30,9 +30,9 @@
   "loadout" itself, only other fragments, by relative path),
   `repo_opt <loadout.ts> '<option>'` (an option added to `repo({…})`:
   `configs: "configs"`), then `compile_repo`, which compiles with the real
-  binary. run-tests.sh exports `LOADOUT_BUN` as the `bun` on PATH when it's
-  unset, so compiles take milliseconds and need no network;
-  `t/42-bun.sh`'s download tests clear it per command (`bl`). A `manual`
+  binary. run-tests.sh unsets `LOADOUT_BUN`, so compiles and scripts run with the
+  binary under test as bun, as on a user's machine; `t/42-bun.sh` sets it
+  per command where a test wants the override. A `manual`
   custom variant with a failing command keeps tests off the host's
   package managers. Add an `ok "..."` test for every user-visible
   behavior change, in the file whose subject it is (new subject = new

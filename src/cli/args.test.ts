@@ -76,3 +76,24 @@ test("flags parse as pflag's: shorthands grouped, values attached or next, repea
   p = parseFlags(cmd, []);
   expect([p.flags.string("message"), p.flags.changed("message"), p.flags.strings("item")]).toEqual(["dflt", false, []]);
 });
+
+test("a command that passes its arguments on gets them as given, after its name only", async () => {
+  const root = newRoot();
+  let got: string[] | undefined;
+  const bun = root.commands.find((c) => c.name === "bun")!;
+  bun.run = async (_cmd, args) => {
+    got = args;
+  };
+  const cases: [string[], string[]][] = [
+    [["bun", "--version"], ["--version"]],
+    [["bun", "-h"], ["-h"]],
+    [["bun", "run", "--watch", "x.ts", "--", "-v"], ["run", "--watch", "x.ts", "--", "-v"]],
+    [["--repo", "bun", "-v", "bun", "--help"], ["--help"]],
+    [["bun"], []],
+  ];
+  for (const [args, want] of cases) {
+    got = undefined;
+    await executeCommand(root, args, { flagError, printHelp: () => {} });
+    expect([args, got]).toEqual([args, want]);
+  }
+});

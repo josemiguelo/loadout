@@ -5,7 +5,7 @@ import type { Command } from "./args.ts";
 import { exitWith } from "./errors.ts";
 import { commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, ensureBun, spinning } from "./spinner.ts";
+import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 import { echoRows, padEnd, runeCount, severe, type TableRow } from "./table.ts";
 
@@ -21,7 +21,6 @@ export function newOutdatedCmd(): Command {
 
 async function runOutdated(a: AppContext): Promise<void> {
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
   const store = a.stateStore();
   const observed = store.read(system.machine);
@@ -34,16 +33,6 @@ async function runOutdated(a: AppContext): Promise<void> {
   const extra = n > 0 ? " and " + n + " extra source(s)" : "";
   const report = await spinning("asking the remotes" + extra + "…", () => a.outdatedReport(manifest, system, observed, true));
   const updates: UpdateRow[] = [...report.updates];
-  // The repo's bun is a row here only: moving it is an edit to loadout.ts.
-  if (report.bun !== undefined) {
-    updates.push({
-      name: "bun",
-      current: report.bun.pinned,
-      candidate: report.bun.latest,
-      source: "repo.bun",
-      note: "the bun scripts run with: move `bun` in loadout.ts, then loadout compile",
-    });
-  }
 
   // The doctor's line per tool first: what upgrading it would mean,
   // declared or not — the program rows below are the part loadout knows

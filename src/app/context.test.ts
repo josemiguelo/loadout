@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { installed, missing, newMachineState } from "../core/coremodel/coremodel.ts";
@@ -39,15 +39,20 @@ function appOf(root: string, runner: Runner = newRunner()): AppContext {
   return newAppWith(root, "m1", false, runner, newDetection(runner, mapFS({})));
 }
 
+// The cache and the bun wrapper (written by any frame) go to temp folders.
 let cacheHome = "";
 const savedCache = process.env.XDG_CACHE_HOME;
+const savedData = process.env.XDG_DATA_HOME;
 beforeEach(() => {
   cacheHome = mkdtempSync(tmpdir() + "/loadout-cache-");
   process.env.XDG_CACHE_HOME = cacheHome;
+  process.env.XDG_DATA_HOME = mkdtempSync(tmpdir() + "/loadout-data-");
 });
 afterEach(() => {
   if (savedCache === undefined) delete process.env.XDG_CACHE_HOME;
   else process.env.XDG_CACHE_HOME = savedCache;
+  if (savedData === undefined) delete process.env.XDG_DATA_HOME;
+  else process.env.XDG_DATA_HOME = savedData;
 });
 
 test("the layout is read once, until reloadLayout", () => {
@@ -69,6 +74,22 @@ test("a layout that can't be read fails every use the same way", () => {
   expect(a.hasConfigs()).toBe(false);
   expect(a.fleetWarnings()).toEqual([]);
   expect(() => a.canonicalRoot()).toThrow("lstat /nonexistent: no such file or directory");
+});
+
+test("every frame puts loadout itself first on PATH as bun", async () => {
+  const saved = process.env.LOADOUT_BUN;
+  delete process.env.LOADOUT_BUN;
+  try {
+    const m = manifestOf((b) => b.machine("m1", {}));
+    const a = appOf(repo({ ...m, layout: newRepoLayout({ state: "state" }) }));
+    const folder = process.env.XDG_DATA_HOME + "/loadout/bin";
+    expect(a.bunDir()).toBe(folder);
+    const command = (await a.frame({ machine: "m1", os: "linux", arch: "x86_64" })).command("x", "");
+    expect(command.env?.["PATH"]?.startsWith(folder + ":")).toBe(true);
+    expect(readFileSync(folder + "/bun", "utf8")).toContain("BUN_BE_BUN=1 exec '" + process.execPath + "'");
+  } finally {
+    if (saved !== undefined) process.env.LOADOUT_BUN = saved;
+  }
 });
 
 test("the outdated report orders rows by installer declaration, then release, then sources", async () => {
@@ -119,7 +140,6 @@ test("the outdated report orders rows by installer declaration, then release, th
   ]);
   expect(report.errors).toEqual([{ label: "broken", reason: "exited 2: boom" }]);
   expect(report.unchecked).toEqual(["plain"]);
-  expect(report.bun).toBeUndefined();
 });
 
 test("explain shows a program's variants, marks this machine's, and stops at an unknown name", async () => {

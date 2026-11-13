@@ -53,20 +53,6 @@ test("a child machine uses the parent's declarations but not its machines", () =
   expect(over.manifest.meta.minToolVersion).toBe("3.1.0");
 });
 
-test("a child's bun wins, and without one it runs the parent's", () => {
-  const parent = parentDraft();
-  parent.manifest.meta = { ...parent.manifest.meta, bun: "1.2.0" };
-  const child = newManifestDraft({
-    manifest: newManifest({ meta: newMeta({ name: "work", bun: "1.3.0" }), layout: newRepoLayout({ state: "state" }) }),
-  });
-  let [over, errs] = draftOver(child, parent, "dotfiles");
-  expect(errs).toEqual([]);
-  expect(over.manifest.meta.bun).toBe("1.3.0");
-  child.manifest.meta = { ...child.manifest.meta, bun: undefined };
-  [over] = draftOver(child, parent, "dotfiles");
-  expect(over.manifest.meta.bun).toBe("1.2.0");
-});
-
 test("a name both repos declare is refused naming the parent", () => {
   const child = newManifestDraft({
     manifest: newManifest({

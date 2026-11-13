@@ -587,8 +587,11 @@ export type RepoSpec<Data> = {
   configs?: string;
   /** The oldest loadout that may read this repo. */
   minToolVersion?: string;
-  /** The bun its scripts run with: loadout downloads it and puts it first on PATH. */
-  bun?: string;
+  /**
+   * Gone: scripts run with the bun loadout is built with (`loadout bun
+   * --version`), so a repo pins none. Drop it.
+   */
+  bun?: never;
   /** Every per-machine setting, with its default (a child repo's are its parent's). */
   data?: Data;
   /** The repo this one builds on (a child repo): its checkout, `~/…`, absolute, or relative to this one. */
@@ -651,9 +654,10 @@ const entries = (m: Map<string, Entry>) => (m.size ? Object.fromEntries([...m].m
  * declared everything. Under `loadout compile` it prints the draft.
  */
 export function repo<Data>(spec: RepoSpec<Data>) {
+  if ((spec as JSON).bun !== undefined) fail(`repo's bun is gone: scripts run with the bun loadout is built with (${Bun.version}), so drop it`);
   if (!process.env.LOADOUT_COMPILE) return;
   const manifest = clean({
-    meta: clean({ name: spec.name, "min-tool-version": spec.minToolVersion, bun: spec.bun }),
+    meta: clean({ name: spec.name, "min-tool-version": spec.minToolVersion }),
     layout: clean({ state: spec.state, configs: spec.configs, sources: sourcesFrom([Bun.main, ...included]) }),
     installers: entries(draft.installers),
     programs: entries(draft.programs),

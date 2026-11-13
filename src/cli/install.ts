@@ -11,7 +11,7 @@ import {
 import { exitWith, usageErr } from "./errors.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, ensureBun, spin } from "./spinner.ts";
+import { echo, spin } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /**
@@ -41,7 +41,6 @@ export function newInstallCmd(): Command {
 async function runInstall(names: string[], all: boolean, dryRun: boolean, yes: boolean): Promise<void> {
   const a = appCtx();
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
   if (all && names.length > 0) throw usageErr("Give program names or --all, not both");
   if (!all && names.length === 0) throw usageErr("Give at least one program, or --all");

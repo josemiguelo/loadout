@@ -10,9 +10,12 @@
   prints `✔ wrote loadout.lock.json` and its warnings; on failure one
   `error: ` line. Nothing is written when anything is wrong (the SDK file
   is written first: it's the compiling binary's, whatever happens next).
-- **Which bun**: `$LOADOUT_BUN` (a binary; CI and the integration suite
-  set it), else the one the repo's lock pins (`bun.Ensure`, downloaded as
-  for scripts), else `bun.DefaultVersion`.
+- **Which bun**: loadout itself, through the `bun` wrapper in
+  `$XDG_DATA_HOME/loadout/bin` (core/bun), in a cleared environment whose
+  PATH starts with that folder; `$LOADOUT_BUN` (a bun binary) overrides it,
+  for tests and developers. A repo pins no bun: `repo({ bun })` is refused
+  where it's declared, and a lock that still carries `meta.bun` can't be
+  read until the repo compiles.
 - **The draft is the lock's own shapes** (`model.EncodeDraft`/
   `DecodeDraft`): the manifest before assembly (machines unflattened,
   built-ins not merged), the profiles, the installers' extra requires, and

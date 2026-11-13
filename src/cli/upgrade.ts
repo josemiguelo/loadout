@@ -6,7 +6,7 @@ import { askForSudoUpfront, confirmOrAbort } from "./converge.ts";
 import { exitWith, usageErr } from "./errors.ts";
 import { boolFlag, commandHelp, stringsFlag } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, echoErr, ensureBun, spinning } from "./spinner.ts";
+import { echo, echoErr, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /**
@@ -49,7 +49,6 @@ async function runUpgrade(names: string[], all: boolean, items: string[], dryRun
   }
 
   const manifest = a.loadManifest();
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
   const store = a.stateStore();
   const before: ReadonlyMap<string, ProgramState> = store.read(system.machine)?.programs ?? new Map();

@@ -9,6 +9,7 @@ import { envVar, isStdoutTty } from "../core/platform/platform.ts";
 import { VERSION } from "../version.ts";
 import { type ArgSpec, Command, executeCommand, type Run } from "./args.ts";
 import { newApplyCmd } from "./apply.ts";
+import { newBunCmd } from "./bun.ts";
 import { newCompileCmd } from "./compile.ts";
 import { newDiffCmd } from "./diff.ts";
 import { argsAtMost, exitWith, flagError, noSuchSubcommand, setRoot } from "./errors.ts";
@@ -105,8 +106,10 @@ export function newRoot(): Command {
     newSelfUpgradeCmd(),
     newInitCmd(),
     newCompileCmd(),
+    newBunCmd(),
   ]) {
-    helpFlag(sub);
+    // A command that passes its arguments on passes --help on too.
+    if (!sub.passArgs) helpFlag(sub);
     root.addCommand(sub);
   }
   // No `help` subcommand: Clikt had none, so `loadout help` is no such

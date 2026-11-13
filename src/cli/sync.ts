@@ -13,7 +13,7 @@ import { compileRepo } from "./compile.ts";
 import { exitWith } from "./errors.ts";
 import { boolFlag, commandHelp, stringFlag } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
-import { echo, ensureBun, spin, spinning } from "./spinner.ts";
+import { echo, spin, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** syncUpgraded is set on the sync an upgrade starts. */
@@ -103,7 +103,6 @@ async function runSync(a: AppContext, noPush: boolean, message: string | undefin
   const loaded = attempt(() => a.loadManifest());
   if ("tooOld" in loaded) return upgradeAndSyncAgain(a, loaded.tooOld, recompiled, noPush, message);
   const manifest = loaded.value;
-  await ensureBun(a, manifest);
   const system = a.detectSystem();
   // Configs land before the refresh, so the state committed is what this
   // machine has after the pull. A file edited here stops the sync before

@@ -220,7 +220,7 @@ test("a script entry's whitespace becomes single spaces", () => {
   expect(scriptEntry("  name\n\ta \n  b  ")).toEqual(["name", "a b"]);
 });
 
-test("shell line puts the repo bun first when set, and a shown line leaves it out", () => {
+test("shell line puts the bun folder first when set, and a shown line leaves it out", () => {
   const line = shellLine("bun x.ts", ["/opt/homebrew/bin"]);
   expect(line).toBe('PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}/opt/homebrew/bin:$PATH"; export PATH; bun x.ts');
   expect(shownLine(line)).toBe('PATH="/opt/homebrew/bin:$PATH"; export PATH; bun x.ts');
