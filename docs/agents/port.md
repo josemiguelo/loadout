@@ -39,10 +39,17 @@ Cross-compile: `bun build --compile --target=bun-<linux-x64-baseline|linux-arm64
   `loadout.script.ts` until the Go code goes; the app imports their text
   (`import SDK from "…/loadout.sdk.ts" with { type: "text" }`) to write them
   into repos.
-- **The home screen** is Ink (React for the terminal). Its run panel runs a
-  command in a PTY (`Bun.spawn({ terminal })` / `Bun.Terminal`) and keeps the
-  screen in `@xterm/headless`, drawn inside Ink. `react-devtools-core` is
-  stubbed (src/stubs, tsconfig paths) so Ink bundles.
+- **The home screen** draws its frames itself (src/tui/renderer.ts: the
+  alternate screen, changed rows only, synchronized output, the command's
+  cursor) and reads the tty itself (src/tui/input.ts). Not Ink: Ink
+  re-tokenizes every styled cell of a frame on each render (60–130 ms for
+  140×40) and the busy spinner redraws twelve times a second, which kept the
+  screen at a full core and made the run panel answer a command's terminal
+  queries too late (sudo read the late replies as a password). Ink and React
+  stay dependencies until the cutover decides on them. Its run panel runs a
+  command in a PTY (`Bun.spawn({ terminal })` / `Bun.Terminal`) and keeps
+  the screen in `@xterm/headless`. `react-devtools-core` is stubbed
+  (src/stubs, tsconfig paths) so Ink bundles.
 
 ## Layout: one folder per Go package
 
@@ -261,6 +268,43 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   build warns about the child scaffold's templated tsconfig.json
   (`{{.ParentImport}}/*`): harmless.
 
+## The home screen in TypeScript
+
+- **Go's architecture, kept**: `HomeModel` (homemodel.ts) is the state and
+  the seams (`runCommand`, `newTerm`, `explain`, `now`); Go's methods are
+  functions taking the model first, in the files Go had them in
+  (`handleKey`/`handleText` in keys.ts, `runExited`/`followUp`/`confirm` in
+  runs.ts, `inspect` in inspect.ts, `screenLines` in view.ts, `key`/`click`/
+  `wheel` in program.ts); the pure builders (`sectionsOf`, `remoteLines`,
+  `listOf`, …) are unchanged. homemodel.test.ts is homemodel_test.go, case
+  for case.
+- **State is plain and replaced, never mutated in place**: Go's sets are
+  `Set`s, its per-subject maps `Map`s (`withKeys`, `without`, `withValue`);
+  the remote status is a tagged union (`asking`, `unavailable(reason)`,
+  `newAnswered({…})`); a Dialog or Inspector is copied before it changes.
+- **What Go asked synchronously is a promise here** (explain, the configs'
+  `edited`, the install plan): `later(m, value, then, failed)` finishes the
+  reducer at once when the answer is already there (tests' fakes), else
+  queues a command whose `ThenMsg` the program applies. The inspector opens
+  when explain answers.
+- **The program** (program.ts) is Bubble Tea's loop: `send(msg)` updates,
+  starts the commands, then redraws once per burst (`setTimeout(0)`).
+  Background jobs are promises (jobs.ts); `post` and the final answer land
+  through `notify`. Input: input.ts decodes the tty's bytes as ultraviolet
+  does (control bytes are ctrl+key, ESC+key alt+key, a lone ESC in its read
+  esc, CSI/SS3 keys with xterm modifiers, kitty CSI u, bracketed paste as one
+  `PasteMsg`, SGR mouse), and `keyString` is Bubble Tea's `Key.String` for
+  key.ts's bindings. The terminal gets mouse cell motion (1002+1006),
+  bracketed paste and the window title, as Bubble Tea set them.
+- **Frames are Go's**: the same bytes per row (style is Lip Gloss's), so a
+  tmux `capture-pane -e` of both binaries at the same size is identical; the
+  screen dump is Go's (stripped, trailing spaces trimmed, written atomically
+  when it changes).
+- **Width is the hot path**: `stringWidth`/`strip` (style/ansi.ts) skip
+  segmentation for styled ASCII and for symbol-only text, where every code
+  point is its own grapheme; ~1.5 ms a 197×51 frame, ~4% CPU while a run
+  spins.
+
 ## Status
 
 | Part | State |
@@ -273,7 +317,7 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 | engines (core/engine) | done: Go tests ported (88, same names), plus text.test.ts for the port's own helpers (goRegExp, forEach) |
 | cli: style, table, spinner, help, errors, the command line (args.ts), init + scaffolds, compile, main.ts | done: Go tests ported (cli_test.go's), plus args/scaffold tests; help screens, usage errors, `init` (plain, --configs, --parent) and `compile` byte-identical to the Go binary (styled on a terminal too); 10-init passes |
 | app | done: Go tests ported (run, screen; same names), plus context.test.ts for what Go left untested (laziness and reloadLayout, the outdated ordering, explain, the self-version cache) |
-| cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | done: every integration file but 70-home-screen passes against build/loadout-ts (55-configs up to its home-screen part); `status --json`, `status`, `explain`, `diff`, `outdated`, `setup-new-machine --dry-run`, `install --dry-run`, `upgrade --dry-run`, `installers` byte-identical to the Go binary on the dotfiles (styled on a terminal too, spinner frames aside); `src/cli/context.ts` is gone. cli_test.go was already ported; converge.test.ts adds the plan table, install tallies and sync's summary. The home screen's entry waits for src/tui/index.ts (main.ts imports it) |
+| cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | done: every integration file but 70-home-screen passes against build/loadout-ts (55-configs up to its home-screen part); `status --json`, `status`, `explain`, `diff`, `outdated`, `setup-new-machine --dry-run`, `install --dry-run`, `upgrade --dry-run`, `installers` byte-identical to the Go binary on the dotfiles (styled on a terminal too, spinner frames aside); `src/cli/context.ts` is gone. cli_test.go was already ported; converge.test.ts adds the plan table, install tallies and sync's summary. src/main.ts imports src/tui/index.ts, which registers the screen |
 | theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
-| tui (the home screen) | — |
+| tui (the home screen) | done: homemodel_test.go ported (66 cases, same names); 70-home-screen, 71-terminal and 55-configs pass against build/loadout-ts; frames and colours identical to the Go binary's in tmux (wide and stacked, dialogs, the palette, a finished run) |
 | release (workflow, install.sh unchanged names), docs, Go removed | — |

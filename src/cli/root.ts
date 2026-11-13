@@ -6,7 +6,6 @@
 
 import { type AppContext, hasScreen, newApp } from "../app/index.ts";
 import { envVar, isStdoutTty } from "../core/platform/platform.ts";
-import { Refusal } from "../model/index.ts";
 import { VERSION } from "../version.ts";
 import { type ArgSpec, Command, executeCommand, type Run } from "./args.ts";
 import { newApplyCmd } from "./apply.ts";
@@ -67,13 +66,10 @@ export function newRoot(): Command {
     ctx = newApp(flags.string("repo"), flags.string("machine"), flags.bool("verbose"));
   };
   root.run = async (cmd) => {
-    if (!isStdoutTty()) {
+    if (!isStdoutTty() || !hasScreen()) {
       printHelp(cmd);
       return;
     }
-    // TODO(port): once src/tui registers the home screen, no screen prints
-    // help, as Go's did (`|| app.NewScreen == nil`).
-    if (!hasScreen()) throw new NoHomeScreen("the home screen is not ported to TypeScript yet (use the Go binary)");
     return home(appCtx());
   };
   setRoot(root);
@@ -121,8 +117,6 @@ export function newRoot(): Command {
   return root;
 }
 
-/** NoHomeScreen refuses bare `loadout` on a terminal while no home screen is registered. */
-class NoHomeScreen extends Refusal {}
 
 /**
  * subcommand is a subcommand named name with help (commandHelp's) and its

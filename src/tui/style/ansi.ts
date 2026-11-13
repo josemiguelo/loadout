@@ -79,6 +79,10 @@ function tokens(s: string): Token[] {
   return out;
 }
 
+const csiSequence = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const asciiPrintable = /^[\x20-\x7e]*$/;
+const simpleSymbols = /^(?:[\x20-\x7e\u00a0-\u02ff\u0370-\u1fff\u2010-\u2027\u2030-\u205f\u2070-\u2bff])*$/;
+
 /** stringWidth is s's width in cells, escape sequences ignored. */
 export function stringWidth(s: string): number {
   let w = 0;
@@ -91,6 +95,14 @@ export function stringWidth(s: string): number {
     }
   }
   if (plain) return s.length;
+  // Styled ASCII (most of a frame): its SGR sequences cost nothing, its
+  // characters a cell each; no need to segment it.
+  const bare = s.includes("\x1b") ? s.replace(csiSequence, "") : s;
+  if (asciiPrintable.test(bare)) return bare.length;
+  // Symbols short of CJK (box drawing, arrows, braille, the status glyphs),
+  // with nothing that joins or combines: every code point is its own
+  // grapheme, and Bun's width per code point is graphemeWidth's.
+  if (simpleSymbols.test(bare)) return Bun.stringWidth(bare, { ambiguousIsNarrow: true });
   for (const t of tokens(s)) if (t.kind === "g") w += t.width;
   return w;
 }
@@ -98,6 +110,9 @@ export function stringWidth(s: string): number {
 /** strip is s without escape sequences (control characters stay). */
 export function strip(s: string): string {
   if (!s.includes("\x1b")) return s;
+  // Only CSI sequences (a frame's SGR): a regex is enough.
+  const bare = s.replace(csiSequence, "");
+  if (!bare.includes("\x1b")) return bare;
   let out = "";
   for (const t of tokens(s)) if (t.kind !== "esc") out += t.text;
   return out;
