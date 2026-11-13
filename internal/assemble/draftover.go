@@ -50,6 +50,10 @@ func DraftOver(child, parent ManifestDraft, parentName string) (ManifestDraft, [
 	}
 	out := child
 	out.Manifest.Meta.MinToolVersion = floor
+	// The child's own bun, else the parent's: its scripts run with one bun.
+	if out.Manifest.Meta.Bun == nil {
+		out.Manifest.Meta.Bun = p.Meta.Bun
+	}
 	out.Manifest.Installers = p.Installers.Plus(c.Installers)
 	out.Manifest.Programs = p.Programs.Plus(c.Programs)
 	out.Manifest.Scripts = p.Scripts.Plus(c.Scripts)

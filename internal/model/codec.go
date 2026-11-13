@@ -56,7 +56,7 @@ func objectsOf[V any](m Map[V], f func(V) JSONObject) JSONObject {
 
 func (m Manifest) toJSON() JSONObject {
 	var w objWriter
-	if m.Meta.Name != "" || m.Meta.MinToolVersion != nil {
+	if m.Meta.Name != "" || m.Meta.MinToolVersion != nil || m.Meta.Bun != nil {
 		w.any("meta", m.Meta.toJSON())
 	}
 	if !m.Layout.isDefault() {
@@ -86,6 +86,7 @@ func (m Meta) toJSON() JSONObject {
 	var w objWriter
 	w.strIf("name", m.Name)
 	w.ptr("min-tool-version", m.MinToolVersion)
+	w.ptr("bun", m.Bun)
 	return w.obj
 }
 
@@ -432,7 +433,7 @@ func readManifest(v any, path string, err *error) Manifest {
 	var m Manifest
 	if meta, ok := r.get("meta"); ok {
 		mr := newReader(meta, r.at("meta"), "loadout.core.model.Meta", err)
-		m.Meta = Meta{Name: mr.str("name"), MinToolVersion: mr.ptr("min-tool-version")}
+		m.Meta = Meta{Name: mr.str("name"), MinToolVersion: mr.ptr("min-tool-version"), Bun: mr.ptr("bun")}
 		mr.done()
 	}
 	if layout, ok := r.get("layout"); ok {

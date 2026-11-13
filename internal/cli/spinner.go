@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/josemiguelo/loadout/internal/app"
 	"github.com/josemiguelo/loadout/internal/core/platform"
+	"github.com/josemiguelo/loadout/internal/model"
 )
 
 // Where commands write; tests swap them.
@@ -90,5 +92,16 @@ func spinning[T any](message string, work func() (T, error)) (T, error) {
 // spin is spinning for work with no result.
 func spin(message string, work func() error) error {
 	_, err := spinning(message, func() (struct{}, error) { return struct{}{}, work() })
+	return err
+}
+
+// ensureBun gets the bun the repo pins (`repo { bun = … }`) before a command
+// runs manifest commands, under a spinner of its own: the first time, it's
+// a download. Afterwards a stat.
+func ensureBun(a *app.AppContext, manifest model.Manifest) error {
+	if manifest.Meta.Bun == nil {
+		return nil
+	}
+	_, err := spinning("getting bun "+*manifest.Meta.Bun+"…", a.BunDir)
 	return err
 }

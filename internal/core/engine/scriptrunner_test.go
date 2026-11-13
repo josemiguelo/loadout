@@ -69,7 +69,7 @@ func TestArgsCheckPassingSkipsRun(t *testing.T) {
 func TestAScriptAndItsCheckRunInTheDeclaringDirectoryWithTheLoadoutEnv(t *testing.T) {
 	fake := fakeexec.New().OnCommand(model.FileLine("plugins.sh", "check"), fakeexec.Exit(1)).OnCommand(model.FileLine("plugins.sh", ""))
 	system := coremodel.SystemInfo{Machine: "m1", Os: coremodel.MacOS, Arch: "arm64"}
-	frame := exec.FrameOf("/repo", system, s("configs"), "", nil)
+	frame := exec.FrameOf("/repo", system, s("configs"), "", nil, "")
 	step := model.ScriptStep{File: s("plugins.sh"), Check: s("file:plugins.sh check"), Origin: "configs/tmux"}
 
 	outcome := must[ScriptOutcome](t)(NewScriptRunner(fake, frame).Run(step, false, ""))
@@ -90,10 +90,24 @@ func TestAScriptAndItsCheckRunInTheDeclaringDirectoryWithTheLoadoutEnv(t *testin
 	}
 }
 
+func TestTheRepoBunGoesFirstOnPathForEveryCommandOfAChildAndItsParent(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin")
+	fake := fakeexec.New().OnCommand(model.FileLine("helper.sh", "")).OnCommand(model.FileLine("mine.sh", ""))
+	system := coremodel.SystemInfo{Machine: "work", Os: coremodel.Linux, Arch: "x86_64"}
+	frame := exec.FrameOf("/child", system, nil, "/parent", nil, "/data/loadout/bun/1.3.0")
+
+	must[ScriptOutcome](t)(NewScriptRunner(fake, frame).Run(model.ScriptStep{File: s("helper.sh"), Origin: "parent:lib"}, false, ""))
+	must[ScriptOutcome](t)(NewScriptRunner(fake, frame).Run(model.ScriptStep{File: s("mine.sh"), Origin: "scripts"}, false, ""))
+	for _, command := range fake.Received() {
+		eq(t, "/data/loadout/bun/1.3.0:/usr/bin", command.Env["PATH"])
+		eq(t, "/data/loadout/bun/1.3.0", command.Env[model.BunDirVar])
+	}
+}
+
 func TestInAChildAParentsScriptRunsInTheParentWithTheParentsRepoAndAChildsInTheChild(t *testing.T) {
 	fake := fakeexec.New().OnCommand(model.FileLine("helper.sh", "")).OnCommand(model.FileLine("mine.sh", ""))
 	system := coremodel.SystemInfo{Machine: "work", Os: coremodel.MacOS, Arch: "arm64"}
-	frame := exec.FrameOf("/child", system, s("configs"), "/parent", s("dots"))
+	frame := exec.FrameOf("/child", system, s("configs"), "/parent", s("dots"), "")
 
 	must[ScriptOutcome](t)(NewScriptRunner(fake, frame).Run(model.ScriptStep{File: s("helper.sh"), Origin: "parent:maintenance/lib"}, false, ""))
 	must[ScriptOutcome](t)(NewScriptRunner(fake, frame).Run(model.ScriptStep{File: s("mine.sh"), Origin: "scripts"}, false, ""))

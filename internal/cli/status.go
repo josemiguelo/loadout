@@ -40,6 +40,9 @@ func runStatus(a *app.AppContext, jsonOut, noWrite bool) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 	store, err := a.StateStore()
 	if err != nil {
@@ -84,6 +87,12 @@ func runStatus(a *app.AppContext, jsonOut, noWrite bool) error {
 	if seen.configsDown != nil {
 		echo("")
 		echo(" " + Style.Warn("⚠") + "  " + Style.Warn("configs not checked: "+*seen.configsDown))
+	}
+	if manifest.Meta.Bun != nil {
+		if dir, err := a.BunDir(); err == nil {
+			echo("")
+			echo(Style.Dim(" ·  scripts run with bun " + *manifest.Meta.Bun + " (" + dir + ")"))
+		}
 	}
 	// The one self-knowledge carve-out: is this binary itself behind?
 	if latest := app.BehindRelease(a.Runner, true); latest != "" {

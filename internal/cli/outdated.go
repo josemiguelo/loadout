@@ -21,6 +21,9 @@ func runOutdated(a *app.AppContext) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 	store, err := a.StateStore()
 	if err != nil {
@@ -43,6 +46,11 @@ func runOutdated(a *app.AppContext) error {
 		return err
 	}
 	updates := report.Updates
+	// The repo's bun is a row here only: moving it is an edit to loadout.hcl.
+	if b := report.Bun; b != nil {
+		updates = append(updates, app.UpdateRow{Name: "bun", Current: b.Pinned, Candidate: b.Latest, Source: "repo.bun",
+			Note: "the bun scripts run with: move `bun` in loadout.hcl, then loadout compile"})
+	}
 
 	// The doctor's line per tool first: what upgrading it would mean,
 	// declared or not — the program rows below are the part loadout knows

@@ -129,7 +129,7 @@ func TestEveryBlockOffersItsAttributesAndBlocks(t *testing.T) {
 		name, src string
 		want      []string
 	}{
-		{"repo", "repo {\n  |", []string{"name", "state", "configs", "min_tool_version", "sources", "parent"}},
+		{"repo", "repo {\n  |", []string{"name", "state", "configs", "min_tool_version", "bun", "sources", "parent"}},
 		{"repo's parent", "repo {\n  parent {\n    |", []string{"name", "path"}},
 		{"function", "function \"f\" {\n  |", []string{"params", "variadic_param", "result"}},
 		{"installer", "installer \"i\" {\n  |", []string{"probe", "install", "check", "regex", "outdated", "outdated_all", "upgrade", "needs_sudo", "params", "spare"}},

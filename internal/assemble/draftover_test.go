@@ -78,6 +78,21 @@ func TestAChildMachineUsesTheParentsDeclarationsButNotItsMachines(t *testing.T) 
 	}
 }
 
+func TestAChildsBunWinsAndWithoutOneItRunsTheParents(t *testing.T) {
+	parent := parentDraft()
+	parent.Manifest.Meta.Bun = s("1.2.0")
+	child := ManifestDraft{Manifest: m.Manifest{Meta: m.Meta{Name: "work", Bun: s("1.3.0")}, Layout: m.RepoLayout{State: "state"}}}
+	over, errs := DraftOver(child, parent, "dotfiles")
+	if errs != nil || *over.Manifest.Meta.Bun != "1.3.0" {
+		t.Fatalf("bun %v, %v", over.Manifest.Meta.Bun, errs)
+	}
+	child.Manifest.Meta.Bun = nil
+	over, _ = DraftOver(child, parent, "dotfiles")
+	if over.Manifest.Meta.Bun == nil || *over.Manifest.Meta.Bun != "1.2.0" {
+		t.Fatalf("bun %v", over.Manifest.Meta.Bun)
+	}
+}
+
 func TestANameBothReposDeclareIsRefusedNamingTheParent(t *testing.T) {
 	child := ManifestDraft{Manifest: m.Manifest{
 		Layout:   m.RepoLayout{State: "state"},

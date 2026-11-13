@@ -56,6 +56,9 @@ func runUpgrade(names []string, all bool, items []string, dryRun, yes bool) erro
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 	store, err := a.StateStore()
 	if err != nil {

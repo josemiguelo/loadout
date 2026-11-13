@@ -268,11 +268,21 @@ func TestAScriptEntrysWhitespaceBecomesSingleSpaces(t *testing.T) {
 	}
 }
 
+func TestShellLinePutsTheRepoBunFirstWhenSetAndAShownLineLeavesItOut(t *testing.T) {
+	line := ShellLine("bun x.ts", []string{"/opt/homebrew/bin"})
+	if line != `PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}/opt/homebrew/bin:$PATH"; export PATH; bun x.ts` {
+		t.Errorf("line %q", line)
+	}
+	if got := ShownLine(line); got != `PATH="/opt/homebrew/bin:$PATH"; export PATH; bun x.ts` {
+		t.Errorf("shown as %q", got)
+	}
+}
+
 func TestShellLineExpandsFileAndPutsPathFirst(t *testing.T) {
 	if got := ShellLine("file:x.sh check \"$@\"", nil); got != `{ l=$(head -n 1 'x.sh'); case $l in '#!'*) ${l#??} 'x.sh' check "$@";; *) sh 'x.sh' check "$@";; esac; }` {
 		t.Fatalf("got %s", got)
 	}
-	if got := ShellLine("file:x.sh", []string{"$HOME/.local/bin", "/opt/b"}); got != `PATH="$HOME/.local/bin:/opt/b:$PATH"; export PATH; `+FileLine("x.sh", "") {
+	if got := ShellLine("file:x.sh", []string{"$HOME/.local/bin", "/opt/b"}); got != `PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}$HOME/.local/bin:/opt/b:$PATH"; export PATH; `+FileLine("x.sh", "") {
 		t.Fatalf("got %s", got)
 	}
 	if got := ExpandFilePrefix("echo hi"); got != "echo hi" {

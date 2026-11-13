@@ -22,6 +22,10 @@ type UpdateRow struct {
 	Link *string
 }
 
+// BunUpdate is a newer bun than the one the repo pins: its scripts' bun
+// moves when the author edits `repo { bun = … }`, nothing upgrades it.
+type BunUpdate struct{ Pinned, Latest string }
+
 // ToolUpdates is what one TOOL (dnf, brew, flatpak — grouped by probe, so
 // brew formulae and casks are one line) has to offer, declared or not. The
 // doctor's view: an upgrade is the whole tool, so this is what ticking it
@@ -53,6 +57,8 @@ type OutdatedReport struct {
 	Errors []SourceError
 	// Unchecked is the installed programs no oracle can answer for, in mapping order.
 	Unchecked []string
+	// Bun is a newer bun than the repo pins; nil when it pins none or it's current.
+	Bun *BunUpdate
 }
 
 // OutdatedReport asks every remote this machine's loadout resolves to.
@@ -280,5 +286,11 @@ func (a *AppContext) OutdatedReport(
 		}
 		return rows[i].Name < rows[j].Name
 	})
-	return OutdatedReport{Updates: rows, Tools: tools, Errors: errors, Unchecked: unchecked}, nil
+	var bunUpdate *BunUpdate
+	if pinned := manifest.Meta.Bun; pinned != nil {
+		if latest := LatestBun(a.Runner, !freshSelfCheck); latest != "" && !version.AtLeast(*pinned, latest) {
+			bunUpdate = &BunUpdate{*pinned, latest}
+		}
+	}
+	return OutdatedReport{Updates: rows, Tools: tools, Errors: errors, Unchecked: unchecked, Bun: bunUpdate}, nil
 }

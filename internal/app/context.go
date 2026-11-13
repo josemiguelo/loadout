@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/josemiguelo/loadout/internal/core/bun"
 	"github.com/josemiguelo/loadout/internal/core/coremodel"
 	"github.com/josemiguelo/loadout/internal/core/detect"
 	"github.com/josemiguelo/loadout/internal/core/engine"
@@ -80,6 +81,7 @@ type fromLayout struct {
 	parentRoot  lazy[string]
 	parentStore lazy[*state.StateStore]
 	configs     lazy[*engine.ConfigEngine]
+	bunDir      lazy[string]
 }
 
 func (a *AppContext) current() *fromLayout {
@@ -224,7 +226,24 @@ func (a *AppContext) Frame(system coremodel.SystemInfo) (exec.CommandFrame, erro
 	if layout.Parent != nil {
 		parentConfigs = layout.Parent.Configs
 	}
-	return exec.FrameOf(root, system, layout.Configs, parentRoot, parentConfigs), nil
+	bunDir, err := a.BunDir()
+	if err != nil {
+		return exec.CommandFrame{}, err
+	}
+	return exec.FrameOf(root, system, layout.Configs, parentRoot, parentConfigs, bunDir), nil
+}
+
+// BunDir is the folder of the bun the repo pins (`repo { bun = … }`),
+// downloaded the first time any command needs a frame, or "" when it pins
+// none.
+func (a *AppContext) BunDir() (string, error) {
+	return a.current().bunDir.get(func() (string, error) {
+		meta, err := loader.ReadMeta(a.RepoRoot)
+		if err != nil || meta.Bun == nil {
+			return "", err
+		}
+		return bun.Ensure(a.Runner, *meta.Bun)
+	})
 }
 
 // Configs is chezmoi over the `layout configs` directory, and for a child

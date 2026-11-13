@@ -133,7 +133,7 @@ func TestAProgramsPathComesFirstOnTheInstallCommandsPath(t *testing.T) {
 		b.Machine("m", model.MachineConfig{PM: ct.PM("tool", "custom")})
 	})
 	item := plan(t, m, "m", nil, model.Map[cs]{}, yes)[0].(InstallItem)
-	eq(t, `PATH="$HOME/.local/bin:$PATH"; export PATH; `+model.FileLine("install.sh", ""), item.Command)
+	eq(t, `PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}$HOME/.local/bin:$PATH"; export PATH; `+model.FileLine("install.sh", ""), item.Command)
 }
 
 func TestAnInstallersRequirementIsPlannedFirst(t *testing.T) {
@@ -252,7 +252,7 @@ func TestAProvidedToolOffPathIsFoundWhereItLandsAndRunsFromThere(t *testing.T) {
 	current := states(model.E("setup-brewish", cs{Status: coremodel.Installed}))
 	step := Installs(plan(t, m, "m", []string{"tool"}, current, func(b string) bool { return b == "/opt/brewish/bin/brewish" }))
 	eq(t, 1, len(step))
-	eq(t, `PATH="/opt/brewish/bin:$PATH"; export PATH; brewish install tool`, step[0].Command)
+	eq(t, `PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}/opt/brewish/bin:$PATH"; export PATH; brewish install tool`, step[0].Command)
 
 	// The check goes through it from there too.
 	eq(t, []string{"/opt/brewish/bin"}, m.CheckFor("tool", s("brewish")).Path)

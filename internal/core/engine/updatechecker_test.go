@@ -158,7 +158,7 @@ func TestOutdatedWithoutRegexIsRejected(t *testing.T) {
 }
 
 func TestAProgramsPathComesFirstForItsOutdatedCheck(t *testing.T) {
-	runner := fakeexec.New().OnCommand(`PATH="/opt/x:$PATH"; export PATH; x latest`, fakeexec.Stdout("2.0.0"))
+	runner := fakeexec.New().OnCommand(`PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}/opt/x:$PATH"; export PATH; x latest`, fakeexec.Stdout("2.0.0"))
 	vc := model.VersionCheck{Command: "x latest", Regex: s("([0-9.]+)"), Path: []string{"/opt/x"}}
 	if c := must[*string](t)(updates(runner).Candidate(vc)); c == nil || *c != "2.0.0" {
 		t.Errorf("%v", c)

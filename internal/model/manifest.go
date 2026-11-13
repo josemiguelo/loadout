@@ -478,11 +478,15 @@ func ScriptEntry(entry string) (name, args string) {
 	return words[0], strings.Join(words[1:], " ")
 }
 
-// Meta is the repo's name and the loadout it needs.
+// Meta is the repo's name, the loadout it needs and the bun its scripts run with.
 type Meta struct {
 	Name string
 	// MinToolVersion is the oldest loadout that may read the lock (`min-tool-version`).
 	MinToolVersion *string
+	// Bun is the bun version loadout downloads and puts first on PATH for
+	// every manifest command (`bun`), so a `#!/usr/bin/env bun` script runs
+	// before anything is installed; nil = none, the machine's own PATH.
+	Bun *string
 }
 
 // RepoLayout is where the repo keeps what loadout writes and reads besides
@@ -587,19 +591,30 @@ func FileLine(path, args string) string {
 var fileLineShape = regexp.MustCompile(`\{ l=\$\(head -n 1 '([^']*)'\); case \$l in '#!'\*\) \$\{l#\?\?\} '[^']*'(.*?);; \*\) sh '[^']*'.*?;; esac; \}`)
 
 // ShownLine is line as a user reads it: every FileLine back to the script
-// it runs and its arguments (`.loadout/x.ts check`).
+// it runs and its arguments (`.loadout/x.ts check`), and no repo bun folder
+// in its PATH (ShellLine's, set only while it runs).
 func ShownLine(line string) string {
-	return fileLineShape.ReplaceAllString(line, "$1$2")
+	return strings.ReplaceAll(fileLineShape.ReplaceAllString(line, "$1$2"), bunFirst, "")
 }
 
+// BunDirVar is the folder of the repo's bun (`repo { bun = … }`), set by
+// the frame of every manifest command; unset when the repo pins none.
+const BunDirVar = "LOADOUT_BUN_DIR"
+
+// bunFirst is the repo's bun folder and a colon, or nothing when unset.
+const bunFirst = "${" + BunDirVar + ":+$" + BunDirVar + ":}"
+
 // ShellLine is the shell line for command: `file:` expanded, and path put
-// first on PATH. The directories are expanded by the shell, so `$HOME` works.
+// first on PATH, after the repo's bun folder when the frame sets one: a
+// `provides … at` folder (brew's bin) may hold a bun of its own, and a
+// `#!/usr/bin/env bun` script runs with the repo's. The directories are
+// expanded by the shell, so `$HOME` works.
 func ShellLine(command string, path []string) string {
 	line := ExpandFilePrefix(command)
 	if len(path) == 0 {
 		return line
 	}
-	return `PATH="` + strings.Join(path, ":") + `:$PATH"; export PATH; ` + line
+	return `PATH="` + bunFirst + strings.Join(path, ":") + `:$PATH"; export PATH; ` + line
 }
 
 // Program is one program: its install variants and how to observe it.

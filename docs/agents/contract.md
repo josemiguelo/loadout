@@ -116,6 +116,16 @@ Explicit user decisions; don't "improve" them away.
    In a child repo (contract 18) a parent's declaration runs in the
    parent's checkout with the parent's `LOADOUT_REPO`/`LOADOUT_CONFIGS`,
    and every command sees `LOADOUT_PARENT` (the parent's root).
+   A repo that pins a bun (`repo { bun = "1.3.0" }`, `meta bun`; a child
+   without one inherits its parent's) gets its folder first on PATH for
+   every one of them, and in `LOADOUT_BUN_DIR`, which `model.ShellLine`
+   puts ahead of the `provides … at` folders (brew's bin may hold a bun of
+   its own); `model.ShownLine` leaves it out. `AppContext.BunDir` gets it
+   once per process (`core/bun.Ensure`: curl, the release's
+   SHASUMS256.txt, unpacked whole into `$XDG_DATA_HOME/loadout/bun/<v>/`,
+   the other versions removed); the CLI commands that run manifest
+   commands call it first under a spinner (`ensureBun`). Without a pin,
+   nothing is set: the machine's own PATH.
 6. **Execution order**: in two phases, core then later; in each, all
    programs before all scripts; programs
    topologically by dependencies, ties broken by NAME (InstallOrder sorts;

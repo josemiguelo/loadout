@@ -20,15 +20,32 @@ import (
 
 const (
 	selfAPI   = "https://api.github.com/repos/josemiguelo/loadout/releases/latest"
+	bunAPI    = "https://api.github.com/repos/oven-sh/bun/releases/latest"
 	selfCache = 6 * time.Hour
 )
 
-var tagName = regexp.MustCompile(`"tag_name": *"v([0-9][0-9.]*)"`)
+var (
+	tagName    = regexp.MustCompile(`"tag_name": *"v([0-9][0-9.]*)"`)
+	bunTagName = regexp.MustCompile(`"tag_name": *"bun-v([0-9][0-9.]*)"`)
+)
 
 // LatestRelease is the latest published release ("0.4.0"), or "" when
 // unknown (offline and no cache). cached uses a ~6h on-disk cache;
 // `outdated` passes false for a fresh answer.
 func LatestRelease(runner exec.ProcessRunner, cached bool) string {
+	return latestOf(runner, selfAPI, tagName, "latest-release", cached)
+}
+
+// LatestBun is bun's latest release ("1.3.1"), or "" when unknown; cached
+// as LatestRelease is. A repo's pin (`repo { bun = … }`) moves only when its
+// author edits it, so this is news, never an upgrade.
+func LatestBun(runner exec.ProcessRunner, cached bool) string {
+	return latestOf(runner, bunAPI, bunTagName, "latest-bun", cached)
+}
+
+// latestOf is the version tag matches in api's latest release, cached in
+// $XDG_CACHE_HOME/loadout/<cacheName>.
+func latestOf(runner exec.ProcessRunner, api string, tag *regexp.Regexp, cacheName string, cached bool) string {
 	cacheHome, ok := platform.EnvVar("XDG_CACHE_HOME")
 	if !ok || cacheHome == "" {
 		home, ok := platform.EnvVar("HOME")
@@ -38,7 +55,7 @@ func LatestRelease(runner exec.ProcessRunner, cached bool) string {
 		cacheHome = home + "/.cache"
 	}
 	cacheDir := cacheHome + "/loadout"
-	cache := filepath.Join(cacheDir, "latest-release")
+	cache := filepath.Join(cacheDir, cacheName)
 	// The cache is a file, so read it as one: no process per status.
 	readCache := func() string {
 		text, err := os.ReadFile(cache)
@@ -54,8 +71,8 @@ func LatestRelease(runner exec.ProcessRunner, cached bool) string {
 			}
 		}
 	}
-	result, _ := runner.Capture(exec.Line("curl -fsSL --max-time 5 '"+selfAPI+"'", ""))
-	match := tagName.FindStringSubmatch(result.Stdout)
+	result, _ := runner.Capture(exec.Line("curl -fsSL --max-time 5 '"+api+"'", ""))
+	match := tag.FindStringSubmatch(result.Stdout)
 	if match == nil {
 		return readCache() // stale beats nothing when the API is unreachable
 	}

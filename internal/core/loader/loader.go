@@ -29,6 +29,16 @@ func ReadLayout(repoRoot string) (model.RepoLayout, error) {
 	return lock.Manifest.Layout, nil
 }
 
+// ReadMeta is the lock's meta (its name, the loadout it needs, its bun),
+// read without the checks a full load makes, like ReadLayout.
+func ReadMeta(repoRoot string) (model.Meta, error) {
+	lock, err := readLock(repoRoot)
+	if err != nil {
+		return model.Meta{}, err
+	}
+	return lock.Manifest.Meta, nil
+}
+
 // LoadRepo is the repo's manifest, checked: the lock is current with its
 // sources and every `file:` path it names exists. Machines see their own
 // script variants through model.Manifest.ForMachine.

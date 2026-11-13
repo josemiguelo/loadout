@@ -53,7 +53,8 @@ func TestAProvidedToolsFolderLeadsAndOnePlainCommandFromTwoFilesRunsOnce(t *test
 	plan := must[[]UpgradeStep](t)(PlanUpgrade(m, "m", []string{"brewish", "brewish-tap"}))
 	eq(t, 1, len(plan))
 	eq(t, []string{"brewish", "brewish-tap"}, plan[0].Installers)
-	eq(t, `PATH="/opt/brewish/bin:$PATH"; export PATH; brewish upgrade`, plan[0].Command)
+	eq(t, `PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}/opt/brewish/bin:$PATH"; export PATH; brewish upgrade`, plan[0].Command)
+	eq(t, `PATH="/opt/brewish/bin:$PATH"; export PATH; brewish upgrade`, model.ShownLine(plan[0].Command))
 	eq(t, "brewish", plan[0].Label())
 }
 

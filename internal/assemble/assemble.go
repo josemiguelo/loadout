@@ -518,6 +518,9 @@ func validate(manifest model.Manifest) error {
 	if v := manifest.Meta.MinToolVersion; v != nil && !dottedVersion.MatchString(*v) {
 		add("meta min-tool-version '" + *v + "' is not a dotted version number (e.g. \"0.2.0\")")
 	}
+	if v := manifest.Meta.Bun; v != nil && !dottedVersion.MatchString(*v) {
+		add("meta bun '" + *v + "' is not a dotted version number (e.g. \"1.3.0\")")
+	}
 
 	for name, installer := range manifest.Installers.All() {
 		if installer.Check != nil && installer.Regex == nil {

@@ -144,7 +144,7 @@ func TestAYesNoCheckRecordsInstalledWithNoVersion(t *testing.T) {
 }
 
 func TestAProgramsPathComesFirstForItsCheck(t *testing.T) {
-	runner := fakeexec.New().OnCommand(`PATH="$HOME/.local/bin:$PATH"; export PATH; ngrok version`, fakeexec.Stdout("ngrok version 3.4.0"))
+	runner := fakeexec.New().OnCommand(`PATH="${LOADOUT_BUN_DIR:+$LOADOUT_BUN_DIR:}$HOME/.local/bin:$PATH"; export PATH; ngrok version`, fakeexec.Stdout("ngrok version 3.4.0"))
 	vc := &model.VersionCheck{Command: "ngrok version", Regex: s("([0-9.]+)"), Path: []string{"$HOME/.local/bin"}}
 	if v := versionOf(check(t, runner, vc)); v != "3.4.0" {
 		t.Error(v)

@@ -36,6 +36,9 @@ func runApply(names []string, force bool) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 
 	units, err := configs.Units()

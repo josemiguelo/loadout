@@ -36,6 +36,13 @@ $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/instal
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply` writes them, and
   `sync` applies them before publishing this machine's state.
+- **Scripts in TypeScript, on a bare machine.** `bun = "1.3.0"` in the
+  `repo` block pins a bun: loadout downloads it the first time a command
+  needs it (checked against the release's checksums, kept in
+  `~/.local/share/loadout/bun/`) and puts it first on PATH for every
+  command it runs, so a `#!/usr/bin/env bun` script works from the first
+  step of a new machine, before anything is installed. Your own bun, if
+  any, stays yours. `outdated` says when the pin is behind bun's latest.
 - **A private repo can build on a public one.** A child repo names its
   parent in its `repo` block (`parent { name = …, path = … }`) and uses the parent's
   programs, scripts and profiles by name, adding its own machines,

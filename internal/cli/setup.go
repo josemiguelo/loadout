@@ -38,6 +38,9 @@ func runSetup(dryRun, yes, skipScripts, skipLater bool) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 
 	plan, err := planPrograms(a, manifest, system, nil)

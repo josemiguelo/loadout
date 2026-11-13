@@ -235,6 +235,7 @@ repo {
   state            = "state"
   configs          = "configs"
   min_tool_version = "3.1.0"
+  bun              = "1.3.0"
 }
 data {
   work = flag(false)
@@ -309,6 +310,8 @@ machine "work-mac" {
 	// The floor is the higher of the two; meta and layout are the child's.
 	equal(t, deref(m.Meta.MinToolVersion), "3.3.0")
 	equal(t, m.Meta.Name, "work")
+	// A child without a bun of its own runs its scripts with the parent's.
+	equal(t, deref(m.Meta.Bun), "1.3.0")
 	if m.Layout.Configs != nil {
 		t.Error("the parent's configs are the parent's")
 	}

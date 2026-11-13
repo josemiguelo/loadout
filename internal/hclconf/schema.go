@@ -64,7 +64,7 @@ var shapeSpecs = map[string]struct {
 	labels map[string]string // block type -> the kind its label names
 }{
 	"":            {spec: topLevel, labels: map[string]string{"requires": "installer"}},
-	"repo":        {spec: repoSpec, values: strs("name", "state", "configs", "min_tool_version").with(Attr{Name: "sources", Value: ValueList})},
+	"repo":        {spec: repoSpec, values: strs("name", "state", "configs", "min_tool_version", "bun").with(Attr{Name: "sources", Value: ValueList})},
 	"repo/parent": {spec: parentSpec, values: strs("name", "path")},
 	"function": {spec: functionSpec, values: values(
 		Attr{Name: "params", Value: ValueNames}, Attr{Name: "variadic_param", Value: ValueName}, Attr{Name: "result", Value: ValueExpr})},

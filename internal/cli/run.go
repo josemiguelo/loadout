@@ -31,6 +31,9 @@ func runScripts(names []string, all, force bool) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 	if all && len(names) > 0 {
 		return usageErr("Give script names or --all, not both")

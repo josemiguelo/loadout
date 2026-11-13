@@ -34,6 +34,9 @@ func runInstall(names []string, all, dryRun, yes bool) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 	if all && len(names) > 0 {
 		return usageErr("Give program names or --all, not both")

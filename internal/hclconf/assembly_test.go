@@ -487,4 +487,9 @@ func TestMetaVersionIsADottedNumber(t *testing.T) {
   state            = "state"
   min_tool_version = "soon"
 }`), "meta min-tool-version 'soon' is not a dotted version number")
+	contains(t, refusal(t, `repo {
+  name  = "x"
+  state = "state"
+  bun   = "latest"
+}`), "meta bun 'latest' is not a dotted version number")
 }

@@ -4,6 +4,7 @@ import (
 	"maps"
 
 	"github.com/josemiguelo/loadout/internal/core/coremodel"
+	"github.com/josemiguelo/loadout/internal/core/platform"
 	"github.com/josemiguelo/loadout/internal/model"
 )
 
@@ -69,11 +70,18 @@ func (f CommandFrame) Command(line, origin string) ShellCommand {
 
 // FrameOf is the frame for system in the repo at absolute repoRoot, with its
 // `layout configs` (nil: none); for a child repo, also its parent's absolute
-// parentRoot ("" for none) and configs.
-func FrameOf(repoRoot string, system coremodel.SystemInfo, configs *string, parentRoot string, parentConfigs *string) CommandFrame {
+// parentRoot ("" for none) and configs. bunDir is the folder of the repo's
+// bun ("" for none): first on PATH, and in LOADOUT_BUN_DIR for the lines
+// that put folders of their own first (model.ShellLine).
+func FrameOf(repoRoot string, system coremodel.SystemInfo, configs *string, parentRoot string, parentConfigs *string, bunDir string) CommandFrame {
 	common := map[string]string{
 		"LOADOUT_MACHINE": system.Machine,
 		"LOADOUT_OS":      string(system.Os),
+	}
+	if bunDir != "" {
+		common[model.BunDirVar] = bunDir
+		path, _ := platform.EnvVar("PATH")
+		common["PATH"] = bunDir + ":" + path
 	}
 	// Every command of a child sees its parent: a parent program's `file`
 	// value runs in whichever repo's installer takes it.

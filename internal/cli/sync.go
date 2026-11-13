@@ -135,6 +135,9 @@ func runSync(a *app.AppContext, noPush bool, message *string) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureBun(a, manifest); err != nil {
+		return err
+	}
 	system := a.DetectSystem()
 	// Configs land before the refresh, so the state committed is what this
 	// machine has after the pull. A file edited here stops the sync before

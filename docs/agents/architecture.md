@@ -62,6 +62,11 @@ internal/
     state/         StateStore — <state>/<machine>.json; pretty JSON, stable
                    order, WriteIfChanged; LastWarnings
     coremodel/     what the binary observes: MachineState and its parts, SystemInfo
+    bun/           Ensure — the repo's pinned bun (`repo { bun = … }`): downloaded
+                   by curl through the runner, checked against SHASUMS256.txt,
+                   unpacked into $XDG_DATA_HOME/loadout/bun/<version>/ (the
+                   -baseline build on x64 without AVX2); Asset, SumOf, Unpack,
+                   Prune. LOADOUT_BUN_DOWNLOAD_BASE serves tests (file://)
     exec/          ProcessRunner interface + ShellRunner; ALL process use goes
                    through the interface (tests use fakeexec). Capture
                    (blocking), Inherit (sudo/progress), each taking a

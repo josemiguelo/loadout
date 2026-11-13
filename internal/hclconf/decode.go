@@ -390,7 +390,7 @@ func (spec) checkBlocksOnly(body *hclsyntax.Body, where string) hcl.Diagnostics 
 }
 
 var repoSpec = spec{
-	attrs:  []string{"name", "state", "configs", "min_tool_version", "sources"},
+	attrs:  []string{"name", "state", "configs", "min_tool_version", "bun", "sources"},
 	blocks: map[string][2]int{"parent": {0, 0}},
 }
 
@@ -422,7 +422,7 @@ func (d *decoder) decodeRepo() {
 		if d.required(repo, "state") {
 			draft.Manifest.Layout.State = d.text(body, "state")
 		}
-		draft.Manifest.Meta = model.Meta{Name: d.text(body, "name"), MinToolVersion: d.str(body, "min_tool_version")}
+		draft.Manifest.Meta = model.Meta{Name: d.text(body, "name"), MinToolVersion: d.str(body, "min_tool_version"), Bun: d.str(body, "bun")}
 		draft.Manifest.Layout.Configs = d.str(body, "configs")
 		d.out.Sources = d.strings(body, "sources")
 		for _, p := range body.Blocks {
