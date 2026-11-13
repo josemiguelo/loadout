@@ -4,6 +4,7 @@
 import { closeSync, openSync, readlinkSync, readSync, writeSync } from "node:fs";
 import os from "node:os";
 import { isatty } from "node:tty";
+import { realtimeNanos } from "./clock.ts";
 import { termiosOf, type Termios } from "./termios.ts";
 
 /**
@@ -41,10 +42,13 @@ export function uname(): UnameInfo {
 /**
  * nowIso is the current UTC time as ISO-8601, as Kotlin's Instant writes it:
  * "2026-08-14T12:00:00Z", with a fraction of 3, 6 or 9 digits when there is
- * one. The clock reads to the microsecond (performance's high-resolution
- * wall time), not the millisecond a Date holds.
+ * one. The clock reads to the nanosecond (clock_gettime, as Go's time.Now),
+ * so a timestamp has 9 digits as the Go binary's did; where libc's clock
+ * can't be loaded, to the microsecond (performance's wall time).
  */
 export function nowIso(): string {
+  const nanos = realtimeNanos();
+  if (nanos !== undefined) return isoOf(nanos);
   const micros = BigInt(Math.round((performance.timeOrigin + performance.now()) * 1000));
   return isoOf(micros * 1000n);
 }

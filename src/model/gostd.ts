@@ -158,3 +158,42 @@ export function slicesEqual<T>(a: readonly T[] | undefined, b: readonly T[] | un
   const y = b ?? [];
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
+
+/** errnoText is Go's syscall.Errno text for the errno codes file work meets. */
+const errnoText: Record<string, string> = {
+  ENOENT: "no such file or directory",
+  EACCES: "permission denied",
+  EPERM: "operation not permitted",
+  EISDIR: "is a directory",
+  ENOTDIR: "not a directory",
+  EEXIST: "file exists",
+  ENOTEMPTY: "directory not empty",
+  ENOSPC: "no space left on device",
+  EROFS: "read-only file system",
+  ELOOP: "too many levels of symbolic links",
+  ENAMETOOLONG: "file name too long",
+  EXDEV: "invalid cross-device link",
+  EBUSY: "device or resource busy",
+  EMFILE: "too many open files",
+  EIO: "input/output error",
+};
+
+/** syscallOp is the Go os operation node's syscall name stands for (os.ReadDir opens first). */
+const syscallOp: Record<string, string> = { scandir: "open", opendir: "open" };
+
+/**
+ * goPathError is node's file error e worded as Go's *os.PathError ("open
+ * /x: permission denied"; a rename as *os.LinkError, "rename /a /b: …"), so
+ * messages (state warnings, `error: ` lines) read as the Go binary's. op
+ * and path fill in what node leaves out (a read's path). Anything that
+ * isn't an errno error comes back as it is.
+ */
+export function goPathError(e: unknown, op?: string, path?: string): Error {
+  const err = e as NodeJS.ErrnoException & { dest?: string };
+  if (!(e instanceof Error) || typeof err.code !== "string") return e instanceof Error ? e : new Error(String(e));
+  const text = errnoText[err.code] ?? err.message;
+  const operation = op ?? (err.syscall !== undefined ? (syscallOp[err.syscall] ?? err.syscall) : "open");
+  const file = path ?? err.path ?? "";
+  const where = operation === "rename" && err.dest !== undefined ? `${file} ${err.dest}` : file;
+  return Object.assign(new Error(`${operation} ${where}: ${text}`), { code: err.code });
+}

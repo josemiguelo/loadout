@@ -107,6 +107,40 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 - **Refusals** extend `Refusal` (src/model/refusal.ts) and are thrown;
   `isRefusal(e)` is Go's `err.(model.Refusal)`.
 
+## Core in TypeScript (what the engines build on)
+
+- **Processes are async**: `ProcessRunner.capture(cmd): Promise<ExecResult>`,
+  `inherit(cmd): Promise<number>`; `success(r)` is Go's `r.Success()`. Go's
+  `(result, err)` is the awaited value, and the only rejection is
+  `InterruptedByUser` (a Refusal, "interrupted"), so the result of an
+  interrupted capture is gone: Go's callers returned the error anyway.
+  Anything that runs a command is async in turn (`Detection.isBinaryAvailable`,
+  every `GitClient` method, `bun.ensure`); file work stays synchronous
+  (`StateStore`, `loader`, `writeIfChanged`) and throws.
+- **`ShellCommand`** is `{ line, cwd, env? }`: `env` a plain
+  `Record<string, string>` (Go's unordered map), `undefined` = nil.
+  `exec.line(l, dir)` for plain lines; manifest commands through
+  `frameOf(...)` → `CommandFrame` (a class: `frame.command(line, origin)`,
+  `frame.cwd(origin)`), `newCommandFrame` for tests.
+- **fakeexec**: `newRunner().onCommand(line, exit(n), stdout(s), stderr(s))`,
+  `received()`, `executed()`; a call is recorded when it is made, so
+  concurrent checks record in call order. Unregistered lines exit 127.
+- **Go's `New…` constructors** are `new…` functions (`newShellRunner`,
+  `newDetection`, `newGitClient`, `newStateStore`) beside the exported
+  classes; a Go nil pointer return is `undefined` (`StateStore.read`).
+- **OS errors read as Go's**: wrap node's with `goPathError(e, op?, path?)`
+  (src/model/gostd.ts): "open /x: permission denied", "read /x: is a
+  directory", "mkdir …", "rename /a /b: …". Warnings and `error: ` lines
+  that carry an OS error depend on it.
+- **diff's kinds** are string unions (`"unknown" | "installed" |
+  "missing"`, `"unknown" | "applied" | "drifted"`), with Go's constant names
+  as constants; a `ConfigCell.files` is 0 unless drifted.
+- **The engines' refusals** (`ResolutionException`, `UpgradeException`,
+  `ConfigException`) join the list in src/core/loader/loader.test.ts's
+  "every loadout failure reports as a clean one-liner" when they're ported.
+- **Timestamps** come from `platform.nowIso()` (9 fraction digits, as Go
+  wrote them). Never `new Date().toISOString()`.
+
 ## Status
 
 | Part | State |
@@ -114,8 +148,8 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 | skeleton, build, Ink + xterm in a compiled binary | done |
 | model, assemble, coremodel, coretest, version | done: Go tests ported; every testdata and real lock re-encodes byte for byte (src/model/differential.test.ts) |
 | core/platform | done (termios through bun:ffi for the OSC 11 query) |
-| core (exec, detect, git, loader, state, diff, bun wrapper) | — |
-| compile (tsmanifest) | — |
+| core (exec + fakeexec, detect, git, loader, state, diff, bun wrapper) | done: Go tests ported; state's testdata re-encodes byte for byte; nowIso reads nanoseconds (clock_gettime through bun:ffi), as Go's time.Now |
+| compile (tsmanifest) | done: Go tests ported; byte-identical to the Go binary (lock, chezmoi data, partial, SDKs, warnings, refusals) on the dotfiles, `init`/`init --configs` scaffolds and child repos. `src/compile/devcompile.ts` (the differential driver) goes at cutover |
 | engines | — |
 | app, cli | — |
 | theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
