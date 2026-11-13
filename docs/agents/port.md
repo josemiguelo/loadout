@@ -82,15 +82,42 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 - **Dependencies**: ink, react, @xterm/headless only. Ask before adding one.
 - **Linux and macOS**, as AGENTS.md's working agreements say.
 
+## The model in TypeScript
+
+- **Plain data**: interfaces built with `newProgram({...})`, `newManifest`,
+  … (unset fields at Go's zero value), copied with spreads, never mutated
+  once shared. Go methods are functions taking the value first
+  (`resolveInstall(m, p, k)`, `forMachine(m, h)`, `scriptVariant(s, v)`).
+  A Go pointer is an optional field (`undefined` = nil); a slice is an
+  array, always present, except `ScriptStep.modes` (undefined = default,
+  `[]` = empty, refused).
+- **Maps** are JS `Map`s (`set` keeps a key's place, as Go's did); helpers
+  in `src/model/map.ts`. Sort with `compareStrings`/`sortStrings`
+  (src/model/gostd.ts, Go's byte order), not bare `.sort()`; Go's
+  `unicode.IsSpace`, `path.Clean`/`Join` are there too.
+- **JSON**: `JSONValue` = null | boolean | string | `JSONNumber` (the
+  literal, as `json.Number`) | array | `JSONObject` (`Map`). The writer takes
+  a JS number only as an integer; a Kotlin Double is `kotlinDouble(f)`.
+  `parseJSON` keeps key order and number literals (JSON.parse loses both)
+  and words errors as Go's decoder; `prettyJSON` is the only writer of
+  the lock, state and chezmoi files. `ObjWriter`/`ObjReader` (codec.ts)
+  are the field-by-field codec for other files (core/state).
+- **Files** go through `RepoFS` (src/model/fsys.ts, Go's `fs.FS`):
+  `dirFS(root)`, `mapFS({...})` for tests.
+- **Refusals** extend `Refusal` (src/model/refusal.ts) and are thrown;
+  `isRefusal(e)` is Go's `err.(model.Refusal)`.
+
 ## Status
 
 | Part | State |
 |---|---|
 | skeleton, build, Ink + xterm in a compiled binary | done |
-| model, assemble, coremodel, coretest, version | — |
-| core (exec, platform, detect, git, loader, state, diff, bun wrapper) | — |
+| model, assemble, coremodel, coretest, version | done: Go tests ported; every testdata and real lock re-encodes byte for byte (src/model/differential.test.ts) |
+| core/platform | done (termios through bun:ffi for the OSC 11 query) |
+| core (exec, detect, git, loader, state, diff, bun wrapper) | — |
 | compile (tsmanifest) | — |
 | engines | — |
 | app, cli | — |
-| theme, tui/style, tui/term, tui | — |
+| theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
+| tui (the home screen) | — |
 | release (workflow, install.sh unchanged names), docs, Go removed | — |
