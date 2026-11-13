@@ -22,6 +22,7 @@ import {
 } from "../../model/index.ts";
 import { VERSION } from "../../version.ts";
 import { custom, manifestOf, pm } from "../coretest/coretest.ts";
+import { ConfigException, ResolutionException, UpgradeException } from "../engine/errors.ts";
 import { InterruptedByUser } from "../exec/exec.ts";
 import { GitException } from "../git/git.ts";
 import { loadRepo, parentChanged, parentRoot, readLayout, toolTooOld } from "./loader.ts";
@@ -267,12 +268,13 @@ test("not a lock is refused cleanly", () => {
 
 test("every loadout failure reports as a clean one-liner", () => {
   // main reports a Refusal and nothing else of ours; a type that isn't one
-  // would reach the user as something else. The engines' refusals
-  // (ResolutionException, UpgradeException, ConfigException) join this
-  // list when src/core/engine is ported.
+  // would reach the user as something else.
   const ours: Error[] = [
     new ManifestException("x"),
     new ToolTooOldException("x", ""),
+    new ResolutionException("x"),
+    new UpgradeException("x"),
+    new ConfigException("x"),
     new GitException("x"),
     new InterruptedByUser(),
   ];
