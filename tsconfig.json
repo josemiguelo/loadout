@@ -14,7 +14,11 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "types": ["bun"],
-    "paths": { "react-devtools-core": ["./src/stubs/react-devtools-core.ts"] }
+    "paths": {
+      "react-devtools-core": ["./src/stubs/react-devtools-core.ts"],
+      "loadout": ["./internal/tsmanifest/sdk/loadout.sdk.ts"],
+      "loadout/script": ["./internal/tsmanifest/sdk/loadout.script.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

@@ -136,10 +136,80 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
   "missing"`, `"unknown" | "applied" | "drifted"`), with Go's constant names
   as constants; a `ConfigCell.files` is 0 unless drifted.
 - **The engines' refusals** (`ResolutionException`, `UpgradeException`,
-  `ConfigException`) join the list in src/core/loader/loader.test.ts's
-  "every loadout failure reports as a clean one-liner" when they're ported.
+  `ConfigException`, src/core/engine/errors.ts) are in
+  src/core/loader/loader.test.ts's "every loadout failure reports as a clean
+  one-liner" list; a new refusal joins it.
 - **Timestamps** come from `platform.nowIso()` (9 fraction digits, as Go
   wrote them). Never `new Date().toISOString()`.
+
+## The engines in TypeScript (what the app builds on)
+
+`src/core/engine/index.ts` exports them all (`import * as engine from …`).
+
+- **Classes for what holds a runner** (`VersionChecker`, `UpdateChecker`,
+  `ScriptRunner`, `InstallEngine`, `StatusEngine`, `ConfigEngine`, each with
+  a `new…` constructor); **functions for the planners and data**
+  (`planUpgrade`, `planSourceItems`, `planProgramUpgrades`,
+  `upgradableInstallers`, `commandFor`, `withArgs`, `commandNeedsSudo`,
+  `sudoValid`, `startSudoKeepalive`, `unitOf`). Go's methods on data are
+  functions: `InstallOutcome.Success` is `outcomeSuccess(o)`,
+  `UpgradeStep.Label` is `stepLabel(s)`, `ToolDown.Message` is
+  `toolDownMessage(t)`. Everything that runs a command is async; the
+  planners that don't are synchronous and throw their refusal.
+- **`PlanItem`** is a union tagged by `kind`: `"install"` (InstallItem) or
+  `"installed"` (InstalledItem); both have `program` (Go's ProgramName()).
+  `installs(plan)` is the InstallItems.
+- **`InstallEngine.plan` is async** and its `binaryAvailable` may return a
+  promise (`Detection.isBinaryAvailable`), asked one at a time in Go's order.
+- **Go's nil vs empty slices** stay apart where the Go code tells them
+  apart: `plan(requested)` (undefined = nothing asked; with nothing mapped
+  either, Go's nil ordered every program), `ConfigEngine.edited(targets)`
+  and `applyCommand(targets)` (undefined = every target, `[]` = none). Pass
+  `undefined` where the Go caller passed nil.
+- **Zero values that were structs** are optional: `InstallOutcome.stateAfter`
+  (unset when skipped), `ScriptOutcome.state` (unset when `alreadyDone`).
+  `InstallOutcome.skippedFor` is `""` when it ran.
+- **`StatusEngine.refreshParts`**: programs, configs and scripts run side by
+  side (promises; checks bounded at 8 by `limiter`), each `Part` emitted as
+  it lands, with the other subjects' fields empty; a part's failure is its
+  `err`, and the refresh rejects with the first of programs', configs',
+  scripts' errors once all are in, as Go did. `Part.kind` is `"programs" |
+  "scripts" | "configs"` (`partPrograms`, …). `lastScriptDetail()` is a `Map`.
+- **Regexes** (version, oracle) go through `goRegExp` (engine/text.ts): RE2
+  syntax read as a JS RegExp, a leading `(?i)`/`(?s)`/`(?m)` as flags,
+  `\A`/`\z` as anchors; one that doesn't compile answers nothing, as Go's
+  did. The app's batch-oracle regex (app/outdated.go) uses it too.
+
+## The CLI in TypeScript (what the remaining commands build on)
+
+- **The command line is cobra's, rewritten** (src/cli/args.ts, no
+  dependency): `Command` (name, help, args, opts, `validateArgs`, `run`,
+  `persistentPreRun`), `find` (cobra's Find, persistent flags skipped with
+  their values), `parseFlags` (pflag: interspersed, `--`, `-abc`, `-fv`,
+  `-f=v`, bools' `=value`), `executeCommand` (flag error, help, not
+  runnable → help, the args' check, persistentPreRun, run, in that order).
+  Errors keep pflag's words there; errors.ts's `flagError` turns them into
+  Clikt's, as Go did. A command is `subcommand(name, commandHelp(…), args,
+  run)` plus `boolFlag`/`stringFlag`/`stringsFlag` (help.ts); `run` gets
+  `(cmd, args, flags)`, flags read as `flags.bool("yes")`,
+  `flags.string(…)`, `flags.strings(…)`, `flags.changed(…)`. The hidden
+  `no-help-command` stays (it shows its help, as Go's); cobra's
+  `__complete` doesn't.
+- **Writes go through `echo`/`echoNoNewline`/`echoErr`** (spinner.ts),
+  synchronous on fds 1 and 2 (`streams`, swapped by tests); `spinning(msg,
+  async work)` draws from a timer, so the work must be async to animate.
+- **`UsageError`/`usageErr`, `ExitError`/`exitWith`** are thrown;
+  src/main.ts reports them as cmd/loadout/main.go did.
+- **Until src/app exists**, `src/cli/context.ts` (`CliContext`, `appCtx()`
+  in root.ts) is the slice init and compile need; it goes when app lands.
+  Every command not yet ported has its file with Go's help, flags and
+  arguments, and runs `notPorted(…)`: fill in its run.
+- **The scaffolds** are imported as text from internal/cli/scaffold
+  (src/cli/scaffold.ts, checked against the folder by scaffold.test.ts).
+  tsconfig maps `loadout`/`loadout/script` to the SDKs, because tsc follows
+  those imports into the scaffolds' .ts files and type-checks them. bun's
+  build warns about the child scaffold's templated tsconfig.json
+  (`{{.ParentImport}}/*`): harmless.
 
 ## Status
 
@@ -150,8 +220,9 @@ carry over: they record why, and the repo's style (AGENTS.md) applies.
 | core/platform | done (termios through bun:ffi for the OSC 11 query) |
 | core (exec + fakeexec, detect, git, loader, state, diff, bun wrapper) | done: Go tests ported; state's testdata re-encodes byte for byte; nowIso reads nanoseconds (clock_gettime through bun:ffi), as Go's time.Now |
 | compile (tsmanifest) | done: Go tests ported; byte-identical to the Go binary (lock, chezmoi data, partial, SDKs, warnings, refusals) on the dotfiles, `init`/`init --configs` scaffolds and child repos. `src/compile/devcompile.ts` (the differential driver) goes at cutover |
-| engines | — |
-| app, cli | — |
+| engines (core/engine) | done: Go tests ported (88, same names), plus text.test.ts for the port's own helpers (goRegExp, forEach) |
+| cli: style, table, spinner, help, errors, the command line (args.ts), init + scaffolds, compile, main.ts | done: Go tests ported (cli_test.go's), plus args/scaffold tests; help screens, usage errors, `init` (plain, --configs, --parent) and `compile` byte-identical to the Go binary (styled on a terminal too); 10-init passes with the other commands through the Go binary. `ensureBun` waits for app |
+| app; cli's other commands (status, explain, installers, setup-new-machine, install, outdated, run, apply, diff, sync, upgrade, self-upgrade, the home screen's entry) | — (each refuses: not ported yet) |
 | theme, tui/style, tui/term (+ src/tui/tea.ts, key.ts: the Bubble Tea and bubbles/key slices they use) | done; style's bytes pinned to Lip Gloss's by testdata/golden.json |
 | tui (the home screen) | — |
 | release (workflow, install.sh unchanged names), docs, Go removed | — |
