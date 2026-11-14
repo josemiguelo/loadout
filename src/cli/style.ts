@@ -84,9 +84,9 @@ export class Styler {
   }
 
   /**
-   * Help's roles, as Clikt mapped the palette onto Mordant's theme: warning =
-   * section titles, info = option/argument/command names, muted = metavars,
-   * danger = errors. Reset to the default foreground, as Mordant does.
+   * Help's roles in the palette: warning = section titles, info =
+   * option/argument/command names, muted = metavars, danger = errors.
+   * Each resets to the default foreground.
    */
   private helpFg(text: string, c: Rgb): string {
     if (!this.enabled() || text === "") return text;

@@ -48,16 +48,16 @@ describe("the draft", () => {
     }
   });
 
-  test("a draft's JSON errors are worded as Go's json.Unmarshal words them", () => {
+  test("a draft's JSON errors say what's wrong and where", () => {
     const cases: [string, string][] = [
       ["not json", "invalid character 'o' in literal null (expecting 'u')"],
       [`{"a":`, "unexpected end of JSON input"],
       ["{} {}", "invalid character '{' after top-level value"],
       ["{} 1", "invalid character '1' after top-level value"],
-      [`{"spares": [1]}`, "json: cannot unmarshal array into Go struct field .spares of type map[string]string"],
-      [`{"spares": {"a": 1}}`, "json: cannot unmarshal number into Go struct field .spares.a of type string"],
-      [`{"transitional": ["a", {}]}`, "json: cannot unmarshal object into .transitional.1 of type string"],
-      [`{"parent": "x"}`, "json: cannot unmarshal string into Go struct field .parent of type tsmanifest.ParentRef"],
+      [`{"spares": [1]}`, "json: .spares is an array, not an object of strings"],
+      [`{"spares": {"a": 1}}`, "json: .spares.a is a number, not a string"],
+      [`{"transitional": ["a", {}]}`, "json: .transitional.1 is an object, not a string"],
+      [`{"parent": "x"}`, "json: .parent is a string, not an object with a name and a path"],
     ];
     for (const [text, want] of cases) {
       expect(() => decodeDraft(text)).toThrow("loadout.ts printed something that isn't a manifest: " + want);
@@ -66,15 +66,7 @@ describe("the draft", () => {
 });
 
 describe("compile, before bun runs", () => {
-  test("a repo still in HCL or Kotlin is refused by name", async () => {
-    for (const [file, want] of [
-      ["loadout.hcl", "manifests are HCL"],
-      ["loadout.kt", "manifests are Kotlin"],
-    ]) {
-      const root = tempDir();
-      fs.writeFileSync(path.join(root, file!), "");
-      await expect(compile(root)).rejects.toThrow(want);
-    }
+  test("a repo without loadout.ts is refused", async () => {
     await expect(compile(tempDir())).rejects.toThrow("has no loadout.ts");
   });
 

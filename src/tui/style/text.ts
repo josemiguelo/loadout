@@ -1,5 +1,5 @@
 import { stringWidth, truncate as ansiTruncate } from "./ansi.ts";
-import { newStyle, type Color, type Style } from "./lipgloss.ts";
+import { newStyle, type Color, type Style } from "./style.ts";
 
 // Glyphs the screen uses. One cell each.
 export const GlyphDot = "●";

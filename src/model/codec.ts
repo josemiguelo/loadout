@@ -1,7 +1,6 @@
-// The lock's JSON shape, field by field, as kotlinx writes the @Serializable
-// classes with encodeDefaults = false and explicitNulls = false: keys in
-// declaration order, a field equal to its default left out, an undefined one
-// too. Reading is strict like kotlinx's: an unknown key or a missing required
+// The lock's JSON shape, field by field: keys in declaration order, a field
+// equal to its default left out, an undefined one too. Reading is strict:
+// an unknown key or a missing required
 // field is an error naming its path.
 
 import { isJSONObject, type JSONObject, type JSONValue, JSONNumber } from "./json.ts";
@@ -226,7 +225,7 @@ function outdatedToJSON(o: OutdatedSource): JSONObject {
 
 // ─── reading ────────────────────────────────────────────────────────────
 
-/** DecodeError is a lock that doesn't fit the model, worded like kotlinx's. */
+/** DecodeError is a lock that doesn't fit the model, naming where. */
 export class DecodeError extends Error {
   constructor(message: string) {
     super(message);
@@ -239,7 +238,7 @@ export interface Errs {
   err?: DecodeError;
 }
 
-/** kindOf is a JSON value's kind as kotlinx names it in messages. */
+/** kindOf is a JSON value's kind as messages name it. */
 function kindOf(v: JSONValue | undefined): string {
   if (isJSONObject(v)) return "JsonObject";
   if (Array.isArray(v)) return "JsonArray";
@@ -338,14 +337,14 @@ export class ObjReader {
     if (v === undefined) return undefined;
     if (!Array.isArray(v)) {
       this.fail(
-        `Expected JsonArray, but had ${kindOf(v)} as the serialized body of kotlin.collections.ArrayList at element: ${this.at(key)}`,
+        `Expected JsonArray, but had ${kindOf(v)} as the serialized body of a list at element: ${this.at(key)}`,
       );
       return undefined;
     }
     return v;
   }
 
-  /** list is key's strings; undefined when absent (Go's nil). */
+  /** list is key's strings; undefined when absent. */
   listOrNil(key: string): string[] | undefined {
     const arr = this.array(key);
     if (arr === undefined) return undefined;
@@ -367,7 +366,7 @@ export class ObjReader {
     if (v === undefined) return undefined;
     if (!isJSONObject(v)) {
       this.fail(
-        `Expected JsonObject, but had ${kindOf(v)} as the serialized body of kotlin.collections.LinkedHashMap at element: ${this.at(key)}`,
+        `Expected JsonObject, but had ${kindOf(v)} as the serialized body of a map at element: ${this.at(key)}`,
       );
       return undefined;
     }
@@ -563,8 +562,8 @@ function readOutdated(v: JSONValue, path: string, errs: Errs): OutdatedSource {
   return o;
 }
 
-/** goAtoi is Go's strconv.Atoi: a decimal int (sign allowed, int64 range), or undefined. */
-export function goAtoi(s: string): number | undefined {
+/** parseDecimal is s as a decimal int (sign allowed, int64 range), or undefined. */
+export function parseDecimal(s: string): number | undefined {
   if (!/^[+-]?[0-9]+$/.test(s)) return undefined;
   const n = BigInt(s);
   if (n > 9223372036854775807n || n < -9223372036854775808n) return undefined;
@@ -577,7 +576,7 @@ export function readLockTree(tree: JSONObject, errs: Errs): { format: number; to
   let format = 1;
   const f = r.get("format");
   if (f !== undefined) {
-    const parsed = f instanceof JSONNumber ? goAtoi(f.text) : undefined;
+    const parsed = f instanceof JSONNumber ? parseDecimal(f.text) : undefined;
     if (parsed === undefined) r.fail("Unexpected JSON token at element: $.format");
     format = parsed ?? 0;
   }

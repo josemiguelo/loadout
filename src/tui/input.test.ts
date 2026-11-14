@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Decoder, keyString, MouseButton, MouseClickMsg, MouseWheelMsg } from "./input.ts";
-import { KeyPressMsg, PasteMsg } from "./tea.ts";
+import { KeyPressMsg, PasteMsg } from "./messages.ts";
 
 const keys = (data: string) => new Decoder().feed(data).map((m) => (m instanceof KeyPressMsg ? keyString(m) : m));
 

@@ -67,7 +67,7 @@ function newPart(p: Partial<Part> & { kind: PartKind }): Part {
  * program's version check runs, every applicable script's `check` command
  * runs, and chezmoi reports the config units (ConfigEngine). All checks are
  * read-only, so they run concurrently (bounded), scripts and configs
- * overlapping with programs — one slow check no longer serializes `status`.
+ * overlapping with programs, so one slow check doesn't hold up the rest.
  */
 export class StatusEngine {
   private configsDown: string | undefined;

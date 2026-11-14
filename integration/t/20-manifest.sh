@@ -144,7 +144,7 @@ OUT=$("$BIN" --repo repo compile 2>&1) && fail "an undefined name must not compi
 echo "$OUT" | grep -qE "^error: programs/profiles\.loadout\.ts:4,[0-9]+: ReferenceError: ghostProgram is not defined$" ||
     fail "the undefined name is named, with its file, line and column, on one line: $OUT"
 [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" = 1 ] || fail "one line: $OUT"
-echo "$OUT" | grep -qE '^panic:|goroutine [0-9]+' && fail "a broken manifest must not crash: $OUT"
+echo "$OUT" | grep -qE '^ +at .+:[0-9]+:[0-9]+\)?$' && fail "a broken manifest must not crash: $OUT"
 rm repo/programs/profiles.loadout.ts
 compile_repo repo
 ok "a program installed twice, or one that doesn't exist, doesn't compile"
@@ -422,6 +422,6 @@ script("broken", {
 });
 TS
 OUT=$("$BIN" --repo syntax compile 2>&1) && fail "a syntax error must not compile"
-echo "$OUT" | grep -qE '^panic:|goroutine [0-9]+' && fail "a broken manifest must not crash: $OUT"
+echo "$OUT" | grep -qE '^ +at .+:[0-9]+:[0-9]+\)?$' && fail "a broken manifest must not crash: $OUT"
 echo "$OUT" | grep -qE '^error: maintenance/broken\.loadout\.ts:[0-9]+,[0-9]+: ' || fail "the syntax error is reported with its file, line and column: $OUT"
 ok "a syntax error is reported as error: <file>:<line>,<col>, and the compile fails"

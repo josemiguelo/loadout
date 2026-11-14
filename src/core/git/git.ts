@@ -1,4 +1,4 @@
-// Package git is the config repo's git, through the `git` binary.
+// The git module is the config repo's git, through the `git` binary.
 
 import { Refusal, trimSpace } from "../../model/index.ts";
 import { type ExecResult, line, type ProcessRunner, success } from "../exec/exec.ts";
@@ -60,7 +60,7 @@ export class GitClient {
   }
 }
 
-/** newGitClient is the git of the repo at repoRoot (Go's git.New). */
+/** newGitClient is the git of the repo at repoRoot. */
 export function newGitClient(runner: ProcessRunner, repoRoot: string): GitClient {
   return new GitClient(runner, repoRoot);
 }

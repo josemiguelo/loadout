@@ -73,11 +73,11 @@ echo "$OUT" | grep -q "Next steps:" && fail "an upgrade must not print first-ins
 echo "$OUT" | grep -q "was v9.9.9" || fail "an upgrade names the version it replaced"
 ok "install.sh installs the binary alone, and tells a first install from an upgrade"
 
-# An older loadout's share directory (its Kotlin DSL and Gradle plugin) is
-# left as it was: install.sh never deletes what it no longer installs.
-mkdir -p prefix/share/loadout/maven
+# A share directory install.sh finds is left as it was: install.sh never
+# deletes what it didn't write.
+mkdir -p prefix/share/loadout/old
 echo 3.0.0 > prefix/share/loadout/VERSION
 OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) ||
-    fail "an upgrade over an old share dir installs: $OUT"
-grep -qx 3.0.0 prefix/share/loadout/VERSION && [ -d prefix/share/loadout/maven ] || fail "the old share dir is left alone"
-ok "install.sh leaves an older loadout's share directory alone"
+    fail "an upgrade over a share dir installs: $OUT"
+grep -qx 3.0.0 prefix/share/loadout/VERSION && [ -d prefix/share/loadout/old ] || fail "the share dir is left alone"
+ok "install.sh leaves a share directory it finds alone"

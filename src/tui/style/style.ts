@@ -1,10 +1,9 @@
-// The slice of Lip Gloss v2 the screen renders with, producing the same
-// bytes: a Style's attributes in Lip Gloss's order (bold, underline,
-// foreground, background, underline style) as one SGR sequence, reset with
-// ESC[m; underlined text styles its spaces apart, as Lip Gloss does;
+// The styling the screen renders with: a Style's attributes in a fixed
+// order (bold, underline, foreground, background, underline style) as one
+// SGR sequence, reset with ESC[m; underlined text styles its spaces apart;
 // horizontal padding in the background colour; multi-line blocks padded to
-// their widest line. Also Blend1D (CIE L*a*b*, as go-colorful) and
-// JoinHorizontal.
+// their widest line. Also blend1D (a CIE L*a*b* blend) and joinHorizontal.
+// The golden tests pin every byte.
 
 import { ResetStyle, stringWidth } from "./ansi.ts";
 
@@ -31,7 +30,7 @@ const bgAttr = (c: Color) => `48;2;${c.r};${c.g};${c.b}`;
 
 const isSpace = (ch: string) => /^\s$/u.test(ch) || ch === "\u0085";
 
-/** Style is an immutable Lip Gloss style: each setter returns a new one. */
+/** Style is an immutable style: each setter returns a new one. */
 export class Style {
   private constructor(
     private readonly fg: Color | undefined,
@@ -82,7 +81,7 @@ export class Style {
     return this.with({ padLeft: horizontal, padRight: horizontal });
   }
 
-  /** render is str styled, as Lip Gloss's Render. */
+  /** render is str styled (tabs become four spaces). */
   render(str: string): string {
     str = str.replaceAll("\t", "    ");
     if (this.props === 0) return str;
@@ -146,7 +145,7 @@ export class Style {
   }
 }
 
-/** newStyle is Lip Gloss's NewStyle. */
+/** newStyle is an empty Style. */
 export const newStyle = (): Style => Style.new();
 
 /** getLines is str's lines and the widest one's width. */
@@ -157,12 +156,12 @@ export function getLines(str: string): [string[], number] {
   return [lines, widest];
 }
 
-/** width is the widest line's width, as lipgloss.Width. */
+/** width is the widest line's terminal cell width. */
 export function width(str: string): number {
   return getLines(str)[1];
 }
 
-/** joinHorizontal is JoinHorizontal(Top, ...): blocks side by side, each padded to its widest line, short ones with blank lines below. */
+/** joinHorizontal is blocks top-aligned: blocks side by side, each padded to its widest line, short ones with blank lines below. */
 export function joinHorizontal(...strs: string[]): string {
   if (strs.length === 0) return "";
   if (strs.length === 1) return strs[0]!;
@@ -187,21 +186,21 @@ export function joinHorizontal(...strs: string[]): string {
   return out.join("\n");
 }
 
-// ─── Blend1D: go-colorful's L*a*b* blend ────────────────────────────────
+// ─── blend1D: an L*a*b* blend ───────────────────────────────────────────
 
 const D65 = [0.95047, 1.0, 1.08883] as const;
 
 const linearize = (v: number) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
 const delinearize = (v: number) => (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1.0 / 2.4) - 0.055);
-// Go folds constant expressions exactly before rounding: 216/24389 is
-// (6/29)³ and 108/841 is 3·(6/29)², rounded once, as Go has them.
+// 216/24389 is (6/29)³ and 108/841 is 3·(6/29)², each written as one
+// fraction so it is rounded once: the golden bytes depend on it.
 const labF = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : ((((t / 3.0) * 29.0) / 6.0) * 29.0) / 6.0 + 4.0 / 29.0);
 const labFinv = (t: number) => (t > 6.0 / 29.0 ? t * t * t : (108 / 841) * (t - 4.0 / 29.0));
 
 type Lab = [number, number, number];
 
 function toLab(c: Color): Lab {
-  // colorful.MakeColor: 8-bit → 16-bit → [0,1].
+  // 8-bit → 16-bit → [0,1].
   const r = linearize((c.r * 257) / 65535);
   const g = linearize((c.g * 257) / 65535);
   const b = linearize((c.b * 257) / 65535);
@@ -220,12 +219,12 @@ function fromLab([l, a, bb]: Lab): Color {
   const r = 3.2409699419045214 * x - 1.5373831775700935 * y - 0.49861076029300328 * z;
   const g = -0.96924363628087983 * x + 1.8759675015077207 * y + 0.041555057407175613 * z;
   const b = 0.055630079696993609 * x - 0.20397695888897657 * y + 1.0569715142428786 * z;
-  // Clamped, then RGBA()'s 16 bits, then the 8 bits a 24-bit SGR takes.
+  // Clamped, then 16 bits, then the 8 bits a 24-bit SGR takes.
   const to8 = (v: number) => Math.floor(Math.floor(Math.max(0, Math.min(delinearize(v), 1)) * 65535.0 + 0.5) / 256);
   return { r: to8(r), g: to8(g), b: to8(b) };
 }
 
-/** blend1D is steps colours blending through stops, as Lip Gloss's Blend1D. */
+/** blend1D is steps colours blending through stops in L*a*b*. */
 export function blend1D(steps: number, ...stops: Color[]): Color[] {
   steps = Math.max(steps, 0);
   if (steps <= stops.length) return stops.slice(0, steps);

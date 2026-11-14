@@ -1,8 +1,8 @@
-// Package state reads and writes the machines' state files.
+// The state module reads and writes the machines' state files.
 
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { cleanPath, goPathError, joinPath, sortStrings, trimRight } from "../../model/index.ts";
+import { cleanPath, fileError, joinPath, sortStrings, trimRight } from "../../model/index.ts";
 import { type MachineState, machineStateEqual, schemaVersion } from "../coremodel/coremodel.ts";
 import { decode, encode } from "./codec.ts";
 
@@ -61,7 +61,7 @@ export class StateStore {
       names = readdirSync(this.stateDir);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
-        this.warnings.push(`${this.stateDirName} is not readable (${goPathError(e, "open", this.stateDir).message})`);
+        this.warnings.push(`${this.stateDirName} is not readable (${fileError(e, "open", this.stateDir).message})`);
       }
       return all;
     }
@@ -86,7 +86,7 @@ export class StateStore {
       try {
         text = readFileSync(path, "utf8");
       } catch (e) {
-        throw goPathError(e, undefined, path);
+        throw fileError(e, undefined, path);
       }
       state = decode(text);
     } catch (e) {
@@ -114,19 +114,19 @@ export class StateStore {
     return state;
   }
 
-  /** write writes state to its machine's file; throws Go-worded OS errors. */
+  /** write writes state to its machine's file; throws file errors worded as fileError words them. */
   write(state: MachineState): void {
     if (this.readOnly) throw new Error(`a child repo never writes its parent's state (${this.stateDir})`);
     try {
       mkdirSync(this.stateDir, { recursive: true, mode: 0o755 });
     } catch (e) {
-      throw goPathError(e, "mkdir");
+      throw fileError(e, "mkdir");
     }
     const path = this.pathFor(state.machine);
     try {
       writeFileSync(path, encode(state), { mode: 0o644 });
     } catch (e) {
-      throw goPathError(e, "open", path);
+      throw fileError(e, "open", path);
     }
   }
 
@@ -165,11 +165,11 @@ export function writeIfChanged(repoRoot: string, target: string, text: string): 
   try {
     mkdirSync(dir, { recursive: true, mode: 0o755 });
   } catch (e) {
-    throw goPathError(e, "mkdir");
+    throw fileError(e, "mkdir");
   }
   try {
     writeFileSync(target, text, { mode: 0o644 });
   } catch (e) {
-    throw goPathError(e, "open", target);
+    throw fileError(e, "open", target);
   }
 }

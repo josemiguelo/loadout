@@ -1,7 +1,6 @@
-// The slice of charmbracelet/x/ansi the screen uses: display widths,
-// truncation and stripping of styled strings, escape-aware and counting
-// graphemes the way ansi's GraphemeWidth method does (a wide East Asian
-// character or an emoji is two cells, a combining mark none).
+// Display widths, truncation and stripping of styled strings: escape-aware,
+// counting a grapheme's terminal cells (a wide East Asian character or an
+// emoji is two cells, a combining mark none).
 
 /** ResetStyle is the SGR sequence that resets every attribute. */
 export const ResetStyle = "\x1b[m";

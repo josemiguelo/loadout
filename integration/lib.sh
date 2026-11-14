@@ -296,7 +296,7 @@ seen() {
 }
 
 # --- the home screen ------------------------------------------------------
-# Bubble Tea's renderer writes only the cells that changed, so the raw
+# The screen's renderer writes only the rows that changed, so the raw
 # capture can't be grepped for what is on screen. The screen writes its
 # current frame as plain text to LOADOUT_SCREEN_DUMP after every render
 # (atomically): these helpers read that file, <name>.screen.

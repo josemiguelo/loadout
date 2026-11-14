@@ -21,7 +21,7 @@ test("the embedded scaffolds are the scaffold folder's files, byte for byte", ()
   expect(sorted(scaffoldTexts)).toEqual(sorted(onDisk));
 });
 
-test("a scaffold's files come in Go's walk order, the SDKs last", () => {
+test("a scaffold's files come in walk order, the SDKs last", () => {
   const files = renderScaffold("init", { hostname: "box", parentName: "", parentPath: "", parentImport: "" });
   expect(files.map((f) => f.path)).toEqual([
     ".gitignore",

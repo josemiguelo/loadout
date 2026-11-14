@@ -1,9 +1,8 @@
-// The command line, as the Go binary read it with cobra and pflag: which
-// command the arguments name (cobra's Find), its flags (pflag, interspersed
-// with the positional arguments, persistent flags inherited from the
-// root), then help, the arguments' check and the command itself (cobra's
-// execute), in that order. Errors keep pflag's wording here; errors.ts
-// turns them into Clikt's, as the Go binary's flagError did.
+// The command line: which command the arguments name, its flags
+// (interspersed with the positional arguments, persistent flags inherited
+// from the root), then help, the arguments' check and the command itself,
+// in that order. Errors here are the parser's own words; errors.ts turns
+// them into the `Error: ` lines loadout prints.
 
 /** OptKind is what an option holds: a switch, a value, or a repeatable value. */
 export type OptKind = "bool" | "string" | "strings";
@@ -47,7 +46,7 @@ export class Command {
   hidden = false;
   parent: Command | undefined;
   commands: Command[] = [];
-  /** validateArgs refuses positional arguments the command doesn't take (cobra's Args); throws. */
+  /** validateArgs refuses positional arguments the command doesn't take; throws. */
   validateArgs: ((cmd: Command, args: string[]) => void) | undefined;
   /** run is the command; undefined = not runnable (help is shown instead). */
   run: Run | undefined;
@@ -55,7 +54,7 @@ export class Command {
   persistentPreRun: Run | undefined;
   /**
    * passArgs hands every argument after the command's name to run as it is,
-   * flags and `--help` included (cobra's DisableFlagParsing).
+   * flags and `--help` included.
    */
   passArgs = false;
 
@@ -72,7 +71,7 @@ export class Command {
 
   /**
    * flagSet is every option the command parses: its own and its
-   * ancestors' persistent ones (cobra's merged Flags()).
+   * ancestors' persistent ones.
    */
   flagSet(): OptSpec[] {
     const set = [...this.opts];
@@ -102,7 +101,7 @@ export class Flags {
     return [...(this.lookup(name, "strings") as string[])];
   }
 
-  /** changed says whether the command line set name (pflag's Changed). */
+  /** changed says whether the command line set name. */
   changed(name: string): boolean {
     return this.set.has(name);
   }
@@ -113,7 +112,7 @@ export class Flags {
     return this.values.get(name)!;
   }
 
-  /** assign is pflag's Set: a value for o, as given; throws FlagError when a switch's isn't a bool. */
+  /** assign sets a value for o, as given; throws FlagError when a switch's isn't a bool. */
   assign(o: OptSpec, value: string): void {
     switch (o.kind) {
       case "bool": {
@@ -121,7 +120,7 @@ export class Flags {
         if (b === undefined) {
           const flagName = o.short !== "" ? `-${o.short}, --${o.long}` : `--${o.long}`;
           throw new FlagError(
-            `invalid argument ${goQuote(value)} for ${goQuote(flagName)} flag: strconv.ParseBool: parsing ${goQuote(value)}: invalid syntax`,
+            `invalid argument ${quoteString(value)} for ${quoteString(flagName)} flag: parsing ${quoteString(value)}: invalid syntax`,
           );
         }
         this.values.set(o.long, b);
@@ -141,13 +140,13 @@ export class Flags {
   }
 }
 
-/** FlagError is a command line pflag refuses, in pflag's words. */
+/** FlagError is a command line the parser refuses, in its words. */
 export class FlagError extends Error {}
 
-/** HelpRequested is -h/--help on a command that doesn't declare it (pflag's ErrHelp). */
+/** HelpRequested is -h/--help on a command that doesn't declare it. */
 export class HelpRequested extends Error {}
 
-/** parseBool is Go's strconv.ParseBool; undefined when s is none of its spellings. */
+/** parseBool reads 1, t, T, TRUE, true, True and their false counterparts; undefined for anything else. */
 function parseBool(s: string): boolean | undefined {
   switch (s) {
     case "1":
@@ -168,7 +167,7 @@ function parseBool(s: string): boolean | undefined {
   return undefined;
 }
 
-/** isPrint is roughly Go's strconv.IsPrint, for the characters a command line holds. */
+/** isPrint says whether cp prints as itself in a quoted string, for the characters a command line holds. */
 function isPrint(cp: number): boolean {
   if (cp < 0x20 || cp === 0x7f) return false;
   if (cp >= 0x80 && cp <= 0xa0) return false;
@@ -178,7 +177,7 @@ function isPrint(cp: number): boolean {
   return true;
 }
 
-/** quoted is cp as Go's quoting writes it inside quote. */
+/** quoted is cp escaped inside quote: a backslash before the quote and itself, `\n`-style escapes, `\x`/`\u`/`\U` for what doesn't print. */
 function quoted(cp: number, quote: string): string {
   const c = String.fromCodePoint(cp);
   if (c === quote || c === "\\") return "\\" + c;
@@ -191,15 +190,15 @@ function quoted(cp: number, quote: string): string {
   return "\\U" + hex(cp, 8);
 }
 
-/** goQuote is s as Go's %q writes a string. */
-export function goQuote(s: string): string {
+/** quoteString is s double-quoted, escaped by quoted. */
+export function quoteString(s: string): string {
   let out = '"';
   for (const c of s) out += quoted(c.codePointAt(0)!, '"');
   return out + '"';
 }
 
-/** goQuoteByte is b as Go's %q writes a byte (a rune literal). */
-function goQuoteByte(b: number): string {
+/** quoteByte is b single-quoted, escaped by quoted. */
+function quoteByte(b: number): string {
   return "'" + quoted(b, "'") + "'";
 }
 
@@ -213,13 +212,13 @@ function shortHasNoOptDefVal(name: string, set: readonly OptSpec[]): boolean {
   return o !== undefined && o.kind === "bool";
 }
 
-/** takesValue says whether s is a flag whose value is the next argument (cobra's guess, before parsing). */
+/** takesValue says whether s is a flag whose value is the next argument (a guess, before parsing). */
 function takesNext(s: string, set: readonly OptSpec[]): boolean {
   if (s.startsWith("--") && !s.includes("=") && !hasNoOptDefVal(s.slice(2), set)) return true;
   return s.startsWith("-") && !s.includes("=") && s.length === 2 && !shortHasNoOptDefVal(s.slice(1), set);
 }
 
-/** stripFlags is args without flags (and what cobra takes for their values): the command words. */
+/** stripFlags is args without flags (and what look like their values): the command words. */
 function stripFlags(args: readonly string[], c: Command): string[] {
   const set = c.flagSet();
   const commands: string[] = [];
@@ -271,7 +270,7 @@ function argsAfterFirstX(args: readonly string[], c: Command, x: string): string
   return [...args];
 }
 
-/** find is the command args name, and the arguments left for it (cobra's Find). */
+/** find is the command args name, and the arguments left for it. */
 export function find(root: Command, args: readonly string[]): [Command, string[]] {
   let c = root;
   let rest = [...args];
@@ -286,10 +285,10 @@ export function find(root: Command, args: readonly string[]): [Command, string[]
 }
 
 /**
- * parseFlags is args parsed as pflag does for cmd: flags anywhere among the
+ * parseFlags is args parsed for cmd: flags anywhere among the
  * positional arguments, `--` ending them, `--flag=value`, `--flag value`,
- * `-abc`, `-fvalue`, `-f=value`, `-f value`. Throws FlagError in pflag's
- * words, or HelpRequested.
+ * `-abc`, `-fvalue`, `-f=value`, `-f value`. Throws FlagError or
+ * HelpRequested.
  */
 export function parseFlags(cmd: Command, args: readonly string[]): { flags: Flags; args: string[] } {
   const set = cmd.flagSet();
@@ -344,7 +343,7 @@ function parseLongArg(s: string, args: string[], set: readonly OptSpec[], flags:
 
 /**
  * parseShortArg is one `-…` argument: a series of shorthands, the last of
- * them perhaps with its value. pflag works on bytes; so does this.
+ * them perhaps with its value. It works on bytes, not characters.
  */
 function parseShortArg(s: string, args: string[], set: readonly OptSpec[], flags: Flags): string[] {
   let shorthands = Buffer.from(s.slice(1), "utf8");
@@ -358,7 +357,7 @@ function parseShortArg(s: string, args: string[], set: readonly OptSpec[], flags
     const o = c < 0x80 ? set.find((x) => x.short !== "" && x.short === letter) : undefined;
     if (o === undefined) {
       if (letter === "h") throw new HelpRequested();
-      throw new FlagError(`unknown shorthand flag: ${goQuoteByte(c)} in -${text(shorthands)}`);
+      throw new FlagError(`unknown shorthand flag: ${quoteByte(c)} in -${text(shorthands)}`);
     }
     let value: string;
     if (shorthands.length > 2 && shorthands[1] === 0x3d) {
@@ -373,7 +372,7 @@ function parseShortArg(s: string, args: string[], set: readonly OptSpec[], flags
       value = args[0]!;
       rest = args.slice(1);
     } else {
-      throw new FlagError(`flag needs an argument: ${goQuoteByte(c)} in -${text(shorthands)}`);
+      throw new FlagError(`flag needs an argument: ${quoteByte(c)} in -${text(shorthands)}`);
     }
     flags.assign(o, value);
     shorthands = outShorts;
@@ -389,7 +388,7 @@ export interface Hooks {
 }
 
 /**
- * executeCommand runs the command args name, as cobra did: flags parsed
+ * executeCommand runs the command args name: flags parsed
  * (a bad one is hooks.flagError's), help if asked for (or if the command
  * isn't runnable), the positional arguments checked, the nearest
  * persistentPreRun, then the command.

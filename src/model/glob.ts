@@ -6,7 +6,7 @@
 // `node_modules` are never entered.
 
 import type { RepoFS } from "./fsys.ts";
-import { joinPath, sortStrings, trimSpace } from "./gostd.ts";
+import { joinPath, sortStrings, trimSpace } from "./stdlib.ts";
 
 /** globProblem is why pattern can't be a layout path or glob, or "" when it can. */
 export function globProblem(pattern: string): string {

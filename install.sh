@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the latest loadout release into ~/.local/bin: one binary, which
-# compiles manifests itself (no share directory, no JDK). An older
-# loadout's ~/.local/share/loadout is left as it was. No sudo.
+# compiles manifests itself (no share directory). A ~/.local/share/loadout
+# it finds is left as it was. No sudo.
 #
 #   curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
 #

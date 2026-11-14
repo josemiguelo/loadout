@@ -15,7 +15,7 @@ function check(runner: ProcessRunner, vc: VersionCheck | undefined): Promise<Pro
 }
 
 function versionOf(state: ProgramState): string {
-  return state.version ?? "<nil>";
+  return state.version ?? "<none>";
 }
 
 test("installed with version", async () => {

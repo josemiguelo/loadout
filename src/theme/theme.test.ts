@@ -42,6 +42,6 @@ test("an unreadable LOADOUT_THEME is refused, not ignored", () => {
   expect((err as Error).message).toContain("lite");
 });
 
-test("hex is Lip Gloss colour", () => {
+test("hex is the colour as #rrggbb", () => {
   expect(Dark.accent.hex()).toBe("#7aa2f7");
 });

@@ -1,4 +1,4 @@
-// Package app is what the CLI and the home screen share (the app context,
+// The app module is what the CLI and the home screen share (the app context,
 // the outdated query, the command a home-screen run starts, explain, the self-version check):
 // the services every command and the screen use, and the Screen interface
 // the home screen implements. Neither side owns these twice, and neither
@@ -14,15 +14,15 @@ import { type CommandFrame, frameOf, newShellRunner, type ProcessRunner } from "
 import * as loader from "../core/loader/loader.ts";
 import { envVar } from "../core/platform/platform.ts";
 import { newStateStore, type StateStore } from "../core/state/index.ts";
-import { dirFS, forMachine, goPathError, type Manifest, plus, type RepoLayout } from "../model/index.ts";
+import { dirFS, forMachine, fileError, type Manifest, plus, type RepoLayout } from "../model/index.ts";
 import { explain, type ExplainedName } from "./explain.ts";
 import { type OutdatedReport, outdatedReport } from "./outdated.ts";
 import { type ChildCommand, childCommand, runCommand, selfArgv } from "./run.ts";
 import type { Closed } from "./screen.ts";
 
 /**
- * Lazy is a value computed once, with the error computing it gave (Go's
- * sync.Once): get computes on the first call and every later call returns
+ * Lazy is a value computed once, with the error computing it gave: get
+ * computes on the first call and every later call returns
  * that value, or throws that error again. A promise is a value like any
  * other: the first call's promise (resolved or rejected) is every call's.
  */
@@ -323,7 +323,7 @@ export class AppContext {
   }
 }
 
-/** newApp is the context of the repo at repoRoot, running real processes (Go's app.New). */
+/** newApp is the context of the repo at repoRoot, running real processes. */
 export function newApp(repoRoot: string, machineOverride: string, verbose: boolean): AppContext {
   const runner = newShellRunner();
   return newAppWith(repoRoot, machineOverride, verbose, runner, newDetection(runner, dirFS("/")));
@@ -346,9 +346,9 @@ export function home(): string {
 }
 
 /**
- * evalSymlinks is Go's filepath.EvalSymlinks of an absolute, clean path: the
- * path with every symlink resolved, or Go's error naming the first part of
- * it that isn't there ("lstat /x/y: no such file or directory").
+ * evalSymlinks is an absolute, clean path with every symlink resolved, or an
+ * error naming the first part of it that isn't there ("lstat /x/y: no such
+ * file or directory").
  */
 function evalSymlinks(path: string): string {
   try {
@@ -360,9 +360,9 @@ function evalSymlinks(path: string): string {
       try {
         lstatSync(prefix);
       } catch (inner) {
-        throw goPathError(inner, "lstat", prefix);
+        throw fileError(inner, "lstat", prefix);
       }
     }
-    throw goPathError(e, "lstat", path);
+    throw fileError(e, "lstat", path);
   }
 }

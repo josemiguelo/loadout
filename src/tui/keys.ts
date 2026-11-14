@@ -135,7 +135,7 @@ export interface Dialog {
   parent?: Dialog;
 }
 
-/** newDialog is a Dialog with every field not given at its zero value. */
+/** newDialog is a Dialog with every field not given at its default. */
 export function newDialog(d: Partial<Dialog> & { kind: DialogKind }): Dialog {
   return {
     pane: app.PaneUpgrade,
@@ -153,7 +153,7 @@ export function newDialog(d: Partial<Dialog> & { kind: DialogKind }): Dialog {
   };
 }
 
-/** dialogAsking says the dialog asks a question (Run/Cancel): Go's Dialog.asking. */
+/** dialogAsking says the dialog asks a question (Run/Cancel). */
 export function dialogAsking(d: Dialog): boolean {
   return d.kind === DialogKind.Confirm;
 }
@@ -297,7 +297,7 @@ export function handleKey(m: HomeModel, k: HomeKey): void {
   if (k >= HomeKey.Subject1 && k <= HomeKey.Subject5) {
     const i = k - HomeKey.Subject1;
     if (i < s.sections.length) {
-      goSubject(m, i);
+      showSubject(m, i);
       // Stacked, the subject's page shows, from any page.
       if (stacked(m)) focus(m, FocusArea.Main);
     }
@@ -346,8 +346,8 @@ function toggleTheme(m: HomeModel): void {
   }
 }
 
-/** goSubject shows subject i in the main pane. */
-export function goSubject(m: HomeModel, i: number): void {
+/** showSubject shows subject i in the main pane. */
+export function showSubject(m: HomeModel, i: number): void {
   const s = m.state;
   if (i !== s.subject) s.inspect = undefined;
   s.subject = i;
@@ -599,11 +599,11 @@ export function sidebarKey(m: HomeModel, k: HomeKey): void {
     case HomeKey.Up:
       if (s.sideRun > 0) s.sideRun--;
       else if (s.sideRun === 0) s.sideRun = -1;
-      else if (s.subject > 0) goSubject(m, s.subject - 1);
+      else if (s.subject > 0) showSubject(m, s.subject - 1);
       break;
     case HomeKey.Down:
       if (s.sideRun >= 0) s.sideRun = Math.min(s.sideRun + 1, runs.length - 1);
-      else if (s.subject < s.sections.length - 1) goSubject(m, s.subject + 1);
+      else if (s.subject < s.sections.length - 1) showSubject(m, s.subject + 1);
       else if (runs.length > 0) s.sideRun = 0;
       break;
     case HomeKey.Open:

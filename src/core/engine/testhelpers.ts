@@ -1,4 +1,4 @@
-// The engine tests' shared helpers (Go's helpers_test.go). TEST-ONLY.
+// The engine tests' shared helpers. TEST-ONLY.
 
 import { expect } from "bun:test";
 import type { SystemInfo } from "../coremodel/coremodel.ts";

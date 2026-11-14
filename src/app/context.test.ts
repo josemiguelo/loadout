@@ -12,8 +12,7 @@ import { type AppContext, newAppWith } from "./context.ts";
 import { NoSuchItemError } from "./explain.ts";
 import { latestRelease } from "./selfversion.ts";
 
-// The port's own checks of app: Go's internal/app had tests only for run
-// and screen. These pin what the CLI and the home screen lean on.
+// app's context: what the CLI and the home screen lean on.
 
 const sources = ["loadout.ts"];
 

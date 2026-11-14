@@ -8,17 +8,16 @@ import { Style } from "./style.ts";
  */
 let rootCommand: Command | undefined;
 
-/** setRoot records the running invocation's root (Go's rootOf). */
+/** setRoot records the running invocation's root. */
 export function setRoot(root: Command): void {
   rootCommand = root;
 }
 
 /**
  * UsageError is a command line loadout can't run: printed under the
- * command's usage line as `Error: <message>` on stderr, exit 1, as Clikt
- * did. cmd is the command whose usage to show; undefined (a check a command
- * made once running, like "Give at least one program") shows the root's,
- * which is what Clikt printed for those.
+ * command's usage line as `Error: <message>` on stderr, exit 1.
+ * cmd is the command whose usage to show; undefined (a check a command
+ * made once running, like "Give at least one program") shows the root's.
  */
 export class UsageError extends Error {
   constructor(
@@ -42,8 +41,8 @@ export function usageErr(message: string): UsageError {
 }
 
 /**
- * ExitError ends loadout with code, saying nothing more (Clikt's
- * ProgramResult): the command already said why.
+ * ExitError ends loadout with code, saying nothing more: the
+ * command already said why.
  */
 export class ExitError extends Error {
   constructor(readonly code: number) {
@@ -61,7 +60,7 @@ const unknownShorthand = /^unknown shorthand flag: '(.)' in /u;
 const needsArgLong = /^flag needs an argument: (--\S+)/;
 const needsArgShort = /^flag needs an argument: '(.)' in /u;
 
-/** flagError turns pflag's messages into Clikt's. */
+/** flagError turns the parser's messages into usage errors in loadout's words. */
 export function flagError(cmd: Command, msg: string): UsageError {
   let m = unknownFlag.exec(msg);
   if (m) return noSuchOption(cmd, m[1]!);
@@ -86,7 +85,7 @@ export function noSuchSubcommand(cmd: Command, name: string): UsageError {
 }
 
 /**
- * suggest is Clikt's "did you mean": the names similar to name (Jaro-Winkler
+ * suggest is "did you mean": the names similar to name (Jaro-Winkler
  * above 0.8), most similar first.
  */
 export function suggest(name: string, names: readonly string[], what: string): string {
@@ -95,7 +94,7 @@ export function suggest(name: string, names: readonly string[], what: string): s
     const score = jaroWinkler(name, n);
     if (score > 0.8) close.push({ name: n, score });
   }
-  // Array.prototype.sort is stable, as sort.SliceStable.
+  // Array.prototype.sort is stable: equal scores keep names' order.
   close.sort((a, b) => (a.score > b.score ? -1 : a.score < b.score ? 1 : 0));
   switch (close.length) {
     case 0:
@@ -107,7 +106,7 @@ export function suggest(name: string, names: readonly string[], what: string): s
 }
 
 /**
- * jaroWinkler is Clikt's similarity: Jaro, plus 0.1 per character of common
+ * jaroWinkler is the similarity suggest uses: Jaro, plus 0.1 per character of common
  * prefix (uncapped, unlike textbook Jaro-Winkler).
  */
 export function jaroWinkler(s1: string, s2: string): number {
@@ -123,7 +122,7 @@ function jaro(a: string[], b: string[]): number {
   if (a.length === 0 && b.length === 0) return 1;
   if (a.length === 0 || b.length === 0) return 0;
   if (a.length === 1 && b.length === 1) return a[0] === b[0] ? 1 : 0;
-  // Go's integer division.
+  // Integer division.
   const searchRange = Math.trunc(Math.max(a.length, b.length) / 2) - 1;
   const consumed = new Array<boolean>(b.length).fill(false);
   let matches = 0;
@@ -143,7 +142,7 @@ function jaro(a: string[], b: string[]): number {
   return (matches / a.length + matches / b.length + (matches - transpositions) / matches) / 3;
 }
 
-/** argsAtMost refuses more positional arguments than n, as Clikt did. */
+/** argsAtMost refuses more positional arguments than n. */
 export function argsAtMost(n: number): (cmd: Command, args: string[]) => void {
   return (cmd, args) => {
     if (args.length <= n) return;

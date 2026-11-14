@@ -1,7 +1,7 @@
 # loadout is the bun: a `bun` wrapper (BUN_BE_BUN=1 exec <loadout>) in
 # $XDG_DATA_HOME/loadout/bin, first on PATH for every manifest command and
 # for compile's run of loadout.ts, ahead of a `provides … at` folder.
-# `loadout bun` is that bun; $LOADOUT_BUN overrides it; a repo pins none.
+# `loadout bun` is that bun; $LOADOUT_BUN overrides it.
 # run-tests.sh leaves LOADOUT_BUN unset, so the suite runs this way throughout.
 
 mkdir -p otherbin
@@ -82,15 +82,8 @@ OUT=$(LOADOUT_BUN="$PWD/nope" "$BIN" --repo repo --machine m1 run hello 2>&1) &&
 echo "$OUT" | grep -q "error: LOADOUT_BUN=$PWD/nope isn't an executable bun" || fail "the refusal names it: $OUT"
 ok "LOADOUT_BUN overrides loadout's bun, for compile and scripts"
 
-repo_opt repo/loadout.ts 'bun: "1.4.3"'
-OUT=$("$BIN" --repo repo compile 2>&1) && fail "a repo that pins a bun compiles: $OUT"
-echo "$OUT" | grep -q "error: loadout.ts:[0-9]*,[0-9]*: repo's bun is gone: scripts run with the bun loadout is built with ($VERSION), so drop it" ||
-    fail "the refusal says it's gone and why: $OUT"
-ok "compile refuses a repo that still pins a bun"
-
-awk '{ print } /"meta": \{/ { print "      \"bun\": \"1.4.3\"," }' repo/loadout.lock.json > lock.tmp && mv lock.tmp repo/loadout.lock.json
-grep -q '"bun": "1.4.3"' repo/loadout.lock.json || fail "fixture: a lock that pins a bun"
-OUT=$("$BIN" --repo repo --machine m1 status 2>&1) && fail "a lock that pins a bun is read: $OUT"
-echo "$OUT" | grep -q "loadout.lock.json can't be read (Encountered an unknown key 'bun' at path: .* — run: loadout compile" ||
-    fail "a lock that pins a bun asks for a compile: $OUT"
-ok "a lock that still pins a bun is refused until the repo compiles"
+repo_opt repo/loadout.ts 'colour: "blue"'
+OUT=$("$BIN" --repo repo compile 2>&1) && fail "a repo with an unknown setting compiles: $OUT"
+echo "$OUT" | grep -q "error: loadout.ts:[0-9]*,[0-9]*: repo has no setting 'colour' (its settings: name, state, configs, minToolVersion, data, parent)" ||
+    fail "the refusal names the setting and lists the real ones: $OUT"
+ok "compile refuses a repo setting that doesn't exist"

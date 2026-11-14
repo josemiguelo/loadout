@@ -1,4 +1,4 @@
-// Package platform is the posix surface the binary needs: the host, the
+// The platform module is the posix surface the binary needs: the host, the
 // clock, the terminal and Ctrl-C.
 
 import { closeSync, openSync, readlinkSync, readSync, writeSync } from "node:fs";
@@ -40,11 +40,10 @@ export function uname(): UnameInfo {
 }
 
 /**
- * nowIso is the current UTC time as ISO-8601, as Kotlin's Instant writes it:
- * "2026-08-14T12:00:00Z", with a fraction of 3, 6 or 9 digits when there is
- * one. The clock reads to the nanosecond (clock_gettime, as Go's time.Now),
- * so a timestamp has 9 digits as the Go binary's did; where libc's clock
- * can't be loaded, to the microsecond (performance's wall time).
+ * nowIso is the current UTC time as ISO-8601: "2026-08-14T12:00:00Z", with
+ * a fraction of 3, 6 or 9 digits when there is one. The clock reads to the
+ * nanosecond (clock_gettime), so a timestamp has 9 digits; where libc's
+ * clock can't be loaded, to the microsecond (performance's wall time).
  */
 export function nowIso(): string {
   const nanos = realtimeNanos();
@@ -72,7 +71,7 @@ export function isoOf(t: Date | bigint): string {
   return `${base}.${String(nanos).padStart(9, "0")}Z`;
 }
 
-/** envVar is the environment variable name's value, undefined when unset (Go's (value, ok)). */
+/** envVar is the environment variable name's value, undefined when unset. */
 export function envVar(name: string): string | undefined {
   return process.env[name];
 }
@@ -80,7 +79,7 @@ export function envVar(name: string): string | undefined {
 /**
  * selfExecutable is this binary's own path, or "" when unreadable. Linux
  * reads /proc/self/exe, which names a binary replaced since it started
- * "<path> (deleted)"; that suffix is dropped, as Go's os.Executable does, so
+ * "<path> (deleted)"; that suffix is dropped, so
  * the path is the new binary's: read it BEFORE an install replaces it when
  * the old one is meant (sync). macOS: the path the kernel started the
  * binary from.

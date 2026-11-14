@@ -1,4 +1,4 @@
-// Package detect says which system loadout runs on.
+// The detect module says which system loadout runs on.
 
 import { type RepoFS, trimSpace } from "../../model/index.ts";
 import { linux, macOS, type SystemInfo } from "../coremodel/coremodel.ts";
@@ -46,7 +46,7 @@ export class Detection {
   }
 }
 
-/** newDetection is a Detection over root, the filesystem at "/" (Go's detect.New). */
+/** newDetection is a Detection over root, the filesystem at "/" */
 export function newDetection(runner: ProcessRunner, root: RepoFS): Detection {
   return new Detection(runner, root);
 }
@@ -55,7 +55,7 @@ function lines(s: string): string[] {
   return s.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
 }
 
-/** trim is Go's strings.Trim: cutset's characters off both ends. */
+/** trim is s without cutset's characters at either end. */
 function trim(s: string, cutset: string): string {
   let start = 0;
   let end = s.length;

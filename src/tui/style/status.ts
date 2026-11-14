@@ -1,7 +1,7 @@
 import type { Binding } from "../key.ts";
-import { tick, type Cmd, type Msg } from "../tea.ts";
+import { tick, type Cmd, type Msg } from "../messages.ts";
 import { strip } from "./ansi.ts";
-import { joinHorizontal, newStyle, width as blockWidth, type Color, type Style } from "./lipgloss.ts";
+import { joinHorizontal, newStyle, width as blockWidth, type Color, type Style } from "./style.ts";
 import { fg, fit, GlyphBullet, truncate, width } from "./text.ts";
 import type { Theme } from "./theme.ts";
 
@@ -191,7 +191,7 @@ export const toastLines = 3;
 
 /**
  * toastCard is a notification as a small card, the dialogs' language
- * (user decision, replacing a full-width band): a rounded border in the
+ * (user decision): a rounded border in the
  * kind's colour, its icon and title bold in that colour, the message below
  * in FgBase, wrapped, at most toastLines lines. Nothing inside is filled, so
  * a transparent terminal stays transparent. Width fits the text, capped at
@@ -219,7 +219,7 @@ export function toastCard(t: Theme, kind: ToastKind, message: string, maxWidth: 
   return out;
 }
 
-/** fields is Go's strings.Fields: s split at runs of white space. */
+/** fields is s split at runs of white space, empty fields dropped. */
 function fields(str: string): string[] {
   return str.split(/[\s\u0085]+/u).filter((f) => f !== "");
 }

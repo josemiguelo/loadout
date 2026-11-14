@@ -19,7 +19,7 @@ export function atLeast(current: string, required: string): boolean {
   return true;
 }
 
-/** parts is v's dot-separated numbers, as Go's strconv.ParseInt(f, 10, 32) reads each: 0 when it can't. */
+/** parts is v's dot-separated numbers, each a signed decimal 32-bit int: 0 when it isn't one. */
 function parts(v: string): number[] {
   return v.split(".").map((f) => {
     if (!/^[+-]?[0-9]+$/.test(f)) return 0;

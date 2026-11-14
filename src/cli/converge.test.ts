@@ -1,5 +1,5 @@
-// The port's own tests for what Go left to the integration suite: the
-// converge pipeline's plan table and tallies, and sync's summary line.
+// The converge pipeline's plan table and tallies, and sync's summary line,
+// beside what the integration suite checks of them.
 
 import { expect, test } from "bun:test";
 import { newMachineState } from "../core/coremodel/coremodel.ts";

@@ -1,5 +1,5 @@
-// Package theme is the one source of truth for loadout's visual identity,
-// shared by the home screen (Lip Gloss colours) and the CLI (24-bit ANSI).
+// The theme module is the one source of truth for loadout's visual identity,
+// shared by the home screen (hex colours) and the CLI (24-bit ANSI).
 // Color is signal, never decoration: every role below means something
 // (ok/warn/error/dim as statuses, accent for headers and actions, machine
 // for machine identity).
@@ -15,7 +15,7 @@ export class Rgb {
     readonly b: number,
   ) {}
 
-  /** hex is the colour as `#rrggbb`, how Lip Gloss takes it. */
+  /** hex is the colour as `#rrggbb`, how the home screen's styles take it. */
   hex(): string {
     const h = (v: number) => v.toString(16).padStart(2, "0");
     return `#${h(this.r)}${h(this.g)}${h(this.b)}`;
@@ -90,7 +90,7 @@ export function paletteFor(dark: boolean): ThemePalette {
 export function detectDarkTerminal(bgLuma: number | undefined, colorFgBg: string): boolean {
   if (bgLuma !== undefined) return bgLuma < 0.5;
   const last = colorFgBg.slice(colorFgBg.lastIndexOf(";") + 1);
-  // strconv.Atoi: an optional sign, then decimal digits only.
+  // A decimal int: an optional sign, then decimal digits only.
   if (colorFgBg === "" || !/^[+-]?[0-9]+$/.test(last)) return true;
   const bg = Number(last);
   return bg !== 7 && bg !== 15;

@@ -1,19 +1,17 @@
 import { expect, test } from "bun:test";
-import { fields, goRegExp, group1, indexSpace, lastNonEmptyTrimmed, lines } from "./text.ts";
+import { fields, compileRegex, group1, indexSpace, lastNonEmptyTrimmed, lines } from "./text.ts";
 import { forEach } from "./versionchecker.ts";
 
-// The port's own helpers (Go had these from its standard library).
-
-test("Go regexps read as Go reads them", () => {
+test("manifest regexes compile with their flags, \\A and \\z", () => {
   expect(group1("(?i)version ([0-9.]+)", "VERSION 1.2")).toBe("1.2");
   expect(group1(String.raw`\A([0-9.]+)\z`, "1.2")).toBe("1.2");
   expect(group1(String.raw`\A([0-9.]+)\z`, "x 1.2")).toBeUndefined();
-  expect(group1("(a)?b", "b")).toBe(""); // an unmatched group is Go's ""
+  expect(group1("(a)?b", "b")).toBe(""); // an unmatched group is ""
   expect(group1("([", "x")).toBeUndefined(); // doesn't compile: no answer
-  expect(goRegExp("(?s)a.b")?.test("a\nb")).toBe(true);
+  expect(compileRegex("(?s)a.b")?.test("a\nb")).toBe(true);
 });
 
-test("lines, fields and spaces split as Go's strings do", () => {
+test("lines, fields and spaces split on every line ending and white space", () => {
   expect(lines("a\r\nb\rc\n")).toEqual(["a", "b", "c", ""]);
   expect(lastNonEmptyTrimmed("x\n  y  \n\n")).toBe("y");
   expect(lastNonEmptyTrimmed(" \n")).toBeUndefined();

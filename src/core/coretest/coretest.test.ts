@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { encodeLock, resolveInstall } from "../../model/index.ts";
 import { example, manifestOf, via } from "./coretest.ts";
 
-// The fixture assembles through the production path (coretest has no Go
-// tests; these keep it honest for the ports that lean on it).
+// The fixture assembles through the production path; these keep it honest
+// for the tests that lean on it.
 
 test("the example assembles with its own installers over the built-ins", () => {
   const m = example();

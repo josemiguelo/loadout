@@ -3,7 +3,7 @@ import * as nodePath from "node:path";
 import { entryFile, scriptSDK, scriptSDKFile, sdk, sdkFile } from "../compile/compile.ts";
 import { newGitClient } from "../core/git/git.ts";
 import { envVar } from "../core/platform/platform.ts";
-import { cleanPath, compareStrings, goPathError, isAbsPath, joinPath, lockFileName } from "../model/index.ts";
+import { cleanPath, compareStrings, fileError, isAbsPath, joinPath, lockFileName } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import type { AppContext } from "../app/index.ts";
 import { exitWith } from "./errors.ts";
@@ -18,7 +18,7 @@ import { Style } from "./style.ts";
 // source, each tool's manifest where its files land), child and
 // child-configs (contract 18: a parent block, no example that could clash).
 // File names and contents are templates over ScaffoldVars ({{.Hostname}}
-// and the like, as Go's text/template wrote them). Every scaffold gets the
+// and the like). Every scaffold gets the
 // SDKs too (sdkFile, scriptSDKFile), so the editor has the manifests' and
 // scripts' types before the first compile.
 
@@ -47,8 +47,8 @@ export interface ScaffoldFile {
 }
 
 /**
- * walkOrder is Go's fs.WalkDir order: a folder's entries by name, each
- * folder's files where its name sorts.
+ * walkOrder is a depth-first walk's order: a folder's entries by name,
+ * each folder's files where its name sorts.
  */
 function walkOrder(a: string, b: string): number {
   const as = a.split("/");
@@ -124,7 +124,7 @@ export function newInitCmd(): Command {
   return cmd;
 }
 
-/** mkdirAll is Go's os.MkdirAll, its errors worded as Go's. */
+/** mkdirAll makes p and its missing parents; its errors are fileError's. */
 function mkdirAll(p: string): void {
   let st: fs.Stats | undefined;
   try {
@@ -149,11 +149,11 @@ function mkdirAll(p: string): void {
     } catch {
       // Not there: Mkdir's error stands.
     }
-    throw goPathError(e, "mkdir", p);
+    throw fileError(e, "mkdir", p);
   }
 }
 
-/** exists says whether p can be stat'ed (Go's os.Stat without an error). */
+/** exists says whether p can be stat'ed (stat succeeds). */
 function exists(p: string): boolean {
   try {
     fs.statSync(p);
@@ -181,7 +181,7 @@ export function writeScaffold(root: string, files: readonly ScaffoldFile[]): voi
     try {
       fs.writeFileSync(target, f.content, { mode: 0o644 });
     } catch (e) {
-      throw goPathError(e, "open", target);
+      throw fileError(e, "open", target);
     }
   }
 }
@@ -227,7 +227,7 @@ export async function initRepo(a: AppContext, root: string, configs: boolean): P
 }
 
 /**
- * getwd is Go's os.Getwd: $PWD when it names the current directory (the
+ * getwd is the working directory: $PWD when it names the current directory (the
  * path as the user's shell spells it, symlinks kept), else the real one.
  */
 function getwd(): string {
@@ -244,12 +244,12 @@ function getwd(): string {
   return process.cwd();
 }
 
-/** absPath is Go's filepath.Abs. */
+/** absPath is p made absolute against the working directory, cleaned. */
 function absPath(p: string): string {
   return isAbsPath(p) ? cleanPath(p) : joinPath(getwd(), p);
 }
 
-/** relPath is Go's filepath.Rel for two absolute, clean paths. */
+/** relPath is target relative to base, for two absolute, clean paths ("." when equal). */
 function relPath(base: string, target: string): string {
   return nodePath.posix.relative(base, target) || ".";
 }

@@ -34,5 +34,5 @@ fi
 
 LOADOUT_THEME=lite "$BIN" --repo repo --machine m1 status >lite.out 2>&1 && fail "an unreadable LOADOUT_THEME must refuse"
 grep -q 'error: LOADOUT_THEME must be dark or light, not "lite"' lite.out || fail "and say so in one clean line: $(cat lite.out)"
-grep -qE '^panic:|goroutine [0-9]+' lite.out && fail "never as a stack trace" || true
+grep -qE '^ +at .+:[0-9]+:[0-9]+\)?$' lite.out && fail "never as a stack trace" || true
 ok "an unreadable LOADOUT_THEME is refused in one line, not ignored"

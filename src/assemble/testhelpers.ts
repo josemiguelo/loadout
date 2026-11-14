@@ -1,4 +1,4 @@
-// The assemble tests' shared builders (Go's helpers in assemble_test.go).
+// The assemble tests' shared builders.
 // TEST-ONLY.
 
 import { expect } from "bun:test";

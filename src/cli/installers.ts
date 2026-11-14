@@ -6,7 +6,7 @@ import { appCtx, subcommand } from "./root.ts";
 import { echo } from "./spinner.ts";
 import { sortedKeys } from "./status.ts";
 import { Style } from "./style.ts";
-import { padEnd, runeCount } from "./table.ts";
+import { padEnd, codePointCount } from "./table.ts";
 
 /**
  * newInstallersCmd is what `install_via = [dnf]` actually means. Installers
@@ -61,7 +61,7 @@ async function runInstallers(args: string[]): Promise<void> {
     return;
   }
   let nameWidth = 9;
-  for (const n of names) nameWidth = Math.max(nameWidth, runeCount(n));
+  for (const n of names) nameWidth = Math.max(nameWidth, codePointCount(n));
   nameWidth += 2;
   echo(Style.header("  " + padEnd("INSTALLER", nameWidth) + "SOURCE    INSTALL"));
   for (const key of names) {

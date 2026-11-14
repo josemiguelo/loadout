@@ -150,7 +150,7 @@ function scriptRows(names: readonly string[]): ExtraRow[] {
   return names.map((name) => ({ name, label: "script" }));
 }
 
-/** exitText is a recorded exit code as Kotlin printed it ("null" for none). */
+/** exitText is a recorded exit code as a run line prints it ("null" for none). */
 export function exitText(code: number | undefined): string {
   return code === undefined ? "null" : String(code);
 }

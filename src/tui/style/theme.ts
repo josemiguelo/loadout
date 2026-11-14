@@ -1,4 +1,4 @@
-// Package style is the home screen's look: Charmtone colours (Crush's
+// style is the home screen's look: Charmtone colours (Crush's
 // "Pantera" dark and a light variant designed here), and pure rendering
 // helpers — wordmark, title rows, section headers, rows, dialogs, the status
 // bar, toasts and the busy animation — that the screen composes. Nothing here
@@ -8,13 +8,13 @@
 // ok = Success/SuccessSubtle, warn = Warning, error = Error, dim =
 // FgMoreSubtle/FgMostSubtle, accent = Primary, machine = Secondary.
 //
-// Rendering produces the bytes Lip Gloss v2 does (lipgloss.ts), and the
+// Rendering (style.ts) produces the bytes the golden tests pin, and the
 // renderer writes them as they are.
 
 import * as charmtone from "./charmtone.ts";
-import type { Color } from "./lipgloss.ts";
+import type { Color } from "./style.ts";
 
-export type { Color } from "./lipgloss.ts";
+export type { Color } from "./style.ts";
 
 /**
  * Theme is every colour token of the screen. Names follow the spec's table;
@@ -182,12 +182,12 @@ export function deepen(c: Color, bg: Color, target: number): Color {
  * fills of a hue over the background.
  */
 export function mix(a: Color, b: Color, w: number): Color {
-  const m = (x: number, y: number) => goRound(x * w + y * (1 - w)) & 0xff;
+  const m = (x: number, y: number) => roundHalfAway(x * w + y * (1 - w)) & 0xff;
   return { r: m(a.r, b.r), g: m(a.g, b.g), b: m(a.b, b.b) };
 }
 
-/** goRound is Go's math.Round: half away from zero. */
-function goRound(x: number): number {
+/** roundHalfAway rounds half away from zero. */
+function roundHalfAway(x: number): number {
   return x < 0 ? -Math.round(-x) : Math.round(x);
 }
 

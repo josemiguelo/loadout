@@ -9,8 +9,7 @@ import { fdWriter } from "./cli/spinner.ts";
 import { InterruptedByUser } from "./core/exec/exec.ts";
 import { envVar, trapInterrupts } from "./core/platform/platform.ts";
 import { forcedDark } from "./theme/theme.ts";
-// The home screen registers itself (app.registerScreen) when imported, as
-// Go's tui package did from its init.
+// The home screen registers itself (app.registerScreen) when imported.
 import "./tui/index.ts";
 
 /** interrupted is the exit a shell reports for a command stopped by Ctrl-C (128 + SIGINT). */

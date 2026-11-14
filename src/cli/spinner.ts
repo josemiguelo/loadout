@@ -29,14 +29,14 @@ export function fdWriter(fd: number): Writer {
 /**
  * Where commands write; tests swap them. Every write goes through echo,
  * echoNoNewline or echoErr: JS runs one write at a time, so the spinner's
- * frames never land inside a line (Go's outMu).
+ * frames never land inside a line.
  */
 export const streams: { stdout: Writer; stderr: Writer } = {
   stdout: fdWriter(1),
   stderr: fdWriter(2),
 };
 
-/** echo prints text and a newline on stdout, as Clikt's echo did. */
+/** echo prints text and a newline on stdout. */
 export function echo(text: string): void {
   streams.stdout.write(text + "\n");
 }

@@ -12,7 +12,7 @@
   and in compile.test.ts; assembly on hand-built drafts in assemble, the
   lock reader in core/loader, byte-identical encoding against the
   `testdata/` locks and state files (src/model, src/assemble, src/core/state)
-  written by older loadouts. tui/style's bytes are pinned to Lip Gloss's by
+  written by earlier loadouts. tui/style's bytes are pinned by
   `testdata/golden.json`.
 - Integration = `integration/run-tests.sh`: black-box, real binary. The
   runner sources `lib.sh` (ok/fail, fixtures, `has_pty`/`pty_run`), then

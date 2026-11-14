@@ -1,4 +1,4 @@
-// Package term is the home screen's run panel: one command in a
+// term is the home screen's run panel: one command in a
 // pseudo-terminal (Bun.spawn's `terminal`), its screen kept by
 // @xterm/headless and drawn as styled lines.
 //
@@ -7,7 +7,7 @@
 // gum) use it and Ctrl-C, sent as a key, makes the line discipline signal
 // the child's foreground process group, never this process.
 //
-// It keeps Bubble Tea's shape (src/tui/tea.ts): start returns a command
+// It speaks the screen's messages (src/tui/messages.ts): start returns a command
 // whose message (OutputMsg, BellMsg, ExitMsg) goes to update, which returns
 // the command that keeps them coming. Messages carry the terminal's ID: a
 // parent holding several terminals (a finished run kept for viewing beside
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import { Terminal as Emulator, type IBufferCell as Cell } from "@xterm/headless";
 import { ResetStyle, stringWidth, truncate } from "../style/ansi.ts";
-import type { Color } from "../style/lipgloss.ts";
+import type { Color } from "../style/style.ts";
 import {
   KeyBackspace,
   KeyDelete,
@@ -50,7 +50,7 @@ import {
   PasteMsg,
   type Cmd,
   type Msg,
-} from "../tea.ts";
+} from "../messages.ts";
 
 /** ScrollbackLines bounds the scrollback the emulator keeps (and so plain). */
 export const ScrollbackLines = 2000;
@@ -91,8 +91,7 @@ export class ExitMsg {
 
 /**
  * TermCommand is what start runs: argv (no shell), its folder, and its
- * environment (undefined = this process's), Go's exec.Cmd as the screen
- * builds it.
+ * environment (undefined = this process's).
  */
 export interface TermCommand {
   readonly argv: readonly string[];
@@ -161,7 +160,7 @@ export class Model {
 
   private plain: string[] = []; // after close: the whole log, the emulator dropped
 
-  /** constructor makes an idle terminal of w x h cells (Go's New). */
+  /** constructor makes an idle terminal of w x h cells. */
   constructor(w: number, h: number) {
     this.w = Math.max(w, 1);
     this.h = Math.max(h, 1);
@@ -357,7 +356,7 @@ export class Model {
     return this.started && !this.exited && !this.closed;
   }
 
-  /** hasExited is true once the child exited (or failed to start): Go's Exited. */
+  /** hasExited is true once the child exited (or failed to start). */
   hasExited(): boolean {
     return this.exited;
   }
@@ -399,7 +398,7 @@ export class Model {
     if (this.emu && this.running() && this.emu.modes.sendFocusMode) this.pty!.write("\x1b[O");
   }
 
-  /** isFocused says whether keys go to the child: Go's Focused. */
+  /** isFocused says whether keys go to the child. */
   isFocused(): boolean {
     return this.focused;
   }
@@ -487,7 +486,6 @@ export class Model {
   /**
    * plainText is the whole log, scrollback then screen, without styles:
    * trailing spaces and trailing blank lines trimmed. Cheap after close.
-   * Go's Plain.
    */
   plainText(): string {
     return (this.emu ? plainLines(this.emu) : this.plain).join("\n");
@@ -614,7 +612,7 @@ export class Model {
   }
 }
 
-/** newModel is Go's New: an idle terminal of w x h cells. */
+/** newModel is an idle terminal of w x h cells. */
 export function newModel(w: number, h: number): Model {
   return new Model(w, h);
 }

@@ -29,8 +29,8 @@ function golden(name: string): string {
   return text.replaceAll("{{VERSION}}", VERSION);
 }
 
-// The layout Clikt printed, off a terminal (79 columns): the same bytes.
-test("help is laid out as Clikt did", () => {
+// The help layout, off a terminal (79 columns), pinned byte for byte.
+test("help is laid out as the golden files have it", () => {
   const root = newRoot();
   expect(renderHelp(root).startsWith(golden("root-help-head.txt"))).toBe(true);
   const upgrade = root.commands.find((sub) => sub.name === "upgrade")!;
@@ -45,7 +45,7 @@ test("wrap keeps indentation and breaks at the last space that fits", () => {
   expect(wrap("  --item x  one two three\nshort", 15)).toEqual(["  --item x  one", "two three", "short"]);
 });
 
-test("suggestions are Clikt's did you mean", () => {
+test("suggestions say did you mean, or list the close names", () => {
   expect(suggest("--jsn", ["--json", "--no-write", "--help"], "options")).toBe(". Did you mean --json?");
   expect(suggest("--verbos", ["--version", "--repo", "--machine", "--verbose", "--help"], "options")).toBe(
     ". (Possible options: --verbose, --version, --repo)",
@@ -76,7 +76,4 @@ test("scaffold values are escaped inside TypeScript strings", () => {
   expect(root).toContain(`path: "~/a\\\\b"`);
   expect(paths.get("tsconfig.json")).toContain(`"parent/*": ["../dots/*"]`);
   expect(paths.get("loadout.sdk.ts")).not.toBe("");
-  for (const p of paths.keys()) {
-    expect(p.endsWith(".hcl") || p.endsWith(".kt")).toBe(false);
-  }
 });

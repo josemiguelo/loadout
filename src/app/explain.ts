@@ -54,8 +54,7 @@ export interface ExplainedName {
 
 /**
  * NoSuchItemError is a name explain doesn't know. explained is what came
- * before it (Go returned it beside the error): the CLI prints it, then the
- * error.
+ * before it: the CLI prints it, then the error.
  */
 export class NoSuchItemError extends Refusal {
   constructor(

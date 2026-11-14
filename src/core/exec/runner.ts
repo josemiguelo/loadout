@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { goPathError } from "../../model/index.ts";
+import { fileError } from "../../model/index.ts";
 import { takeInterrupt, takeInterruptWithin } from "../platform/platform.ts";
 import { type ExecResult, InterruptedByUser, type ProcessRunner, type ShellCommand } from "./exec.ts";
 
@@ -46,7 +46,7 @@ export function newShellRunner(): ShellRunner {
 
 /**
  * options is c's directory and environment: c.env over the inherited one
- * (a key in both takes c.env's value, as Go's os/exec keeps the last).
+ * (a key in both takes c.env's value).
  */
 function options(c: ShellCommand): { cwd?: string; env?: Record<string, string | undefined> } {
   const env = c.env !== undefined && Object.keys(c.env).length > 0 ? { ...process.env, ...c.env } : undefined;
@@ -54,7 +54,7 @@ function options(c: ShellCommand): { cwd?: string; env?: Record<string, string |
 }
 
 /**
- * startError is why sh didn't start, as Go's os/exec words it: a working
+ * startError is why sh didn't start, in words: a working
  * directory that isn't there fails the child's chdir ("chdir /x: no such
  * file or directory"); bun reports it as sh's own spawn failing.
  */
@@ -63,7 +63,7 @@ function startError(e: unknown, cwd: string): string {
     try {
       if (!statSync(cwd).isDirectory()) return `chdir ${cwd}: not a directory`;
     } catch (err) {
-      return goPathError(err, "chdir", cwd).message;
+      return fileError(err, "chdir", cwd).message;
     }
   }
   return e instanceof Error ? e.message : String(e);

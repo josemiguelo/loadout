@@ -6,8 +6,8 @@ import { type Closed, closedCommand } from "./screen.ts";
 /**
  * ChildCommand is a command run without a shell: argv, its folder
  * (undefined = the current directory) and its environment (undefined = this
- * process's). Go's exec.Cmd as runCommand builds it; tui/term's TermCommand
- * takes it as it is.
+ * process's), as runCommand builds it; tui/term's TermCommand takes it as it
+ * is.
  */
 export interface ChildCommand {
   readonly argv: readonly string[];

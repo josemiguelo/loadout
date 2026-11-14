@@ -1,6 +1,6 @@
 import { ResetStyle, truncate as ansiTruncate, truncateLeft } from "./ansi.ts";
 import { styledOr, titleRow } from "./elements.ts";
-import { newStyle } from "./lipgloss.ts";
+import { newStyle } from "./style.ts";
 import { fit, truncate, width } from "./text.ts";
 import type { Theme } from "./theme.ts";
 
@@ -60,7 +60,6 @@ const rounded = { top: "─", bottom: "─", left: "│", right: "│", topLeft:
  * cells: rounded border, the title row, a blank line, the body, the buttons
  * (right-aligned) and the help line, each section separated by a blank line.
  * The frame never exceeds the caps or the screen; the body is cut first.
- * Go's Dialog.Render.
  */
 export function renderDialog(d: Dialog, t: Theme, screenW: number, screenH: number): string[] | null {
   let maxW = d.maxWidth ?? 0;
@@ -126,11 +125,11 @@ export function overlay(bg: readonly string[], fg: readonly string[], x: number,
     const fw = width(line);
     let left = ansiTruncate(base, x, "");
     const lw = width(left);
-    if (lw < x) left += " ".repeat(x - lw); // short line, or a wide rune split
+    if (lw < x) left += " ".repeat(x - lw); // short line, or a wide character split
     let right = "";
     if (width(base) > x + fw) {
       right = truncateLeft(base, x + fw, "");
-      // a wide rune straddling the edge comes back whole: blank its
+      // a wide character straddling the edge comes back whole: blank its
       // covered half instead
       if (width(right) > width(base) - (x + fw)) right = " " + truncateLeft(base, x + fw + 1, "");
     }

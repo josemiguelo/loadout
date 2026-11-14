@@ -1,9 +1,9 @@
-// The state file's JSON, as kotlinx wrote it: every field in declaration
-// order, nulls included (encodeDefaults), except configs, left out when
+// The state file's JSON: every field in declaration order, nulls included,
+// except configs, left out when
 // empty; pretty-printed with a two-space indent. Unknown keys are ignored
 // on read (contract 8).
 
-import { goAtoi, isJSONObject, type JSONObject, type JSONValue, mapValues, ObjWriter, parseJSON, prettyJSON, primitive } from "../../model/index.ts";
+import { parseDecimal, isJSONObject, type JSONObject, type JSONValue, mapValues, ObjWriter, parseJSON, prettyJSON, primitive } from "../../model/index.ts";
 import {
   type ConfigState,
   type ConfigStatus,
@@ -57,7 +57,7 @@ function strOrNull(s: string | undefined): JSONValue {
   return s === undefined ? null : s;
 }
 
-/** StateDecodeError is a state file that doesn't fit, worded as kotlinx's messages were. */
+/** StateDecodeError is a state file that doesn't fit, naming the field and where. */
 export class StateDecodeError extends Error {
   constructor(message: string) {
     super(message);
@@ -118,10 +118,10 @@ class Decoder {
     return this.str(v, path + "." + key);
   }
 
-  /** integer is v as Go's strconv.Atoi(fmt.Sprint(v)) reads it: a JSON string never counts. */
+  /** integer is v, a JSON number holding a decimal int; anything else (a string too) is refused. */
   integer(v: JSONValue, path: string): number {
     const p = primitive(v);
-    const n = p === undefined || p.isString ? undefined : goAtoi(p.content);
+    const n = p === undefined || p.isString ? undefined : parseDecimal(p.content);
     if (n === undefined) {
       this.fail(`Expected an int at element: ${path}`);
       return 0;
@@ -131,7 +131,7 @@ class Decoder {
 
   objectsOf<V>(obj: JSONObject, key: string, path: string, read: (v: JSONValue, path: string) => V): Map<string, V> {
     if (!obj.has(key)) return new Map();
-    const entries = this.object(obj.get(key), path + "." + key, "kotlin.collections.LinkedHashMap");
+    const entries = this.object(obj.get(key), path + "." + key, "a map");
     return mapValues(entries, (k, e) => read(e, path + "." + key + "." + k));
   }
 

@@ -1,5 +1,5 @@
 import { strip } from "./ansi.ts";
-import { blend1D, newStyle, type Color } from "./lipgloss.ts";
+import { blend1D, newStyle, type Color } from "./style.ts";
 import {
   fg,
   fit,
@@ -36,11 +36,11 @@ export function ramp(n: number, from: Color, to: Color): Color[] {
  * plain (they show no colour anyway).
  */
 export function gradient(str: string, from: Color, to: Color, bold: boolean): string {
-  const runes = [...str];
-  if (runes.length === 0) return "";
-  const r = ramp(runes.length, from, to);
+  const chars = [...str];
+  if (chars.length === 0) return "";
+  const r = ramp(chars.length, from, to);
   let b = "";
-  runes.forEach((ch, i) => {
+  chars.forEach((ch, i) => {
     if (ch === " ") {
       b += ch;
       return;
@@ -274,7 +274,7 @@ export function statusGlyph(t: Theme, st: Status): Span {
   return s(GlyphUnticked, t.fgMostSubtle);
 }
 
-/** renderSpan is a lone span styled (no fg = FgBase): Go's Span.Render. */
+/** renderSpan is a lone span styled (no fg = FgBase). */
 export function renderSpan(t: Theme, sp: Span): string {
   return renderSpans([sp], t.fgBase, undefined, undefined);
 }

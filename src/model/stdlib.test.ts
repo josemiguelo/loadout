@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { cleanPath, compareStrings, joinPath, trimSpace } from "./gostd.ts";
+import { cleanPath, compareStrings, joinPath, trimSpace } from "./stdlib.ts";
 
-// Go's path.Clean cases (from its own tests) and the string rules the port keeps.
+// Path cleaning's cases and the string rules loadout keeps.
 
-test("cleanPath is Go's path.Clean", () => {
+test("cleanPath gives the shortest equivalent path", () => {
   const cases: [string, string][] = [
     ["", "."],
     ["abc", "abc"],
@@ -40,7 +40,7 @@ test("cleanPath is Go's path.Clean", () => {
   expect(joinPath("", "")).toBe("");
 });
 
-test("strings sort by code point and trim Go's whitespace", () => {
+test("strings sort by code point and trim Unicode white space", () => {
   expect(compareStrings("￿", "\u{10000}")).toBe(-1);
   expect(compareStrings("a", "ab")).toBe(-1);
   expect(trimSpace("\u0085 x ")).toBe("x");

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { isJSONObject, JSONNumber, type JSONValue, jsonEqual, jsonString, parseJSON, prettyJSON, quote } from "./json.ts";
 
 // The reader and writer beside the lock's golden test (model.test.ts): what
-// JSON.parse would lose, and Go's wording for text that isn't JSON.
+// JSON.parse would lose, and the wording for text that isn't JSON.
 
 test("parsing keeps key order and numbers as written", () => {
   const v = parseJSON('{"b": 1, "2": [0.85, 1e5, -0, 3], "a": {"z": null, "1": true}}');
@@ -24,7 +24,7 @@ test("strings decode escapes and pair surrogates", () => {
   expect(parseJSON(`"${bs}ud800x"`)).toBe("\ufffdx");
 });
 
-test("pretty JSON is kotlinx's layout", () => {
+test("pretty JSON is two-space indented, one entry per line", () => {
   const v = parseJSON('{"a": [], "b": {}, "c": [1, {"d": "x"}]}');
   expect(prettyJSON(v)).toBe('{\n  "a": [],\n  "b": {},\n  "c": [\n    1,\n    {\n      "d": "x"\n    }\n  ]\n}');
 });
@@ -36,7 +36,7 @@ test("only what JSON requires is escaped", () => {
   );
 });
 
-test("JSON equality is kotlinx's", () => {
+test("JSON equality compares content, string-ness and keys in any order", () => {
   expect(jsonEqual(parseJSON('{"a": 1, "b": [true]}'), parseJSON('{"b": [true], "a": 1}'))).toBe(true);
   expect(jsonEqual(parseJSON('"1"'), parseJSON("1"))).toBe(false);
   expect(jsonEqual(1, new JSONNumber("1"))).toBe(true);
@@ -44,14 +44,14 @@ test("JSON equality is kotlinx's", () => {
 });
 
 /**
- * jsonerrors.golden.json is what Go's model.ParseJSON (go1.27's
- * encoding/json Decoder) says of each text, as [text, message] pairs, ""
- * when it parses: recorded from the Go code by feeding it these texts.
+ * jsonerrors.golden.json is what parseJSON says of each text, as [text,
+ * message] pairs, "" when it parses: the messages a broken lock or state
+ * file is refused with, pinned.
  */
-const goErrors = JSON.parse(readFileSync(import.meta.dir + "/jsonerrors.golden.json", "utf8")) as [string, string][];
+const wantErrors = JSON.parse(readFileSync(import.meta.dir + "/jsonerrors.golden.json", "utf8")) as [string, string][];
 
-test("text that isn't JSON is refused in Go's words", () => {
-  for (const [text, want] of goErrors) {
+test("text that isn't JSON is refused in the golden file's words", () => {
+  for (const [text, want] of wantErrors) {
     let got = "";
     try {
       parseJSON(text);

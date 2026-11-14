@@ -1,15 +1,14 @@
-// Package model is a config repo, resolved: what a manifest compiles to,
+// The model module is a config repo, resolved: what a manifest compiles to,
 // what loadout.lock.json holds, and what every engine reads.
 //
 // The model is plain data: interfaces, built with the new… functions below
-// (every field at its zero value unless given), copied with spreads, never
-// mutated once another value holds it. Go's methods are functions taking the
-// value first (m.ResolveInstall(p, k) is resolveInstall(m, p, k)). A Go
-// pointer field is an optional one (undefined = nil); a Go slice is an array,
-// always present, except ScriptStep.modes, where nil (the default) and empty
-// differ.
+// (every field empty unless given), copied with spreads, never
+// mutated once another value holds it. Operations are functions taking the
+// value first (resolveInstall(m, p, k)). A field that may be missing is
+// optional (undefined); a list is an array, always present, except
+// ScriptStep.modes, where undefined (the default) and empty differ.
 
-import { cleanPath, cut, cutPrefix, joinPath, sortedStrings, slicesEqual, trimPrefix, trimRight, trimSpace } from "./gostd.ts";
+import { cleanPath, cut, cutPrefix, joinPath, sortedStrings, slicesEqual, trimPrefix, trimRight, trimSpace } from "./stdlib.ts";
 import type { JSONObject } from "./json.ts";
 import { concat, distinct, mapOf, mapValues, plus } from "./map.ts";
 import { ManifestException } from "./refusal.ts";
@@ -56,7 +55,7 @@ export interface Manifest {
   toolPaths: Map<string, string[]>;
 }
 
-/** newManifest is a Manifest with every field not given at its zero value. */
+/** newManifest is a Manifest with every field not given empty. */
 export function newManifest(m: Partial<Manifest> = {}): Manifest {
   return {
     meta: newMeta(),
@@ -366,7 +365,7 @@ export interface Installer {
   origin: string;
 }
 
-/** newInstaller is an Installer with every field not given at its zero value. */
+/** newInstaller is an Installer with every field not given empty. */
 export function newInstaller(i: Partial<Installer> = {}): Installer {
   return { params: [], sudo: false, requires: [], origin: "", ...i };
 }
@@ -413,7 +412,7 @@ export interface InstallVariant {
   provides: Provides[];
 }
 
-/** newInstallVariant is an InstallVariant with every field not given at its zero value. */
+/** newInstallVariant is an InstallVariant with every field not given empty. */
 export function newInstallVariant(v: Partial<InstallVariant> = {}): InstallVariant {
   return { present: false, with: new Map(), dependsOn: [], provides: [], ...v };
 }
@@ -454,7 +453,7 @@ export interface MachineConfig {
   label: string;
 }
 
-/** newMachineConfig is a MachineConfig with every field not given at its zero value. */
+/** newMachineConfig is a MachineConfig with every field not given empty. */
 export function newMachineConfig(c: Partial<MachineConfig> = {}): MachineConfig {
   return { extends: [], pm: new Map(), scripts: [], scriptVariants: new Map(), data: new Map(), label: "", ...c };
 }
@@ -492,7 +491,7 @@ export interface Meta {
   minToolVersion?: string;
 }
 
-/** newMeta is a Meta with every field not given at its zero value. */
+/** newMeta is a Meta with every field not given empty. */
 export function newMeta(m: Partial<Meta> = {}): Meta {
   return { name: "", ...m };
 }
@@ -516,7 +515,7 @@ export interface RepoLayout {
   parent?: ParentLayout;
 }
 
-/** newRepoLayout is a RepoLayout with every field not given at its zero value. */
+/** newRepoLayout is a RepoLayout with every field not given empty. */
 export function newRepoLayout(l: Partial<RepoLayout> = {}): RepoLayout {
   return { state: "", sources: [], ...l };
 }
@@ -545,7 +544,7 @@ export interface ParentLayout {
   hash: string;
 }
 
-/** newParentLayout is a ParentLayout with every field not given at its zero value. */
+/** newParentLayout is a ParentLayout with every field not given empty. */
 export function newParentLayout(p: Partial<ParentLayout> = {}): ParentLayout {
   return { name: "", path: "", state: "", sources: [], hash: "", ...p };
 }
@@ -695,7 +694,7 @@ export interface Program {
   origin: string;
 }
 
-/** newProgram is a Program with every field not given at its zero value. */
+/** newProgram is a Program with every field not given empty. */
 export function newProgram(p: Partial<Program> = {}): Program {
   return { description: "", tags: [], dependsOn: [], install: new Map(), path: [], later: "", origin: "", ...p };
 }
@@ -729,7 +728,7 @@ export interface VersionCheck {
   path: string[];
 }
 
-/** newVersionCheck is a VersionCheck with every field not given at its zero value. */
+/** newVersionCheck is a VersionCheck with every field not given empty. */
 export function newVersionCheck(v: Partial<VersionCheck> & { command: string }): VersionCheck {
   return { origin: "", path: [], ...v };
 }
@@ -806,7 +805,7 @@ export interface ScriptStep {
   path: string[];
 }
 
-/** newScriptStep is a ScriptStep with every field not given at its zero value. */
+/** newScriptStep is a ScriptStep with every field not given empty. */
 export function newScriptStep(s: Partial<ScriptStep> = {}): ScriptStep {
   return { description: "", after: [], sudo: false, later: "", variants: new Map(), origin: "", path: [], ...s };
 }
@@ -821,7 +820,7 @@ export function runsIn(s: ScriptStep, mode: string): boolean {
   return modeList(s).includes(mode);
 }
 
-/** scriptVariant is the step as variant name does it (Go's ScriptStep.Variant). Assumes the variant exists. */
+/** scriptVariant is the step as variant name does it Assumes the variant exists. */
 export function scriptVariant(s: ScriptStep, name: string): ScriptStep {
   const chosen = s.variants.get(name);
   if (chosen === undefined) throw new Error(`script has no variant ${JSON.stringify(name)}`);
@@ -860,7 +859,7 @@ export interface OutdatedSource {
   path: string[];
 }
 
-/** newOutdatedSource is an OutdatedSource with every field not given at its zero value. */
+/** newOutdatedSource is an OutdatedSource with every field not given empty. */
 export function newOutdatedSource(o: Partial<OutdatedSource> = {}): OutdatedSource {
   return { sudo: false, origin: "", path: [], ...o };
 }

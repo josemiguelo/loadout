@@ -1,6 +1,6 @@
 # AGENTS.md — loadout
 
-`loadout` is one executable, TypeScript compiled by bun (`src/`, bun inside, so it is also its own bun), that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, typed by the SDK loadout writes as `loadout.sdk.ts`); each machine picks its variants and scripts. `loadout compile` runs them with loadout itself as bun and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE full-screen terminal UI, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic. It was once `post-installer`: never reintroduce that name in code.
+`loadout` is one executable, TypeScript compiled by bun (`src/`, bun inside, so it is also its own bun), that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, typed by the SDK loadout writes as `loadout.sdk.ts`); each machine picks its variants and scripts. `loadout compile` runs them with loadout itself as bun and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE full-screen terminal UI, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic.
 
 ## Build, run, test
 

@@ -1,4 +1,4 @@
-// Package coremodel is what the binary observes, as opposed to what the lock
+// The coremodel module is what the binary observes, as opposed to what the lock
 // declares: a machine's state file
 // and the system it runs on.
 
@@ -28,7 +28,7 @@ export interface MachineState {
   configs: Map<string, ConfigState>;
 }
 
-/** newMachineState is a MachineState with every field not given at its zero value. */
+/** newMachineState is a MachineState with every field not given empty. */
 export function newMachineState(s: Partial<MachineState> = {}): MachineState {
   return {
     schemaVersion: 0,

@@ -10,7 +10,7 @@ import {
   jsonEqual,
   jsonString,
   type JSONValue,
-  kotlinDouble,
+  floatNumber,
   type Lock,
   type MachineConfig,
   type Manifest,
@@ -457,7 +457,7 @@ describe("machines and profiles", () => {
   });
 
   const flags = () =>
-    data(["omarchy", false], ["tags", ["a"]], ["kitty", data(["opacity", kotlinDouble(0.85)], ["font", "mono"])]);
+    data(["omarchy", false], ["tags", ["a"]], ["kitty", data(["opacity", floatNumber(0.85)], ["font", "mono"])]);
 
   test("data merges defaults, profiles and machine", () => {
     const manifest = inRepo(
@@ -465,7 +465,7 @@ describe("machines and profiles", () => {
         {
           data: flags(),
           machines: mapOf(
-            machine("m", { extends: ["omarchy"], data: data(["kitty", data(["opacity", kotlinDouble(0.9)])], ["tags", ["b"]]) }),
+            machine("m", { extends: ["omarchy"], data: data(["kitty", data(["opacity", floatNumber(0.9)])], ["tags", ["b"]]) }),
             machine("bare", {}),
           ),
         },

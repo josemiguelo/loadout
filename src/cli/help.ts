@@ -2,7 +2,7 @@ import { isStdoutTty, terminalColumns } from "../core/platform/platform.ts";
 import { type ArgSpec, type Command, type OptSpec, valued } from "./args.ts";
 import { streams } from "./spinner.ts";
 import { Style } from "./style.ts";
-import { padEnd, runeCount } from "./table.ts";
+import { padEnd, codePointCount } from "./table.ts";
 
 /**
  * commandHelp is structured command help: a summary line, then one
@@ -17,7 +17,7 @@ export function commandHelp(summary: string, ...details: string[]): string {
     return i < 0 ? [d, ""] : [d.slice(0, i), d.slice(i + 2)];
   };
   let nameWidth = 0;
-  for (const d of details) nameWidth = Math.max(nameWidth, runeCount(cut(d)[0]));
+  for (const d of details) nameWidth = Math.max(nameWidth, codePointCount(cut(d)[0]));
   const lines = [summary];
   for (const d of details) {
     const [name, rawDesc] = cut(d);
@@ -97,11 +97,11 @@ export function wrap(text: string, width: number): string[] {
       const spaces = rest.slice(0, i);
       const word = rest.slice(i, j);
       rest = rest.slice(j);
-      const n = runeCount(spaces) + runeCount(word);
+      const n = codePointCount(spaces) + codePointCount(word);
       if (cur > 0 && cur + n > width && word !== "") {
         out.push(current.replace(/ +$/, ""));
         current = word;
-        cur = runeCount(word);
+        cur = codePointCount(word);
         continue;
       }
       current += spaces + word;
@@ -119,7 +119,7 @@ export function wrap(text: string, width: number): string[] {
 function definitionList(terms: string[], plainTerms: string[], descs: string[], width: number): string {
   let b = "";
   let termWidth = 0;
-  for (const t of plainTerms) termWidth = Math.max(termWidth, runeCount(t));
+  for (const t of plainTerms) termWidth = Math.max(termWidth, codePointCount(t));
   const col = 2 + termWidth + 2;
   terms.forEach((term, i) => {
     b += "  " + term;
@@ -127,7 +127,7 @@ function definitionList(terms: string[], plainTerms: string[], descs: string[], 
       b += "\n";
       return;
     }
-    b += " ".repeat(termWidth - runeCount(plainTerms[i]!) + 2);
+    b += " ".repeat(termWidth - codePointCount(plainTerms[i]!) + 2);
     wrap(descs[i]!, Math.max(width - col, 1)).forEach((line, k) => {
       if (k > 0) b += " ".repeat(col);
       b += line + "\n";
@@ -149,8 +149,7 @@ export function usageLine(cmd: Command): string {
 }
 
 /**
- * renderHelp is cmd's --help, laid out as Clikt's MordantHelpFormatter
- * did: usage, description, Options, then Arguments or Commands, each
+ * renderHelp is cmd's --help: usage, description, Options, then Arguments or Commands, each
  * command listed with its FULL help (the structured arg/flag lines too).
  */
 export function renderHelp(cmd: Command): string {

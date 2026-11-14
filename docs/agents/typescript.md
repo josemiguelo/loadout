@@ -13,9 +13,8 @@
 - **Which bun**: loadout itself, through the `bun` wrapper in
   `$XDG_DATA_HOME/loadout/bin` (core/bun), in a cleared environment whose
   PATH starts with that folder; `$LOADOUT_BUN` (a bun binary) overrides it,
-  for tests and developers. A repo pins no bun: `repo({ bun })` is refused
-  where it's declared, and a lock that still carries `meta.bun` can't be
-  read until the repo compiles.
+  for tests and developers. A `repo()` setting that doesn't exist is
+  refused where it's declared.
 - **The draft is the lock's own shapes** (`model.encodeDraft`/
   `DecodeDraft`): the manifest before assembly (machines unflattened,
   built-ins not merged), the profiles, the installers' extra requires, and

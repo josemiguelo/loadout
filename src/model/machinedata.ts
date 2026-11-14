@@ -3,7 +3,7 @@
 // them, and chezmoi templates read each machine's merged table from the
 // lock. Kept as JSON values, because the model can't hold free-form tables.
 
-import { sortStrings } from "./gostd.ts";
+import { sortStrings } from "./stdlib.ts";
 import { isJSONObject, JSONNumber, type JSONObject, type JSONValue, jsonEqual, jsonString } from "./json.ts";
 import { sortedMap } from "./map.ts";
 
@@ -79,6 +79,6 @@ function dataKind(v: JSONValue): string {
   if (typeof v === "string") return "string";
   if (typeof v === "boolean") return "boolean";
   if (v instanceof JSONNumber && (v.text === "true" || v.text === "false")) return "boolean";
-  // kotlinx's rule: any other primitive (null too) is a number.
+  // Any other primitive (null too) is a number.
   return "number";
 }

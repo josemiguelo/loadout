@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { machineStateEqual, newMachineState, osFamilyFromID } from "./coremodel.ts";
 
-// coremodel has no Go tests of its own; these pin the equality the state
-// store's WriteIfChanged relies on (contract 8).
+// These pin the equality the state store's writeIfChanged relies on
+// (contract 8).
 
 test("state equality reads schema 0 as the current one and maps in any order", () => {
   const a = newMachineState({

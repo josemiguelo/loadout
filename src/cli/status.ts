@@ -17,7 +17,7 @@ import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, echoErr, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
-import { attention, echoRows, padEnd, runeCount, severe, type TableRow } from "./table.ts";
+import { attention, echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
 /** newStatusCmd is `loadout status`. */
 export function newStatusCmd(): Command {
@@ -97,7 +97,7 @@ function printStatusTable(s: MachineState, detail: ReadonlyMap<string, string>):
   echo("");
   let nameWidth = 7;
   for (const keys of [s.programs.keys(), s.scripts.keys(), s.configs.keys()]) {
-    for (const k of keys) nameWidth = Math.max(nameWidth, runeCount(k));
+    for (const k of keys) nameWidth = Math.max(nameWidth, codePointCount(k));
   }
   echo(Style.header("  " + padEnd("PROGRAM", nameWidth + 4) + padEnd("STATUS", 13) + "VERSION"));
   // Rows that aren't settled get boxed by echoRows, same as diff's drift

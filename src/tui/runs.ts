@@ -1,7 +1,7 @@
 import * as app from "../app/index.ts";
 import { toolTooOld as repoToolTooOld } from "../core/loader/loader.ts";
 import type { Color } from "./style/index.ts";
-import type { Cmd, Msg } from "./tea.ts";
+import type { Cmd, Msg } from "./messages.ts";
 import type { Cursor, ExitMsg, TermCommand } from "./term/term.ts";
 import { askRemotesAgain, errorText, FocusArea, firstLine, type HomeModel, load, refresh, reload, theme } from "./homemodel.ts";
 import { fail, hey, okay, warn } from "./keys.ts";
@@ -55,7 +55,7 @@ export class Run {
   interrupted = false;
   err: Error | null = null;
   ended = new Date(0);
-  /** released says the emulator was closed: its text stays, unstyled. (Go's closed.) */
+  /** released says the emulator was closed: its text stays, unstyled. */
   released = false;
   /** closing is the emulator's close, once released (the screen waits for it on exit). */
   closing: Promise<void> | undefined;
@@ -83,7 +83,7 @@ export class Run {
   /** duration is how long it ran (so far), as m:ss or Ns. */
   duration(now: Date): string {
     const end = this.done ? this.ended : now;
-    // Go's Duration.Round(time.Second): half away from zero.
+    // Rounded to the second, half away from zero.
     const ms = end.getTime() - this.started.getTime();
     const d = Math.sign(ms) * Math.round(Math.abs(ms) / 1000);
     if (d < 60 && this.done) return `${Math.trunc(d)}s`;

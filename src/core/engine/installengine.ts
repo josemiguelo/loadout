@@ -95,7 +95,7 @@ export class InstallEngine {
 
     // Membership: converge covers only mapped programs. (Nothing requested
     // and nothing mapped leaves targets as requested was: undefined orders
-    // every program, as Go's nil did.)
+    // every program.)
     let targets = requested;
     if (targets === undefined || targets.length === 0) {
       for (const name of manifest.programs.keys()) {
@@ -212,7 +212,7 @@ export class InstallEngine {
    * (setup-new-machine's later phase after its core one): an install whose
    * dependency failed or was skipped in earlier is skipped too. Only the new
    * outcomes are returned. An interrupted install rejects; the outcomes so
-   * far are lost with it, as Go's callers dropped them on its error.
+   * far are lost with it.
    */
   async executeAfter(
     manifest: Manifest,

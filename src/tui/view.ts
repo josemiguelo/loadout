@@ -17,7 +17,7 @@ import {
   RemoteKind,
   type RemoteLine,
   remoteLines,
-  runes,
+  codePoints,
   Severity,
   theme,
 } from "./homemodel.ts";
@@ -405,7 +405,7 @@ function rowContextOf(m: HomeModel, width: number): RowContext {
   const c: RowContext = { name: 0, current: 0, candidate: 0, fleetName: 0, fleetColumn: 0 };
   const longest = (names: readonly string[], fallback: number, limit: number) => {
     let n = fallback;
-    for (const name of names) n = Math.max(n, runes(name));
+    for (const name of names) n = Math.max(n, codePoints(name));
     return Math.min(n, limit);
   };
   switch (subjectOf(s)) {
@@ -641,7 +641,7 @@ export function inspectorLines(_m: HomeModel, t: style.Theme, inspector: Inspect
   const out: string[] = [];
   const rows = (rows: readonly ExplainRowView[]) => {
     let labelW = 0;
-    for (const r of rows) labelW = Math.max(labelW, runes(r.label));
+    for (const r of rows) labelW = Math.max(labelW, codePoints(r.label));
     labelW = Math.min(labelW, 24);
     const valueW = Math.max(width - labelW - 4, 10);
     for (const r of rows) {
@@ -876,11 +876,11 @@ function dialogLines(m: HomeModel, t: style.Theme, d: Dialog, l: Layout, _frame:
       const title = d.title !== "" ? d.title : (confirmTitles[d.pane] ?? "");
       const limit = Math.min(style.DialogWideMaxWidth, l.w - 4) - 4;
       let longest = 0;
-      for (const item of d.items) longest = Math.max(longest, runes(item.name));
+      for (const item of d.items) longest = Math.max(longest, codePoints(item.name));
       const col = Math.min(longest, 24) + 2;
       // As wide as the longest row wants, between a readable minimum and the cap.
-      let width = runes(confirmIntro(d));
-      for (const item of d.items) width = Math.max(width, col + runes(item.text) + "  · enter lists them".length + 2);
+      let width = codePoints(confirmIntro(d));
+      for (const item of d.items) width = Math.max(width, col + codePoints(item.text) + "  · enter lists them".length + 2);
       width = Math.min(Math.max(width, 44), limit);
       const body: string[] = [];
       d.items.forEach((item, i) => {

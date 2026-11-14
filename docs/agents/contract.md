@@ -128,7 +128,7 @@ Explicit user decisions; don't "improve" them away.
    run with, the one it was built with. `AppContext.bunDir` writes it once
    per process (`core/bun` `ensure`: `$XDG_DATA_HOME/loadout/bin`, only
    when missing or different, through a rename); `$LOADOUT_BUN` (a bun
-   binary) puts its own folder there instead. A repo pins no bun.
+   binary) puts its own folder there instead.
 6. **Execution order**: in two phases, core then later; in each, all
    programs before all scripts; programs
    topologically by dependencies, ties broken by NAME (InstallOrder sorts;
@@ -197,7 +197,7 @@ Explicit user decisions; don't "improve" them away.
     and everything else — built-ins, flattening, validation — is the
     production path.
 11. **Declarations are written out, by convention.** Manifests are
-    TypeScript (loadout 5), so the language allows anything; the
+    TypeScript, so the language allows anything; the
     convention is plain values: consts (shared lists: `everydayCli = [bat,
     eza]`) and functions that build references or arguments (`sshKey(name)`,
     which saves repeating two `args(…)` entries in every machine). Nothing
@@ -217,7 +217,7 @@ Explicit user decisions; don't "improve" them away.
     --`, see engine.withArgs); `managedBy: "x.sh"` checks with `x.sh
     check "$@"`, so a managing script gets them in both modes. Args on an
     inline script are an error. No implicit script application, no OS or
-    bootc detection deciding membership (the old `os` filter is gone: the
+    bootc detection deciding membership (the
     machine's opt-in decides). A script's modes (`setupOnly: true`,
     `maintainOnly: true`, default both) scope EXECUTION only:
     setup-new-machine converges setup-mode scripts, the home screen's
@@ -295,20 +295,11 @@ Explicit user decisions; don't "improve" them away.
     content: an undeclared sudo inside a repo script still prompts
     mid-run, on the terminal, as before. Home-screen runs get this for
     free: each runs one of these subcommands, in the run panel.
-14. **Versioning contract.** The deliberate breaks: 0.2.0 (string install
-    values became variant mappings), 0.9.0 (`templates` removed), 2.0.0
-    (TOML to YAML), 3.0.0 (YAML removed: manifests are the Kotlin DSL,
-    compiled into the lock), 3.1.0 (`install(installer, programs…)`
-    removed for `via(installer) { install(…) }`; kept a minor release
-    because the lock format didn't change) and 4.0.0 (the Kotlin DSL
-    removed: manifests are HCL, compiled by the binary itself, no JDK or
-    Gradle; a Kotlin repo is refused by name; the lock format is
-    unchanged, so a 3.x lock still reads) and 5.0.0 (HCL removed:
-    manifests are TypeScript, run by loadout itself as bun (no
-    pin: `repo({ bun })` is refused); `loadout lsp`
-    removed, the TypeScript language server replaces it; an HCL repo is
-    refused by name; the lock format is unchanged). A removal is decided once,
-    loudly, in the release notes, never silently. The manifest language
+14. **Versioning contract.** Breaks are deliberate: a removal is decided
+    once, loudly, in the release notes, never silently. Manifests are
+    TypeScript, run by loadout itself as bun, the one it was built with;
+    the TypeScript language server gives editors completion,
+    hover and errors. The manifest language
     and the binary are one version: compile is the binary's own, so a repo
     compiles against exactly the installed binary. The lock carries
     `format` (bumped only when an older binary could misread a lock; a
@@ -369,9 +360,8 @@ Explicit user decisions; don't "improve" them away.
     records the sources (every file the entry and its includes reach
     through static imports, helpers included) and a sha256 of them (path +
     content); a binary that finds them changed refuses with "run: loadout
-    compile", so a lock never silently lags its sources. A repo with
-    `loadout.hcl` (loadout 4), `loadout.kt` or `build.gradle.kts` (3) and
-    no `loadout.ts` is refused by name. The suite runs with its own
+    compile", so a lock never silently lags its sources. A repo without
+    `loadout.ts` is refused. The suite runs with its own
     XDG_CACHE_HOME (seeded with a release, so `status` doesn't ask
     GitHub), never the developer's.
 17. **Configs are chezmoi's, observed like everything else.** `repo({

@@ -33,8 +33,8 @@ export function newInspector(name: string): Inspector {
 
 /**
  * inspect opens the inspector on the row under the main pane's cursor. It
- * opens once explain has answered (Go's answered at once; here it may take
- * a moment, the list staying until then).
+ * opens once explain has answered, which may take a moment; the list stays
+ * until then.
  */
 export function inspect(m: HomeModel): void {
   const name = inspectable(m);

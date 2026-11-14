@@ -1,8 +1,7 @@
-// The terminal's input as Bubble Tea v2 reads it: raw bytes from the tty
-// turned into key presses, pastes and mouse events: ctrl+], alt+key,
+// The terminal's input: raw bytes from the tty decoded into key presses, pastes and mouse events: ctrl+], alt+key,
 // bracketed paste as one message and SGR mouse, which the screen relies on.
 //
-// Legacy encodings, as ultraviolet decodes them: a control byte is ctrl+key
+// Legacy encodings: a control byte is ctrl+key
 // (0x1d is ctrl+]), ESC before a key is alt+key (ESC alone in its read is
 // esc), CSI and SS3 sequences are the special keys with xterm's modifier
 // parameter, CSI u is a kitty key, `CSI 200~ … CSI 201~` a paste and
@@ -32,9 +31,9 @@ import {
   ModShift,
   type Msg,
   PasteMsg,
-} from "./tea.ts";
+} from "./messages.ts";
 
-/** MouseButton is a mouse event's button, as Bubble Tea numbers them. */
+/** MouseButton is a mouse event's button, as the screen numbers them. */
 export enum MouseButton {
   None = 0,
   Left = 1,
@@ -83,8 +82,7 @@ const keyNames = new Map<number, string>([
 for (let i = 0; i < 12; i++) keyNames.set(KeyF1 + i, "f" + (i + 1));
 
 /**
- * keyString is a key press as Bubble Tea's Key.String says it, the string
- * key bindings match: its text when it types something other than a space
+ * keyString is a key press as a string, the one key bindings match: its text when it types something other than a space
  * ("K", "q"), else its keystroke ("ctrl+]", "shift+tab", "alt+x", "space").
  */
 export function keyString(k: KeyPressMsg): string {
@@ -134,7 +132,7 @@ const letterKeys = new Map<string, number>([
   ["S", KeyF1 + 3],
 ]);
 
-/** modOf is xterm's modifier parameter (1 + bits) as Bubble Tea's modifiers. */
+/** modOf is xterm's modifier parameter (1 + bits) as the Mod* bits. */
 function modOf(param: number): number {
   if (!(param > 1)) return 0;
   const bits = param - 1;

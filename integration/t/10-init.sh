@@ -5,9 +5,7 @@ for f in loadout.ts loadout.sdk.ts tsconfig.json package.json .gitignore machine
     [ -f "repo/$f" ] || fail "init creates $f"
 done
 [ -d repo/maintenance ] && [ -d repo/machines/state ] || fail "init creates dirs"
-for f in loadout.hcl loadout.kt settings.gradle.kts build.gradle.kts gradlew gradle node_modules; do
-    [ -e "repo/$f" ] && fail "init writes no HCL, Kotlin or Gradle file, and installs nothing: $f" || true
-done
+[ -e repo/node_modules ] && fail "init installs nothing: node_modules" || true
 for g in 'programs/**/*.loadout.ts' 'maintenance/**/*.loadout.ts' 'machines/**/*.loadout.ts'; do
     grep -qF "\"$g\"" repo/loadout.ts || fail "init includes $g: $(cat repo/loadout.ts)"
 done
@@ -90,27 +88,12 @@ ok "init's scaffold compiles and status reads it"
 [ -z "$(LC_ALL=C comm -23 files.before files.after)" ] || fail "compile removes nothing: $(LC_ALL=C comm -23 files.before files.after)"
 ok "compile writes the lock and nothing else into the repo"
 
-# A repo still on HCL (loadout 4) or Kotlin (loadout 3) manifests is named,
-# not half-read.
-mkdir -p hclrepo/machines/state
-printf 'repo {\n  name  = "old"\n  state = "machines/state"\n}\n' > hclrepo/loadout.hcl
-OUT=$("$BIN" --repo hclrepo compile 2>&1) && fail "an HCL repo must not compile"
-echo "$OUT" | grep -q "^error: this repo's manifests are HCL; loadout 5 reads TypeScript (loadout.ts)" || fail "the HCL repo is named: $OUT"
-[ -e hclrepo/loadout.lock.json ] && fail "nothing is written for an HCL repo" || true
-mkdir -p ktrepo/machines/state
-printf 'package repo\n\nimport loadout.dsl.*\n\nval loadout = repo(name = "old", state = "machines/state")\n' > ktrepo/loadout.kt
-printf 'plugins {\n    id("io.github.josemiguelo.loadout")\n}\n' > ktrepo/build.gradle.kts
-OUT=$("$BIN" --repo ktrepo compile 2>&1) && fail "a Kotlin repo must not compile"
-echo "$OUT" | grep -q "^error: this repo's manifests are Kotlin; loadout 5 reads TypeScript (loadout.ts)" || fail "the Kotlin repo is named: $OUT"
-[ -e ktrepo/loadout.lock.json ] && fail "nothing is written for a Kotlin repo" || true
-rm ktrepo/loadout.kt
-OUT=$("$BIN" --repo ktrepo compile 2>&1) && fail "a Gradle build without loadout.ts must not compile"
-echo "$OUT" | grep -q "this repo's manifests are Kotlin" || fail "build.gradle.kts alone names it too: $OUT"
-rm ktrepo/build.gradle.kts
-printf 'package repo\n' > ktrepo/loadout.kt
-OUT=$("$BIN" --repo ktrepo compile 2>&1) && fail "loadout.kt alone must not compile"
-echo "$OUT" | grep -q "this repo's manifests are Kotlin" || fail "loadout.kt alone names it too: $OUT"
-ok "compile refuses a repo with HCL or Kotlin manifests and no loadout.ts, saying loadout 5 reads TypeScript"
+# A repo without loadout.ts is refused, and nothing is written.
+mkdir -p bare/machines/state
+OUT=$("$BIN" --repo bare compile 2>&1) && fail "a repo without loadout.ts must not compile"
+echo "$OUT" | grep -q "^error: .* has no loadout.ts — a config repo starts there (see: loadout init)" || fail "the missing loadout.ts is named: $OUT"
+[ -e bare/loadout.lock.json ] && fail "nothing is written for a repo without loadout.ts" || true
+ok "compile refuses a repo without loadout.ts"
 
 # Unchanged sources: the lock is left as it was (no new write, nothing in git).
 touch -t 200001010000 repo/loadout.lock.json lock-ref
@@ -149,7 +132,7 @@ ok "a helper module a manifest imports is a source: editing it makes the lock st
 printf '{ this is not json' > repo/machines/state/m1.json
 OUT=$("$BIN" --repo repo --machine m1 status --no-write 2>&1) || fail "status survives a corrupt state file"
 echo "$OUT" | grep -q "not readable state" || fail "a corrupt state file warns"
-echo "$OUT" | grep -qE "^panic:|goroutine [0-9]+" && fail "a corrupt state file must not crash" || true
+echo "$OUT" | grep -qE '^ +at .+:[0-9]+:[0-9]+\)?$' && fail "a corrupt state file must not crash" || true
 OUT=$("$BIN" --repo repo --machine m1 diff 2>&1 || true)
 echo "$OUT" | grep -q "not readable state" || fail "diff warns about a corrupt state file instead of hiding it"
 rm -f repo/machines/state/m1.json

@@ -1,6 +1,6 @@
-// The Charmtone colours the screen's themes use (charmbracelet/x/exp/charmtone).
+// The Charmtone colours the screen's themes use.
 
-import type { Color } from "./lipgloss.ts";
+import type { Color } from "./style.ts";
 
 const hex = (h: string): Color => ({
   r: parseInt(h.slice(1, 3), 16),

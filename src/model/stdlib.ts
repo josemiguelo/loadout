@@ -1,11 +1,11 @@
-// Go standard library behaviours the port keeps, where JavaScript's differ:
-// unicode.IsSpace (JS's \s and trim() take U+FEFF and leave U+0085),
-// string order (Go sorts UTF-8 bytes, JS compares UTF-16 units: they part
-// beyond the BMP), and path.Clean/Join/IsAbs (node's posix.normalize keeps
-// trailing slashes and turns "" into "."). Messages, sort orders and paths
-// must come out as the Go code made them.
+// String, path and file-error rules loadout keeps where JavaScript's own
+// differ: white space (JS's \s and trim() take U+FEFF and leave U+0085),
+// string order (by UTF-8 bytes; JS compares UTF-16 units, and they part
+// beyond the BMP), and path cleaning (node's posix.normalize keeps trailing
+// slashes and turns "" into "."). Messages, sort orders and paths in the
+// lock and state files depend on them, so they must not change.
 
-/** isSpace is Go's unicode.IsSpace for one code point. */
+/** isSpace says whether cp is white space: \t to \r, space, U+0085, U+00A0 and Unicode's other spaces, never U+FEFF. */
 export function isSpace(cp: number): boolean {
   if (cp <= 0xff) {
     return cp === 0x20 || (cp >= 0x09 && cp <= 0x0d) || cp === 0x85 || cp === 0xa0;
@@ -21,7 +21,7 @@ export function isSpace(cp: number): boolean {
   );
 }
 
-/** trimSpace is Go's strings.TrimFunc(s, unicode.IsSpace). */
+/** trimSpace is s without the white space (isSpace) at either end. */
 export function trimSpace(s: string): string {
   const cps = Array.from(s);
   let start = 0;
@@ -31,18 +31,18 @@ export function trimSpace(s: string): string {
   return cps.slice(start, end).join("");
 }
 
-/** isBlank says whether s is empty or only whitespace (unicode.IsSpace). */
+/** isBlank says whether s is empty or only white space (isSpace). */
 export function isBlank(s: string): boolean {
   return trimSpace(s) === "";
 }
 
-/** hasSpace says whether s holds a whitespace code point (unicode.IsSpace). */
+/** hasSpace says whether s holds a white space code point (isSpace). */
 export function hasSpace(s: string): boolean {
   for (const c of s) if (isSpace(c.codePointAt(0)!)) return true;
   return false;
 }
 
-/** compareStrings orders as Go's < on strings: by UTF-8 bytes, i.e. by code point. */
+/** compareStrings orders strings by UTF-8 bytes, i.e. by code point. */
 export function compareStrings(a: string, b: string): number {
   let i = 0;
   let j = 0;
@@ -58,28 +58,28 @@ export function compareStrings(a: string, b: string): number {
   return restA === restB ? 0 : restA < restB ? -1 : 1;
 }
 
-/** sortStrings sorts xs in place as Go's slices.Sort does, and returns it. */
+/** sortStrings sorts xs in place by compareStrings, and returns it. */
 export function sortStrings(xs: string[]): string[] {
   return xs.sort(compareStrings);
 }
 
-/** sortedStrings is a sorted copy of xs (slices.Sorted). */
+/** sortedStrings is a copy of xs sorted by compareStrings. */
 export function sortedStrings(xs: Iterable<string>): string[] {
   return sortStrings([...xs]);
 }
 
-/** isSortedStrings is Go's slices.IsSorted for strings. */
+/** isSortedStrings says whether xs is in compareStrings order. */
 export function isSortedStrings(xs: readonly string[]): boolean {
   for (let i = 1; i < xs.length; i++) if (compareStrings(xs[i - 1]!, xs[i]!) > 0) return false;
   return true;
 }
 
-/** cleanPath is Go's path.Clean: the shortest equivalent `/` path; "" is ".". */
+/** cleanPath is the shortest equivalent `/` path: no `.`, no `..` it can resolve, no doubled or trailing slash; "" is ".". */
 export function cleanPath(path: string): string {
   if (path === "") return ".";
   const rooted = path[0] === "/";
   const n = path.length;
-  // buf[0..w) is the output so far, as Go's lazybuf.
+  // buf[0..w) is the output so far.
   const buf: string[] = [];
   let w = 0;
   const append = (c: string) => {
@@ -117,49 +117,49 @@ export function cleanPath(path: string): string {
   return buf.slice(0, w).join("");
 }
 
-/** joinPath is Go's path.Join: the non-empty elements, `/`-joined and cleaned; "" when all are empty. */
+/** joinPath is the non-empty elements, `/`-joined and cleaned; "" when all are empty. */
 export function joinPath(...elems: string[]): string {
   const parts = elems.filter((e) => e !== "");
   return parts.length === 0 ? "" : cleanPath(parts.join("/"));
 }
 
-/** isAbsPath is Go's path.IsAbs. */
+/** isAbsPath says whether path starts with `/`. */
 export function isAbsPath(path: string): boolean {
   return path.startsWith("/");
 }
 
-/** cut is Go's strings.Cut: before and after the first sep, and whether it was there. */
+/** cut is s before and after the first sep, and whether it was there. */
 export function cut(s: string, sep: string): [before: string, after: string, found: boolean] {
   const i = s.indexOf(sep);
   if (i < 0) return [s, "", false];
   return [s.slice(0, i), s.slice(i + sep.length), true];
 }
 
-/** cutPrefix is Go's strings.CutPrefix. */
+/** cutPrefix is s without prefix, and whether s had it. */
 export function cutPrefix(s: string, prefix: string): [rest: string, found: boolean] {
   return s.startsWith(prefix) ? [s.slice(prefix.length), true] : [s, false];
 }
 
-/** trimPrefix is Go's strings.TrimPrefix. */
+/** trimPrefix is s without prefix, or s when it doesn't start with it. */
 export function trimPrefix(s: string, prefix: string): string {
   return s.startsWith(prefix) ? s.slice(prefix.length) : s;
 }
 
-/** trimRight is Go's strings.TrimRight with a set of characters. */
+/** trimRight is s without the trailing characters that are in cutset. */
 export function trimRight(s: string, cutset: string): string {
   let end = s.length;
   while (end > 0 && cutset.includes(s[end - 1]!)) end--;
   return s.slice(0, end);
 }
 
-/** slicesEqual is Go's slices.Equal. */
+/** slicesEqual says whether a and b hold the same elements in the same order. */
 export function slicesEqual<T>(a: readonly T[] | undefined, b: readonly T[] | undefined): boolean {
   const x = a ?? [];
   const y = b ?? [];
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
-/** errnoText is Go's syscall.Errno text for the errno codes file work meets. */
+/** errnoText is the text a file error gives for each errno code file work meets. */
 const errnoText: Record<string, string> = {
   ENOENT: "no such file or directory",
   EACCES: "permission denied",
@@ -178,17 +178,17 @@ const errnoText: Record<string, string> = {
   EIO: "input/output error",
 };
 
-/** syscallOp is the Go os operation node's syscall name stands for (os.ReadDir opens first). */
+/** syscallOp is the operation a file error names for node's syscall (reading a folder opens it first). */
 const syscallOp: Record<string, string> = { scandir: "open", opendir: "open" };
 
 /**
- * goPathError is node's file error e worded as Go's *os.PathError ("open
- * /x: permission denied"; a rename as *os.LinkError, "rename /a /b: …"), so
- * messages (state warnings, `error: ` lines) read as the Go binary's. op
- * and path fill in what node leaves out (a read's path). Anything that
+ * fileError is node's file error e worded as loadout words file errors:
+ * "open /x: permission denied", a rename "rename /a /b: …". State warnings
+ * and `error: ` lines carry it. op and path fill in what node leaves out (a
+ * read's path). Anything that
  * isn't an errno error comes back as it is.
  */
-export function goPathError(e: unknown, op?: string, path?: string): Error {
+export function fileError(e: unknown, op?: string, path?: string): Error {
   const err = e as NodeJS.ErrnoException & { dest?: string };
   if (!(e instanceof Error) || typeof err.code !== "string") return e instanceof Error ? e : new Error(String(e));
   const text = errnoText[err.code] ?? err.message;

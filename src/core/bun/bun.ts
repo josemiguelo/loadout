@@ -1,4 +1,4 @@
-// Package bun makes loadout the bun of the commands it runs. A compiled bun
+// The bun module makes loadout the bun of the commands it runs. A compiled bun
 // executable started with BUN_BE_BUN=1 is the bun CLI it was built with, so
 // loadout keeps a `bun` wrapper (`BUN_BE_BUN=1 exec <loadout> "$@"`) in
 // $XDG_DATA_HOME/loadout/bin and puts that folder first on PATH for every
@@ -7,7 +7,7 @@
 // installed yet, with the bun this loadout was built with (Bun.version).
 
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { cleanPath, goPathError, joinPath } from "../../model/index.ts";
+import { cleanPath, fileError, joinPath } from "../../model/index.ts";
 import { envVar } from "../platform/platform.ts";
 
 /**
@@ -93,7 +93,7 @@ function put(folder: string, name: string, text: string, mode: number) {
   try {
     mkdirSync(folder, { recursive: true, mode: 0o755 });
   } catch (e) {
-    throw new Error("couldn't set up bun in " + folder + ": " + goPathError(e, "mkdir", folder).message);
+    throw new Error("couldn't set up bun in " + folder + ": " + fileError(e, "mkdir", folder).message);
   }
   const temp = joinPath(folder, ".bun-" + process.pid + "-" + Math.random().toString(36).slice(2));
   try {
@@ -102,7 +102,7 @@ function put(folder: string, name: string, text: string, mode: number) {
     renameSync(temp, target);
   } catch (e) {
     rmSync(temp, { force: true });
-    throw new Error("couldn't set up bun in " + folder + ": " + goPathError(e).message);
+    throw new Error("couldn't set up bun in " + folder + ": " + fileError(e).message);
   }
 }
 
@@ -130,7 +130,7 @@ function isExecutable(file: string): boolean {
   }
 }
 
-/** dir is Go's filepath.Dir: everything before the last slash, cleaned ("." when there is none). */
+/** dir is path's folder: everything before the last slash, cleaned ("." when there is none). */
 function dir(path: string): string {
   const i = path.lastIndexOf("/");
   return cleanPath(path.slice(0, i + 1) || ".");

@@ -2,7 +2,7 @@
 
 - **Theme is ONE source of truth**: `src/theme/theme.ts` holds the
   Tokyo Night / Day `ThemePalette` pair and `detectDarkTerminal(bgLuma,
-  COLORFGBG)`. The TUI maps it to Lip Gloss colours (`Rgb.hex()`), the CLI to
+  COLORFGBG)`. The TUI maps it to `#rrggbb` colours (`Rgb.hex()`), the CLI to
   24-bit ANSI (`cli/style.ts`'s `Style`). The home screen has its own palette (tui/style: Charmtone "Pantera"
   dark, Crush's, and a light variant) picked by the same detection; `t`
   toggles it. The screen never paints the terminal's background (no

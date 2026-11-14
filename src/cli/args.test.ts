@@ -17,8 +17,8 @@ async function refusal(args: string[]): Promise<string> {
   return "";
 }
 
-// What the Go binary (cobra and pflag, worded as Clikt) printed for each.
-test("bad command lines are refused in the Go binary's words", async () => {
+// What loadout prints for each.
+test("bad command lines are refused with the command's usage and one Error: line", async () => {
   const root = "Usage: loadout [<options>] <command> [<args>]...\n\nError: ";
   const cases: [string[], string][] = [
     [["help"], root + "no such subcommand help"],
@@ -26,7 +26,7 @@ test("bad command lines are refused in the Go binary's words", async () => {
     [["status", "--jsn"], "Usage: loadout status [<options>]\n\nError: no such option --jsn. Did you mean --json?"],
     [
       ["status", "--json=maybe"],
-      'Usage: loadout status [<options>]\n\nError: invalid argument "maybe" for "--json" flag: strconv.ParseBool: parsing "maybe": invalid syntax',
+      'Usage: loadout status [<options>]\n\nError: invalid argument "maybe" for "--json" flag: parsing "maybe": invalid syntax',
     ],
     [["init", "a", "b"], "Usage: loadout init [<options>] [<path>]\n\nError: got unexpected extra argument (b)"],
     [["installers", "a", "b", "c"], "Usage: loadout installers [<options>] [<name>]\n\nError: got unexpected extra arguments (b c)"],
@@ -61,7 +61,7 @@ test("the command is found past persistent flags and their values", () => {
   expect(parsed.args).toEqual([]);
 });
 
-test("flags parse as pflag's: shorthands grouped, values attached or next, repeatable ones adding up", () => {
+test("flags parse: shorthands grouped, values attached or next, repeatable ones adding up", () => {
   const cmd = new Command("x");
   cmd.opts = [
     { long: "yes", short: "y", help: "", kind: "bool", value: "", persistent: false },

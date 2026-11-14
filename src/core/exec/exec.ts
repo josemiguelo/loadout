@@ -1,4 +1,4 @@
-// Package exec runs shell commands: every process loadout starts goes
+// The exec module runs shell commands: every process loadout starts goes
 // through ProcessRunner, so tests script them (fakeexec).
 
 import { Refusal } from "../../model/index.ts";
@@ -18,7 +18,7 @@ export function success(r: ExecResult): boolean {
 /**
  * ShellCommand is one shell command line and the frame it runs in: cwd
  * ("" = the caller's) and env, added to the inherited environment
- * (undefined = Go's nil map: the environment as it is).
+ * (undefined: the environment as it is).
  */
 export interface ShellCommand {
   line: string;

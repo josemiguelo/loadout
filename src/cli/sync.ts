@@ -159,7 +159,7 @@ async function runSync(a: AppContext, noPush: boolean, message: string | undefin
   }
 }
 
-/** parentName is the parent's name, as Kotlin printed a missing one ("null"). */
+/** parentName is the parent's name, ("null" when it has none). */
 function parentName(a: AppContext): string {
   try {
     const layout = a.layout();

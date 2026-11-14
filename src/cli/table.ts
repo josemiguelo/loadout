@@ -18,8 +18,8 @@ export const severe = true;
 
 const ansi = /\x1b\[[0-9;]*m/g;
 
-/** runeCount is s's length in code points, as Go's utf8.RuneCountInString. */
-export function runeCount(s: string): number {
+/** codePointCount is s's length in code points. */
+export function codePointCount(s: string): number {
   let n = 0;
   for (const _ of s) n++;
   return n;
@@ -27,12 +27,12 @@ export function runeCount(s: string): number {
 
 /** printedWidth is the visible width of a styled string — escape codes take no columns. */
 export function printedWidth(text: string): number {
-  return runeCount(text.replace(ansi, ""));
+  return codePointCount(text.replace(ansi, ""));
 }
 
-/** padEnd pads s with spaces to width characters, as Kotlin's padEnd does. */
+/** padEnd pads s with spaces to width code points. */
 export function padEnd(s: string, width: number): string {
-  const n = runeCount(s);
+  const n = codePointCount(s);
   return n < width ? s + " ".repeat(width - n) : s;
 }
 

@@ -1,8 +1,7 @@
-// The slice of Bubble Tea's model the screen's parts keep (style's Busy and
-// Toasts, term's Model): a message is any value, a command is a function
-// that resolves to the next message, run by whoever drives the screen, and
-// fed back to the parts' update methods. It keeps the shape of the Go
-// packages the home screen was ported from, so its reducers read as they did.
+// The messages, commands and key codes the screen's parts share (style's
+// Busy and Toasts, term's Model): a message is any value, a command is a
+// function that resolves to the next message, run by whoever drives the
+// screen, and fed back to the parts' update methods.
 
 /** Msg is anything a command delivers. */
 export type Msg = unknown;
@@ -17,7 +16,7 @@ export function tick(ms: number, fn: (t: Date) => Msg): Cmd {
 
 // ─── keys ───────────────────────────────────────────────────────────────
 
-/** Key modifiers, as Bubble Tea v2 (ultraviolet) numbers them. */
+/** Key modifiers, as bits. */
 export const ModShift = 1 << 0;
 export const ModAlt = 1 << 1;
 export const ModCtrl = 1 << 2;
@@ -55,7 +54,7 @@ export const KeyKpDecimal = keyExtended + 20;
 export const KeyKpDivide = keyExtended + 21;
 /** KeyKp0 … Kp9 are KeyKp0 + 0 … 9. */
 export const KeyKp0 = keyExtended + 22;
-/** KeyF1 … F12 are KeyF1 + 0 … 11 (the codes ultraviolet gives them). */
+/** KeyF1 … F12 are KeyF1 + 0 … 11. */
 export const KeyF1 = keyExtended + 44;
 
 /** KeyPressMsg is a key press: its code, the text it types (if any) and its modifiers. */

@@ -6,7 +6,7 @@ import { commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo } from "./spinner.ts";
 import { Style } from "./style.ts";
-import { padEnd, runeCount } from "./table.ts";
+import { padEnd, codePointCount } from "./table.ts";
 
 /** newExplainCmd is `loadout explain`. */
 export function newExplainCmd(): Command {
@@ -30,7 +30,7 @@ export interface Row {
 /** echoLabelled prints rows with their labels in one dim column. */
 export function echoLabelled(rows: readonly Row[]): void {
   let width = 0;
-  for (const r of rows) width = Math.max(width, runeCount(r.label));
+  for (const r of rows) width = Math.max(width, codePointCount(r.label));
   for (const r of rows) echo("  " + Style.dim(padEnd(r.label, width)) + "  " + r.value);
 }
 

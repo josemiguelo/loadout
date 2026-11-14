@@ -1,16 +1,15 @@
 import type { Cursor } from "./term/term.ts";
 
 /**
- * Renderer draws the screen's frames on the terminal's alternate screen, as
- * Bubble Tea's renderer does: only what changed (whole rows here, cells
- * there), inside synchronized output, then the command's cursor where it
- * stands, or none. Each row is written as view built it, Lip Gloss's bytes
- * unchanged.
+ * Renderer draws the screen's frames on the terminal's alternate screen:
+ * only the rows that changed, inside synchronized output, then the
+ * command's cursor where it stands, or none. Each row is written as view
+ * built it, its bytes unchanged.
  *
- * Not Ink's renderer: it re-tokenizes every styled cell of the frame on each
- * render (60–130 ms for a 140×40 screen), and the busy spinner redraws
- * twelve times a second: the screen sat at a full core, and the run panel's
- * answers to a command's terminal queries came too late for it.
+ * Rows are compared and written as strings, never re-parsed into cells: the
+ * busy spinner redraws twelve times a second, and the run panel must answer
+ * a command's terminal queries without delay (sudo reads a late reply as
+ * its password).
  */
 export class Renderer {
   private last: string[] = [];

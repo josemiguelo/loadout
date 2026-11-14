@@ -1,4 +1,4 @@
-// Package engine is what loadout does with a manifest: observe, plan,
+// The engine module is what loadout does with a manifest: observe, plan,
 // install, upgrade, run scripts and configs.
 
 import { Refusal } from "../../model/index.ts";

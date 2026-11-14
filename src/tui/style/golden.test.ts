@@ -1,7 +1,6 @@
-// The rendered bytes, compared with what the Go package (Lip Gloss) made
-// for the same calls: testdata/golden.json was written by the Go reference
-// over this same grid of themes, widths and states. Not a Go test: it pins
-// the port to the look it reproduces.
+// The rendered bytes, pinned: testdata/golden.json holds what each call
+// renders over this grid of themes, widths and states, so any change to
+// the screen's look shows up here byte for byte.
 
 import { describe, expect, test } from "bun:test";
 import { newBinding } from "../key.ts";
@@ -13,7 +12,7 @@ import type { Span } from "./text.ts";
 function render(): Map<string, string> {
   const out = new Map<string, string>();
   const put = (k: string, v: string) => out.set(k, v);
-  const putL = (k: string, v: string[] | null) => out.set(k, v === null ? "<nil>" : v.join("\n"));
+  const putL = (k: string, v: string[] | null) => out.set(k, v === null ? "<none>" : v.join("\n"));
   for (const tn of ["dark", "light"]) {
     const th = style.themeFor(tn === "dark");
     const p = tn + "/";
@@ -119,7 +118,7 @@ function render(): Map<string, string> {
   return out;
 }
 
-describe("rendering matches the Go reference byte for byte", () => {
+describe("rendering matches the golden bytes", () => {
   const got = render();
   const want = golden as Record<string, string>;
   test("every case is rendered", () => {

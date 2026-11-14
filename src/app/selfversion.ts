@@ -62,7 +62,7 @@ async function latestOf(runner: ProcessRunner, api: string, tag: RegExp, cacheNa
   try {
     result = await runner.capture(line("curl -fsSL --max-time 5 '" + api + "'", ""));
   } catch {
-    // Go ignored the error (an interrupted curl) and read no output.
+    // An interrupted curl reads as no output.
     result = { exitCode: 0, stdout: "", stderr: "" };
   }
   const match = tag.exec(result.stdout);

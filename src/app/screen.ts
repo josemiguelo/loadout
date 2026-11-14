@@ -8,7 +8,7 @@ import type { AppContext } from "./context.ts";
 
 /**
  * HomeAction is what the user chose. The screen decides; the matching
- * command does it. The values are Go's iota's.
+ * command does it. The values count up from 0, in this order.
  */
 export type HomeAction =
   | typeof ActionNone
@@ -154,15 +154,15 @@ export type ScreenFactory = (app: AppContext) => Screen | Promise<Screen>;
 let screenFactory: ScreenFactory | undefined;
 
 /**
- * registerScreen is how a TUI registers itself (Go's `app.NewScreen = …` in
- * the tui package's init; src/main.ts imports that module). Until one does,
+ * registerScreen is how a TUI registers itself (src/tui/index.ts, which
+ * src/main.ts imports). Until one does,
  * bare `loadout` on a TTY prints help.
  */
 export function registerScreen(factory: ScreenFactory): void {
   screenFactory = factory;
 }
 
-/** hasScreen says whether a TUI registered itself (Go's `app.NewScreen != nil`). */
+/** hasScreen says whether a TUI registered itself. */
 export function hasScreen(): boolean {
   return screenFactory !== undefined;
 }

@@ -7,7 +7,7 @@ import { commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
-import { echoRows, padEnd, runeCount, severe, type TableRow } from "./table.ts";
+import { echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
 /** newOutdatedCmd is `loadout outdated`. */
 export function newOutdatedCmd(): Command {
@@ -39,7 +39,7 @@ async function runOutdated(a: AppContext): Promise<void> {
   // by name.
   if (report.tools.length > 0) {
     let toolWidth = 0;
-    for (const t of report.tools) toolWidth = Math.max(toolWidth, runeCount(t.tool));
+    for (const t of report.tools) toolWidth = Math.max(toolWidth, codePointCount(t.tool));
     toolWidth += 2;
     for (const t of report.tools) {
       const mark = t.total === 0 ? Style.ok("✔") : Style.warn("↑");
@@ -65,10 +65,10 @@ async function runOutdated(a: AppContext): Promise<void> {
     let candidateWidth = 9;
     let sourceWidth = 6;
     for (const u of updates) {
-      nameWidth = Math.max(nameWidth, runeCount(u.name));
-      currentWidth = Math.max(currentWidth, runeCount(u.current));
-      candidateWidth = Math.max(candidateWidth, runeCount(u.candidate));
-      sourceWidth = Math.max(sourceWidth, runeCount(u.source));
+      nameWidth = Math.max(nameWidth, codePointCount(u.name));
+      currentWidth = Math.max(currentWidth, codePointCount(u.current));
+      candidateWidth = Math.max(candidateWidth, codePointCount(u.candidate));
+      sourceWidth = Math.max(sourceWidth, codePointCount(u.source));
     }
     nameWidth += 2;
     currentWidth += 2;
@@ -103,11 +103,11 @@ async function runOutdated(a: AppContext): Promise<void> {
     const tail = " — its results are missing this run";
     let cols = terminalColumns();
     if (cols === 0) cols = 100;
-    const budget = cols - 6 - runeCount(tail);
+    const budget = cols - 6 - codePointCount(tail);
     const rows: TableRow[] = [];
     for (const e of report.errors) {
       let head = "  outdated source [" + e.label + "] failed: " + e.reason;
-      if (runeCount(head) > budget) head = [...head].slice(0, Math.max(budget - 1, 0)).join("") + "…";
+      if (codePointCount(head) > budget) head = [...head].slice(0, Math.max(budget - 1, 0)).join("") + "…";
       rows.push({ lines: [Style.error("✖") + head + Style.dim(tail)], severity: severe });
     }
     echoRows(rows);

@@ -12,7 +12,7 @@ import { checkFor, type Manifest, type MachineConfig, newMachineConfig, shownLin
 import { exitWith } from "./errors.ts";
 import { echo, echoErr, echoNoNewline, readLine, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
-import { padEnd, runeCount } from "./table.ts";
+import { padEnd, codePointCount } from "./table.ts";
 
 /** ProgramPlan is what converging the programs would do, and the engine that does it. */
 export interface ProgramPlan {
@@ -20,12 +20,12 @@ export interface ProgramPlan {
   items: engine.PlanItem[];
 }
 
-/** planInstalls is p's InstallItems (Go's programPlan.installs). */
+/** planInstalls is p's install items. */
 export function planInstalls(p: ProgramPlan): engine.InstallItem[] {
   return engine.installs(p.items);
 }
 
-/** machineOf is machine's config, Go's zero value (nothing mapped) when it isn't declared. */
+/** machineOf is machine's config, an empty one (nothing mapped) when it isn't declared. */
 export function machineOf(manifest: Manifest, machine: string): MachineConfig {
   return manifest.machines.get(machine) ?? newMachineConfig();
 }
@@ -87,8 +87,8 @@ export interface PlanSection {
 export function echoSections(machine: string, sections: readonly PlanSection[]): void {
   let nameWidth = 1;
   for (const s of sections) {
-    for (const item of s.items) nameWidth = Math.max(nameWidth, runeCount(item.program));
-    for (const row of s.extra) nameWidth = Math.max(nameWidth, runeCount(row.name));
+    for (const item of s.items) nameWidth = Math.max(nameWidth, codePointCount(item.program));
+    for (const row of s.extra) nameWidth = Math.max(nameWidth, codePointCount(row.name));
   }
   echo("");
   echo(Style.header("Plan for ") + Style.machine(machine) + Style.header(":"));

@@ -1,5 +1,5 @@
-# The home screen, driven on a pseudo-terminal. Bubble Tea's renderer only
-# writes the cells that change, so the tests read the frame the screen dumps
+# The home screen, driven on a pseudo-terminal. Its renderer only
+# writes the rows that change, so the tests read the frame the screen dumps
 # as plain text (screen_run / wait_frame / frame_seen, lib.sh). Key feeders
 # wait on the frame, never on a fixed sleep: a key on a busy row is refused,
 # a key before raw mode is lost, and how long the rows take to answer

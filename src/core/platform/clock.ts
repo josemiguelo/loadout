@@ -1,7 +1,6 @@
 // The wall clock to the nanosecond, from libc's clock_gettime(CLOCK_REALTIME)
 // through bun:ffi: a Date holds milliseconds and performance's wall time
-// microseconds, but Go's time.Now (what wrote every state file so far) reads
-// nanoseconds, so its timestamps carry 9 fraction digits and ours must too.
+// microseconds, but state files' timestamps carry 9 fraction digits.
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
 

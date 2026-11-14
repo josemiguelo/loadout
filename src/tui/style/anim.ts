@@ -1,12 +1,12 @@
-import { tick, type Cmd, type Msg } from "../tea.ts";
+import { tick, type Cmd, type Msg } from "../messages.ts";
 import { fg } from "./text.ts";
 import type { Theme } from "./theme.ts";
 
 /**
- * busySpinner is the busy glyph: Bubbles' MiniDot braille spinner
- * (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏), at its own pace. One cell, calm, and unlike any status
- * glyph (● means "needs attention" in the sidebar), so a row being checked
- * never reads as a verdict (user decision, replacing scrambling glyphs).
+ * busySpinner is the busy glyph: a braille spinner (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏), at
+ * its own pace. One cell, calm, and unlike any status glyph (● means
+ * "needs attention" in the sidebar), so a row being checked never reads as
+ * a verdict (user decision).
  */
 const busySpinner = {
   frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],

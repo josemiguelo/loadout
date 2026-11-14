@@ -1,4 +1,4 @@
-// Package diff compares the fleet: manifest × states -> DiffReport. Pure.
+// The diff module compares the fleet: manifest × states -> DiffReport. Pure.
 
 import { distinct, type Manifest, sortStrings } from "../../model/index.ts";
 import type { MachineState } from "../coremodel/coremodel.ts";

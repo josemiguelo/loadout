@@ -29,7 +29,7 @@ import { loadRepo, parentChanged, parentRoot, readLayout, toolTooOld } from "./l
 
 // The lock reader: the only way the binary sees a repo's manifests.
 
-const sources = ["loadout.hcl", "programs/**/*.loadout.hcl"];
+const sources = ["loadout.ts", "programs/**/*.loadout.ts"];
 
 const tempDir = () => mkdtempSync(tmpdir() + "/loadout-loader-");
 
@@ -59,8 +59,8 @@ interface RepoOpts {
 function repo(o: RepoOpts = {}): string {
   const root = tempDir();
   const m = o.manifest ?? manifest("");
-  put(root + "/loadout.hcl", "repo {}\n");
-  put(root + "/programs/cli.loadout.hcl", "\n");
+  put(root + "/loadout.ts", "repo {}\n");
+  put(root + "/programs/cli.loadout.ts", "\n");
   for (const f of o.files ?? ["install-git.sh"]) put(root + "/" + f, "#!/bin/sh\n");
   put(root + "/loadout.lock.json", encodeLock({ format: 0, toolVersion: o.toolVersion ?? VERSION, sources: hash(root, sources), manifest: m }));
   // What compile writes beside the configs.
@@ -136,12 +136,12 @@ test("no lock says to compile", () => {
 
 test("an edit the lock hasn't seen is refused", () => {
   const root = repo();
-  put(root + "/programs/cli.loadout.hcl", "# edited\n");
+  put(root + "/programs/cli.loadout.ts", "# edited\n");
   contains(refusal(root), "the manifests changed since loadout.lock.json was written — run: loadout compile");
 
   // A new source file counts too.
   const added = repo();
-  put(added + "/programs/new.loadout.hcl", "\n");
+  put(added + "/programs/new.loadout.ts", "\n");
   contains(refusal(added), "run: loadout compile");
 
   // Files no source glob matches don't.
@@ -176,7 +176,7 @@ test("a newer minor's field is refused by version, not by the field", () => {
 
 // ─── a child repo's parent (contract 18) ─────────────────────────
 
-const parentSources = ["loadout.hcl"];
+const parentSources = ["loadout.ts"];
 
 /**
  * child is a child repo whose parent, at ~/dots, declares a script whose
@@ -185,7 +185,7 @@ const parentSources = ["loadout.hcl"];
 function child(): [root: string, home: string] {
   const home = tempDir();
   const parentDir = home + "/dots";
-  put(parentDir + "/loadout.hcl", "repo {}\n");
+  put(parentDir + "/loadout.ts", "repo {}\n");
   put(parentDir + "/lib/helper.sh", "#!/bin/sh\n");
   const parent = newParentLayout({ name: "dotfiles", path: "~/dots", state: "state", sources: parentSources, hash: hash(parentDir, parentSources) });
   const m = manifestOf((b) => {
@@ -194,7 +194,7 @@ function child(): [root: string, home: string] {
     b.machine("work", newMachineConfig({ scripts: ["helper"] }));
   });
   const root = tempDir();
-  put(root + "/loadout.hcl", "repo {}\n");
+  put(root + "/loadout.ts", "repo {}\n");
   const withLayout = { ...m, layout: newRepoLayout({ state: "state", sources, parent }) };
   put(root + "/loadout.lock.json", encodeLock({ format: 0, toolVersion: VERSION, sources: hash(root, sources), manifest: withLayout }));
   return [root, home];
@@ -218,7 +218,7 @@ test("a child loads with its parent at its path", () => {
 
 test("a parent edit the child hasn't compiled is refused", () => {
   const [root, home] = child();
-  put(home + "/dots/loadout.hcl", "# edited\n");
+  put(home + "/dots/loadout.ts", "# edited\n");
   contains(childRefusal(root, home), "parent dotfiles: the manifests changed since loadout.lock.json was written — run: loadout compile");
   expect(parentChanged(root, home)).toBe(true);
 });
@@ -262,7 +262,7 @@ test("a file the lock names must still exist", () => {
 
 test("not a lock is refused cleanly", () => {
   const root = repo();
-  put(root + "/loadout.lock.json", "meta:\n  name: yaml\n");
+  put(root + "/loadout.lock.json", "not a lock\n");
   contains(refusal(root), "run: loadout compile");
 });
 

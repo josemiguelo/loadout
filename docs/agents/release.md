@@ -27,9 +27,8 @@ scripts run with: say so in the release notes.
 `install.sh` (repo root) is the curl|sh bootstrap over those releases: it
 resolves latest via the GitHub API (pin: LOADOUT_VERSION) and installs the
 one binary to ~/.local/bin (LOADOUT_INSTALL_DIR); keep its target names in
-sync with release.yml. An older loadout's `~/.local/share/loadout` (its
-Kotlin DSL and Gradle plugin) is left as it was: install.sh never deletes
-what it no longer installs. It reads the installed version BEFORE
+sync with release.yml. A `~/.local/share/loadout` it finds is left as
+it was: install.sh never deletes what it didn't write. It reads the installed version BEFORE
 overwriting, so an upgrade (including `loadout self-upgrade`, which shells
 out to it) says "was vX" and skips the first-install "Next steps".
 Testable offline via LOADOUT_DOWNLOAD_BASE=file://… against a local

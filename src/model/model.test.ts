@@ -5,7 +5,7 @@ import { chezmoiDataFiles, chezmoiPartial, renderChezmoiData } from "./chezmoida
 import { type Errs, programToJSON, readProgram, readScript, scriptToJSON } from "./codec.ts";
 import { mapFS } from "./fsys.ts";
 import { globExpand, globMatches, globProblem } from "./glob.ts";
-import { type JSONValue, jsonString, kotlinDouble } from "./json.ts";
+import { type JSONValue, jsonString, floatNumber } from "./json.ts";
 import { decodeLock, encodeLock, type Lock, sourcesHash } from "./lock.ts";
 import { dataConflicts, mergeData, validateData } from "./machinedata.ts";
 import {
@@ -146,18 +146,18 @@ test("an unreadable lock says so", () => {
 
 test("sources hash covers path and content in path order", () => {
   const files: Record<string, string> = {
-    "loadout.hcl": "repo {}\n",
-    "b/x.loadout.hcl": "b",
-    "a/.y.loadout.hcl": "a",
+    "loadout.ts": "repo {}\n",
+    "b/x.loadout.ts": "b",
+    "a/.y.loadout.ts": "a",
     "a/z.txt": "no",
-    ".git/q.loadout.hcl": "no",
-    "a/.git/q.loadout.hcl": "no",
-    "a/deep/w.loadout.hcl": "w",
+    ".git/q.loadout.ts": "no",
+    "a/.git/q.loadout.ts": "no",
+    "a/deep/w.loadout.ts": "w",
   };
   const repo = mapFS(files);
-  const got = sourcesHash(repo, ["loadout.hcl", "**/*.loadout.hcl", "a/**/.*.loadout.hcl", "loadout.hcl"]);
+  const got = sourcesHash(repo, ["loadout.ts", "**/*.loadout.ts", "a/**/.*.loadout.ts", "loadout.ts"]);
   const h = createHash("sha256");
-  for (const f of ["a/.y.loadout.hcl", "a/deep/w.loadout.hcl", "b/x.loadout.hcl", "loadout.hcl"]) {
+  for (const f of ["a/.y.loadout.ts", "a/deep/w.loadout.ts", "b/x.loadout.ts", "loadout.ts"]) {
     h.update(f + "\x00" + files[f] + "\x00");
   }
   expect(got).toBe(h.digest("hex"));
@@ -251,7 +251,7 @@ test("provided folders come first for scripts on the machine", () => {
 
 test("data merges tables and replaces the rest", () => {
   const base = mapOf<JSONValue>(["a", true], ["k", mapOf<JSONValue>(["x", "1"], ["y", "2"])], ["l", ["a"]]);
-  const over = mapOf<JSONValue>(["k", mapOf<JSONValue>(["y", "3"])], ["l", ["b"]], ["n", kotlinDouble(1)]);
+  const over = mapOf<JSONValue>(["k", mapOf<JSONValue>(["y", "3"])], ["l", ["b"]], ["n", floatNumber(1)]);
   expect(jsonString(mergeData(base, over))).toBe(`{"a":true,"k":{"x":"1","y":"3"},"l":["b"],"n":1.0}`);
   expect(dataConflicts(base, over, "").join(",")).toBe("k.y,l");
   const errs = validateData(base, mapOf<JSONValue>(["a", "yes"], ["k", mapOf<JSONValue>(["z", "1"])]), "machine 'm'", "");
@@ -261,7 +261,7 @@ test("data merges tables and replaces the rest", () => {
   ]);
 });
 
-test("Kotlin doubles read as Kotlin writes them", () => {
+test("floats are written with a fraction or an exponent", () => {
   const cases: [number, string][] = [
     [0.85, "0.85"],
     [1, "1.0"],
@@ -271,7 +271,7 @@ test("Kotlin doubles read as Kotlin writes them", () => {
     [-2.5, "-2.5"],
     [123456.0, "123456.0"],
   ];
-  for (const [f, want] of cases) expect([f, kotlinDouble(f).text]).toEqual([f, want]);
+  for (const [f, want] of cases) expect([f, floatNumber(f).text]).toEqual([f, want]);
 });
 
 test("a machine sees its script variant and tool paths", () => {

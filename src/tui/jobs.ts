@@ -1,4 +1,4 @@
-import type { Cmd, Msg } from "./tea.ts";
+import type { Cmd, Msg } from "./messages.ts";
 
 /**
  * Jobs runs the screen's background work: each job is a command (a promise

@@ -63,13 +63,6 @@ export const scriptSDKFile = "loadout.script.ts";
 /** scriptSDK is loadout.script.ts's text, embedded in the binary. */
 export const scriptSDK: string = ScriptSDKText as string;
 
-/** hclRepoMessage refuses a repo still declared in HCL (loadout 4). */
-export const hclRepoMessage =
-  "this repo's manifests are HCL; loadout 5 reads TypeScript (loadout.ts) — see the wiki's Writing-Your-Manifest";
-
-/** kotlinRepoMessage refuses a repo still declared in Kotlin (loadout 3). */
-export const kotlinRepoMessage = "this repo's manifests are Kotlin; loadout 5 reads TypeScript (loadout.ts)";
-
 /**
  * Draft is what loadout.ts prints: the manifest before assembly, and what
  * only compile reads (the warnings' marks, the parent it names).
@@ -102,13 +95,9 @@ export async function compile(root: string): Promise<string[]> {
   try {
     root = fs.realpathSync(root);
   } catch {
-    // Go's EvalSymlinks failing keeps the absolute path.
+    // A path that can't be resolved stays absolute.
   }
   if (!isFile(path.join(root, entryFile))) {
-    if (isFile(path.join(root, "loadout.hcl"))) throw new ManifestException(hclRepoMessage);
-    if (isFile(path.join(root, "loadout.kt")) || isFile(path.join(root, "build.gradle.kts"))) {
-      throw new ManifestException(kotlinRepoMessage);
-    }
     throw new ManifestException(root + " has no " + entryFile + " — a config repo starts there (see: loadout init)");
   }
   const bunDir = bun.ensure();
@@ -172,9 +161,9 @@ export async function compile(root: string): Promise<string[]> {
  * as bun, through the wrapper in bunDir, unless $LOADOUT_BUN names one)
  * with nothing of the caller's environment but PATH, bunDir first, and
  * HOME: a manifest's output must not depend on who compiles it. asParent
- * marks every origin as the parent's.
- * Like Go's, it runs the process itself rather than through the
- * ProcessRunner: an argv with a cleared environment, not a shell line.
+ * marks every origin as the parent's. It runs the process itself rather
+ * than through the ProcessRunner: an argv with a cleared environment, not a
+ * shell line.
  */
 async function run(bunBin: string, bunDir: string, root: string, asParent: boolean): Promise<Draft> {
   const env: Record<string, string> = {
@@ -211,7 +200,7 @@ async function run(bunBin: string, bunDir: string, root: string, asParent: boole
   return decodeDraft(stdout);
 }
 
-/** signalName is a signal as Go's os.ProcessState words it ("signal: killed"). */
+/** signalName is a signal in words, as a failed run names it ("signal: killed"). */
 function signalName(signal: string): string {
   const names: Record<string, string> = {
     SIGHUP: "hangup",
@@ -233,7 +222,7 @@ function signalName(signal: string): string {
   return names[signal] ?? signal;
 }
 
-/** errnoText is a failed spawn's reason as Go's syscall.Errno words it. */
+/** errnoText is a failed spawn's reason in words ("no such file or directory"). */
 function errnoText(e: unknown): string {
   const code = (e as { code?: string }).code;
   const texts: Record<string, string> = {
@@ -278,48 +267,43 @@ interface Extra {
 }
 
 /**
- * readExtra is Go's json.Unmarshal of the draft into its spares,
- * transitional and parent fields, with its errors' words: Unmarshal's
- * syntax errors (not the Decoder's that parseJSON speaks), and the first
- * type mismatch. Fields match case-insensitively, as Go's do.
+ * readExtra is the draft's spares, transitional and parent fields. It
+ * throws the first problem: a syntax error (as parseDraftJSON words it) or
+ * a field of the wrong kind. Fields match case-insensitively.
  */
 function readExtra(text: string): Extra {
-  const tree = unmarshalJSON(text);
+  const tree = parseDraftJSON(text);
   const out: Extra = { spares: new Map(), transitional: [] };
   const errs: string[] = [];
   const mismatch = (v: JSONValue, where: string, type: string) => {
-    errs.push(`json: cannot unmarshal ${kindOf(v)} into ${where} of type ${type}`);
+    errs.push(`json: ${where} is ${kindOf(v)}, not ${type}`);
   };
   if (tree === null) return out;
   if (!isJSONObject(tree)) {
-    mismatch(
-      tree,
-      "Go value",
-      'struct { Spares map[string]string "json:\\"spares\\""; Transitional []string "json:\\"transitional\\""; Parent *tsmanifest.ParentRef "json:\\"parent\\"" }',
-    );
+    mismatch(tree, "the draft", "an object");
     throw new Error(errs[0]);
   }
   for (const [key, v] of tree) {
     switch (key.toLowerCase()) {
       case "spares":
         if (v === null) out.spares = new Map();
-        else if (!isJSONObject(v)) mismatch(v, "Go struct field .spares", "map[string]string");
+        else if (!isJSONObject(v)) mismatch(v, ".spares", "an object of strings");
         else {
           for (const [k, s] of v) {
             if (s === null) out.spares.set(k, "");
             else if (typeof s === "string") out.spares.set(k, s);
-            else mismatch(s, "Go struct field .spares." + k, "string");
+            else mismatch(s, ".spares." + k, "a string");
           }
         }
         break;
       case "transitional":
         if (v === null) out.transitional = [];
-        else if (!Array.isArray(v)) mismatch(v, "Go struct field .transitional", "[]string");
+        else if (!Array.isArray(v)) mismatch(v, ".transitional", "an array of strings");
         else {
           out.transitional = v.map((s, i) => {
             if (s === null) return "";
             if (typeof s !== "string") {
-              mismatch(s, ".transitional." + i, "string");
+              mismatch(s, ".transitional." + i, "a string");
               return "";
             }
             return s;
@@ -328,14 +312,14 @@ function readExtra(text: string): Extra {
         break;
       case "parent":
         if (v === null) out.parent = undefined;
-        else if (!isJSONObject(v)) mismatch(v, "Go struct field .parent", "tsmanifest.ParentRef");
+        else if (!isJSONObject(v)) mismatch(v, ".parent", "an object with a name and a path");
         else {
           const ref = out.parent ?? { name: "", path: "" };
           for (const [k, s] of v) {
             const field = k.toLowerCase();
             if (field !== "name" && field !== "path") continue;
             if (s === null) continue;
-            if (typeof s !== "string") mismatch(s, "Go struct field .parent." + k, "string");
+            if (typeof s !== "string") mismatch(s, ".parent." + k, "a string");
             else ref[field] = s;
           }
           out.parent = ref;
@@ -347,21 +331,20 @@ function readExtra(text: string): Extra {
   return out;
 }
 
-/** kindOf is a JSON value's kind as Go's UnmarshalTypeError names it. */
+/** kindOf is a JSON value's kind, with its article, as a mismatch names it. */
 function kindOf(v: JSONValue): string {
-  if (typeof v === "string") return "string";
-  if (typeof v === "boolean") return "bool";
-  if (Array.isArray(v)) return "array";
-  if (isJSONObject(v)) return "object";
-  return "number";
+  if (typeof v === "string") return "a string";
+  if (typeof v === "boolean") return "a bool";
+  if (Array.isArray(v)) return "an array";
+  if (isJSONObject(v)) return "an object";
+  return "a number";
 }
 
 /**
- * unmarshalJSON is parseJSON with json.Unmarshal's words for what the
- * Decoder words differently: running out of input, and content after the
- * value.
+ * parseDraftJSON is parseJSON with the draft's own words for running out of
+ * input ("unexpected end of JSON input") and for content after the value.
  */
-function unmarshalJSON(text: string): JSONValue {
+function parseDraftJSON(text: string): JSONValue {
   try {
     return parseJSON(text);
   } catch (e) {
@@ -377,7 +360,7 @@ function unmarshalJSON(text: string): JSONValue {
   }
 }
 
-/** quoteChar is a character as Go's json errors quote it. */
+/** quoteChar is a character as a draft's syntax errors quote it. */
 function quoteChar(c: string): string {
   if (c === "'") return "'\\''";
   if (c === '"') return "'\"'";
@@ -463,7 +446,7 @@ async function loadParent(bunBin: string, bunDir: string, ref: ParentRef, childR
     throw new ManifestException("parent " + ref.name + " is itself a child: a parent can't have a parent");
   }
   if (!isFile(path.join(root, entryFile))) {
-    throw new ManifestException("parent " + ref.name + ": " + hclRepoMessage);
+    throw new ManifestException(`parent ${ref.name} (${ref.path}) has no ${entryFile}`);
   }
   const parentFS = dirFS(root);
   const hash = sourcesHash(parentFS, lock.manifest.layout.sources);
@@ -513,9 +496,9 @@ export function doneScripts(stateDir: string, machines: readonly string[]): Map<
 }
 
 /**
- * stateScripts is each script's status in a state file, as Go's Unmarshal
- * into `{scripts: map[string]{status any}}` reads it; undefined where that
- * fails (not JSON, or a field of the wrong kind).
+ * stateScripts is each script's status in a state file, read as
+ * `{scripts: {<name>: {status}}}`; undefined where that fails (not JSON, or
+ * a field of the wrong kind).
  */
 function stateScripts(text: string): Map<string, JSONValue> | undefined {
   let tree: JSONValue;

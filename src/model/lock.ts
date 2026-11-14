@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { ObjWriter, readLockTree, type Errs, goAtoi, manifestToJSON } from "./codec.ts";
+import { ObjWriter, readLockTree, type Errs, parseDecimal, manifestToJSON } from "./codec.ts";
 import type { RepoFS } from "./fsys.ts";
 import { globExpand } from "./glob.ts";
-import { sortStrings } from "./gostd.ts";
+import { sortStrings } from "./stdlib.ts";
 import { isJSONObject, type JSONObject, parseJSON, prettyJSON, primitive } from "./json.ts";
 import type { Manifest } from "./manifest.ts";
 import { distinct } from "./map.ts";
@@ -34,7 +34,7 @@ export const lockFileName = "loadout.lock.json";
 export const lockFormat = 1;
 
 /**
- * encodeLock is the lock's text, as kotlinx wrote it: pretty-printed with a
+ * encodeLock is the lock's text: pretty-printed with a
  * two-space indent, defaults (the model's) left out — keeping the lock short
  * and its diffs about what changed — and a final newline.
  */
@@ -89,7 +89,7 @@ function lockHeader(text: string, label: string): JSONObject {
   if (v.has("format")) {
     const p = primitive(v.get("format"));
     if (p === undefined) throw notALock(label);
-    const n = goAtoi(p.content);
+    const n = parseDecimal(p.content);
     if (n === undefined) throw notALock(label);
     format = n;
   }

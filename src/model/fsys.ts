@@ -1,11 +1,11 @@
-// RepoFS is Go's io/fs.FS as the model and assemble use it: a tree rooted
-// at a repo, read through `/`-separated paths relative to that root. dirFS
-// is os.DirFS; mapFS is testing/fstest.MapFS, for tests. Paths follow Go's
-// fs.ValidPath: no leading or trailing slash, no empty, "." or ".."
+// RepoFS is how the model and assemble read files: a tree rooted at a
+// repo, read through `/`-separated paths relative to that root. dirFS is
+// the disk; mapFS is in memory, for tests. A valid path (validPath) has no
+// leading or trailing slash, no empty, "." or ".."
 // segment, "." for the root; anything else doesn't exist.
 
 import * as fs from "node:fs";
-import { compareStrings } from "./gostd.ts";
+import { compareStrings } from "./stdlib.ts";
 
 /** EntryKind is what a path is, without following a symlink. */
 export type EntryKind = "file" | "dir" | "symlink" | "other";
@@ -26,14 +26,14 @@ export interface RepoFS {
   readFile(path: string): Uint8Array;
 }
 
-/** validPath is Go's fs.ValidPath. */
+/** validPath says whether name is a valid RepoFS path. */
 export function validPath(name: string): boolean {
   if (name === ".") return true;
   if (name === "") return false;
   return name.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
 }
 
-/** byName orders entries as Go's fs.ReadDir does: by name, bytewise. */
+/** byName orders entries by name, bytewise. */
 function byName(a: DirEntry, b: DirEntry): number {
   return compareStrings(a.name, b.name);
 }
@@ -45,7 +45,7 @@ function kindOf(st: fs.Stats | fs.Dirent): EntryKind {
   return "other";
 }
 
-/** dirFS is the tree under root on disk (os.DirFS). */
+/** dirFS is the tree under root on disk. */
 export function dirFS(root: string): RepoFS {
   const full = (p: string) => {
     if (!validPath(p)) throw Object.assign(new Error(`open ${p}: invalid argument`), { code: "EINVAL" });
@@ -73,7 +73,7 @@ export function dirFS(root: string): RepoFS {
 }
 
 /**
- * mapFS is a tree in memory (fstest.MapFS): each key a file path, its value
+ * mapFS is a tree in memory: each key a file path, its value
  * the content; the folders on the way are implied.
  */
 export function mapFS(files: Record<string, string | Uint8Array>): RepoFS {

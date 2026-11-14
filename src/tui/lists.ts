@@ -11,7 +11,7 @@ import {
   RemoteKind,
   type RemoteLine,
   remoteLines,
-  runes,
+  codePoints,
   type ScriptRow,
 } from "./homemodel.ts";
 
@@ -42,13 +42,13 @@ export interface Item {
   matches: number[];
 }
 
-/** subjectOf is the subject the main pane shows ("" when there is none yet): Go's HomeState.subject. */
+/** subjectOf is the subject the main pane shows ("" when there is none yet). */
 export function subjectOf(s: HomeState): string {
   if (s.subject < 0 || s.subject >= s.sections.length) return "";
   return s.sections[s.subject]!.subject;
 }
 
-/** sectionOf is the subject the main pane shows, as its section: Go's HomeState.section. */
+/** sectionOf is the subject the main pane shows, as its section. */
 export function sectionOf(s: HomeState): HomeSection | undefined {
   if (s.subject < 0 || s.subject >= s.sections.length) return undefined;
   return s.sections[s.subject];
@@ -169,7 +169,7 @@ export function wrapWords(text: string, width: number): string[] {
   let line = "";
   for (const word of text.split(" ")) {
     if (line === "") line = word;
-    else if (runes(line) + 1 + runes(word) <= width) line += " " + word;
+    else if (codePoints(line) + 1 + codePoints(word) <= width) line += " " + word;
     else {
       lines.push(line);
       line = word;

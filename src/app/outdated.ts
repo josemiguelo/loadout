@@ -68,7 +68,7 @@ export interface OutdatedReport {
   unchecked: string[];
 }
 
-/** last is Go's math.MaxInt: after every declared position. */
+/** last is after every declared position. */
 const last = Number.MAX_SAFE_INTEGER;
 
 /**
@@ -125,7 +125,7 @@ export async function outdatedReport(
     let candidate: string | undefined;
     const raw = batchResults.get(oracle.installer)?.get(oracle.pkg);
     if (raw !== undefined) {
-      const re = engine.goRegExp(oracle.regex);
+      const re = engine.compileRegex(oracle.regex);
       const m = re?.exec(raw);
       if (m !== null && m !== undefined && m.length > 1) candidate = m[1] ?? "";
     }

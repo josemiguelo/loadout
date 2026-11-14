@@ -7,7 +7,7 @@ import { commandHelp, stringFlag } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, echoErr } from "./spinner.ts";
 import { Style } from "./style.ts";
-import { attention, echoRows, padEnd, runeCount, severe, type TableRow } from "./table.ts";
+import { attention, echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
 function driftedLabel(cell: diff.ConfigCell): string {
   return "drifted (" + cell.files + ")";
@@ -35,12 +35,12 @@ export function newDiffCmd(): Command {
   return cmd;
 }
 
-/** cellOf is the program's cell for machine m, Go's zero value (unknown) when absent. */
+/** cellOf is the program's cell for machine m, unknown when absent. */
 function cellOf(r: diff.ProgramRow, m: string): diff.InstallState {
   return r.perMachine.get(m) ?? { kind: diff.unknown };
 }
 
-/** configCellOf is the unit's cell for machine m, Go's zero value (unknown) when absent. */
+/** configCellOf is the unit's cell for machine m, unknown when absent. */
 function configCellOf(r: diff.ConfigRow, m: string): diff.ConfigCell {
   return r.perMachine.get(m) ?? { kind: diff.configUnknown, files: 0 };
 }
@@ -72,14 +72,14 @@ async function runDiff(machines: string, given: boolean): Promise<void> {
   const report = diff.diff(manifest, states);
 
   let nameWidth = 7;
-  for (const r of report.rows) nameWidth = Math.max(nameWidth, runeCount(r.program));
-  for (const c of report.configs) nameWidth = Math.max(nameWidth, runeCount(c.unit));
+  for (const r of report.rows) nameWidth = Math.max(nameWidth, codePointCount(r.program));
+  for (const c of report.configs) nameWidth = Math.max(nameWidth, codePointCount(c.unit));
   nameWidth += 2;
   let colWidth = 8;
-  for (const m of report.machines) colWidth = Math.max(colWidth, runeCount(m));
+  for (const m of report.machines) colWidth = Math.max(colWidth, codePointCount(m));
   for (const c of report.configs) {
     for (const cell of c.perMachine.values()) {
-      if (cell.kind === diff.configDrifted) colWidth = Math.max(colWidth, runeCount(driftedLabel(cell)));
+      if (cell.kind === diff.configDrifted) colWidth = Math.max(colWidth, codePointCount(driftedLabel(cell)));
     }
   }
   colWidth += 2;

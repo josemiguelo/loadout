@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { isoOf, nowIso, takeInterrupt, takeInterruptWithin, trapInterrupts } from "./platform.ts";
 
-test("timestamps read as Kotlin's Instant writes them", () => {
+test("timestamps are ISO-8601 UTC with 0, 3, 6 or 9 fraction digits", () => {
   const at = (nanos: bigint) => isoOf(BigInt(Date.UTC(2026, 7, 14, 12, 0, 0)) * 1_000_000n + nanos);
   expect(at(0n)).toBe("2026-08-14T12:00:00Z");
   expect(at(650_000_000n)).toBe("2026-08-14T12:00:00.650Z");
@@ -25,7 +25,7 @@ test("an interrupt is taken once", async () => {
   }
 });
 
-test("the clock reads to the nanosecond, as Go's time.Now", () => {
+test("the clock reads to the nanosecond", () => {
   // 9 fraction digits unless the nanoseconds happen to end in 000 (1 in 1000).
   const stamps = Array.from({ length: 5 }, () => nowIso());
   expect(stamps.some((s) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{9}Z$/.test(s))).toBe(true);

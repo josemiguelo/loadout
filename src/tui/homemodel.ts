@@ -1,10 +1,10 @@
-// Package tui is the home screen (bare `loadout` on a TTY): HomeModel holds
+// tui is the home screen (bare `loadout` on a TTY): HomeModel holds
 // ALL its state and logic, pure and unit-tested; the program (program.ts)
 // feeds it keys and background answers as messages, and view.ts draws it.
 //
-// Go's methods on HomeModel are functions taking the model first, spread
-// over the files Go spread them over (keys.ts, runs.ts, inspect.ts,
-// view.ts); they import each other, and none runs at load time.
+// HomeModel's operations are functions taking the model first, spread over
+// keys.ts, runs.ts, inspect.ts and view.ts; they import each other, and
+// none runs at load time.
 
 import * as app from "../app/index.ts";
 import { scriptOrder } from "../assemble/index.ts";
@@ -31,7 +31,7 @@ import * as engine from "../core/engine/index.ts";
 import * as exec from "../core/exec/index.ts";
 import { type Manifest, resolveInstall, runsIn, scriptArgs, shownLine, sortStrings, compareStrings } from "../model/index.ts";
 import * as style from "./style/index.ts";
-import type { Cmd, Msg } from "./tea.ts";
+import type { Cmd, Msg } from "./messages.ts";
 import { newModel as newTermModel } from "./term/term.ts";
 import { Jobs, newJobs } from "./jobs.ts";
 import { ask, fail, hey, say, warn, type Dialog, DialogKind, newDialog } from "./keys.ts";
@@ -166,7 +166,7 @@ export interface Answered {
   programUpgrades: Set<string>;
 }
 
-/** newAnswered is an Answered with every field not given empty (Go's zero value). */
+/** newAnswered is an Answered with every field not given empty. */
 export function newAnswered(a: Partial<Omit<Answered, "kind">> = {}): Answered {
   return {
     kind: "answered",
@@ -234,7 +234,7 @@ export interface HomeSection {
   busy: boolean;
 }
 
-/** newSection is a HomeSection with every field not given at its zero value. */
+/** newSection is a HomeSection with every field not given at its default. */
 export function newSection(s: Partial<HomeSection> & { subject: string }): HomeSection {
   return { summary: "", short: "", verb: "", action: app.ActionNone, severity: Severity.Settled, neutral: false, busy: false, ...s };
 }
@@ -322,7 +322,7 @@ export interface HomeState {
   exit: boolean;
 }
 
-/** newHomeState is a HomeState with every field not given at its zero value (sideRun -1). */
+/** newHomeState is a HomeState with every field not given at its default (sideRun -1). */
 export function newHomeState(s: Partial<HomeState> = {}): HomeState {
   return {
     machine: "",
@@ -520,9 +520,8 @@ export class SayMsg {
 }
 
 /**
- * ThenMsg is the rest of a reducer that had to wait for an answer (Go asked
- * synchronously; here explain, configs and the install plan are promises):
- * it lands like any message and finishes on the model.
+ * ThenMsg is the rest of a reducer that had to wait for an answer (explain,
+ * configs and the install plan are promises): it lands like any message and finishes on the model.
  */
 export class ThenMsg {
   constructor(readonly finish: (m: HomeModel) => void) {}
@@ -953,8 +952,8 @@ export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
 /**
  * openInBrowser hands url to the desktop (xdg-open, else open) in the
  * background and says how it went: the opener's own last line when it fails
- * — a Qt "could not connect to display" was once a silent core dump behind
- * "opened …" — with the URL kept on screen to copy by hand.
+ * (a Qt "could not connect to display", say, rather than "opened …"), with
+ * the URL kept on screen to copy by hand.
  */
 export function openInBrowser(m: HomeModel, url: string): void {
   if (m.app === undefined) return;
@@ -1372,7 +1371,7 @@ export function remoteSummary(remote: Answered): string {
   let shown = 0;
   for (const label of labels) {
     const candidate = line + sep + `${label} ${counts.get(label)}`;
-    if (runes(candidate) > summaryWidth) break;
+    if (codePoints(candidate) > summaryWidth) break;
     line = candidate;
     shown++;
   }
@@ -1380,7 +1379,7 @@ export function remoteSummary(remote: Answered): string {
   // never costs a named group, since the total already implies "and more".
   if (shown >= 1 && shown < labels.length) {
     const marker = `${sep}+${labels.length - shown} more`;
-    if (runes(line) + runes(marker) <= summaryWidth) line += marker;
+    if (codePoints(line) + codePoints(marker) <= summaryWidth) line += marker;
   }
   return line;
 }
@@ -1614,8 +1613,8 @@ export function sectionsOf(
 
 // ---------------------------------------------------------------- helpers
 
-/** runes is s's length in code points. */
-export function runes(s: string): number {
+/** codePoints is s's length in code points. */
+export function codePoints(s: string): number {
   let n = 0;
   for (const _ of s) n++;
   return n;
@@ -1635,7 +1634,7 @@ function firstLineOr(s: string, fallback: string): string {
   return line !== "" ? line : fallback;
 }
 
-/** errorText is an error's message, as Go's err.Error(). */
+/** errorText is an error's message (any thrown value's text). */
 export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -1644,7 +1643,7 @@ function allIn(xs: readonly string[], within: readonly string[]): boolean {
   return xs.every((x) => within.includes(x));
 }
 
-/** namesSet is rows' names, as a set (Go's namesOf). */
+/** namesSet is rows' names, as a set. */
 export function namesSet(rows: readonly { name: string }[]): Set<string> {
   return new Set(rows.map((r) => r.name));
 }

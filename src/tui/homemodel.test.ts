@@ -7,7 +7,7 @@ import type * as engine from "../core/engine/index.ts";
 import type { Manifest } from "../model/index.ts";
 import { strip, stringWidth } from "./style/ansi.ts";
 import * as style from "./style/index.ts";
-import { KeyEnd, KeyHome, KeyPressMsg, ModCtrl, ModShift, type Cmd, type Msg } from "./tea.ts";
+import { KeyEnd, KeyHome, KeyPressMsg, ModCtrl, ModShift, type Cmd, type Msg } from "./messages.ts";
 import { ExitMsg, type Cursor, type TermCommand } from "./term/term.ts";
 import {
   answered,
@@ -37,7 +37,7 @@ import {
   refusal,
   remoteLines,
   remoteSummary,
-  runes,
+  codePoints,
   scriptRowsOf,
   sectionsOf,
   selectionKey,
@@ -260,7 +260,7 @@ test("an idle tool is left out and the work is named", () => {
   const line = remoteSummary(summaryAnswered({ brew: 0, counts: liveShape }));
   expect(line).toBe("42 updates · nvim-plugins 15 · +4 more");
   expect(line).not.toContain("brew"); // a tool with nothing outdated is not news
-  expect(runes(line)).toBeLessThanOrEqual(summaryWidth);
+  expect(codePoints(line)).toBeLessThanOrEqual(summaryWidth);
 });
 
 test("a tool with work leads and its count stays its own", () => {
@@ -269,7 +269,7 @@ test("a tool with work leads and its count stays its own", () => {
   // purely by size would bury the cheapest win.
   const line = remoteSummary(summaryAnswered({ brew: 3, counts: liveShape }));
   expect(line).toBe("brew 3 · 42 more · nvim-plugins 15");
-  expect(runes(line)).toBeLessThanOrEqual(summaryWidth);
+  expect(codePoints(line)).toBeLessThanOrEqual(summaryWidth);
 });
 
 test("nothing outdated reads as settled even while tools exist", () => {
@@ -303,7 +303,7 @@ test("long source names lose the marker, not the column", () => {
       ],
     }),
   );
-  expect(runes(line)).toBeLessThanOrEqual(summaryWidth); // spilling the column clips mid-word
+  expect(codePoints(line)).toBeLessThanOrEqual(summaryWidth); // spilling the column clips mid-word
   expect(line).toBe("5 updates · some-very-long-source-name 3");
 });
 
@@ -427,7 +427,7 @@ test("the filter narrows the list and underlines the match", () => {
   const items = listOf(m.state, SubjectScripts);
   expect(items.length).toBe(1);
   expect(items[0]!.name).toBe("keychron-access");
-  expect(items[0]!.matches).toEqual([0, 3]); // a fuzzy match, matched runes underlined
+  expect(items[0]!.matches).toEqual([0, 3]); // a fuzzy match, matched characters underlined
   press(m, HomeKey.Backspace);
   expect(names(listOf(m.state, SubjectScripts))).toEqual(["keychron-access"]); // backspace widens it again
   press(m, HomeKey.Enter);
@@ -1478,7 +1478,7 @@ test("the frame is exactly the screen in both layouts", () => {
   }
 });
 
-/** handleTextless puts a long toast up (Go's m.hey(strings.Repeat("long ", 60))). */
+/** handleTextless puts a long toast up ("long " 60 times). */
 function handleTextless(m: HomeModel): void {
   m.cmds.push(m.toasts.show(style.ToastKind.Hey, "long ".repeat(60)));
 }
@@ -1553,9 +1553,8 @@ test("a source row named like a program is never the program", () => {
   expect(remoteLines(own, undefined)[3]!.group).toBe("source:tmux-plugins");
   expect(selectionKey(own, row)).toBe("item:tmux-plugins/tpack");
 
-  // Read-only: still its source's row — NOT a brew program. This is the case
-  // the old name lookup got wrong, because only upgradable sources were kept
-  // out of the tool groups.
+  // Read-only: still its source's row — NOT a brew program, even though a
+  // read-only source isn't upgradable.
   const readOnly = answeredWith(false);
   expect(remoteKinds(remoteLines(readOnly, undefined))).toEqual(["Tool", "Gap", "Source", "Item"]);
   expect(remoteLines(readOnly, undefined)[3]!.group).toBe("source:tmux-plugins");

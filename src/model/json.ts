@@ -1,11 +1,11 @@
-// JSON as kotlinx wrote it, and read back without losing what JSON.parse
+// JSON as loadout writes it, and read back without losing what JSON.parse
 // loses: key order (JSON.parse moves integer-like keys first) and numbers as
 // written ("0.85", "3", "1e5"). The lock, the state files and the chezmoi
 // data are written through PrettyJSON; their bytes must not change.
 
 /**
- * JSONNumber is a JSON number as its literal ("0.85", "3"), as Go's
- * json.Number kept it: read back and written out unchanged.
+ * JSONNumber is a JSON number as its literal ("0.85", "3"): read back
+ * and written out unchanged.
  */
 export class JSONNumber {
   constructor(readonly text: string) {}
@@ -15,8 +15,7 @@ export class JSONNumber {
 }
 
 /**
- * JSONObject is a JSON object with its keys in order, as kotlinx's
- * JsonObject keeps them: the per-machine data tables, and the tree the lock
+ * JSONObject is a JSON object with its keys in order: the per-machine data tables, and the tree the lock
  * is written through.
  */
 export type JSONObject = Map<string, JSONValue>;
@@ -24,9 +23,9 @@ export type JSONObject = Map<string, JSONValue>;
 /**
  * A JSON value is one of: null, boolean, string, JSONNumber (the literal as
  * written), an array, a JSONObject. The writer also takes a JS number, which
- * must be an integer (Go's int: the lock's format, a state's exit code); a
- * Kotlin Double is kotlinDouble(f), so a `number` default of 1 reads "1.0",
- * as it did. ParseJSON never gives a JS number.
+ * must be an integer (the lock's format, a state's exit code); a float is
+ * floatNumber(f), so a `number` default of 1 reads "1.0", as locks and data
+ * from earlier loadouts have it. ParseJSON never gives a JS number.
  */
 export type JSONValue = null | boolean | string | number | JSONNumber | JSONValue[] | JSONObject;
 
@@ -35,15 +34,15 @@ export function isJSONObject(v: unknown): v is JSONObject {
   return v instanceof Map;
 }
 
-/** kotlinDouble is f as Kotlin's Double.toString writes it: "0.85", "1.0", "1.0E7", "1.0E-4". */
-export function kotlinDouble(f: number): JSONNumber {
+/** floatNumber is f written as loadout writes floats: always a fraction or an exponent, "0.85", "1.0", "1.0E7", "1.0E-4". */
+export function floatNumber(f: number): JSONNumber {
   if (Number.isNaN(f)) return new JSONNumber("NaN");
   if (f === Infinity) return new JSONNumber("Infinity");
   if (f === -Infinity) return new JSONNumber("-Infinity");
   if (f === 0) return new JSONNumber(Object.is(f, -0) ? "-0.0" : "0.0");
   const a = Math.abs(f);
   if (a >= 1e-3 && a < 1e7) {
-    // Shortest round-trip digits, fixed notation in this range: Go's FormatFloat(f, 'f', -1).
+    // Shortest round-trip digits, fixed notation in this range.
     let s = String(f);
     if (!s.includes(".")) s += ".0";
     return new JSONNumber(s);
@@ -54,8 +53,8 @@ export function kotlinDouble(f: number): JSONNumber {
 }
 
 /**
- * primitive is a JSON primitive's content and whether it's a string, as
- * kotlinx's JsonPrimitive holds it; undefined for arrays and objects.
+ * primitive is a JSON primitive's content and whether it's a string;
+ * undefined for arrays and objects.
  */
 export function primitive(v: JSONValue | undefined): { content: string; isString: boolean } | undefined {
   if (v === null || v === undefined) return { content: "null", isString: false };
@@ -65,7 +64,7 @@ export function primitive(v: JSONValue | undefined): { content: string; isString
     case "string":
       return { content: v, isString: true };
     case "number":
-      if (!Number.isInteger(v)) throw new Error(`not a JSON value: the non-integer number ${v} (use kotlinDouble)`);
+      if (!Number.isInteger(v)) throw new Error(`not a JSON value: the non-integer number ${v} (use floatNumber)`);
       return { content: String(v), isString: false };
   }
   if (v instanceof JSONNumber) return { content: v.text, isString: false };
@@ -73,7 +72,7 @@ export function primitive(v: JSONValue | undefined): { content: string; isString
 }
 
 /**
- * jsonEqual is kotlinx's equality of JSON elements: primitives by content
+ * jsonEqual is the equality of JSON elements: primitives by content
  * and string-ness, arrays element by element, objects key by key in any order.
  */
 export function jsonEqual(a: JSONValue | undefined, b: JSONValue | undefined): boolean {
@@ -94,7 +93,7 @@ export function jsonEqual(a: JSONValue | undefined, b: JSONValue | undefined): b
   return pa !== undefined && pb !== undefined && pa.content === pb.content && pa.isString === pb.isString;
 }
 
-/** jsonString is v as kotlinx's toString writes it: compact, `{"a":1,"b":["x"]}`. */
+/** jsonString is v written compact: `{"a":1,"b":["x"]}`. */
 export function jsonString(v: JSONValue): string {
   const out: string[] = [];
   writeJSON(out, v, "", 0);
@@ -102,9 +101,8 @@ export function jsonString(v: JSONValue): string {
 }
 
 /**
- * prettyJSON is v as kotlinx writes it with prettyPrint and a two-space
- * indent: one entry per line, `"key": value`, `{}` and `[]` when empty.
- * Only what JSON requires is escaped (never <, >, &, or U+2028).
+ * prettyJSON is v pretty-printed with a two-space indent: one entry per
+ * line, `"key": value`, `{}` and `[]` when empty. Only what JSON requires is escaped (never <, >, &, or U+2028).
  */
 export function prettyJSON(v: JSONValue): string {
   const out: string[] = [];
@@ -150,7 +148,7 @@ function writeJSON(out: string[], v: JSONValue, indent: string, level: number): 
 const hexDigits = "0123456789abcdef";
 
 /**
- * quote is s quoted as kotlinx's printQuoted does: only control characters,
+ * quote is s as a JSON string: only control characters,
  * '"' and '\\' are escaped.
  */
 export function quote(s: string): string {
@@ -193,9 +191,8 @@ export function quote(s: string): string {
 // ─── reading ────────────────────────────────────────────────────────────
 
 /**
- * JSONSyntaxError is text that isn't JSON, worded as Go's encoding/json
- * words it through model.ParseJSON's Decoder (go1.27): the lock's "is not
- * valid JSON (…)" message carries it.
+ * JSONSyntaxError is text that isn't JSON, worded as jsonerrors.golden.json
+ * pins it: the lock's "is not valid JSON (…)" message carries it.
  */
 export class JSONSyntaxError extends Error {
   constructor(message: string) {
@@ -204,7 +201,7 @@ export class JSONSyntaxError extends Error {
   }
 }
 
-/** quoteChar is a character in a message, as Go's encoding/json quotes it: 'x', '\n', '\''. */
+/** quoteChar is a character in a message, quoted: 'x', '\n', '\''. */
 function quoteChar(c: string): string {
   if (c === "'") return "'\\''";
   if (c === '"') return "'\"'";
@@ -218,7 +215,7 @@ function quoteChar(c: string): string {
 /**
  * parseJSON reads one JSON value, keys in order and numbers as written. A
  * repeated key keeps its first place and its last value. Throws a
- * JSONSyntaxError worded like Go's decoder ("unexpected EOF", "invalid
+ * JSONSyntaxError ("unexpected EOF", "invalid
  * character 'x' looking for beginning of value").
  */
 export function parseJSON(text: string): JSONValue {
@@ -227,8 +224,8 @@ export function parseJSON(text: string): JSONValue {
   p.skipSpace();
   if (p.i < text.length) {
     const c = text[p.i]!;
-    // Go's decoder reads the next token before it notices: a container's
-    // opening delimiter, or a whole scalar.
+    // The offset is past the next token: a container's opening delimiter,
+    // or a whole scalar.
     if (c === "{" || c === "[") throw new JSONSyntaxError(`unexpected trailing content at offset ${p.i + 1}`);
     if (startsValue(c)) {
       p.value();
@@ -244,7 +241,7 @@ function startsValue(c: string): boolean {
   return "{[\"-0123456789tfn".includes(c);
 }
 
-/** Go's two words for running out: inside a token or before a value, and between a container's tokens. */
+/** The two words for running out: inside a token or before a value, and between a container's tokens. */
 const unexpectedEOF = "unexpected EOF";
 const endOfInput = "unexpected end of JSON input";
 
@@ -421,7 +418,7 @@ class Parser {
         this.i++;
         let unit = this.hex4(escape);
         if (unit >= 0xd800 && unit < 0xdc00) {
-          // A high surrogate pairs with a following \u low one; alone it's U+FFFD, as in Go.
+          // A high surrogate pairs with a following \u low one; alone it's U+FFFD.
           if (t.startsWith("\\u", this.i)) {
             const save = this.i;
             this.i += 2;

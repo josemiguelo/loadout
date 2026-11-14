@@ -3,7 +3,7 @@ import { newBinding } from "../key.ts";
 import { ResetStyle, strip } from "./ansi.ts";
 import * as charmtone from "./charmtone.ts";
 import * as style from "./index.ts";
-import type { Color } from "./lipgloss.ts";
+import type { Color } from "./style.ts";
 import { Focus, Status, ToastKind, type Span, type Theme } from "./index.ts";
 
 const plain = (s: string) => strip(s);
@@ -262,7 +262,7 @@ test("overlay placement", () => {
   expect(plainLines(style.center(bg, fg, 10, 4))).toBe("aaaaaaaaaa\nbbbbXXbbbb\nccccYYcccc\ndddddddddd");
   expect(plainLines(style.overlay(["ab"], ["Z"], 4, 0))).toBe("ab  Z"); // past short lines
   expect(plainLines(style.overlay(["ab"], ["Z"], 0, 2))).toBe("ab\n\nZ"); // past the bottom
-  // a wide rune split by the edge leaves a space, never a shifted row
+  // a wide character split by the edge leaves a space, never a shifted row
   expect(plainLines(style.overlay(["世界世界"], ["Z"], 1, 0))).toBe(" Z界世界");
   expect(plainLines(style.overlay(["世界世界"], ["Z"], 0, 0))).toBe("Z 界世界");
   // styles of the background don't leak into the overlay and resume after

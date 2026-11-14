@@ -1,4 +1,4 @@
-// Package assemble turns what a config repo declares into the Manifest the
+// The assemble module turns what a config repo declares into the Manifest the
 // lock holds: built-ins merged, profiles flattened, everything validated.
 
 import {
@@ -67,7 +67,7 @@ export interface ManifestDraft {
   requires: Map<string, string[]>;
 }
 
-/** newManifestDraft is a ManifestDraft with every field not given at its zero value. */
+/** newManifestDraft is a ManifestDraft with every field not given empty. */
 export function newManifestDraft(d: Partial<ManifestDraft> = {}): ManifestDraft {
   return { manifest: newManifest(), profiles: new Map(), requires: new Map(), ...d };
 }

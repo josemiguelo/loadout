@@ -5,7 +5,7 @@ export * from "./codec.ts";
 export * from "./draft.ts";
 export * from "./fsys.ts";
 export * from "./glob.ts";
-export * from "./gostd.ts";
+export * from "./stdlib.ts";
 export * from "./installerlibrary.ts";
 export * from "./json.ts";
 export * from "./lock.ts";

@@ -1,4 +1,4 @@
-// Package fakeexec is a scripted exec.ProcessRunner for tests.
+// The fakeexec module is a scripted exec.ProcessRunner for tests.
 
 import type { ExecResult, ProcessRunner, ShellCommand } from "../exec.ts";
 
@@ -72,7 +72,7 @@ export class Runner implements ProcessRunner {
   }
 }
 
-/** newRunner is a runner that knows no commands yet (Go's fakeexec.New). */
+/** newRunner is a runner that knows no commands yet. */
 export function newRunner(): Runner {
   return new Runner();
 }

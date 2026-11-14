@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { strip, stringWidth } from "../style/ansi.ts";
-import { KeyEnter, KeyPressMsg, ModCtrl, type Cmd, type Msg } from "../tea.ts";
+import { KeyEnter, KeyPressMsg, ModCtrl, type Cmd, type Msg } from "../messages.ts";
 import { BellMsg, ExitMsg, Model, ScrollbackLines } from "./term.ts";
 
 // harness drives one terminal the way the screen would: it runs the pending

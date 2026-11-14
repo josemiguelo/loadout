@@ -47,8 +47,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   `Runs` (this session's runs, newest first). Side by side needs ≥100
   columns (width only: a wide but short window keeps it). Tests find a row
   by its text, never by position.
-- **Under 100 columns the screen is STACKED** (user decision, replacing a
-  compact layout of header + subject tabs + a `d` details dialog), like a
+- **Under 100 columns the screen is STACKED** (user decision), like a
   website's sidebar collapsing on a phone: ONE page fills the screen, the
   focused area's — FocusArea.Sidebar is the home page (the sidebar's content,
   full width), FocusArea.Main the subject page (title, filter, list or
@@ -76,8 +75,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   the run panel included (user decision); every other title is muted
   (`titleRowMuted`). The sidebar has no title row: its selected entry is
   its highlight.
-- **Focus areas, not one cursor** (user decision, replacing "one cursor
-  for the whole screen"): the sidebar (subjects, then runs), the main pane
+- **Focus areas, not one cursor** (user decision): the sidebar (subjects, then runs), the main pane
   (its list, filter or inspector) and the terminal (only while the run
   panel shows). tab/shift+tab cycle them (side by side); ctrl+] always leaves the
   terminal for the main pane. A run opened from the sidebar's Runs
@@ -100,7 +98,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   on a sidebar subject only goes INTO its list, like l (user decision: a
   command never starts from a row whose ticks aren't in view; enter on a
   sidebar run shows that run), `/` filter (fuzzy,
-  matched runes underlined; esc clears), ctrl+d/ctrl+u half a page as in vim and less (user decision; the list, the inspector and a finished run's output — a running command gets them, ctrl+d is its end of input), `i` inspector, `K` link, `r`
+  matched characters underlined; esc clears), ctrl+d/ctrl+u half a page as in vim and less (user decision; the list, the inspector and a finished run's output — a running command gets them, ctrl+d is its end of input), `i` inspector, `K` link, `r`
   re-check, `S` sync, `U` self-upgrade, `C` setup-new-machine (each asks
   first), `t` theme, `z` zoom the run panel, ctrl+p command palette, ctrl+g
   full help, `q` quit. Mouse: click a subject, run or row; the wheel
@@ -159,9 +157,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   logic in the TUI), where it is declared, this machine's last verdict
   from the rows on screen, and every machine's from the fleet comparison.
   esc goes back to the list.
-- **Commands run INSIDE the screen** (user decision, replacing "nothing
-  runs inside the screen; every action is a hand-off" and "no screen
-  re-displays command output"): a confirmed action runs its real
+- **Commands run INSIDE the screen** (user decision): a confirmed action runs its real
   subcommand in the run panel, an embedded terminal below the list (45% of
   the main pane, at least 10 rows; `z` gives it the whole pane). A
   finished run's output scrolls with ↑↓, pgup/pgdn, ctrl+u/ctrl+d, and
@@ -215,13 +211,12 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   key) and help (ctrl+g: every binding, grouped; stacked, it names no
   tab or zoom). A dialog owns the keyboard. **Toasts** are floating cards at the
   bottom right, above the help line, which stays (`style.toastCard`; user
-  decision, replacing a full-width band that covered a transparent
-  terminal): a rounded border, icon and title in the kind's colour (✓ Done,
+  decision): a rounded border, icon and title in the kind's colour (✓ Done,
   ! Warning, × Error, • Note), the message wrapped below, nothing filled,
   4s; a dialog sits over one. Every message the screen says is one.
 - **The home screen's mechanics** (`src/tui/program.ts`, `renderer.ts`,
   `input.ts`, `jobs.ts`): ONE program for the whole session, an
-  Elm-style loop in Bubble Tea's shape (tea.ts: messages, commands,
+  update loop over messages and commands (messages.ts: messages, commands,
   update). `send(msg)` updates, starts the commands, then redraws once per
   burst (`setTimeout(0)`). The renderer draws on the alternate screen
   (quitting gives the normal screen back exactly as it was), writes only
@@ -239,8 +234,8 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   expiries, the terminal's messages) for the program to run. Busy is shown
   by a MiniDot braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` in Primary,
   `style.busyGlyph`/`busyLabel`), every row on the same frame (user
-  decision, replacing scrambling glyphs: calm, and never mistaken for a
-  status glyph such as the attention `●`). It runs off ONE clock
+  decision: calm, and never mistaken for a status glyph such as the
+  attention `●`). It runs off ONE clock
   (`style.Busy`) that ticks only while something is busy and stops on
   exit, so q never hangs. `LOADOUT_SCREEN_DUMP=<file>` (undocumented for
   users) writes each changed frame as plain text, atomically: the PTY

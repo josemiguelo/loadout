@@ -59,7 +59,7 @@ function programsOf(items: readonly PlanItem[]): string[] {
 }
 
 function versionOf(state: cs | undefined): string {
-  return state?.version ?? "<nil>";
+  return state?.version ?? "<none>";
 }
 
 function install(item: Partial<InstallItem> & { program: string; installKey: string; command: string }): InstallItem {

@@ -21,12 +21,12 @@ export function lastNonEmptyTrimmed(s: string): string | undefined {
 }
 
 /**
- * goRegExp is pattern, a Go (RE2) regexp, as a JavaScript RegExp, or
+ * compileRegex is pattern, a manifest's (RE2 syntax) regex, as a RegExp, or
  * undefined when it doesn't compile. A leading flag group (`(?i)`, `(?s)`,
  * `(?m)`) becomes the RegExp's flags, and `\A`/`\z` become `^`/`$` (outside
  * multi-line mode): what manifests' regexes use of RE2 beyond the syntax both share.
  */
-export function goRegExp(pattern: string): RegExp | undefined {
+export function compileRegex(pattern: string): RegExp | undefined {
   let flags = "";
   const lead = /^\(\?([imsU]+)\)/.exec(pattern);
   if (lead !== null) {
@@ -44,9 +44,9 @@ export function goRegExp(pattern: string): RegExp | undefined {
 
 /** group1 is pattern's first capture group in text, or undefined when it doesn't match. */
 export function group1(pattern: string, text: string): string | undefined {
-  const m = goRegExp(pattern)?.exec(text);
+  const m = compileRegex(pattern)?.exec(text);
   if (m === null || m === undefined || m.length < 2) return undefined;
-  // An unmatched optional group is Go's empty string.
+  // An unmatched optional group is the empty string.
   return m[1] ?? "";
 }
 
@@ -55,7 +55,7 @@ export function shellQuote(s: string): string {
   return "'" + s.replaceAll("'", `'\\''`) + "'";
 }
 
-/** fields is s split around runs of whitespace (Go's strings.Fields). */
+/** fields is s split around runs of white space, without empty fields. */
 export function fields(s: string): string[] {
   const out: string[] = [];
   let word = "";

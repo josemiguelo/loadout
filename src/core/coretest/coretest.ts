@@ -1,4 +1,4 @@
-// Package coretest builds the core tests' manifests the way a repo's
+// The coretest module builds the core tests' manifests the way a repo's
 // declarations do: a ManifestDraft through assembleWithoutFiles, so
 // built-ins, flattening and validation are the production path (contract
 // 10). TEST-ONLY. A draft that doesn't assemble throws, failing the test.

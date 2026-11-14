@@ -7,12 +7,12 @@ import { terminalIsDark } from "../theme/theme.ts";
 import { matches, newBinding } from "./key.ts";
 import * as style from "./style/index.ts";
 import { strip } from "./style/ansi.ts";
-import { type Cmd, KeyPressMsg, ModAlt, ModCtrl, type Msg, PasteMsg } from "./tea.ts";
+import { type Cmd, KeyPressMsg, ModAlt, ModCtrl, type Msg, PasteMsg } from "./messages.ts";
 import { BellMsg, type Cursor, ExitMsg, OutputMsg } from "./term/term.ts";
 import { apply, FocusArea, type HomeModel, load, newHomeModel, refresh } from "./homemodel.ts";
 import { Renderer } from "./renderer.ts";
 import { Decoder, keyString, type Mouse, MouseButton, MouseClickMsg, MouseWheelMsg } from "./input.ts";
-import { focus, handleKey, handleText, HomeKey, moveCursor, setCursor, sidebarKey, typing, goSubject } from "./keys.ts";
+import { focus, handleKey, handleText, HomeKey, moveCursor, setCursor, sidebarKey, typing, showSubject } from "./keys.ts";
 import { listOf, subjectOf } from "./lists.ts";
 import { afterJobs, closeRuns, runExited, runsNewestFirst, showRun, terminalMsg } from "./runs.ts";
 import { type Layout, layout, Page, page, resize, screenLines, sideHead, sideOffset, sidebarWidth } from "./view.ts";
@@ -46,7 +46,7 @@ export class WindowSizeMsg {
 class JobsMsg {}
 
 /**
- * Program is the loop over HomeModel, Bubble Tea's: keys, mouse, the jobs'
+ * Program is the loop over HomeModel: keys, mouse, the jobs'
  * answers, the terminal's output and the clocks arrive as messages, update
  * applies each and runs the commands it asks for, whose messages come back
  * the same way. Every state write happens in update; view is the frame,
@@ -253,7 +253,7 @@ function sideClick(m: HomeModel, n: number, wide: boolean): void {
   const s = m.state;
   const i = n - sideHead(wide);
   if (i >= 0 && i < s.sections.length) {
-    goSubject(m, i);
+    showSubject(m, i);
     focus(m, wide ? FocusArea.Sidebar : FocusArea.Main);
     return;
   }
@@ -418,7 +418,7 @@ class HomeScreen implements app.Screen {
       () => done(),
     );
 
-    // Bubble Tea's terminal: the alternate screen, mouse cell motion in SGR,
+    // The terminal: the alternate screen, mouse cell motion in SGR,
     // bracketed paste, the window's title. No background colour: the
     // terminal's own (a transparent one included) shows.
     input.setRawMode(true);

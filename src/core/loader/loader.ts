@@ -1,4 +1,4 @@
-// Package loader reads a config repo's lock: the only manifest the binary
+// The loader module reads a config repo's lock: the only manifest the binary
 // knows.
 //
 // The manifests themselves are TypeScript, run by `loadout compile`; the lock
@@ -13,7 +13,7 @@ import {
   chezmoiDataFiles,
   decodeLock,
   dirFS,
-  goPathError,
+  fileError,
   joinPath,
   type Lock,
   lockFileName,
@@ -127,7 +127,7 @@ function readLock(repoRoot: string): Lock {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       throw new ManifestException("no " + lockFileName + " in " + repoRoot + " — run: loadout compile");
     }
-    throw goPathError(e, undefined, path);
+    throw fileError(e, undefined, path);
   }
   // A newer minor may write what this binary would misread (a field it
   // doesn't know), so its version is checked before the body is read; a

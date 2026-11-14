@@ -32,7 +32,7 @@ test("round-trips state", () => {
   expect(store.read("ghost")).toBeUndefined();
 });
 
-test("a Kotlin-written state file reads and writes back byte for byte", () => {
+test("a state file from an earlier loadout reads and writes back byte for byte", () => {
   const text = read(import.meta.dir + "/testdata/machine.json");
   expect(encode(decode(text))).toBe(text);
 });
@@ -148,9 +148,7 @@ test("compile writes only under the repo root and only what changed", async () =
   expect(() => writeIfChanged(root, root + "/../parent/loadout.lock.json", "x")).toThrow("compile writes only under the repo root");
 });
 
-// Beyond the Go tests: the TypeScript port's own seams.
-
-test("OS errors read as the Go binary's", () => {
+test("file errors are worded with the operation and the path", () => {
   if (process.getuid?.() === 0) return;
   const root = tempDir();
   mkdirSync(root + "/state");
@@ -170,7 +168,7 @@ test("OS errors read as the Go binary's", () => {
   );
 });
 
-test("a decode error names the field as kotlinx did", () => {
+test("a decode error names the missing field and where", () => {
   expect(() => decode(`{"machine": "m", "os": "linux", "arch": "x", "toolVersion": "1"}`)).toThrow(
     "Field 'updatedAt' is required for type with serial name 'loadout.core.model.MachineState', but it was missing at path: $",
   );
