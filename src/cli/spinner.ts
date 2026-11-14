@@ -1,6 +1,9 @@
 import { readSync, writeSync } from "node:fs";
 import { isStdoutTty } from "../core/platform/platform.ts";
 
+/** brokenPipeStatus is 128 + SIGPIPE: how a shell reports a process a closed pipe ended. */
+export const brokenPipeStatus = 141;
+
 /** Writer is where commands write: a file descriptor, or a test's buffer. */
 export interface Writer {
   write(text: string): void;
@@ -8,7 +11,9 @@ export interface Writer {
 
 /**
  * fdWriter writes synchronously to fd, so nothing is lost when loadout
- * exits right after (process.exit doesn't wait for queued writes).
+ * exits right after (process.exit doesn't wait for queued writes). When the
+ * reader has gone (`loadout status | head -1`), loadout stops quietly with
+ * 141, the status of a process a broken pipe ends.
  */
 export function fdWriter(fd: number): Writer {
   return {
@@ -18,8 +23,11 @@ export function fdWriter(fd: number): Writer {
         try {
           bytes = bytes.subarray(writeSync(fd, bytes));
         } catch (e) {
+          const code = (e as NodeJS.ErrnoException).code;
+          // Nobody reads any more: nothing left to say.
+          if (code === "EPIPE") process.exit(brokenPipeStatus);
           // A non-blocking pipe that's full: try again.
-          if ((e as NodeJS.ErrnoException).code !== "EAGAIN") throw e;
+          if (code !== "EAGAIN") throw e;
         }
       }
     },

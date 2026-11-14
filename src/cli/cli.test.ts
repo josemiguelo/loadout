@@ -77,3 +77,11 @@ test("scaffold values are escaped inside TypeScript strings", () => {
   expect(paths.get("tsconfig.json")).toContain(`"parent/*": ["../dots/*"]`);
   expect(paths.get("node_modules/@types/loadout/index.d.ts")).toContain(`declare module "loadout" {`);
 });
+
+test("output to a reader that has gone stops quietly, with a broken pipe's 141", () => {
+  const writer = `${import.meta.dir}/spinner.ts`;
+  const script = `const { fdWriter } = await import(${JSON.stringify(writer)}); const w = fdWriter(1); for (let i = 0; i < 2000; i++) w.write("x".repeat(1024) + "\\n");`;
+  const r = Bun.spawnSync(["bash", "-c", 'set -o pipefail; "$0" -e "$1" | head -c1 >/dev/null', process.execPath, script], { stderr: "pipe" });
+  expect(r.stderr.toString()).toBe("");
+  expect(r.exitCode).toBe(141);
+});
