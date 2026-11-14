@@ -70,7 +70,9 @@ Explicit user decisions; don't "improve" them away.
    generated and committed like the lock. It also writes
    `node_modules/@types/loadout`, the types of the SDKs the manifests
    (`"loadout"`) and TypeScript scripts (`"loadout/script"`) import, which
-   are the binary's own: for the editor, never committed. Nothing
+   are the binary's own: for the editor, never committed, and refreshed
+   by every command that reads the repo, so they're never older than the
+   loadout that last touched it. Nothing
    hand-edited goes in state, the lock or those; the tool never writes
    authored files, except `init` scaffolding.
 4. **Scripts: exactly one of `file` (path) or `run` (inline)**, per variant

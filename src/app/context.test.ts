@@ -7,6 +7,7 @@ import { custom, defaultRegex, manifestOf, pm, version, via } from "../core/core
 import { newDetection } from "../core/detect/detect.ts";
 import { exit, newRunner, type Runner, stderr, stdout } from "../core/exec/fakeexec/fakeexec.ts";
 import { dirFS, encodeLock, type Manifest, mapFS, newInstallVariant, newRepoLayout, sourcesHash } from "../model/index.ts";
+import { typesFile, typesFiles } from "../compile/compile.ts";
 import { VERSION } from "../version.ts";
 import { type AppContext, newAppWith } from "./context.ts";
 import { NoSuchItemError } from "./explain.ts";
@@ -64,6 +65,16 @@ test("the layout is read once, until reloadLayout", () => {
   expect(a.stateStore()).toBe(store);
   a.reloadLayout();
   expect(a.stateStore().pathFor("m1")).toBe(root + "/moved/m1.json");
+});
+
+test("reading the layout puts the SDKs' types in the repo, rewriting stale ones", () => {
+  const m = manifestOf((b) => b.machine("m1", {}));
+  const root = repo({ ...m, layout: newRepoLayout({ state: "state" }) });
+  const index = root + "/" + typesFile;
+  put(index, "// an older loadout's\n");
+  appOf(root).layout();
+  for (const f of typesFiles) expect(readFileSync(root + "/" + f.path, "utf8")).toBe(f.content);
+  expect(readFileSync(index, "utf8")).toContain('declare module "loadout" {');
 });
 
 test("a layout that can't be read fails every use the same way", () => {

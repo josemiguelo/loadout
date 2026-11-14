@@ -59,6 +59,15 @@ grep -q '^declare module "loadout/script" {' repo/node_modules/@types/loadout/in
 [ -e repo/loadout.script.ts ] && fail "the script SDK itself stays in loadout"
 ok "compile writes the script SDK's types (node_modules/@types/loadout), and the scripts import it from loadout"
 
+TYPES=repo/node_modules/@types/loadout/index.d.ts
+echo "// an older loadout's" > "$TYPES"
+"$BIN" --repo repo --machine m1 status >/dev/null 2>&1 || true
+grep -q '^declare module "loadout/script" {' "$TYPES" || fail "status puts this loadout's types back: $(head -3 "$TYPES")"
+rm -rf repo/node_modules
+"$BIN" --repo repo --machine m1 status >/dev/null 2>&1 || true
+[ -f "$TYPES" ] || fail "status writes the types a fresh clone lacks"
+ok "any command that reads the repo refreshes the SDKs' types"
+
 OUT=$("$BIN" --repo repo --machine m1 run marker 2>&1) || fail "a managed script runs: $OUT"
 echo "$OUT" | grep -qE "marked hello on m1 \((linux|macos)\)" || fail "main() installs with the machine's argument and loadout's environment: $OUT"
 grep -qx hello repo/programs/marker.txt || fail "it wrote its marker in its fragment's folder"

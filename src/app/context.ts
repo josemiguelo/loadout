@@ -6,6 +6,7 @@
 
 import { lstatSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { refreshTypes } from "../compile/compile.ts";
 import * as bun from "../core/bun/bun.ts";
 import type { MachineState, ScriptState, SystemInfo } from "../core/coremodel/coremodel.ts";
 import { type Detection, newDetection } from "../core/detect/detect.ts";
@@ -93,9 +94,17 @@ export class AppContext {
     this.fromLayout = new FromLayout();
   }
 
-  /** layout is the lock's layout, read without the checks a full load makes. */
+  /**
+   * layout is the lock's layout, read without the checks a full load makes.
+   * Reading it refreshes the repo's SDK types (refreshTypes): every command
+   * that reads the repo does.
+   */
   layout(): RepoLayout {
-    return this.current().layout.get(() => loader.readLayout(this.repoRoot));
+    return this.current().layout.get(() => {
+      const layout = loader.readLayout(this.repoRoot);
+      refreshTypes(this.repoRoot);
+      return layout;
+    });
   }
 
   /** stateStore is this repo's state directory. */

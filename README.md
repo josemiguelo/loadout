@@ -126,8 +126,9 @@ Manifests are plain TypeScript, so any editor with TypeScript support
 works: completion of every setting (with the SDK's docs on hover),
 references imported from the files that declare them, go to definition,
 and a typo or a wrong type underlined as you type. The SDKs run inside
-loadout; `loadout compile` writes their types where your editor finds
-them with no setup (`node_modules/@types/loadout`, out of git); `bun
+loadout, which writes their types where your editor finds them with no
+setup (`node_modules/@types/loadout`, out of git) whenever it reads the
+repo, so they're never older than your loadout; `bun
 install` gives it bun's own types. See [Writing your manifest](../../wiki/Writing-Your-Manifest).
 
 ## Learn more

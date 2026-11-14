@@ -229,8 +229,11 @@ loadout wrote stay byte-identical.
 - **The SDKs' types are an @types package**: `node_modules/@types/loadout`
   (index.d.ts and a package.json), which TypeScript resolves for
   `import … from "loadout"` with no tsconfig entry, and which stays out of
-  git with the rest of node_modules. compile and init write it; a fresh
-  clone has it after its first compile.
+  git with the rest of node_modules. compile and init write it, and so
+  does every command that reads the repo's lock (`refreshTypes`, from
+  `AppContext.layout`), only where it differs and never failing for it:
+  after an upgrade or on a fresh clone, the first command puts this
+  loadout's types there.
 
 ## loadout is the bun
 

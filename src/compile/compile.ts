@@ -54,6 +54,22 @@ export const typesFile = "node_modules/@types/loadout/index.d.ts";
 /** types is typesFile's text, embedded in the binary. */
 export const types: string = TypesText as string;
 
+/**
+ * refreshTypes writes typesFiles into the repo at root where they differ:
+ * every command that reads a repo's lock does (AppContext.layout), so the
+ * editor's types are never older than the last loadout that touched the
+ * repo. Best effort: a checkout it can't write keeps what it has.
+ */
+export function refreshTypes(root: string): void {
+  for (const f of typesFiles) {
+    try {
+      writeIfChanged(root, path.join(root, f.path), f.content);
+    } catch {
+      // A read-only checkout: its editor keeps the types it has.
+    }
+  }
+}
+
 /** typesFiles is the @types package compile and init write: typesFile and its package.json. */
 export const typesFiles: { path: string; content: string }[] = [
   { path: "node_modules/@types/loadout/package.json", content: '{ "name": "@types/loadout", "private": true, "types": "index.d.ts" }\n' },
