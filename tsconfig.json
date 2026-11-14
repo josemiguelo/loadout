@@ -12,11 +12,7 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
-    "types": ["bun"],
-    "paths": {
-      "loadout": ["./src/compile/sdk/loadout.sdk.ts"],
-      "loadout/script": ["./src/compile/sdk/loadout.script.ts"]
-    }
+    "types": ["bun"]
   },
   "include": ["src/**/*.ts"]
 }

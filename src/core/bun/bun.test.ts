@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { binary, binVar, ensure, home, preload, preloadFile, version, wrapper } from "./bun.ts";
+import { binVar, ensure, home, preload, preloadFile, sdkModules, version, wrapper } from "./bun.ts";
 
 const saved = { data: process.env.XDG_DATA_HOME, bin: process.env[binVar] };
 let data: string;
@@ -30,14 +30,37 @@ test("home is loadout's bin folder under the data folder", () => {
   expect(home()).toBe(data + "/loadout/bin");
 });
 
-test("the wrapper runs the executable as bun, quoted, preloading for a file", () => {
+test("the wrapper runs the executable as bun, quoted, preloading for a file, or $LOADOUT_BUN", () => {
   expect(wrapper("/opt/it's/loadout", "/d")).toBe(
     "#!/bin/sh\n" +
       'if [ "$1" = run ] && [ -f "$2" ]; then shift; set -- run --preload \'/d/.preload.js\' "$@"\n' +
       'elif [ -f "$1" ]; then set -- --preload \'/d/.preload.js\' "$@"\n' +
       "fi\n" +
+      'if [ -n "$LOADOUT_BUN" ]; then exec "$LOADOUT_BUN" "$@"; fi\n' +
       "BUN_BE_BUN=1 exec '/opt/it'\\''s/loadout' \"$@\"\n",
   );
+});
+
+test("the preload drops BUN_BE_BUN and registers the SDKs as modules, from the embedded sources", async () => {
+  expect(preload.startsWith("delete process.env.BUN_BE_BUN;\n")).toBe(true);
+  expect(sdkModules.map(([name]) => name)).toEqual(["loadout", "loadout/script"]);
+  expect(sdkModules[0]![1]).toBe(await Bun.file(import.meta.dir + "/../../compile/sdk/loadout.sdk.ts").text());
+  expect(sdkModules[1]![1]).toBe(await Bun.file(import.meta.dir + "/../../compile/sdk/loadout.script.ts").text());
+  const folder = ensure("/opt/loadout");
+  const dir = mkdtempSync(tmpdir() + "/loadout-preload-");
+  writeFileSync(dir + "/a.ts", 'import { apt } from "loadout";\nexport const name = apt.name;\n');
+  writeFileSync(
+    dir + "/x.ts",
+    'import { apt, program } from "loadout";\nimport { formatRow } from "loadout/script";\nimport { name } from "./a.ts";\n' +
+      'console.log(typeof program, apt === (await import("loadout")).apt, name, formatRow({ item: "i", current: "1", candidate: "2" }), process.env.BUN_BE_BUN);\n',
+  );
+  const proc = Bun.spawn([process.execPath, "--preload", folder + "/" + preloadFile, dir + "/x.ts"], {
+    cwd: dir,
+    env: { ...process.env, BUN_BE_BUN: "1" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect((await new Response(proc.stderr).text()) + (await new Response(proc.stdout).text())).toBe("function true apt i 1 2 undefined\n");
 });
 
 test("ensure writes the wrapper executable, and rewrites it only when it differs", () => {
@@ -84,18 +107,19 @@ test("the wrapper preloads the module that drops BUN_BE_BUN when it runs a file"
   expect(await out("install")).toBe("install\n");
 });
 
-test("LOADOUT_BUN overrides the wrapper: its folder, its binary, nothing written", () => {
+test("with LOADOUT_BUN, the wrapper execs that bun, preloading for a file, without BUN_BE_BUN", async () => {
   const fake = data + "/tools/bun";
   Bun.spawnSync(["mkdir", "-p", data + "/tools"]);
-  writeFileSync(fake, "#!/bin/sh\n", { mode: 0o755 });
+  writeFileSync(fake, '#!/bin/sh\necho "other[$BUN_BE_BUN]" "$@"\n', { mode: 0o755 });
   process.env[binVar] = fake;
-  expect(ensure("/opt/loadout")).toBe(data + "/tools");
-  expect(binary(data + "/tools")).toBe(fake);
-  expect(readdirSync(data)).toEqual(["tools"]);
+  const folder = ensure("/opt/loadout");
+  expect(folder).toBe(data + "/loadout/bin");
+  const script = data + "/x.ts";
+  writeFileSync(script, "");
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "BUN_BE_BUN"));
+  const out = async (...args: string[]) => new Response(Bun.spawn([folder + "/bun", ...args], { env, stdout: "pipe" }).stdout).text();
+  expect(await out("run", script)).toBe(`other[] run --preload ${folder}/${preloadFile} ${script}\n`);
+  expect(await out("install")).toBe("other[] install\n");
   process.env[binVar] = data + "/nope";
   expect(() => ensure()).toThrow("LOADOUT_BUN=" + data + "/nope isn't an executable bun");
-});
-
-test("binary is the wrapper in the folder without LOADOUT_BUN", () => {
-  expect(binary("/x/loadout/bin")).toBe("/x/loadout/bin/bun");
 });

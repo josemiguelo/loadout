@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import { entryFile, scriptSDK, scriptSDKFile, sdk, sdkFile } from "../compile/compile.ts";
+import { entryFile, types, typesFile } from "../compile/compile.ts";
 import { newGitClient } from "../core/git/git.ts";
 import { envVar } from "../core/platform/platform.ts";
 import { cleanPath, compareStrings, fileError, isAbsPath, joinPath, lockFileName } from "../model/index.ts";
@@ -19,7 +19,7 @@ import { Style } from "./style.ts";
 // child-configs (contract 18: a parent block, no example that could clash).
 // File names and contents are templates over ScaffoldVars ({{.Hostname}}
 // and the like). Every scaffold gets the
-// SDKs too (sdkFile, scriptSDKFile), so the editor has the manifests' and
+// SDKs' types too (typesFile), so the editor has the manifests' and
 // scripts' types before the first compile.
 
 /** ScaffoldVars is what a scaffold's templates fill in. */
@@ -61,7 +61,7 @@ function walkOrder(a: string, b: string): number {
 }
 
 /**
- * renderScaffold is the files of scaffold kind for vars, and the SDK. Paths
+ * renderScaffold is the files of scaffold kind for vars, and the SDKs' types. Paths
  * take the values as they are; contents take them escaped, since every
  * value lands inside a string.
  */
@@ -77,7 +77,7 @@ export function renderScaffold(kind: string, vars: ScaffoldVars): ScaffoldFile[]
   const files = Object.keys(texts)
     .sort(walkOrder)
     .map((p) => ({ path: fill(p, vars), content: fill(texts[p]!, escaped) }));
-  files.push({ path: sdkFile, content: sdk }, { path: scriptSDKFile, content: scriptSDK });
+  files.push({ path: typesFile, content: types });
   return files;
 }
 

@@ -27,8 +27,8 @@ ts_file() {
     { printf '%s\n\n' "$TS_PRELUDE"; cat; } > "$1"
 }
 
-# The repo <dir>: tsconfig.json (mapping "loadout" to the SDK compile writes
-# beside it) and loadout.ts, a repo named test with its state in
+# The repo <dir>: tsconfig.json (with loadout.d.ts, the SDKs' types compile
+# writes beside it) and loadout.ts, a repo named test with its state in
 # machines/state/; each [option] is one more line of repo({...})
 # (`'configs: "configs"'`). stdin, when there is any, is root.loadout.ts:
 # declarations at the repo root.
@@ -41,9 +41,10 @@ ts_root() {
     "module": "Preserve",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "paths": { "loadout": ["./loadout.sdk.ts"], "loadout/script": ["./loadout.script.ts"] }
-  }
+    "noEmit": true
+  },
+  "files": ["loadout.d.ts"],
+  "include": ["**/*.ts"]
 }
 JSON
     {

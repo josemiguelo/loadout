@@ -1,6 +1,8 @@
-// loadout's manifest SDK. Written by `loadout compile` (and `loadout init`)
-// from the loadout that compiles the repo: don't edit it, a compile puts it
-// back. Manifests import it as "loadout" (tsconfig.json's `paths`).
+// loadout's manifest SDK, imported as "loadout". It is part of loadout, not
+// of the repo: whenever loadout runs a repo's files (compile, scripts), its
+// bun wrapper's preload registers this module, and compile and init write
+// its types into the repo as loadout.d.ts. A repo's manifests always run
+// with the SDK of the loadout that compiles them.
 //
 // Each declaration returns a typed reference: a name that doesn't exist is a
 // type error where it's used, and "go to definition" finds it. The entry
@@ -51,20 +53,25 @@ export const pacman = builtin("pacman");
 
 type JSON = Record<string, unknown>;
 const ROOT = process.cwd();
-const HERE = fileURLToPath(import.meta.url);
 /** Compiling a child repo's parent: every origin is the parent's. */
 const AS_PARENT = !!process.env.LOADOUT_AS_PARENT;
 
 type Place = { file: string; line: string; col: string };
 
-/** Where the user's code called the SDK: the first stack frame outside this file. */
+/**
+ * A stack frame's file, line and column, when it names a file: bun prints
+ * "at fn (path:line:col)", "at path:line:col", and sometimes no column. The
+ * SDK's own frames name its module ("loadout:61:20"), never a path.
+ */
+const frameAt = /(?:\(|at )((?:file:\/\/)?\/[^():]+):(\d+)(?::(\d+))?\)?$/;
+
+/** Where the user's code called the SDK: the first stack frame at a file. */
 function caller(): Place {
   for (const frame of (new Error().stack ?? "").split("\n")) {
-    // Bun prints "at fn (path:line:col)", "at path:line:col", and sometimes no column.
-    const m = frame.match(/\(?((?:file:\/\/)?\/[^():]+):(\d+)(?::(\d+))?\)?$/);
+    const m = frame.match(frameAt);
     if (!m) continue;
     const file = m[1].startsWith("file://") ? fileURLToPath(m[1]) : m[1];
-    if (file !== HERE) return { file, line: m[2], col: m[3] ?? "1" };
+    return { file, line: m[2], col: m[3] ?? "1" };
   }
   return { file: resolve(ROOT, "loadout.ts"), line: "1", col: "1" };
 }
@@ -91,10 +98,10 @@ function oneLine(e: unknown): string {
   const pos = err?.position;
   if (pos?.file) return `${relative(ROOT, pos.file)}:${pos.line ?? 1},${pos.column ?? 1}: ${what}`;
   for (const frame of (err?.stack ?? "").split("\n")) {
-    const m = frame.match(/\(?((?:file:\/\/)?\/[^():]+):(\d+)(?::(\d+))?\)?$/);
+    const m = frame.match(frameAt);
     if (!m) continue;
     const file = m[1].startsWith("file://") ? fileURLToPath(m[1]) : m[1];
-    if (file !== HERE && ownFile(file)) return `${placeOf({ file, line: m[2], col: m[3] ?? "1" })}: ${what}`;
+    if (ownFile(file)) return `${placeOf({ file, line: m[2], col: m[3] ?? "1" })}: ${what}`;
   }
   return what.split("\n")[0];
 }
@@ -122,9 +129,9 @@ function originOf(file: string): string {
 /** A declaration: recorded only when its file is this repo's (a child sees its parent's as references). */
 type Entry = { at: Place; value: JSON };
 /**
- * One state per process, on globalThis: a child repo imports its parent's
- * modules, which load the parent's copy of this SDK; both copies must see
- * the same declarations (the parent's programs' variants above all).
+ * One state per process, on globalThis: a child repo's files and the
+ * parent's modules they import both import this SDK, and must see the same
+ * declarations (the parent's programs' variants above all).
  */
 const state = ((globalThis as Record<string, unknown>).__loadoutManifest ??= {
   draft: {
@@ -618,6 +625,9 @@ export async function include(...globs: string[]) {
   }
 }
 
+/** The SDK's modules: loadout's own, never a repo file. */
+const sdkModules = ["loadout", "loadout/script"];
+
 /**
  * The sources whose edits make the lock stale: the include() globs (so a
  * new file they'd pick up counts too), and every repo file the entry and
@@ -631,6 +641,7 @@ function sourcesFrom(entries: string[]): string[] {
     if (seen.has(f)) return;
     seen.add(f);
     for (const { path } of transpiler.scanImports(readFileSync(f, "utf8"))) {
+      if (sdkModules.includes(path)) continue;
       let resolved: string;
       try {
         resolved = Bun.resolveSync(path, dirname(f));

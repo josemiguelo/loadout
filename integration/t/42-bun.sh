@@ -1,11 +1,12 @@
 # loadout is the bun: a `bun` wrapper (BUN_BE_BUN=1 exec <loadout>) in
 # $XDG_DATA_HOME/loadout/bin, first on PATH for every manifest command and
-# for compile's run of loadout.ts, ahead of a `provides … at` folder.
-# `loadout bun` is that bun; $LOADOUT_BUN overrides it.
+# for compile's run of loadout.ts, ahead of a `provides … at` folder. It
+# preloads the SDKs for a file. `loadout bun` is that bun; with $LOADOUT_BUN
+# the wrapper execs that bun instead, preloading the same way.
 # run-tests.sh leaves LOADOUT_BUN unset, so the suite runs this way throughout.
 
 mkdir -p otherbin
-printf '#!/bin/sh\necho "the other bun ran"\n' > otherbin/bun
+printf '#!/bin/sh\necho "the other bun ran: $*"\n' > otherbin/bun
 chmod +x otherbin/bun
 
 ts_root repo <<TS
@@ -70,16 +71,20 @@ printf '#!/bin/sh\necho stale\n' > "$WRAPPER"
 grep -q "BUN_BE_BUN=1 exec '$BIN'" "$WRAPPER" || fail "a wrapper that differs is rewritten: $(cat "$WRAPPER")"
 ok "a wrapper for another loadout is rewritten"
 
-OUT=$(LOADOUT_BUN="$PWD/otherbin/bun" "$BIN" --repo repo --machine m1 run hello 2>&1) || fail "run with LOADOUT_BUN: $OUT"
-echo "$OUT" | grep -q "the other bun ran" || fail "LOADOUT_BUN runs the scripts: $OUT"
+OUT=$(LOADOUT_BUN="$PWD/otherbin/bun" "$BIN" --repo repo --machine m1 run hello env 2>&1) || fail "run with LOADOUT_BUN: $OUT"
+echo "$OUT" | grep -qF "the other bun ran: --preload $XDG_DATA_HOME/loadout/bin/.preload.js hello.ts" ||
+    fail "LOADOUT_BUN runs the scripts, through the wrapper's preload: $OUT"
+echo "$OUT" | grep -q "bun dir=\[$XDG_DATA_HOME/loadout/bin\]" || fail "with LOADOUT_BUN, the wrapper's folder is still LOADOUT_BUN_DIR: $OUT"
 mkdir -p logbin
-printf '#!/bin/sh\necho ran >> "%s/logbin/log"\nBUN_BE_BUN=1 exec "%s" "$@"\n' "$PWD" "$BIN" > logbin/bun
+printf '#!/bin/sh\necho "ran[$BUN_BE_BUN] $*" >> "%s/logbin/log"\nBUN_BE_BUN=1 exec "%s" "$@"\n' "$PWD" "$BIN" > logbin/bun
 chmod +x logbin/bun
 sed -i.bak '/process.execPath !==/d' repo/root.loadout.ts && rm repo/root.loadout.ts.bak
 OUT=$(LOADOUT_BUN="$PWD/logbin/bun" "$BIN" --repo repo compile 2>&1) || fail "compile with LOADOUT_BUN: $OUT"
-grep -q ran logbin/log || fail "compile ran loadout.ts with LOADOUT_BUN"
+grep -qxF "ran[] run --preload $XDG_DATA_HOME/loadout/bin/.preload.js loadout.ts" logbin/log ||
+    fail "compile ran loadout.ts with LOADOUT_BUN, through the wrapper's preload, without BUN_BE_BUN: $(cat logbin/log)"
 OUT=$(LOADOUT_BUN="$PWD/nope" "$BIN" --repo repo --machine m1 run hello 2>&1) && fail "a LOADOUT_BUN that isn't there runs: $OUT"
 echo "$OUT" | grep -q "error: LOADOUT_BUN=$PWD/nope isn't an executable bun" || fail "the refusal names it: $OUT"
+[ "$(LOADOUT_BUN="$PWD/otherbin/bun" "$BIN" bun --version)" = "$VERSION" ] || fail "loadout bun is loadout's own bun, whatever LOADOUT_BUN says"
 ok "LOADOUT_BUN overrides loadout's bun, for compile and scripts"
 
 repo_opt repo/loadout.ts 'colour: "blue"'

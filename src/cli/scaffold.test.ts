@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderScaffold } from "./init.ts";
 import { scaffoldTexts } from "./scaffold.ts";
+import { typeCheck } from "../compile/sdktypes.ts";
 
 const folder = fileURLToPath(new URL("./scaffold/", import.meta.url));
 
@@ -21,7 +22,7 @@ test("the embedded scaffolds are the scaffold folder's files, byte for byte", ()
   expect(sorted(scaffoldTexts)).toEqual(sorted(onDisk));
 });
 
-test("a scaffold's files come in walk order, the SDKs last", () => {
+test("a scaffold's files come in walk order, the SDKs' types last", () => {
   const files = renderScaffold("init", { hostname: "box", parentName: "", parentPath: "", parentImport: "" });
   expect(files.map((f) => f.path)).toEqual([
     ".gitignore",
@@ -33,7 +34,16 @@ test("a scaffold's files come in walk order, the SDKs last", () => {
     "package.json",
     "programs/cli.loadout.ts",
     "tsconfig.json",
-    "loadout.sdk.ts",
-    "loadout.script.ts",
+    "loadout.d.ts",
   ]);
+});
+
+test("every scaffold type-checks against the loadout.d.ts init writes, and only with it", () => {
+  for (const kind of ["init", "init-configs", "child", "child-configs"]) {
+    const files = renderScaffold(kind, { hostname: "box", parentName: "dad", parentPath: "../dad", parentImport: "../dad" });
+    const repo = Object.fromEntries(files.map((f) => [f.path, f.content]));
+    expect(typeCheck(repo)).toEqual({ code: 0, out: "" });
+    repo["loadout.d.ts"] = "";
+    expect(typeCheck(repo).out).toContain("error TS2307: Cannot find module 'loadout'");
+  }
 });

@@ -1,4 +1,4 @@
-import { version, wrapperDir } from "../core/bun/bun.ts";
+import { binVar, version, wrapperDir } from "../core/bun/bun.ts";
 import { joinPath } from "../model/index.ts";
 import { newShellRunner } from "../core/exec/index.ts";
 import type { Command } from "./args.ts";
@@ -27,10 +27,11 @@ export function newBunCmd(): Command {
         return;
       }
       const code = await newShellRunner().inherit({
-        // Through the wrapper, as scripts run: a file gets its preload.
+        // Through the wrapper, as scripts run: a file gets its preload. Always
+        // loadout's own bun, whatever $LOADOUT_BUN says.
         line: "exec " + [joinPath(wrapperDir(), "bun"), ...args].map(quote).join(" "),
         cwd: "",
-        env: {},
+        env: { [binVar]: "" },
       });
       if (code !== 0) throw exitWith(code < 0 ? 1 : code);
     },

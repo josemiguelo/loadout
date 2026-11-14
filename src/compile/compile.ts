@@ -31,37 +31,26 @@ import {
   encodeLock,
 } from "../model/index.ts";
 import { VERSION } from "../version.ts";
-// The SDKs' text, which bun inlines (`bun build --compile` too). TypeScript
-// types these imports as the modules themselves, which have no default.
-// @ts-expect-error a text import's default is the file's text
-import SDKText from "./sdk/loadout.sdk.ts" with { type: "text" };
-// @ts-expect-error a text import's default is the file's text
-import ScriptSDKText from "./sdk/loadout.script.ts" with { type: "text" };
+// The SDKs' types (sdktypes.ts makes the file), which bun inlines (`bun
+// build --compile` too). TypeScript refuses a declaration file as a value.
+// @ts-ignore a text import's default is the file's text
+import TypesText from "./sdk/loadout.d.ts" with { type: "text" };
 import { transitionalWarnings, unusedWarnings } from "./unused.ts";
 
 /** entryFile is a repo's root manifest: run by compile, it imports the rest. */
 export const entryFile = "loadout.ts";
 
 /**
- * sdkFile is the SDK compile writes beside the entry (manifests import it as
- * "loadout"): the one this binary reads drafts from, so a repo's types are
- * always the loadout's that compiles it.
+ * typesFile is the SDKs' types compile writes beside the entry, committed:
+ * `declare module "loadout"` (the manifests' SDK) and `declare module
+ * "loadout/script"` (loadout's protocols for scripts in TypeScript). The
+ * modules themselves are the binary's (core/bun's preload), so a repo's
+ * types are always the loadout's that compiles it and runs its scripts.
  */
-export const sdkFile = "loadout.sdk.ts";
+export const typesFile = "loadout.d.ts";
 
-/** sdk is loadout.sdk.ts's text, embedded in the binary. */
-export const sdk: string = SDKText as string;
-
-/**
- * scriptSDKFile is the script SDK compile writes beside it (scripts import
- * it as "loadout/script"): loadout's protocols for scripts in TypeScript (a
- * managed script's check/install, an oracle's rows and update, the LOADOUT_*
- * environment), as the binary that runs them speaks them.
- */
-export const scriptSDKFile = "loadout.script.ts";
-
-/** scriptSDK is loadout.script.ts's text, embedded in the binary. */
-export const scriptSDK: string = ScriptSDKText as string;
+/** types is loadout.d.ts's text, embedded in the binary. */
+export const types: string = TypesText as string;
 
 /**
  * Draft is what loadout.ts prints: the manifest before assembly, and what
@@ -101,19 +90,13 @@ export async function compile(root: string): Promise<string[]> {
     throw new ManifestException(root + " has no " + entryFile + " — a config repo starts there (see: loadout init)");
   }
   const bunDir = bun.ensure();
-  const bunBin = bun.binary(bunDir);
-  for (const [file, text] of [
-    [sdkFile, sdk],
-    [scriptSDKFile, scriptSDK],
-  ] as const) {
-    writeIfChanged(root, path.join(root, file), text);
-  }
-  const d = await run(bunBin, bunDir, root, false);
+  writeIfChanged(root, path.join(root, typesFile), types);
+  const d = await run(bunDir, root, false);
   let draft: ManifestDraft = { manifest: d.manifest, profiles: d.profiles, requires: d.requires };
   let parentFS: RepoFS | undefined;
   let inherited: string[] = [];
   if (d.parent !== undefined) {
-    const parent = await loadParent(bunBin, bunDir, d.parent, root);
+    const parent = await loadParent(bunDir, d.parent, root);
     const [over, errs] = draftOver(draft, parent.draft, d.parent.name);
     if (errs.length > 0) throw invalid(distinct(errs));
     const layout = parent.draft.manifest.layout;
@@ -157,20 +140,23 @@ export async function compile(root: string): Promise<string[]> {
 }
 
 /**
- * run is the draft root's loadout.ts prints, run by bunBin (loadout itself
- * as bun, through the wrapper in bunDir, unless $LOADOUT_BUN names one)
- * with nothing of the caller's environment but PATH, bunDir first, and
- * HOME: a manifest's output must not depend on who compiles it. asParent
- * marks every origin as the parent's. It runs the process itself rather
- * than through the ProcessRunner: an argv with a cleared environment, not a
- * shell line.
+ * run is the draft root's loadout.ts prints, run by the wrapper in bunDir
+ * (loadout itself as bun, or $LOADOUT_BUN, with the SDKs' preload) with
+ * nothing of the caller's environment but PATH, bunDir first, HOME and
+ * $LOADOUT_BUN: a manifest's output must not depend on who compiles it.
+ * asParent marks every origin as the parent's. It runs the process itself
+ * rather than through the ProcessRunner: an argv with a cleared
+ * environment, not a shell line.
  */
-async function run(bunBin: string, bunDir: string, root: string, asParent: boolean): Promise<Draft> {
+async function run(bunDir: string, root: string, asParent: boolean): Promise<Draft> {
+  const bunBin = path.join(bunDir, "bun");
   const env: Record<string, string> = {
     PATH: bunDir + ":" + (process.env.PATH ?? ""),
     HOME: process.env.HOME ?? "",
     LOADOUT_COMPILE: "1",
   };
+  const otherBun = process.env[bun.binVar];
+  if (otherBun !== undefined && otherBun !== "") env[bun.binVar] = otherBun;
   if (asParent) env.LOADOUT_AS_PARENT = "1";
   let stdout: string;
   let stderr: string;
@@ -189,9 +175,6 @@ async function run(bunBin: string, bunDir: string, root: string, asParent: boole
   if (failure !== undefined) {
     let why = stderr.trim();
     if (why === "") why = failure;
-    if (why.includes(`Cannot find module 'loadout'`) || why.includes(`Cannot find package 'loadout'`)) {
-      why += ` — tsconfig.json maps "loadout" to ./` + sdkFile + ` ("paths": {"loadout": ["./` + sdkFile + `"]})`;
-    }
     throw new ManifestException(why);
   }
   if (stdout.trim() === "") {
@@ -421,7 +404,7 @@ interface ParentRepo {
  * be current and have no parent of its own: the child's lock records the
  * parent's sources as that lock names them.
  */
-async function loadParent(bunBin: string, bunDir: string, ref: ParentRef, childRoot: string): Promise<ParentRepo> {
+async function loadParent(bunDir: string, ref: ParentRef, childRoot: string): Promise<ParentRepo> {
   const root = parentRoot(newParentLayout({ name: ref.name, path: ref.path }), process.env.HOME ?? "", childRoot);
   let isDir = false;
   try {
@@ -455,7 +438,7 @@ async function loadParent(bunBin: string, bunDir: string, ref: ParentRef, childR
   }
   let d: Draft;
   try {
-    d = await run(bunBin, bunDir, root, true);
+    d = await run(bunDir, root, true);
   } catch (e) {
     throw new ManifestException("parent " + ref.name + ": " + (e as Error).message);
   }

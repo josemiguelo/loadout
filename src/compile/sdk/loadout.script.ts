@@ -1,8 +1,8 @@
-// loadout's script SDK. Written by `loadout compile` (and `loadout init`)
-// from the loadout that runs the repo's scripts: don't edit it, a compile
-// puts it back. Scripts import it as "loadout/script" (tsconfig.json's
-// `paths`); a script stays any executable, this is for the ones in
-// TypeScript (`#!/usr/bin/env bun`, run with the bun loadout brings).
+// loadout's script SDK, imported as "loadout/script". Like the manifests'
+// SDK, it is part of loadout: the bun wrapper's preload registers it when
+// loadout runs a script, and its types are in the repo's loadout.d.ts. A
+// script stays any executable; this is for the ones in TypeScript
+// (`#!/usr/bin/env bun`, run with the bun loadout brings).
 //
 // It holds loadout's protocols, so a script speaks them as the binary that
 // runs it expects: a managed script's `check`/`install` (`main`), an

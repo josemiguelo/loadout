@@ -1,5 +1,6 @@
-# The script SDK (`import … from "loadout/script"`): compile writes it beside
-# the manifests, and a TypeScript script speaks loadout's protocols with it.
+# The script SDK (`import … from "loadout/script"`): loadout provides it to
+# the scripts it runs (compile writes only its types, in loadout.d.ts), and a
+# TypeScript script speaks loadout's protocols with it.
 
 ts_repo repo
 mkdir -p repo/programs/.loadout
@@ -54,9 +55,9 @@ import { broken, marker } from "../programs/scripts.loadout.ts";
 machine("m1", { run: [args(marker, "hello"), broken] });
 TS
 compile_repo repo
-[ -f repo/loadout.script.ts ] || fail "compile writes the script SDK beside the manifests"
-grep -q '"loadout/script"' repo/tsconfig.json || fail "the fixture maps it"
-ok "compile writes the script SDK (loadout.script.ts) beside the manifests"
+grep -q '^declare module "loadout/script" {' repo/loadout.d.ts || fail "compile writes the script SDK's types into loadout.d.ts: $(head -20 repo/loadout.d.ts)"
+[ -e repo/loadout.script.ts ] && fail "the script SDK itself stays in loadout"
+ok "compile writes the script SDK's types (loadout.d.ts), and the scripts import it from loadout"
 
 OUT=$("$BIN" --repo repo --machine m1 run marker 2>&1) || fail "a managed script runs: $OUT"
 echo "$OUT" | grep -qE "marked hello on m1 \((linux|macos)\)" || fail "main() installs with the machine's argument and loadout's environment: $OUT"

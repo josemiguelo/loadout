@@ -20,7 +20,7 @@
   builds its fixtures (`basic_repo`, `scripts_repo`, `worktree_repo`, or
   inline) and never depends on another file; the numbers only fix the
   order. Fixtures are TypeScript repos: `ts_root <dir> [option…]`
-  (tsconfig.json mapping "loadout" to the SDK, and loadout.ts including
+  (tsconfig.json with loadout.d.ts, the SDKs' types, and loadout.ts including
   `*.loadout.ts` at the root and in programs/, maintenance/, machines/;
   each option is a line of `repo({…})`; stdin, if any, is
   root.loadout.ts, declarations at the root), `ts_repo <dir>` (the same,

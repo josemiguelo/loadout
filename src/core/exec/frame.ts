@@ -66,8 +66,8 @@ export function newCommandFrame(repoRoot: string, env: Record<string, string> | 
  * frameOf is the frame for system in the repo at absolute repoRoot, with its
  * `layout configs` (undefined: none); for a child repo, also its parent's
  * absolute parentRoot ("" for none) and configs. bunDir is the folder of
- * the `bun` manifest commands run (core/bun: loadout's wrapper, or
- * $LOADOUT_BUN's; "" for none, in tests): first on PATH, and in
+ * the `bun` manifest commands run (core/bun: loadout's wrapper; "" for
+ * none, in tests): first on PATH, and in
  * LOADOUT_BUN_DIR for the lines that put folders of their own first
  * (model.shellLine).
  */

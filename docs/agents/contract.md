@@ -67,9 +67,9 @@ Explicit user decisions; don't "improve" them away.
    state directory is generated and disposable. With configs,
    compile also writes `<configs>/.chezmoidata/loadout.json` and the
    `<configs>/.chezmoitemplates/loadout/machine` partial (contract 17),
-   generated and committed like the lock, and so are `loadout.sdk.ts`, the
-   SDK the manifests import, and `loadout.script.ts`, the one TypeScript
-   scripts import (both the compiling binary's own). Nothing
+   generated and committed like the lock, and so is `loadout.d.ts`, the
+   types of the SDKs the manifests (`"loadout"`) and TypeScript scripts
+   (`"loadout/script"`) import, which are the binary's own. Nothing
    hand-edited goes in state, the lock or those; the tool never writes
    authored files, except `init` scaffolding.
 4. **Scripts: exactly one of `file` (path) or `run` (inline)**, per variant
@@ -125,10 +125,12 @@ Explicit user decisions; don't "improve" them away.
    … at` folders (brew's bin may hold a bun of its own);
    `model.shownLine` leaves it out. The folder holds a `bun` wrapper
    (`BUN_BE_BUN=1 exec <loadout> "$@"`): loadout is the bun its scripts
-   run with, the one it was built with. `AppContext.bunDir` writes it once
-   per process (`core/bun` `ensure`: `$XDG_DATA_HOME/loadout/bin`, only
-   when missing or different, through a rename); `$LOADOUT_BUN` (a bun
-   binary) puts its own folder there instead.
+   run with, the one it was built with, and the wrapper's preload gives
+   every file it runs the SDKs as modules. `AppContext.bunDir` writes it
+   once per process (`core/bun` `ensure`: `$XDG_DATA_HOME/loadout/bin`,
+   only when missing or different, through a rename). With `$LOADOUT_BUN`
+   (a bun binary) the wrapper execs that bun instead, with the same
+   preload; the folder on PATH stays the wrapper's.
 6. **Execution order**: in two phases, core then later; in each, all
    programs before all scripts; programs
    topologically by dependencies, ties broken by NAME (InstallOrder sorts;
@@ -348,15 +350,15 @@ Explicit user decisions; don't "improve" them away.
     repo moved ahead of the binary.
 16. **The repo's shape is declared, never assumed.** A config repo is
     `loadout.ts` at its root, run by compile with loadout itself as bun
-    (`$LOADOUT_BUN` overrides it), plus
+    (through the wrapper, which `$LOADOUT_BUN` points elsewhere), plus
     what it imports and `include()`s (`include("loadouts/**/*.loadout.ts")`:
     Bun.Glob, dot files included, path order), and only those; it ends
     with `repo({ … })`, which prints the draft. Nothing else: no build
     files, no build folder, no npm. `repo({ state, configs })` names the
     state and chezmoi dirs; `state` is required, with no default.
-    Manifests import the SDK as `"loadout"` (tsconfig `paths` to
-    `loadout.sdk.ts`, which compile writes) and each other by relative
-    path; a declaration's origin is the file that called it. The lock
+    Manifests import the SDK as `"loadout"` (the binary's, registered by
+    the wrapper's preload; `loadout.d.ts`, which compile writes, types it)
+    and each other by relative path; a declaration's origin is the file that called it. The lock
     records the sources (every file the entry and its includes reach
     through static imports, helpers included) and a sha256 of them (path +
     content); a binary that finds them changed refuses with "run: loadout
@@ -435,7 +437,7 @@ Explicit user decisions; don't "improve" them away.
       No `system/` beside it: one folder holds the whole loadout, and
       `include("loadouts/**/*.loadout.ts")` finds a manifest in any dot
       folder. Plain `init` keeps `programs/` and `maintenance/`. Every
-      scaffold has a `tsconfig.json` (the `"loadout"` path), the SDK, and a
+      scaffold has a `tsconfig.json` (`loadout.d.ts` in `"files"`), the SDKs' types, and a
       `package.json` whose `@types/bun` only the editor needs.
 
 18. **A child repo inherits a parent; nothing flows back.** A private repo
@@ -451,8 +453,8 @@ Explicit user decisions; don't "improve" them away.
       parent's loadout.ts as a parent (`LOADOUT_AS_PARENT`: every origin
       `parent:`) and the child's, whose SDK records only declarations in
       the child's own files (what it imports from the parent are
-      references; the SDK's state is shared on `globalThis`, so the
-      parent's copy of the SDK and the child's see one set of variants),
+      references; the parent's modules import the same SDK module, whose
+      state is on `globalThis`: one set of variants),
       and merges them (`assemble.draftOver`): the
       parent's machines, meta and layout stay out; a name both declare, a
       machine in both and a child data schema are errors; the floor is the

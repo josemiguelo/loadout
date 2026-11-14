@@ -195,8 +195,8 @@ export class AppContext {
 
   /**
    * bunDir is the folder first on every manifest command's PATH: its `bun`
-   * is loadout itself (core/bun's wrapper, written the first time any
-   * command needs a frame), or $LOADOUT_BUN.
+   * is core/bun's wrapper (loadout itself, or $LOADOUT_BUN, with the SDKs'
+   * preload), written the first time any command needs a frame.
    */
   bunDir(): string {
     return this.bunFolder.get(() => bun.ensure());

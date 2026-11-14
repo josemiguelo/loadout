@@ -41,17 +41,25 @@ src/
                TEST-ONLY. draftover.ts: a child's draft over its parent's
                (contract 18)
   compile/     `loadout compile`: the TypeScript manifests
-    sdk/loadout.sdk.ts  the SDK (a text import), written into every repo
-                   as loadout.sdk.ts: the manifest language, its references,
-                   the language's own rules (fail(): file, line, column), the
-                   draft repo() prints, include(), the import-graph sources
-    sdk/loadout.script.ts  the script SDK, written beside it as
-                   loadout.script.ts, imported as "loadout/script":
-                   main/run (a managed script's check/install), oracle and
-                   programOracle (outdated rows, Row/formatRow, update), env
-                   (LOADOUT_*), clonesBehind/fastForward, Bun Shell helpers
-    compile.ts     compile: refuses a repo without loadout.ts, writes both
-                   SDKs, runs loadout.ts (and a child's parent as a parent)
+    sdk/loadout.sdk.ts  the SDK, imported as "loadout" (embedded by
+                   core/bun, a module of the wrapper's preload): the manifest
+                   language, its references, the language's own rules
+                   (fail(): file, line, column), the draft repo() prints,
+                   include(), the import-graph sources
+    sdk/loadout.script.ts  the script SDK, imported as "loadout/script"
+                   (the same way): main/run (a managed script's
+                   check/install), oracle and programOracle (outdated rows,
+                   Row/formatRow, update), env (LOADOUT_*),
+                   clonesBehind/fastForward, Bun Shell helpers
+    sdk/loadout.d.ts  GENERATED (sdktypes.ts, committed): both SDKs'
+                   declarations as `declare module` blocks, the loadout.d.ts
+                   compile and init write into every repo
+    sdktypes.ts    makes it with the pinned tsc (`bun run sdk-types`, and
+                   `bun run build`); never in the binary. sdktypes.test.ts
+                   fails when it drifts from the sources, and type-checks a
+                   fixture repo against it alone
+    compile.ts     compile: refuses a repo without loadout.ts, writes
+                   loadout.d.ts, runs loadout.ts (and a child's parent as a parent)
                    with loadout as bun, decodeDraft, draftOver, assemble,
                    writes the lock (and, with configs, the chezmoi data and
                    partial) only when changed; doneScripts, writeIfChanged
@@ -210,13 +218,17 @@ loadout wrote stay byte-identical.
   a `passArgs` command (`loadout bun`) gets every argument after its name
   as it is. Writes go through `echo`/`echoErr` (spinner.ts), synchronous on
   fds 1 and 2.
-- **The scaffolds and SDKs are text imports** (`import t from "…" with {
-  type: "text" }`), inlined by `bun build --compile`. scaffold.test.ts
-  checks scaffold.ts's table against the folder: a file added there is
-  added to the table too. tsconfig maps `loadout`/`loadout/script` to the
-  SDKs, so tsc checks the scaffolds' .ts files. bun's build warns about the
-  child scaffolds' templated tsconfig.json (`{{.ParentImport}}/*`):
-  harmless.
+- **The scaffolds, the SDKs and their types are text imports** (`import t
+  from "…" with { type: "text" }`), inlined by `bun build --compile`.
+  scaffold.test.ts checks scaffold.ts's table against the folder: a file
+  added there is added to the table too. tsc checks the scaffolds' .ts
+  files against the generated `src/compile/sdk/loadout.d.ts` (no `paths`),
+  as a repo's editor does, and scaffold.test.ts type-checks each rendered
+  scaffold on its own. bun's build warns about the child scaffolds'
+  templated tsconfig.json (`{{.ParentImport}}/*`): harmless.
+- **`loadout.d.ts` is in tsconfig's `"files"`**: an `include` pattern
+  skips a `.d.ts` that sits beside a `.ts` of the same name (TypeScript
+  takes it for that file's output), and every repo has `loadout.ts`.
 
 ## loadout is the bun
 
@@ -225,18 +237,33 @@ loadout wrote stay byte-identical.
   <folder>/.preload.js` when it runs a file) and that preload into
   `$XDG_DATA_HOME/loadout/bin` (else `~/.local/share/loadout/bin`) when
   missing, not executable or different, through a temp file and a rename.
-  `ensure()` is that folder, unless `$LOADOUT_BUN` names a bun binary: then
-  it's that binary's folder and nothing is written. `AppContext.bunDir()`
-  (once per process) feeds it to `frameOf`, which puts it first on PATH and
-  sets `LOADOUT_BUN_DIR`; `model.shellLine` puts it ahead of a `provides …
-  at` folder.
-- **compile runs loadout.ts in a child process**, loadout as bun, with a
-  cleared environment plus that folder first on PATH: isolation and
+  `ensure()` is that folder, always. `AppContext.bunDir()` (once per
+  process) feeds it to `frameOf`, which puts it first on PATH and sets
+  `LOADOUT_BUN_DIR`; `model.shellLine` puts it ahead of a `provides … at`
+  folder.
+- **The SDKs live only in the binary**: the preload registers
+  `"loadout"` and `"loadout/script"` as virtual modules (`Bun.plugin`,
+  `build.module(name, () => ({ contents, loader: "ts" }))`, the sources'
+  text inlined in the preload), so every file the wrapper runs, a parent's
+  included, imports the one module. A virtual module's stack frames name
+  it (`loadout:61:20`), never a path: the SDK's `caller()` takes the first
+  frame with a path. `import.meta.url` is `file:///loadout`, so the SDK
+  never resolves anything against its own location, and `sourcesFrom`
+  skips the two names (bun would look for an npm package). A repo holds
+  only the types (`loadout.d.ts`).
+- **`$LOADOUT_BUN`** (a bun binary, for tests and developers): the
+  wrapper, still what's on PATH, execs it instead of loadout, without
+  `BUN_BE_BUN` and with the same preload; `ensure()` refuses one that isn't
+  executable. The wrapper reads it when it runs, so one wrapper serves
+  every loadout running at once.
+- **compile runs loadout.ts in a child process**, the wrapper as bun
+  (`bun run loadout.ts`, so the preload too), with a cleared environment
+  plus that folder first on PATH and `$LOADOUT_BUN` when set: isolation and
   determinism, not in-process.
 - **One bun**: every repo runs the bun this loadout was built with
   (`Bun.version`).
-- **`loadout bun [args…]`** (cli/bun.ts) runs the wrapper (never
-  `$LOADOUT_BUN`) with stdio inherited, exits with its code, and needs no
+- **`loadout bun [args…]`** (cli/bun.ts) runs the wrapper (with
+  `$LOADOUT_BUN` cleared: always loadout's own bun) with stdio inherited, exits with its code, and needs no
   repo.
 - **`BUN_BE_BUN` must not reach what a script starts**: bun leaves it set,
   so loadout itself, or any bun-compiled executable a script runs, would
