@@ -8,36 +8,40 @@ permissions:
   contents: write
 
 jobs:
-  # The tag must name internal/version's Version, the binary's own: a tag
+  # The tag must name src/version.ts's VERSION, the binary's own: a tag
   # can't publish a binary that reports another version.
   version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Tag matches internal/version
+      - name: Tag matches src/version.ts
         run: |
-          version=$(sed -n 's/^var Version = "\(.*\)"$/\1/p' internal/version/version.go)
-          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME but internal/version says $version"; exit 1; }
+          version=$(sed -n 's/^export const VERSION = "\(.*\)";$/\1/p' src/version.ts)
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME but src/version.ts says $version"; exit 1; }
 
-  # Go cross-compiles every target from one runner; CGO is off, so the
-  # binaries are static and need nothing beside them.
+  # bun cross-compiles every target from one runner. Each binary carries
+  # its bun: the Linux ones need glibc, the macOS ones come ad-hoc signed.
   build:
     needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: oven-sh/setup-bun@v2
         with:
-          go-version-file: go.mod
+          bun-version-file: package.json
+      - name: Dependencies
+        run: bun install --frozen-lockfile
       - name: Build and package
         run: |
-          for target in linux/amd64:linux-x64 linux/arm64:linux-arm64 darwin/arm64:macos-arm64 darwin/amd64:macos-x64; do
-            platform="${target%%:*}"; release_name="${target##*:}"
+          for target in linux-x64-baseline:linux-x64 linux-arm64:linux-arm64 darwin-arm64:macos-arm64 darwin-x64:macos-x64; do
+            bun_target="${target%%:*}"; release_name="${target##*:}"
             mkdir -p "dist-$release_name"
-            CGO_ENABLED=0 GOOS="${platform%/*}" GOARCH="${platform#*/}" \
-              go build -trimpath -ldflags='-s -w' -o "dist-$release_name/loadout" ./cmd/loadout
+            bun build --compile --minify --target="bun-$bun_target" src/main.ts --outfile "dist-$release_name/loadout"
             tar -C "dist-$release_name" -czf "loadout-${GITHUB_REF_NAME}-$release_name.tar.gz" loadout
           done
+      - name: The runner's own binary reports the tag
+        run: |
+          [ "$(dist-linux-x64/loadout --version)" = "loadout version ${GITHUB_REF_NAME#v}" ] || { echo "::error::dist-linux-x64/loadout --version: $(dist-linux-x64/loadout --version)"; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
           files: loadout-*.tar.gz

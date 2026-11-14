@@ -14,8 +14,8 @@
     "noImplicitOverride": true,
     "types": ["bun"],
     "paths": {
-      "loadout": ["./internal/tsmanifest/sdk/loadout.sdk.ts"],
-      "loadout/script": ["./internal/tsmanifest/sdk/loadout.script.ts"]
+      "loadout": ["./src/compile/sdk/loadout.sdk.ts"],
+      "loadout/script": ["./src/compile/sdk/loadout.script.ts"]
     }
   },
   "include": ["src/**/*.ts"]

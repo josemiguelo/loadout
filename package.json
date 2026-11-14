@@ -2,9 +2,13 @@
   "name": "loadout",
   "private": true,
   "type": "module",
-  "description": "loadout in TypeScript, compiled by bun into one executable per target (src/main.ts). The Go code beside it is the reference until the port reaches parity.",
+  "description": "loadout, compiled by bun into one executable per target (src/main.ts); the executable is its own bun.",
+  "packageManager": "bun@1.4.3",
+  "engines": {
+    "bun": "1.4.3"
+  },
   "scripts": {
-    "build": "bun build --compile --minify src/main.ts --outfile build/loadout-ts",
+    "build": "bun build --compile --minify src/main.ts --outfile build/loadout",
     "test": "bun test src",
     "typecheck": "tsc --noEmit -p ."
   },

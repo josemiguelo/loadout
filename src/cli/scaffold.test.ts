@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { renderScaffold } from "./init.ts";
 import { scaffoldTexts } from "./scaffold.ts";
 
-const folder = fileURLToPath(new URL("../../internal/cli/scaffold/", import.meta.url));
+const folder = fileURLToPath(new URL("./scaffold/", import.meta.url));
 
 test("the embedded scaffolds are the scaffold folder's files, byte for byte", () => {
   const onDisk: Record<string, Record<string, string>> = {};

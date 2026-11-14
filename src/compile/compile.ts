@@ -34,9 +34,9 @@ import { VERSION } from "../version.ts";
 // The SDKs' text, which bun inlines (`bun build --compile` too). TypeScript
 // types these imports as the modules themselves, which have no default.
 // @ts-expect-error a text import's default is the file's text
-import SDKText from "../../internal/tsmanifest/sdk/loadout.sdk.ts" with { type: "text" };
+import SDKText from "./sdk/loadout.sdk.ts" with { type: "text" };
 // @ts-expect-error a text import's default is the file's text
-import ScriptSDKText from "../../internal/tsmanifest/sdk/loadout.script.ts" with { type: "text" };
+import ScriptSDKText from "./sdk/loadout.script.ts" with { type: "text" };
 import { transitionalWarnings, unusedWarnings } from "./unused.ts";
 
 /** entryFile is a repo's root manifest: run by compile, it imports the rest. */

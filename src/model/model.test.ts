@@ -31,7 +31,7 @@ import {
 import { mapOf } from "./map.ts";
 import { isRefusal, ManifestException, ToolTooOldException } from "./refusal.ts";
 
-const testdata = import.meta.dir + "/../../internal/model/testdata/";
+const testdata = import.meta.dir + "/testdata/";
 
 function read(name: string): string {
   return readFileSync(testdata + name, "utf8");

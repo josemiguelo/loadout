@@ -42,7 +42,7 @@ Explicit user decisions; don't "improve" them away.
      unknown key, a wrong type or a table given a non-object is an error
      naming the machine and key), recorded as written, which keeps the
      profile-conflict error. Every machine ends up with all
-     declared keys (model/machinedata.go; bare `explain` shows them); the
+     declared keys (model/machinedata.ts; bare `explain` shows them); the
      lock holds each machine's merged table.
 
    `setup-new-machine` refuses (ResolutionException) before
@@ -55,7 +55,7 @@ Explicit user decisions; don't "improve" them away.
    refused, naming the fix. `provides: { brew: { at: "/opt/homebrew/bin" } }`
    also says where it lands when a fresh shell doesn't have it on PATH:
    the probe counts as present there, and `ForMachine` records the mapped
-   variants' folders in `Manifest.ToolPaths`, which `ResolveInstall`
+   variants' folders in `toolPaths`, which `ResolveInstall`
    (install, check, outdated, batch oracle), `UpgradeEngine` (`ToolPathOf`)
    and the status's tool question put first on PATH for every command
    probed through that binary. On the variant, not the program: where a
@@ -89,18 +89,18 @@ Explicit user decisions; don't "improve" them away.
    in `loadout.ts`. Paths are kept as written, and validated at compile
    AND at every lock load to exist without leaving the repo (`..` inside
    one is fine: a shared helper). Expansion is centralized in
-   model.ExpandFilePrefix/ShellLine, applied at the execution sites. Tokens
+   model.expandFilePrefix/ShellLine, applied at the execution sites. Tokens
    after the first space are arguments, so script paths can't contain
-   spaces. A file runs like an executable (`model.FileLine`): with the
+   spaces. A file runs like an executable (`model.fileLine`): with the
    interpreter its `#!` line names (`#!/usr/bin/env bun`), else `sh`; a
    script in TypeScript can speak loadout's protocols through
    `"loadout/script"` (`main`, `run`, `oracle`, `programOracle`, `env`),
    never required. The
    line is read by the shell when the command runs, never by loadout, and
    the file needn't be executable; what's shown to the user is the script
-   and its arguments (`model.ShownLine`), not that launcher. Every script
+   and its arguments (`model.shownLine`), not that launcher. Every script
    command and custom `outdated` source gets the machine's `provides … at`
-   folders first on PATH (`ScriptStep.Path`, set by `ForMachine`), so a
+   folders first on PATH (`ScriptStep.path`, set by `ForMachine`), so a
    script's interpreter is found where its program put it (bun from brew
    on a fresh Mac) before any shell profile adds that folder. A variant's param value
    given as `file("repos/x.repo")` (`params: { repofile: file(…) }`) is a
@@ -113,8 +113,8 @@ Explicit user decisions; don't "improve" them away.
    upgrades), whatever the invocation directory, with `LOADOUT_REPO`,
    `LOADOUT_FRAGMENT_DIR` (= that directory), `LOADOUT_MACHINE`,
    `LOADOUT_OS` (`linux`/`macos`) and, with configs,
-   `LOADOUT_CONFIGS`, all absolute (`exec.FrameOf`, via
-   `AppContext.Frame`). A command takes the origin of the file that WROTE
+   `LOADOUT_CONFIGS`, all absolute (`exec.frameOf`, via
+   `AppContext.frame`). A command takes the origin of the file that WROTE
    it: an installer pattern runs in the installer's directory, a variant's
    own `command`/`check`/`outdated` in the program's (`ResolveInstall`).
    In a child repo (contract 18) a parent's declaration runs in the
@@ -137,14 +137,14 @@ Explicit user decisions; don't "improve" them away.
    `run_after` edges, ties by name. Whatever must come first says so.
    Sequential, never parallel (only read-only checks run concurrently).
    `run_after` orders but never pulls anything in; dependencies pull in
-   transitively. A program's dependencies (`Manifest.DependenciesOf`) are
+   transitively. A program's dependencies (`dependenciesOf`) are
    its own `depends_on`, the mapped variant's (a COPR's dnf-plugins-core
    never lands on a pacman machine), and what the variant's INSTALLER
    `requires` of everything it installs (`requires(brew,
    [setupBrew])`; the required program is exempt from its own
    installer's rule). Validation and cycle detection count every variant's
    edges. An install whose dependency failed (or was itself skipped) is
-   skipped, not tried (`InstallOutcome.SkippedFor`), and counts as a
+   skipped, not tried (`InstallOutcome.skippedFor`), and counts as a
    failure: the run says what it skipped and why, and exits 1.
    **Phases**: `later = "why"` on a program or script (the declaration, so
    every machine; never a variant) puts it in setup-new-machine's later
@@ -158,7 +158,7 @@ Explicit user decisions; don't "improve" them away.
    program, so a script that acts on whatever installs leave (not one
    program) belongs in the later phase. A later install whose
    dependency failed in the core phase is skipped
-   (`InstallEngine.ExecuteAfter`). `--skip-later` stops after the core
+   (`InstallEngine.executeAfter`). `--skip-later` stops after the core
    phase; `install`, `run` and `status` ignore phases. `later` on a
    `maintain_only` script is refused: it isn't part of setup.
 7. **Script status is observation**: every refresh re-runs each `check`
@@ -166,13 +166,13 @@ Explicit user decisions; don't "improve" them away.
    `exitCode` are only history of tool-run executions. Check-less scripts
    carry only run history. Install success = exit 0 AND a re-run version
    check no longer says missing. **A check that couldn't run is not
-   "missing"**: a check that goes THROUGH a tool (`VersionCheck.Probe`, from
+   "missing"**: a check that goes THROUGH a tool (`VersionCheck.probe`, from
    the installer's/variant's probe) and dies with the shell's 127/126 is
-   `unknown`, with `ProgramState.Reason` set to the shell's line; a check
+   `unknown`, with `ProgramState.reason` set to the shell's line; a check
    with no probe IS the program, so its 127 means missing. (Otherwise a tool
    off PATH reports all its programs missing.) The refresh groups unknown
    rows by tool and asks about each ONCE (`command -v`):
-   `StatusEngine.LastToolsDown` — `status` reports it once after the table,
+   `StatusEngine.lastToolsDown` — `status` reports it once after the table,
    the home screen in a toast, and affected programs are never
    offered for install. Ceiling: a pipeline check (`tool | grep …`) exits
    with the LAST command's code and hides the tool's absence; write
@@ -185,14 +185,14 @@ Explicit user decisions; don't "improve" them away.
    when content changed (clean git history; `sync` is a no-op when idle).
    Unknown JSON keys are ignored on read.
 9. **Errors are clean one-liners** (`error: ...`), never stack traces or
-   panics. Every refusal implements `model.Refusal`, and cmd/loadout/main.go
+   panics. Every refusal extends `model.Refusal`, and src/main.ts
    prints any error that reaches it as one `error: ` line (an OS error
    too), so a new failure type needs no new case. A test asserts that every
-   refusal type implements it (loader_test.go).
-10. **Product code loads manifests via `loader.LoadRepo`** (the lock,
-    checked) and sees it through `Manifest.ForMachine` (its script
-    variants picked; `AppContext.LoadManifest` does both).
-    `assemble.AssembleWithoutFiles` and `coretest.ManifestOf` are for
+   refusal type extends it (loader.test.ts).
+10. **Product code loads manifests via `loader.loadRepo`** (the lock,
+    checked) and sees it through `forMachine` (its script
+    variants picked; `AppContext.loadManifest` does both).
+    `assemble.assembleWithoutFiles` and `coretest.manifestOf` are for
     tests only: they skip the `file:` checks,
     and everything else — built-ins, flattening, validation — is the
     production path.
@@ -214,7 +214,7 @@ Explicit user decisions; don't "improve" them away.
     command line, where a newline would run the next line as a command).
     Only opted-in scripts converge and are observed; `run` errors on others.
     Args become positional params for the file script AND its check (`set
-    --`, see engine.WithArgs); `managedBy: "x.sh"` checks with `x.sh
+    --`, see engine.withArgs); `managedBy: "x.sh"` checks with `x.sh
     check "$@"`, so a managing script gets them in both modes. Args on an
     inline script are an error. No implicit script application, no OS or
     bootc detection deciding membership (the old `os` filter is gone: the
@@ -230,13 +230,13 @@ Explicit user decisions; don't "improve" them away.
     (`probe`, `install`, `check`, `regex`, `outdated`, `outdatedAll`,
     `upgrade`, `needsSudo`, `params`; `{pkg}` substituted) defines a
     mechanism once, repo-unique. Loadout
-    ships a library (`internal/model/installerlibrary.go`: dnf, dnf-repo,
+    ships a library (`src/model/installerlibrary.ts`: dnf, dnf-repo,
     dnf-copr, brew, brew-cask, flatpak, pacman, omarchy, omarchy-aur with
-    oracles; apt install/check only) as Go values, which the SDK exports as
+    oracles; apt install/check only) as values, which the SDK exports as
     references (`dnf`, `brewCask`), merged UNDER the repo's own at
     assembly: a repo installer of the same name replaces the built-in
     outright, and
-    `Manifest.BuiltinInstallers` records which survived so
+    `Manifest.builtinInstallers` records which survived so
     `explain`/`installers` label `(built-in)` vs `(repo)`. `requires(x,
     [programs…])` adds to any installer, built-ins included, without
     redefining it. Knowledge, never detection: nothing probes the machine
@@ -254,7 +254,7 @@ Explicit user decisions; don't "improve" them away.
     substituted like `{pkg}`. All declared, never inferred: a missing param
     or an undeclared one is an error, so an unsubstituted `{placeholder}`
     never reaches a shell.
-    Resolution (`Manifest.ResolveInstall`/`CheckFor`, used by every
+    Resolution (`resolveInstall`/`CheckFor`, used by every
     engine/UI): command → installer install pattern (else error); check →
     variant check → installer check (else program `version`); probe →
     installer probe (else none); outdated → variant override, else
@@ -284,10 +284,10 @@ Explicit user decisions; don't "improve" them away.
     itself (`omarchy pkg add`, a repo script); a variant's replaces its
     installer's. `setup-new-machine`, `install`, `run` and `upgrade` ask
     for the password once, after the confirmation and before the first
-    step (`askForSudoUpfront` in cli/converge.go), when their plan holds a
-    step that needs it: declared, or a command matching `CommandNeedsSudo`
-    (core/engine/sudo.go: the word sudo, not "pseudo"). Scripts count only
-    while pending (`ScriptRunner.Pending` asks the check, which `run` asks
+    step (`askForSudoUpfront` in cli/converge.ts), when their plan holds a
+    step that needs it: declared, or a command matching `commandNeedsSudo`
+    (core/engine/sudo.ts: the word sudo, not "pseudo"). Scripts count only
+    while pending (`ScriptRunner.pending` asks the check, which `run` asks
     again). Valid credentials ask nothing; a refusal stops the run before
     any step. A background shell loop then runs `sudo -n -v` every 50s
     while loadout's pid lives, checked every second (`SudoKeepalive`), so
@@ -318,8 +318,8 @@ Explicit user decisions; don't "improve" them away.
     `self-upgrade`. `meta minToolVersion` (`repo({ minToolVersion: … })`)
     is a floor the repo declares on top.
     New lock fields are additive with defaults. State files with
-    `schemaVersion > coremodel.SchemaVersion` are skipped with a warning
-    (`StateStore.LastWarnings`; new read paths must echo/log them). Bump
+    `schemaVersion > coremodel.schemaVersion` are skipped with a warning
+    (`StateStore.lastWarnings`; new read paths must echo/log them). Bump
     SchemaVersion only for a real schema break; handle older schemas via
     defaults.
 15. **Converge installs; `upgrade` upgrades, a whole mechanism at a time.**
@@ -352,7 +352,7 @@ Explicit user decisions; don't "improve" them away.
     `LOADOUT_SYNC_RECOMPILED=1`: the sync it starts finds the lock already
     compiled (the parent unchanged since) and must still commit it. The
     home screen ends after an S whose repo now refuses its binary
-    (`loader.ToolTooOld`), like after U. Only `sync` upgrades by
+    (`loader.toolTooOld`), like after U. Only `sync` upgrades by
     itself: it is the command that pulls, so it's the one that meets a
     repo moved ahead of the binary.
 16. **The repo's shape is declared, never assumed.** A config repo is
@@ -388,40 +388,40 @@ Explicit user decisions; don't "improve" them away.
     - **Drift is observation** (contract 7): one `chezmoi status --include
       files,symlinks` per refresh. Its second column is what `apply` would
       change (the same answer as `chezmoi verify`, in one call); a unit with
-      any such file is `drifted`, with them in `ConfigState.Files`. Its
+      any such file is `drifted`, with them in `ConfigState.files`. Its
       first column marks a file edited since chezmoi last wrote it.
     - **chezmoi can't answer** (absent: exit 127; a template error): the
       units last seen are `unknown` with chezmoi's line as the reason, and
-      `status` says it once (`StatusEngine.LastConfigsDown`); never a
+      `status` says it once (`StatusEngine.lastConfigsDown`); never a
       refusal for status.
     - **Writing**: `apply [unit…]` and `sync` run `chezmoi apply --no-tty`
       (a unit = its targets, absolute via `chezmoi target-path`). Without a
       terminal chezmoi aborts the whole apply on a file edited in place
       (it would ask), so both refuse first when a file they'd replace is
-      edited AND drifted (`refuseEdited`, cli/apply.go), naming the files:
+      edited AND drifted (`refuseEdited`, cli/apply.ts), naming the files:
       keep them with `chezmoi re-add`, or replace them with `apply
       --force`. `sync` = pull → (upgrade loadout, contract 15) → refuse
       edited → apply → refresh → name what's left (missing programs,
       scripts not done) → commit → push; nothing is committed after a
       refusal or a failed apply. It never installs or runs scripts itself.
       Its pull (or a parent's, through the child's compile) can rename the
-      repo's folders, so `sync` calls `AppContext.ReloadLayout()` after
+      repo's folders, so `sync` calls `AppContext.reloadLayout()` after
       them: everything read from the layout (configs and state folders, the
       parent, chezmoi's sources) is read again, never kept from before the
       pull.
-    - **State**: `MachineState.Configs`, left out of the file when empty,
+    - **State**: `MachineState.configs`, left out of the file when empty,
       so repos without configs write what they always did and older
       readers ignore it (schema stays 1). `diff` shows a CONFIG table (`-` =
       the machine doesn't report that unit) and exits 1 on config drift.
     - **Templates' data**: `loadout compile` writes `<configs>/
-      .chezmoidata/loadout.json` (`model.ChezmoiDataFiles`), which chezmoi
+      .chezmoidata/loadout.json` (`model.chezmoiDataFiles`), which chezmoi
       loads into every template as `.loadout`: `loadout.defaults` (every
       declared key) and `loadout.machines.<hostname>` (each machine's
       merged table). That shape is the contract with templates; the lock's
       layout stays loadout's own (templates reading the lock broke on any
       change to it). Compile also writes the partial that picks this host's
       table, `<configs>/.chezmoitemplates/loadout/machine`
-      (`model.ChezmoiPartial`): the machine loadout runs as
+      (`model.chezmoiPartial`): the machine loadout runs as
       (`LOADOUT_MACHINE`, else the hostname, so a plain `chezmoi apply`
       agrees with `--machine`); for a machine this repo's data lacks, its
       table from the lock of `LOADOUT_REPO` (a child repo declaring it,
@@ -455,7 +455,7 @@ Explicit user decisions; don't "improve" them away.
     schema from the parent's checkout (tsconfig's `"parent/*"` alias, which
     `init --parent` writes), typed like its own. One level, one parent; any number of children,
     none of which the parent knows.
-    - **Compile** (tsmanifest/compile.go): compile refuses a parent that
+    - **Compile** (compile/compile.ts): compile refuses a parent that
       has no lock, whose lock is stale (its sources' hash differs), that is
       itself a child, or whose manifests aren't TypeScript. It runs the
       parent's loadout.ts as a parent (`LOADOUT_AS_PARENT`: every origin
@@ -463,7 +463,7 @@ Explicit user decisions; don't "improve" them away.
       the child's own files (what it imports from the parent are
       references; the SDK's state is shared on `globalThis`, so the
       parent's copy of the SDK and the child's see one set of variants),
-      and merges them (`assemble.DraftOver`): the
+      and merges them (`assemble.draftOver`): the
       parent's machines, meta and layout stay out; a name both declare, a
       machine in both and a child data schema are errors; the floor is the
       higher `minToolVersion`, and the bun is the child's, else the

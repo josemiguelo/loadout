@@ -1,8 +1,8 @@
 // The slice of Bubble Tea's model the screen's parts keep (style's Busy and
 // Toasts, term's Model): a message is any value, a command is a function
 // that resolves to the next message, run by whoever drives the screen, and
-// fed back to the parts' update methods. It keeps the Go packages' shape so
-// the home screen's reducers port one to one, whatever draws them (Ink).
+// fed back to the parts' update methods. It keeps the shape of the Go
+// packages the home screen was ported from, so its reducers read as they did.
 
 /** Msg is anything a command delivers. */
 export type Msg = unknown;

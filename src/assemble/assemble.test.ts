@@ -723,7 +723,7 @@ test("the refusal lists every error", () => {
 });
 
 test("the real lock reassembles to itself", () => {
-  const text = readFileSync(import.meta.dir + "/../../internal/assemble/testdata/loadout.lock.json", "utf8");
+  const text = readFileSync(import.meta.dir + "/testdata/loadout.lock.json", "utf8");
   const lock = decodeLock(text);
   // The lock as a draft: built-ins taken out again, their requirements kept.
   const d = newManifestDraft({ manifest: { ...lock.manifest, installers: new Map(lock.manifest.installers), builtinInstallers: [] } });

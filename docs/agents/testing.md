@@ -1,20 +1,19 @@
 # Testing conventions
 
-- Unit tests are Go `_test.go` files beside the code (`go test ./...`). No
-  real processes: `fakeexec.Runner` (scripted command lines with stdout/
-  stderr/exit; an unregistered command exits 127) behind
-  `exec.ProcessRunner`. Files are `t.TempDir()` or `testing/fstest`
-  (assembly's file checks go through an `fs.FS`).
-- Fixtures are written in HCL where the front end is in reach:
-  `hcltest.ManifestOf(t, src)` / `ManifestOfFiles` / `Refusal` (TEST-ONLY,
-  contract 10: the real decoder, `file:` checks skipped). Core's tests
-  build drafts in Go:
-  `coretest.ManifestOf(t, func(b *coretest.Draft) { … })` and
-  `coretest.Example(t)`, the shared fixture. The language's meaning and
-  mistakes are tested in hclconf (dsl_test, decode_test, assembly_test,
-  compile_test, unused_test, in HCL), assembly on hand-built drafts in
-  assemble, the lock reader in core/loader, byte-identical encoding
-  against `testdata/` locks and state files written by loadout 3.
+- Unit tests are bun tests, `<name>.test.ts` beside the code (`bun test
+  src`). No real processes: fakeexec's runner (scripted command lines with
+  stdout/stderr/exit; an unregistered command exits 127) behind
+  `ProcessRunner`. Files are temp directories or `mapFS({...})`
+  (assembly's file checks go through a `RepoFS`).
+- Core's tests build manifests in code: `coretest.manifestOf((b) => { … })`
+  and `coretest.example()`, the shared fixture; assemble's use
+  testhelpers.ts. The language's meaning and mistakes are tested end to end
+  in the integration suite (TypeScript fixtures through the real compile)
+  and in compile.test.ts; assembly on hand-built drafts in assemble, the
+  lock reader in core/loader, byte-identical encoding against the
+  `testdata/` locks and state files (src/model, src/assemble, src/core/state)
+  written by older loadouts. tui/style's bytes are pinned to Lip Gloss's by
+  `testdata/golden.json`.
 - Integration = `integration/run-tests.sh`: black-box, real binary. The
   runner sources `lib.sh` (ok/fail, fixtures, `has_pty`/`pty_run`), then
   every `t/NN-*.sh` in name order, each in its OWN fresh directory: a file
@@ -46,8 +45,8 @@
 - TUI: the model's reducers (`handleKey`, `handleText`, `runExited`,
   `followUp`) and pure builders (`sectionsOf`, `scriptRowsOf`,
   `programRowsOf`, `preselect`, `selectionKey`, `remoteLines`, `listOf`,
-  `upgradeItem`) are unit-tested in internal/tui on a state set up by the
-  test; runs go through seams (`runCommand`, `newTerm` with a fake
+  `upgradeItem`) are unit-tested in src/tui (homemodel.test.ts) on a state
+  set up by the test; runs go through seams (`runCommand`, `newTerm` with a fake
   terminal, `explain`), and the frame's size is checked in both layouts.
   Rendering is verified manually (ask the user) plus PTY probes.
   `t/70-home-screen.sh` (`has_pty`-guarded, `script`-driven) and
@@ -60,8 +59,8 @@
   unmocked self-version check is seconds of curl before the remote subject
   settles.
   **The home screen is read from its frame dump, never from the raw
-  capture**: Bubble Tea's renderer writes only changed cells, so text is
-  split by cursor moves. `screen_run <name> <args>` runs it under `script`
+  capture**: the renderer (src/tui/renderer.ts) writes only changed rows,
+  so text is split by cursor moves. `screen_run <name> <args>` runs it under `script`
   at `PTY_SIZE` (default 140x40; `stty` inside the pty) with
   `LOADOUT_SCREEN_DUMP=<name>.screen` (the current frame, plain, written
   atomically after every changed render; undocumented for users) and the

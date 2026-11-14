@@ -1,8 +1,6 @@
 // The terminal's input as Bubble Tea v2 reads it: raw bytes from the tty
-// turned into key presses, pastes and mouse events. Ink's own input loses
-// what the screen relies on (ctrl+], alt+key, bracketed paste as one
-// message, SGR mouse), so the screen reads the tty itself and Ink only
-// draws.
+// turned into key presses, pastes and mouse events: ctrl+], alt+key,
+// bracketed paste as one message and SGR mouse, which the screen relies on.
 //
 // Legacy encodings, as ultraviolet decodes them: a control byte is ctrl+key
 // (0x1d is ctrl+]), ESC before a key is alt+key (ESC alone in its read is

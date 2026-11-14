@@ -5,8 +5,8 @@
 **Driving the TUI without a human**: the home screen needs a real TTY; fake
 one with `script` and pipe keys in, and read what it draws from
 `LOADOUT_SCREEN_DUMP=<file>` (the current frame as plain text, rewritten
-after every render; Bubble Tea's renderer writes only changed cells, so
-the raw capture can't be grepped). Give the screen time to bind the tty
+after every render; the renderer writes only changed rows, so the raw
+capture can't be grepped). Give the screen time to bind the tty
 and finish its first refresh: a key on a busy row is refused, a key before
 raw mode is lost. By hand, sleeps do; the integration suite waits on the
 dump instead (see testing.md). Set the pty's size inside it
@@ -20,22 +20,22 @@ dump instead (see testing.md). Set the pty's size inside it
 ```
 
 A run that doesn't exit means something kept the screen alive after q
-(see "The home screen's Bubble Tea mechanics" below). Rendering changes
+(see "The home screen's mechanics" below). Rendering changes
 still need a human check: ask the user to run it.
 
 **Ctrl-C in a run**: every action runs its command as a child loadout in
-the run panel's pseudo-terminal (internal/tui/term), its own session with
+the run panel's pseudo-terminal (src/tui/term), its own session with
 the PTY as controlling terminal, so Ctrl-C typed into the panel is the
 line discipline's SIGINT to the child's process group, never to the screen.
 The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
-(cmd/loadout/main.go), stops, and exits 130, which the screen reads as
+(src/main.ts), stops, and exits 130, which the screen reads as
 "interrupted". `70-home-screen` checks Ctrl-C on both platforms.
 
 ## How it works
 
 - **Home screen** (bare `loadout` on a TTY; a pipe gets help):
-  `internal/tui` (homemodel.go + keys.go hold all state and logic,
-  unit-tested; view.go draws). Layout B, master–detail, in Crush's style
+  `src/tui` (homemodel.ts + keys.ts hold all state and logic,
+  unit-tested; view.ts draws). Layout B, master–detail, in Crush's style
   (user decisions): the sidebar LEFT (32 cols) and the main pane right of
   it, which shows one subject (programs, scripts, configs — only with
   `repo({ configs })` —, remote, fleet) under a plain title row
@@ -50,14 +50,14 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
 - **Under 100 columns the screen is STACKED** (user decision, replacing a
   compact layout of header + subject tabs + a `d` details dialog), like a
   website's sidebar collapsing on a phone: ONE page fills the screen, the
-  focused area's — FocusSidebar is the home page (the sidebar's content,
-  full width), FocusMain the subject page (title, filter, list or
-  inspector), FocusTerminal the run page (the panel, full height). Same
+  focused area's — FocusArea.Sidebar is the home page (the sidebar's content,
+  full width), FocusArea.Main the subject page (title, filter, list or
+  inspector), FocusArea.Terminal the run page (the panel, full height). Same
   state, focus areas and reducers; only the presentation changes, so a
   resize across 100 keeps the focus. A breadcrumb row on top (`loadout ›
   m1`, `loadout › programs › inspect › git`, `loadout › scripts › run`;
   the verdict counts ✓N ●M at the right, and `⟳ <run>` while a command
-  runs off-page), a horizontal `style.Divider` rule under it (no `│` or
+  runs off-page), a horizontal `style.divider` rule under it (no `│` or
   `├`). enter/l push (a subject's page, a run's page), i the inspector,
   esc/h pop one level; 1–5 show a subject's page from anywhere; tab and z
   do nothing (one page shows). A confirmed run pushes the run page,
@@ -69,12 +69,12 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   and the run panel blended into the main pane): a vertical `│` in the
   gutter between the sidebar and the main pane, full height, and with the run panel a
   horizontal rule above it that meets it in a `├` (none when zoomed), both
-  in `style.Divider` (BgMost: quiet, still visible on a transparent
+  in `style.divider` (BgMost: quiet, still visible on a transparent
   terminal). The focused area's title wears the focused selection's
-  highlight (`TitleRowFocused`: the Primary fill and OnPrimary ink of a
+  highlight (`titleRowFocused`: the Primary fill and OnPrimary ink of a
   selected row), so tab lands on something that stands out in every area,
   the run panel included (user decision); every other title is muted
-  (`TitleRowMuted`). The sidebar has no title row: its selected entry is
+  (`titleRowMuted`). The sidebar has no title row: its selected entry is
   its highlight.
 - **Focus areas, not one cursor** (user decision, replacing "one cursor
   for the whole screen"): the sidebar (subjects, then runs), the main pane
@@ -82,16 +82,16 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   panel shows). tab/shift+tab cycle them (side by side); ctrl+] always leaves the
   terminal for the main pane. A run opened from the sidebar's Runs
   (enter or a click) gives the focus back to that entry when the panel is
-  left (h/←) or closed (esc) — `RunFromSidebar` — not to the main pane,
+  left (h/←) or closed (esc) — `runFromSidebar` — not to the main pane,
   which never opened it. The focused area's selection is a full-row fill,
   with no bar (user decision: the `▌` read as a stray `|`) — Primary with
   OnPrimary ink, the same in the sidebar
-  (`style.SubjectRow`) as in the main pane (`ListRow`), so the active
+  (`style.subjectRow`) as in the main pane (`listRow`), so the active
   entry stands out (user decision); an unfocused area keeps its
   selection on a dimmer BgLess fill. Moving in
   the sidebar switches the main pane's subject at once; 1–5 jump. Each
-  subject keeps its own cursor, scroll and filter (`Cursors`/`Offsets`/
-  `Filters`, keyed by subject name); `snap` re-resolves a cursor against
+  subject keeps its own cursor, scroll and filter (`cursors`/`offsets`/
+  `filters`, keyed by subject name); `snap` re-resolves a cursor against
   the CURRENT rows after every reshape (nearest stop at or above), so an
   emptied list never highlights nothing. Keys: ↑↓/jk move, pgup/pgdn page,
   `[`/`]` jump between remote groups (not `H`/`L`), l/→ into the list or
@@ -119,7 +119,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   dashboard never quits either: with a run going it interrupts it (as in
   its terminal), otherwise a toast says "q quits".
 - **Remote tree** is grouped by the TOOL that will act (`remoteLines`,
-  from `OutdatedReport.Tools`): a heading per probe (brew and brew-cask are
+  from `OutdatedReport.tools`): a heading per probe (brew and brew-cask are
   one tool) with its declared programs nested under it and an amber "⋯ N
   more not in your loadout" line for the sweep's real cost (enter lists
   them), then each custom source as a heading with its items. space
@@ -140,7 +140,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
 - **Configs**: every unit the last observation saw, with its verdict and
   drifted files; drifted ones pre-ticked (`preselectConfigs`). Enter first
   asks chezmoi which ticked files were edited on this machine
-  (`ConfigEngine.Edited`): any, and an Error toast names them plus a list
+  (`ConfigEngine.edited`): any, and an Error toast names them plus a list
   dialog of the files, and nothing runs (the choice between `chezmoi
   re-add` and `apply --force` is made in a terminal, never from the
   screen); none, and it asks, then runs `apply <names>`. The fleet subject
@@ -155,7 +155,7 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   `install <names> --yes`. **Fleet**: the drifting programs and configs,
   machines as columns.
 - **Inspector** (`i`, user decision): the row's program, script or config
-  as `explain` resolves it (`app.Explain`, shared with the CLI: no explain
+  as `explain` resolves it (`app.explain`, shared with the CLI: no explain
   logic in the TUI), where it is declared, this machine's last verdict
   from the rows on screen, and every machine's from the fleet comparison.
   esc goes back to the list.
@@ -182,13 +182,14 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
     in your loadout" list row (↑↓ selects it, enter lists them). Buttons
     Run/Cancel: ←→, h/l or tab move, enter presses, y/n press directly,
     esc/q cancel. S, U and C ask in the same dialog.
-  - The yes builds the command with `AppContext.RunCommand` (a CHILD
-    loadout: `platform.SelfExecutable()`, the global options, the
-    subcommand with `--yes`/`--force` as `Closed.Command` says,
+  - The yes builds the command with `AppContext.runCommand` (a CHILD
+    loadout: `platform.selfExecutable()`, the global options, the
+    subcommand with `--yes`/`--force` as `closedCommand` says,
     `LOADOUT_HANDOFF=1`, `PAGER=cat`/`GIT_PAGER=cat`: a pager would work in
     the panel, but its screen leaves nothing in the run's log) and starts
-    it in a `term.Model` (internal/tui/term: creack/pty + charmbracelet/x/vt;
-    the reply pipe drained, redraws coalesced, OSC 10/11 answered with the
+    it in a `term.Model` (src/tui/term: a PTY through `Bun.spawn({ terminal
+    })`/`Bun.Terminal`, its screen kept by `@xterm/headless`; replies
+    written back at once, redraws coalesced, OSC 10/11 answered with the
     theme's colours, ExitMsg only after the last output). The terminal is
     focused: EVERY key goes to the child except ctrl+], so sudo, `gum
     confirm` and pagers work as in a shell (kitty/CSI-u keys don't).
@@ -202,47 +203,54 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
     command wrote; an upgrade also re-asks the remotes (its ticks clear on
     success only), sync/setup reload everything (layout included), a
     failure re-checks the machine. U, and an S whose repo now refuses this
-    binary (`loader.ToolTooOld`), END the screen: the binary on disk is a
+    binary (`loader.toolTooOld`), END the screen: the binary on disk is a
     different version, and the run's output plus what to do next is
-    printed on the normal screen (`app.Ended`).
+    printed on the normal screen (app's `Ended`).
   - The run stays in the panel until esc dismisses it or the next run
     starts, and in the sidebar's Runs (at most `maxRuns`; enter shows one
     again). Only the newest finished run keeps its emulator (4 MiB); older
-    ones are closed and keep their text (`term.Close` keeps `Plain`).
+    ones are closed and keep their text (`close()` keeps the plain text).
 - **Dialogs** are centred overlays (no dim): confirm, list, command
   palette (ctrl+p: fuzzy filter, every machine verb and subject with its
-  key) and help (ctrl+g: bubbles/help's full view; stacked, it names no
+  key) and help (ctrl+g: every binding, grouped; stacked, it names no
   tab or zoom). A dialog owns the keyboard. **Toasts** are floating cards at the
-  bottom right, above the help line, which stays (`style.ToastCard`; user
+  bottom right, above the help line, which stays (`style.toastCard`; user
   decision, replacing a full-width band that covered a transparent
   terminal): a rounded border, icon and title in the kind's colour (✓ Done,
   ! Warning, × Error, • Note), the message wrapped below, nothing filled,
   4s; a dialog sits over one. Every message the screen says is one.
-- **The home screen's Bubble Tea mechanics** (`internal/tui/program.go`,
-  `jobs.go`): ONE program for the whole session on Bubble Tea v2's own
-  renderer (cell diffs, synchronized output). `View` returns a `tea.View`
-  with AltScreen (quitting gives the normal screen back exactly as it
-  was), MouseModeCellMotion and, while the terminal has the keys, its
-  cursor offset
-  by the panel's position. Keys come from `/dev/tty` when stdin isn't one.
-  Background work (refresh, remotes, plans, the browser) is a `tea.Cmd` run
-  by `jobs`: the first refresh starts before the program, a finished job
-  queues its message and `prog.Send`s a wake-up, so every state write
-  happens on Update's goroutine (no lock around state). Reducers queue
-  their commands (`m.cmds`: toast expiries, the terminal's messages) for
-  the program to run. Busy is shown by Bubbles' MiniDot braille spinner
-  (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` in Primary, `style.BusyGlyph`/`BusyLabel`), every row on
-  the same frame (user decision, replacing scrambling glyphs: calm, and
-  never mistaken for a status glyph such as the attention `●`). It runs
-  off ONE clock (`style.Busy`) that ticks only while something is busy
-  and stops on exit, so q never hangs. `LOADOUT_SCREEN_DUMP=<file>` (undocumented for users) writes
-  each changed frame as plain text, atomically: the PTY tests' window.
+- **The home screen's mechanics** (`src/tui/program.ts`, `renderer.ts`,
+  `input.ts`, `jobs.ts`): ONE program for the whole session, an
+  Elm-style loop in Bubble Tea's shape (tea.ts: messages, commands,
+  update). `send(msg)` updates, starts the commands, then redraws once per
+  burst (`setTimeout(0)`). The renderer draws on the alternate screen
+  (quitting gives the normal screen back exactly as it was), writes only
+  the rows that changed, inside synchronized output (mode 2026), and puts
+  the cursor where the run panel's command has it while the terminal has
+  the keys. input.ts decodes the tty's bytes itself: control bytes as
+  ctrl+key, ESC+key as alt+key, a lone ESC in its read as esc, CSI/SS3 keys
+  with xterm modifiers, kitty CSI u, bracketed paste as one `PasteMsg`, SGR
+  mouse; the screen turns on mouse cell motion (1002+1006), bracketed paste
+  and the window title. Keys come from `/dev/tty` when stdin isn't one.
+  Background work (refresh, remotes, plans, the browser) is a promise run
+  by `jobs`: the first refresh starts before the program, and a finished
+  job queues its message and wakes the program, so every state write
+  happens in update. Reducers queue their commands (`m.cmds`: toast
+  expiries, the terminal's messages) for the program to run. Busy is shown
+  by a MiniDot braille spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` in Primary,
+  `style.busyGlyph`/`busyLabel`), every row on the same frame (user
+  decision, replacing scrambling glyphs: calm, and never mistaken for a
+  status glyph such as the attention `●`). It runs off ONE clock
+  (`style.Busy`) that ticks only while something is busy and stops on
+  exit, so q never hangs. `LOADOUT_SCREEN_DUMP=<file>` (undocumented for
+  users) writes each changed frame as plain text, atomically: the PTY
+  tests' window.
 - **Each subject settles on its own** (user decision): programs, scripts
   and configs are checked side by side by ONE refresh
-  (`StatusEngine.RefreshParts` → `AppContext.RefreshAndWriteStateParts`),
+  (`StatusEngine.refreshParts` → `AppContext.refreshAndWriteStateParts`),
   which hands each part to the screen the moment ITS checks finish
   (`engine.Part`; the refresh job `post`s a `partMsg` per part before its
-  own message). `HomeState.Checking` is the subjects still waiting: a
+  own message). `HomeState.checking` is the subjects still waiting: a
   sidebar row's spinner stops, with its fresh counts, when its own part
   lands (`partLanded` merges it into `partial`), never when the slowest
   subject does. The state file is still written once, with the whole
@@ -255,6 +263,6 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   asked at once, each landing as it finishes. The remote subject uses the
   CACHED self-version check (GitHub's API is rate-limited and the screen
   opens constantly); `outdated` asks fresh. The home model owns no domain
-  logic: StatusEngine/DiffEngine/`AppContext.OutdatedReport`/`Explain` do
+  logic: StatusEngine/DiffEngine/`AppContext.outdatedReport`/`explain` do
   the work, and every action is a real subcommand. Rows measure their
   columns once a frame from ALL the list's rows, not just the visible ones. A script's verdict is always its check.

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Black-box integration tests: drive the real binary against temp config
 # repos. Usage: integration/run-tests.sh [path-to-binary] [pattern]
-#   path-to-binary  default build/loadout (`go build -o build/loadout ./cmd/loadout`)
+#   path-to-binary  default build/loadout (`bun run build`)
 #   pattern         run only t/*.sh whose name contains it (e.g. `home`, `run`)
 # Each t/*.sh builds its own fixtures in its own directory — no file
 # depends on another having run; the numbers only fix the order. The
@@ -12,7 +12,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 BIN=$HERE/../build/loadout
 if [ $# -gt 0 ] && [ -f "$1" ]; then BIN=$1; shift; fi
 [ -x "$BIN" ] || {
-    echo "no loadout binary at $BIN: run go build -o build/loadout ./cmd/loadout first (or pass its path)" >&2
+    echo "no loadout binary at $BIN: run bun run build first (or pass its path)" >&2
     exit 1
 }
 BIN=$(realpath "$BIN")

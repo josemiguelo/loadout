@@ -1,4 +1,4 @@
-# Build output (go build -o build/loadout ./cmd/loadout)
+# Build output (bun run build: build/loadout)
 build/
 
 # IDE

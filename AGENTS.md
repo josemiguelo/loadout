@@ -1,15 +1,18 @@
 # AGENTS.md — loadout
 
-`loadout` is one static Go binary that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, typed by the SDK loadout writes as `loadout.sdk.ts`); each machine picks its variants and scripts. `loadout compile` runs them with the bun loadout brings and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE Bubble Tea screen, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic. It was once `post-installer`: never reintroduce that name in code.
+`loadout` is one executable, TypeScript compiled by bun (`src/`, bun inside, so it is also its own bun), that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, typed by the SDK loadout writes as `loadout.sdk.ts`); each machine picks its variants and scripts. `loadout compile` runs them with loadout itself as bun and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE full-screen terminal UI, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic. It was once `post-installer`: never reintroduce that name in code.
 
 ## Build, run, test
 
 ```sh
-go build -o build/loadout ./cmd/loadout              # the binary
-go vet ./...
-go test ./...                                        # unit tests (one package: ./internal/tsmanifest/...)
+bun install --frozen-lockfile                        # deps (@xterm/headless; types, typescript)
+bun run build                                        # build/loadout, this host's executable
+bunx tsc --noEmit -p .                               # types
+bun test src                                         # unit tests (<name>.test.ts beside the code)
 ./integration/run-tests.sh [path-to-binary] [pattern] # black-box suite; builds nothing, default build/loadout
 ```
+
+Cross-compile a release target: `bun build --compile --minify --target=bun-<linux-x64-baseline|linux-arm64|darwin-arm64|darwin-x64> src/main.ts --outfile <path>`. The bun version is package.json's `packageManager`.
 
 All suites pass before work is called done. Manual target: the user's live config repo (`$LOADOUT_REPO`, `~/.local/share/chezmoi`). `status`, `diff` and `--dry-run` against it are fine; installing or removing packages or pushing git needs the user's OK. Opening the home screen writes the machine's state file there.
 
@@ -25,8 +28,8 @@ Explicit user decisions, numbered (code, the wiki and `.dotfiles` cite them as "
 6. Programs before scripts, topological, ties by name; sequential.
 7. Status is observation: checks re-run every refresh; a check that couldn't run is `unknown`, not missing.
 8. State files are this machine's only and change only when their content does.
-9. Errors are one `error: ` line; every refusal implements `model.Refusal`.
-10. Product code loads manifests only through `loader.LoadRepo` and `ForMachine`.
+9. Errors are one `error: ` line; every refusal extends `model.Refusal`.
+10. Product code loads manifests only through `loader.loadRepo` and `forMachine`.
 11. Declarations are written out: consts and helper functions over plain values, by convention.
 12. Scripts are opt-in per machine.
 13. Installers own mechanics; variants refine them. Declared, never inferred.
@@ -38,7 +41,7 @@ Explicit user decisions, numbered (code, the wiki and `.dotfiles` cite them as "
 
 ## More, when the task needs it
 
-- Package layout and dependency direction, byte-identical outputs: `docs/agents/architecture.md`.
+- Module layout and dependency direction, byte-identical outputs, TypeScript conventions, loadout as bun: `docs/agents/architecture.md`.
 - The TypeScript manifests: the SDK, compile, its warnings, gotchas and house style: `docs/agents/typescript.md`.
 - CLI presentation (theme, terminal queries, boxed tables, spinner, the converge pipeline): `docs/agents/cli-output.md`.
 - The home screen, and driving it without a human: `docs/agents/home-screen.md`.
@@ -52,8 +55,8 @@ Update this knowledge in the same change that makes it true. Add an entry only w
 
 ## Working agreements
 
-- **Everything works on Linux AND macOS** (the user runs both), the Go and the shell, here and in config repos. macOS ships BSD tools: no `\|` in a BRE (`sed -nE` with `|`); `cat -A`, bare `sed -i`, `timeout` and GNU `readlink -f` are absent or differ; `script` takes its arguments the other way round. BSD failures tend to be silent. Test here and reason about the other platform before claiming done.
-- **The manifest language is the SDK** (`internal/tsmanifest/sdk/loadout.sdk.ts`): a new or changed setting is a typed field there, documented in its doc comment (that's the user's completion and hover), desugared into the draft exactly as the lock reads it, and caught where it's declared when it's a mistake (`fail()`: one line, the file, line and column). Test it end to end in the integration suite (a TS fixture, `compile_repo`). Details in `docs/agents/typescript.md`.
+- **Everything works on Linux AND macOS** (the user runs both), the TypeScript and the shell, here and in config repos. macOS ships BSD tools: no `\|` in a BRE (`sed -nE` with `|`); `cat -A`, bare `sed -i`, `timeout` and GNU `readlink -f` are absent or differ; `script` takes its arguments the other way round. BSD failures tend to be silent. Test here and reason about the other platform before claiming done.
+- **The manifest language is the SDK** (`src/compile/sdk/loadout.sdk.ts`): a new or changed setting is a typed field there, documented in its doc comment (that's the user's completion and hover), desugared into the draft exactly as the lock reads it, and caught where it's declared when it's a mistake (`fail()`: one line, the file, line and column). Test it end to end in the integration suite (a TS fixture, `compile_repo`). Details in `docs/agents/typescript.md`.
 - **Close your tmux test windows**: a real-terminal check is `tmux new-window -d -n ldtest` + `send-keys` + `capture-pane`, then `tmux kill-window -t ldtest`.
 - After any phase or feature, end with a **"Try it"** section: exact commands, binary path, expected output.
 - **Docs split**: README is the front door (concept, command table, quickstart, links); the GitHub wiki holds the guides, cloned at `../loadout.wiki`, a separate repo with its own commits. A change isn't done until the wiki, README and these files have been re-read against it: grep them for the screen text, keys and output the change touches. The wiki links into josemiguelo/.dotfiles, so renames there can break it.

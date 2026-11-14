@@ -1,24 +1,28 @@
 # CI and release
 
-`.github/workflows/ci.yml`: ubuntu (`go vet` + unit tests, the binary,
-integration, a cross-build of every release target) and macos (`go vet` +
-unit tests, a release-flagged binary — CGO off, `-trimpath -ldflags='-s
--w'` —, integration against it). It runs on pushes to `master` and on pull
-requests; the Go version comes from go.mod.
+`.github/workflows/ci.yml`: ubuntu and macos each run `bun install
+--frozen-lockfile`, tsc, `bun test src`, `bun run build` (build/loadout)
+and the integration suite against it; ubuntu also cross-builds every
+release target. It runs on pushes to `master` and on pull requests. The
+bun version comes from package.json's `packageManager` (setup-bun's
+`bun-version-file`), and it is the bun every release ships.
 Runners differ from a desktop: Ubuntu's `/bin/sh` is dash ("not found", not
 bash's "command not found"), and `TERM` is unset (Linux) or unusable
 (macOS), so `pty_run` sets its own.
 Reproduce the Linux job locally in an `ubuntu:24.04` container as a non-root user.
-The integration suite compiles TypeScript repos with the binary under test as bun (`run-tests.sh` unsets `LOADOUT_BUN`): no bun on the runners, no network.
+The integration suite compiles TypeScript repos with the binary under test as bun (`run-tests.sh` unsets `LOADOUT_BUN`): no network needed.
 `release.yml` on `v*` tags: one ubuntu runner cross-compiles each target
-(`CGO_ENABLED=0`, `-trimpath -ldflags='-s -w'`) and tars the binary alone
-→ `loadout-<tag>-{linux-x64,linux-arm64,macos-arm64,macos-x64}.tar.gz`
-attached to the GitHub Release. Nothing runs the linux-arm64 or macos-x64
-binaries before release. It packages without testing: let CI pass before
-tagging. **The version lives in ONE place**, `internal/version/version.go`'s
-`var Version = "…"` (the binary's `--version`, the lock's `toolVersion`);
-release.yml's first job refuses a tag that isn't `v<Version>`. A release =
-bump that line, commit, tag.
+with `bun build --compile --minify --target=bun-<target>` (linux-x64 is
+bun's `linux-x64-baseline`, for CPUs without AVX2) and tars the binary
+alone, named `loadout` → `loadout-<tag>-{linux-x64,linux-arm64,macos-arm64,macos-x64}.tar.gz`
+attached to the GitHub Release; no checksums file. It runs the linux-x64
+binary's `--version` against the tag and nothing else: let CI pass before
+tagging. **The version lives in ONE place**, `src/version.ts`'s `export
+const VERSION = "…";` (the binary's `--version`, the lock's
+`toolVersion`); release.yml's first job refuses a tag that isn't
+`v<VERSION>`. A release = bump that line, commit, tag. A bun bump
+(`packageManager` and `engines.bun`) changes the bun users'
+scripts run with: say so in the release notes.
 
 `install.sh` (repo root) is the curl|sh bootstrap over those releases: it
 resolves latest via the GitHub API (pin: LOADOUT_VERSION) and installs the

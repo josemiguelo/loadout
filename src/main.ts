@@ -1,8 +1,7 @@
 // loadout sets up a machine from a shared config repo and tracks installed
-// program versions. The TypeScript port: dispatches to the CLI (src/cli).
-// Compiled by bun into one executable per target (package.json's build).
-// Until the port reaches parity, the Go binary (cmd/loadout) is the
-// reference.
+// program versions: dispatches to the CLI (src/cli). Compiled by bun into
+// one executable per target (package.json's build, release.yml), which is
+// also the bun its manifests and scripts run with.
 
 import { execute } from "./cli/root.ts";
 import { ExitError, UsageError } from "./cli/errors.ts";

@@ -25,7 +25,7 @@ function capture(f: () => void): string {
 }
 
 function golden(name: string): string {
-  const text = readFileSync(new URL("../../internal/cli/testdata/" + name, import.meta.url), "utf8");
+  const text = readFileSync(new URL("./testdata/" + name, import.meta.url), "utf8");
   return text.replaceAll("{{VERSION}}", VERSION);
 }
 

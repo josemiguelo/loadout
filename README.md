@@ -6,8 +6,8 @@ loadout makes it explicit: **declared** once in a shared git repo,
 **converged** on every machine, **observed** continuously, and **compared**
 across the fleet.
 
-One static binary (Go) that shells out to your package managers and
-`git`. Linux and macOS. You write the manifests in TypeScript; `loadout
+One binary that shells out to your package managers and `git`. Linux
+(glibc) and macOS. You write the manifests in TypeScript; `loadout
 compile` runs them with the bun built into loadout (nothing to install)
 and turns them into a committed lock file, which every other command
 reads.
@@ -15,6 +15,10 @@ reads.
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
 ```
+
+It installs `~/.local/bin/loadout` and nothing else. The binary is about
+70 MB (90 MB on Linux): bun is inside it, and it is also the bun your
+TypeScript scripts run with.
 
 ## How it thinks
 
@@ -141,29 +145,28 @@ types. See [Writing your manifest](../../wiki/Writing-Your-Manifest).
 
 ## Building from source
 
-Requires Go (the version in `go.mod`); nothing else.
+Requires [bun](https://bun.sh), the version in `package.json`'s
+`packageManager`; nothing else.
 
 ```console
-$ go build -o build/loadout ./cmd/loadout
+$ bun install --frozen-lockfile
+$ bun run build                                     # build/loadout
 $ ./build/loadout --help
 
-$ go vet ./... && go test ./...                    # unit tests
+$ bunx tsc --noEmit -p . && bun test src            # types and unit tests
 $ ./integration/run-tests.sh [binary] [pattern]    # black-box suite (default build/loadout; pattern = only t/*pattern*.sh)
 ```
 
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64, all
-cross-compiled from one machine. A `v*` tag builds and attaches a release
+cross-compiled from one machine (`bun build --compile --target=…`). A `v*` tag builds and attaches a release
 tarball for each (the binary alone), which the install one-liner and
 `loadout self-upgrade` download.
 
-Stack: [cobra](https://github.com/spf13/cobra) ·
-[Bun](https://bun.sh) (the manifests) ·
-[Bubble Tea](https://github.com/charmbracelet/bubbletea),
-[Lip Gloss](https://github.com/charmbracelet/lipgloss) and
-[Bubbles](https://github.com/charmbracelet/bubbles) (the home screen, in
-[Crush](https://github.com/charmbracelet/crush)'s style and Charmtone colours;
-its run panel is a pseudo-terminal read through
-[x/vt](https://github.com/charmbracelet/x/tree/main/vt)).
+Stack: TypeScript on [Bun](https://bun.sh), compiled to one executable
+per target · the home screen draws itself (in
+[Crush](https://github.com/charmbracelet/crush)'s style and Charmtone
+colours); its run panel is a pseudo-terminal (`Bun.Terminal`) read through
+[@xterm/headless](https://www.npmjs.com/package/@xterm/headless).
 
 Known limits: unix-like only · dependency edges have no version
 constraints.

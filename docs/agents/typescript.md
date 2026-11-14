@@ -1,8 +1,8 @@
 # TypeScript manifests: the SDK and compile
 
 - **Manifests are TypeScript, run by bun; every other command reads JSON.**
-  `loadout compile` is `tsmanifest.Compile` under a spinner: it writes the
-  SDK (`loadout.sdk.ts`, embedded from `internal/tsmanifest/sdk/`) into the
+  `loadout compile` is compile/compile.ts's `compile` under a spinner: it writes the
+  SDK (`loadout.sdk.ts`, embedded from `src/compile/sdk/`) into the
   repo root, runs `bun run loadout.ts` there with nothing of the caller's
   environment but PATH and HOME (and `LOADOUT_COMPILE=1`), reads the draft
   the SDK's `repo()` prints, assembles it, and writes the lock (and, with
@@ -16,7 +16,7 @@
   for tests and developers. A repo pins no bun: `repo({ bun })` is refused
   where it's declared, and a lock that still carries `meta.bun` can't be
   read until the repo compiles.
-- **The draft is the lock's own shapes** (`model.EncodeDraft`/
+- **The draft is the lock's own shapes** (`model.encodeDraft`/
   `DecodeDraft`): the manifest before assembly (machines unflattened,
   built-ins not merged), the profiles, the installers' extra requires, and
   what only compile reads: `spares`, `transitional`, `parent`. The SDK
@@ -72,7 +72,7 @@
   `custom()`); a machine's `install` groups programs by installer with
   `via(installer, [...])`; a comment about an entry sits above it; a
   blank line between declarations.
-- **Compile warns about what no machine uses** (tsmanifest/unused.go): a
+- **Compile warns about what no machine uses** (compile/unused.ts): a
   profile no machine extends, a program none installs (dependencies
   count), a script or script variant none runs, a repo installer nothing
   in use goes through. A way to install a program that no machine picks is
@@ -85,7 +85,7 @@
   profile's contents count as used, and a spare mark on something used is
   itself a warning, so marks can't go stale. A machine can't be spare.
 - **Transitional scripts end themselves through compile**
-  (`TransitionalWarnings`): `transitional: true` marks a script that only
+  (`transitionalWarnings`): `transitional: true` marks a script that only
   exists until every machine has done it. It's a compile-time mark like
   `spare`, carried in the draft and never in the lock. Compile reads
   `<state>/<machine>.json` for every machine that runs it and warns

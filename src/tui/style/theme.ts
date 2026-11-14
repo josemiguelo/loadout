@@ -8,8 +8,8 @@
 // ok = Success/SuccessSubtle, warn = Warning, error = Error, dim =
 // FgMoreSubtle/FgMostSubtle, accent = Primary, machine = Secondary.
 //
-// Rendering produces the bytes Lip Gloss v2 does (lipgloss.ts), so the
-// strings drop into Ink's <Text> as they are.
+// Rendering produces the bytes Lip Gloss v2 does (lipgloss.ts), and the
+// renderer writes them as they are.
 
 import * as charmtone from "./charmtone.ts";
 import type { Color } from "./lipgloss.ts";
