@@ -1,12 +1,12 @@
 #!/bin/sh
-# Install the latest loadout release into ~/.local/bin: one binary, which
-# compiles manifests itself (no share directory). A ~/.local/share/loadout
-# it finds is left as it was. No sudo.
+# Install the latest loadout release into ~/.local/bin: one binary, with
+# bun inside it. A ~/.local/share/loadout it finds is left as it was. No
+# sudo.
 #
 #   curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
 #
 # Environment overrides:
-#   LOADOUT_VERSION=v4.0.0   pin a release (default: latest)
+#   LOADOUT_VERSION=v5.0.0   pin a release (default: latest)
 #   LOADOUT_INSTALL_DIR=...  install the binary somewhere else (default: ~/.local/bin)
 set -eu
 
@@ -31,6 +31,13 @@ case "$(uname -s)-$(uname -m)" in
     exit 1
     ;;
 esac
+
+# The Linux builds link glibc: on musl (Alpine and the like) the binary
+# would fail with a bare "not found".
+if [ "$(uname -s)" = Linux ] && { ls /lib/ld-musl-* >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; }; then
+  echo "error: loadout's Linux builds need glibc, and this system uses musl" >&2
+  exit 1
+fi
 
 version="${LOADOUT_VERSION:-}"
 if [ -z "$version" ]; then

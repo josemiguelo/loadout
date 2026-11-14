@@ -81,3 +81,17 @@ OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNL
     fail "an upgrade over a share dir installs: $OUT"
 grep -qx 3.0.0 prefix/share/loadout/VERSION && [ -d prefix/share/loadout/old ] || fail "the share dir is left alone"
 ok "install.sh leaves a share directory it finds alone"
+
+# The Linux builds link glibc: on musl install.sh refuses, rather than
+# leaving a binary that fails with a bare "not found".
+if [ "$(uname -s)" = Linux ]; then
+    mkdir -p muslbin
+    printf '#!/bin/sh\necho "musl libc (x86_64)" >&2\nexit 1\n' > muslbin/ldd
+    chmod +x muslbin/ldd
+    rm -f prefix/bin/loadout
+    OUT=$(PATH="$PWD/muslbin:$PATH" LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) &&
+        fail "install.sh installs on musl: $OUT"
+    echo "$OUT" | grep -q "error: loadout's Linux builds need glibc, and this system uses musl" || fail "the refusal says why: $OUT"
+    [ -e prefix/bin/loadout ] && fail "nothing is installed on musl" || true
+fi
+ok "install.sh refuses a musl system"
