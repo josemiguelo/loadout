@@ -67,9 +67,10 @@ Explicit user decisions; don't "improve" them away.
    state directory is generated and disposable. With configs,
    compile also writes `<configs>/.chezmoidata/loadout.json` and the
    `<configs>/.chezmoitemplates/loadout/machine` partial (contract 17),
-   generated and committed like the lock, and so is `loadout.d.ts`, the
-   types of the SDKs the manifests (`"loadout"`) and TypeScript scripts
-   (`"loadout/script"`) import, which are the binary's own. Nothing
+   generated and committed like the lock. It also writes
+   `node_modules/@types/loadout`, the types of the SDKs the manifests
+   (`"loadout"`) and TypeScript scripts (`"loadout/script"`) import, which
+   are the binary's own: for the editor, never committed. Nothing
    hand-edited goes in state, the lock or those; the tool never writes
    authored files, except `init` scaffolding.
 4. **Scripts: exactly one of `file` (path) or `run` (inline)**, per variant
@@ -357,7 +358,7 @@ Explicit user decisions; don't "improve" them away.
     files, no build folder, no npm. `repo({ state, configs })` names the
     state and chezmoi dirs; `state` is required, with no default.
     Manifests import the SDK as `"loadout"` (the binary's, registered by
-    the wrapper's preload; `loadout.d.ts`, which compile writes, types it)
+    the wrapper's preload; `node_modules/@types/loadout`, which compile writes, types it)
     and each other by relative path; a declaration's origin is the file that called it. The lock
     records the sources (every file the entry and its includes reach
     through static imports, helpers included) and a sha256 of them (path +
@@ -437,7 +438,7 @@ Explicit user decisions; don't "improve" them away.
       No `system/` beside it: one folder holds the whole loadout, and
       `include("loadouts/**/*.loadout.ts")` finds a manifest in any dot
       folder. Plain `init` keeps `programs/` and `maintenance/`. Every
-      scaffold has a `tsconfig.json` (`loadout.d.ts` in `"files"`), the SDKs' types, and a
+      scaffold has a `tsconfig.json`, the SDKs' types (`node_modules/@types/loadout`), a `.gitignore` for node_modules, and a
       `package.json` whose `@types/bun` only the editor needs.
 
 18. **A child repo inherits a parent; nothing flows back.** A private repo

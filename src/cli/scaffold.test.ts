@@ -34,16 +34,17 @@ test("a scaffold's files come in walk order, the SDKs' types last", () => {
     "package.json",
     "programs/cli.loadout.ts",
     "tsconfig.json",
-    "loadout.d.ts",
+    "node_modules/@types/loadout/package.json",
+    "node_modules/@types/loadout/index.d.ts",
   ]);
 });
 
-test("every scaffold type-checks against the loadout.d.ts init writes, and only with it", () => {
+test("every scaffold type-checks against the node_modules/@types/loadout init writes, and only with it", () => {
   for (const kind of ["init", "init-configs", "child", "child-configs"]) {
     const files = renderScaffold(kind, { hostname: "box", parentName: "dad", parentPath: "../dad", parentImport: "../dad" });
     const repo = Object.fromEntries(files.map((f) => [f.path, f.content]));
     expect(typeCheck(repo)).toEqual({ code: 0, out: "" });
-    repo["loadout.d.ts"] = "";
+    delete repo["node_modules/@types/loadout/index.d.ts"];
     expect(typeCheck(repo).out).toContain("error TS2307: Cannot find module 'loadout'");
   }
 });

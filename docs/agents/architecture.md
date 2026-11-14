@@ -52,14 +52,14 @@ src/
                    Row/formatRow, update), env (LOADOUT_*),
                    clonesBehind/fastForward, Bun Shell helpers
     sdk/loadout.d.ts  GENERATED (sdktypes.ts, committed): both SDKs'
-                   declarations as `declare module` blocks, the loadout.d.ts
-                   compile and init write into every repo
+                   declarations as `declare module` blocks, which compile
+                   and init write into every repo's node_modules/@types/loadout
     sdktypes.ts    makes it with the pinned tsc (`bun run sdk-types`, and
                    `bun run build`); never in the binary. sdktypes.test.ts
                    fails when it drifts from the sources, and type-checks a
                    fixture repo against it alone
     compile.ts     compile: refuses a repo without loadout.ts, writes
-                   loadout.d.ts, runs loadout.ts (and a child's parent as a parent)
+                   the SDKs' types, runs loadout.ts (and a child's parent as a parent)
                    with loadout as bun, decodeDraft, draftOver, assemble,
                    writes the lock (and, with configs, the chezmoi data and
                    partial) only when changed; doneScripts, writeIfChanged
@@ -226,9 +226,11 @@ loadout wrote stay byte-identical.
   as a repo's editor does, and scaffold.test.ts type-checks each rendered
   scaffold on its own. bun's build warns about the child scaffolds'
   templated tsconfig.json (`{{.ParentImport}}/*`): harmless.
-- **`loadout.d.ts` is in tsconfig's `"files"`**: an `include` pattern
-  skips a `.d.ts` that sits beside a `.ts` of the same name (TypeScript
-  takes it for that file's output), and every repo has `loadout.ts`.
+- **The SDKs' types are an @types package**: `node_modules/@types/loadout`
+  (index.d.ts and a package.json), which TypeScript resolves for
+  `import … from "loadout"` with no tsconfig entry, and which stays out of
+  git with the rest of node_modules. compile and init write it; a fresh
+  clone has it after its first compile.
 
 ## loadout is the bun
 
@@ -250,7 +252,7 @@ loadout wrote stay byte-identical.
   frame with a path. `import.meta.url` is `file:///loadout`, so the SDK
   never resolves anything against its own location, and `sourcesFrom`
   skips the two names (bun would look for an npm package). A repo holds
-  only the types (`loadout.d.ts`).
+  no SDK code, and its types only in node_modules.
 - **`$LOADOUT_BUN`** (a bun binary, for tests and developers): the
   wrapper, still what's on PATH, execs it instead of loadout, without
   `BUN_BE_BUN` and with the same preload; `ensure()` refuses one that isn't

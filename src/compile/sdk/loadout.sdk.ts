@@ -1,7 +1,7 @@
 // loadout's manifest SDK, imported as "loadout". It is part of loadout, not
 // of the repo: whenever loadout runs a repo's files (compile, scripts), its
 // bun wrapper's preload registers this module, and compile and init write
-// its types into the repo as loadout.d.ts. A repo's manifests always run
+// its types into the repo's node_modules/@types/loadout. A repo's manifests always run
 // with the SDK of the loadout that compiles them.
 //
 // Each declaration returns a typed reference: a name that doesn't exist is a

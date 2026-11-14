@@ -41,16 +41,24 @@ import { transitionalWarnings, unusedWarnings } from "./unused.ts";
 export const entryFile = "loadout.ts";
 
 /**
- * typesFile is the SDKs' types compile writes beside the entry, committed:
- * `declare module "loadout"` (the manifests' SDK) and `declare module
- * "loadout/script"` (loadout's protocols for scripts in TypeScript). The
- * modules themselves are the binary's (core/bun's preload), so a repo's
- * types are always the loadout's that compiles it and runs its scripts.
+ * typesFile is where compile and init write the SDKs' types, for the
+ * editor: `declare module "loadout"` (the manifests' SDK) and `declare
+ * module "loadout/script"` (loadout's protocols for scripts in TypeScript),
+ * as an @types package the TypeScript server finds with no tsconfig entry.
+ * In node_modules, so it's never committed. The modules themselves are the
+ * binary's (core/bun's preload), so a repo's types are always the
+ * loadout's that compiles it and runs its scripts.
  */
-export const typesFile = "loadout.d.ts";
+export const typesFile = "node_modules/@types/loadout/index.d.ts";
 
-/** types is loadout.d.ts's text, embedded in the binary. */
+/** types is typesFile's text, embedded in the binary. */
 export const types: string = TypesText as string;
+
+/** typesFiles is the @types package compile and init write: typesFile and its package.json. */
+export const typesFiles: { path: string; content: string }[] = [
+  { path: "node_modules/@types/loadout/package.json", content: '{ "name": "@types/loadout", "private": true, "types": "index.d.ts" }\n' },
+  { path: typesFile, content: types },
+];
 
 /**
  * Draft is what loadout.ts prints: the manifest before assembly, and what
@@ -90,7 +98,7 @@ export async function compile(root: string): Promise<string[]> {
     throw new ManifestException(root + " has no " + entryFile + " — a config repo starts there (see: loadout init)");
   }
   const bunDir = bun.ensure();
-  writeIfChanged(root, path.join(root, typesFile), types);
+  for (const f of typesFiles) writeIfChanged(root, path.join(root, f.path), f.content);
   const d = await run(bunDir, root, false);
   let draft: ManifestDraft = { manifest: d.manifest, profiles: d.profiles, requires: d.requires };
   let parentFS: RepoFS | undefined;

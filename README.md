@@ -120,15 +120,15 @@ machine("laptop", { install: [via(dnf, [ripgrep])] });
 Scripts can be TypeScript too: `import { main } from "loadout/script"`
 gives a managed script loadout's `check`/`install` protocol, `oracle()` an
 outdated source's rows and `update`, and `env` the variables loadout sets
-(both SDKs are built into loadout; their types are in `loadout.d.ts`).
+(both SDKs are built into loadout, and so are their types).
 
 Manifests are plain TypeScript, so any editor with TypeScript support
 works: completion of every setting (with the SDK's docs on hover),
 references imported from the files that declare them, go to definition,
 and a typo or a wrong type underlined as you type. The SDKs run inside
-loadout; `loadout compile` writes their types beside your manifests
-(`loadout.d.ts`, committed, in tsconfig's `"files"`); `bun install` gives
-the editor bun's own types. See [Writing your manifest](../../wiki/Writing-Your-Manifest).
+loadout; `loadout compile` writes their types where your editor finds
+them with no setup (`node_modules/@types/loadout`, out of git); `bun
+install` gives it bun's own types. See [Writing your manifest](../../wiki/Writing-Your-Manifest).
 
 ## Learn more
 

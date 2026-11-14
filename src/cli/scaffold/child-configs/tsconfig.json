@@ -1,7 +1,7 @@
 {
-  // loadout.d.ts types "loadout" and "loadout/script", the SDKs inside
-  // loadout that manifests and scripts import; loadout compile writes it. It
-  // is in "files": an include pattern skips it beside loadout.ts.
+  // "loadout" and "loadout/script", the SDKs inside loadout that manifests
+  // and scripts import, are typed by node_modules/@types/loadout, which
+  // loadout compile writes.
   // "parent/…" is {{.ParentName}}'s checkout, whose modules this repo imports
   // what it uses from: bun resolves it when it runs the manifests and
   // scripts, and so does the editor, for types.
@@ -18,6 +18,5 @@
     "types": ["bun"],
     "paths": { "parent/*": ["{{.ParentImport}}/*"] }
   },
-  "files": ["loadout.d.ts"],
   "include": ["**/*.ts", "**/.*.ts", "**/.*/**/*.ts", "**/.*/**/.*.ts"]
 }

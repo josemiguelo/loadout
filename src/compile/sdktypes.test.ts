@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { types, typesFile } from "./compile.ts";
+import { types, typesFiles } from "./compile.ts";
 import { generate, typeCheck, typesPath } from "./sdktypes.ts";
 
 const tsconfig = JSON.stringify({
@@ -16,9 +16,11 @@ const tsconfig = JSON.stringify({
     skipLibCheck: true,
     types: ["bun"],
   },
-  files: ["loadout.d.ts"],
   include: ["**/*.ts", "**/.*.ts", "**/.*/**/*.ts", "**/.*/**/.*.ts"],
 });
+
+/** The @types package compile writes, as files. */
+const typesPackage = Object.fromEntries(typesFiles.map((f) => [f.path, f.content]));
 
 /** A repo that uses most of both SDKs, as a config repo writes them. */
 const fixture: Record<string, string> = {
@@ -116,16 +118,16 @@ test("doc comments reach the types, for the editor's hover", () => {
   expect(types).toMatch(/\/\*\*\n {3}\* A managed script \(`managedBy: "x.ts"`\)/);
 });
 
-test("a repo type-checks against loadout.d.ts alone, and a wrong setting is a type error", () => {
-  const ok = typeCheck({ ...fixture, [typesFile]: types });
+test("a repo type-checks against node_modules/@types/loadout alone, and a wrong setting is a type error", () => {
+  const ok = typeCheck({ ...fixture, ...typesPackage });
   expect(ok.out).toBe("");
   expect(ok.code).toBe(0);
   const typo = typeCheck({
     ...fixture,
-    [typesFile]: types,
+    ...typesPackage,
     "programs/typo.loadout.ts": 'import { program } from "loadout";\nprogram("x", { descripton: "", install: [] });\n',
   });
   expect(typo.out).toContain("programs/typo.loadout.ts(2,16): error TS2561: Object literal may only specify known properties, but 'descripton' does not exist in type 'ProgramSpec'.");
-  const none = typeCheck({ ...fixture, [typesFile]: "" });
+  const none = typeCheck(fixture);
   expect(none.out).toContain("error TS2307: Cannot find module 'loadout'");
 });

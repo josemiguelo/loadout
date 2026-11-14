@@ -1,6 +1,6 @@
 // loadout's script SDK, imported as "loadout/script". Like the manifests'
 // SDK, it is part of loadout: the bun wrapper's preload registers it when
-// loadout runs a script, and its types are in the repo's loadout.d.ts. A
+// loadout runs a script, and its types are in the repo's node_modules/@types/loadout. A
 // script stays any executable; this is for the ones in TypeScript
 // (`#!/usr/bin/env bun`, run with the bun loadout brings).
 //

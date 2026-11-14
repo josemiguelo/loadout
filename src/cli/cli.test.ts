@@ -75,5 +75,5 @@ test("scaffold values are escaped inside TypeScript strings", () => {
   expect(root).toContain(`name: "my \\"pub\\""`);
   expect(root).toContain(`path: "~/a\\\\b"`);
   expect(paths.get("tsconfig.json")).toContain(`"parent/*": ["../dots/*"]`);
-  expect(paths.get("loadout.d.ts")).toContain(`declare module "loadout" {`);
+  expect(paths.get("node_modules/@types/loadout/index.d.ts")).toContain(`declare module "loadout" {`);
 });

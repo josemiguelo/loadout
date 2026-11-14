@@ -2,14 +2,15 @@
 
 - **Manifests are TypeScript, run by bun; every other command reads JSON.**
   `loadout compile` is compile/compile.ts's `compile` under a spinner: it writes the
-  SDKs' types (`loadout.d.ts`, generated from `src/compile/sdk/`) into the
-  repo root, runs `bun run loadout.ts` there with nothing of the caller's
+  SDKs' types (`node_modules/@types/loadout`, generated from
+  `src/compile/sdk/`) into the repo, runs `bun run loadout.ts` there with nothing of the caller's
   environment but PATH and HOME (and `LOADOUT_COMPILE=1`), reads the draft
   the SDK's `repo()` prints, assembles it, and writes the lock (and, with
   configs, the chezmoi data and partial) only when changed. On success it
   prints `✔ wrote loadout.lock.json` and its warnings; on failure one
-  `error: ` line. Nothing is written when anything is wrong (`loadout.d.ts`
-  is written first: it's the compiling binary's, whatever happens next).
+  `error: ` line. Nothing is written when anything is wrong (the SDKs'
+  types are written first: they're the compiling binary's, whatever
+  happens next).
 - **Which bun**: loadout itself, through the `bun` wrapper in
   `$XDG_DATA_HOME/loadout/bin` (core/bun), in a cleared environment whose
   PATH starts with that folder; with `$LOADOUT_BUN` (a bun binary, for
@@ -17,8 +18,8 @@
 - **The SDKs are the binary's**: `"loadout"` and `"loadout/script"` are
   virtual modules the wrapper's preload registers from the sources embedded
   in loadout; no SDK code is in a repo, so a repo always runs with the SDK
-  of the loadout that compiles it. The repo commits only `loadout.d.ts`,
-  their types: `src/compile/sdk/loadout.d.ts`, which `bun run sdk-types`
+  of the loadout that compiles it. The repo gets only their types, in
+  `node_modules/@types/loadout`, out of git: `src/compile/sdk/loadout.d.ts`, which `bun run sdk-types`
   (compile/sdktypes.ts) emits from the sources with the pinned tsc, doc
   comments included, wrapped in one `declare module` block per name. Edit
   the sources, then regenerate: sdktypes.test.ts fails on a stale file. A `repo()` setting that doesn't exist is
@@ -52,7 +53,7 @@
   (Bun.Glob, dot files included, path order), and every repo file they
   reach through static imports (`Bun.Transpiler.scanImports`), helpers and
   the data schema included; never `"loadout"`/`"loadout/script"` (the
-  binary's) nor `loadout.d.ts`. The lock hashes them; any edit makes it
+  binary's) nor anything in node_modules. The lock hashes them; any edit makes it
   stale.
 - **The language's own rules are the SDK's** (`fail()`), checked where
   they're declared and reported as `<file>:<line>,<col>: <message>` (the
@@ -108,7 +109,7 @@
   that waits on a later one (contract 6).
 - **Scripts have an SDK too: `"loadout/script"`**
   (`src/compile/sdk/loadout.script.ts`), the binary's like the manifests'
-  one, typed in the same `loadout.d.ts`. It holds loadout's protocols for a
+  one, typed in the same `node_modules/@types/loadout`. It holds loadout's protocols for a
   script in TypeScript, so the script speaks them as the binary that runs
   it does: `main(check, install)` (a managed script, contract 12), `run(step)`
   (a `file` with its check inline), `oracle({ rows, update })` (an outdated
@@ -121,7 +122,7 @@
   A script needn't use it: contract 4's executables are any language.
 - **The editor is TypeScript's own**: completion, hover (the SDK's doc
   comments), go to definition and type errors come from the TypeScript
-  language server over the repo's tsconfig (`loadout.d.ts` in `"files"`,
-  bun's types from `bun install`). loadout has no
+  language server over the repo's tsconfig (loadout's types from
+  `node_modules/@types/loadout`, bun's from `bun install`). loadout has no
   language server of its own; compile's refusals reach the editor only by
   running compile.

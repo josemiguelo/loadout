@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import { entryFile, types, typesFile } from "../compile/compile.ts";
+import { entryFile, typesFiles } from "../compile/compile.ts";
 import { newGitClient } from "../core/git/git.ts";
 import { envVar } from "../core/platform/platform.ts";
 import { cleanPath, compareStrings, fileError, isAbsPath, joinPath, lockFileName } from "../model/index.ts";
@@ -19,8 +19,8 @@ import { Style } from "./style.ts";
 // child-configs (contract 18: a parent block, no example that could clash).
 // File names and contents are templates over ScaffoldVars ({{.Hostname}}
 // and the like). Every scaffold gets the
-// SDKs' types too (typesFile), so the editor has the manifests' and
-// scripts' types before the first compile.
+// SDKs' types too (typesFiles, in node_modules/@types/loadout), so the
+// editor has the manifests' and scripts' types before the first compile.
 
 /** ScaffoldVars is what a scaffold's templates fill in. */
 export interface ScaffoldVars {
@@ -77,7 +77,7 @@ export function renderScaffold(kind: string, vars: ScaffoldVars): ScaffoldFile[]
   const files = Object.keys(texts)
     .sort(walkOrder)
     .map((p) => ({ path: fill(p, vars), content: fill(texts[p]!, escaped) }));
-  files.push({ path: typesFile, content: types });
+  files.push(...typesFiles);
   return files;
 }
 

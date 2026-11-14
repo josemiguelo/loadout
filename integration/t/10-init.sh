@@ -1,17 +1,17 @@
 # init scaffolding, compile, and what a scaffolded repo already knows.
 
 OUT=$("$BIN" init repo) || fail "init exits 0"
-for f in loadout.ts loadout.d.ts tsconfig.json package.json .gitignore machines/machines.loadout.ts machines/data.ts programs/cli.loadout.ts machines/state/.gitkeep maintenance/.gitkeep; do
+for f in loadout.ts node_modules/@types/loadout/index.d.ts node_modules/@types/loadout/package.json tsconfig.json package.json .gitignore machines/machines.loadout.ts machines/data.ts programs/cli.loadout.ts machines/state/.gitkeep maintenance/.gitkeep; do
     [ -f "repo/$f" ] || fail "init creates $f"
 done
 [ -d repo/maintenance ] && [ -d repo/machines/state ] || fail "init creates dirs"
-[ -e repo/node_modules ] && fail "init installs nothing: node_modules" || true
+[ "$(ls repo/node_modules)" = "@types" ] && [ "$(ls repo/node_modules/@types)" = "loadout" ] || fail "init installs nothing, only writes the SDKs' types: $(ls -R repo/node_modules)"
 for g in 'programs/**/*.loadout.ts' 'maintenance/**/*.loadout.ts' 'machines/**/*.loadout.ts'; do
     grep -qF "\"$g\"" repo/loadout.ts || fail "init includes $g: $(cat repo/loadout.ts)"
 done
-grep -qF '"files": ["loadout.d.ts"]' repo/tsconfig.json || fail "tsconfig.json has the SDKs' types: $(cat repo/tsconfig.json)"
 grep -q "paths" repo/tsconfig.json && fail "tsconfig.json maps nothing: the SDKs are loadout's: $(cat repo/tsconfig.json)"
-grep -q '^declare module "loadout" {' repo/loadout.d.ts || fail "loadout.d.ts types the manifests' SDK: $(head -20 repo/loadout.d.ts)"
+grep -q '^declare module "loadout" {' repo/node_modules/@types/loadout/index.d.ts || fail "the types are the manifests' SDK's: $(head -20 repo/node_modules/@types/loadout/index.d.ts)"
+grep -qx 'node_modules/' repo/.gitignore || fail "the SDKs' types stay out of git"
 [ -e repo/loadout.sdk.ts ] || [ -e repo/loadout.script.ts ] && fail "init writes only the SDKs' types"
 grep -qE '^machine<Data>\("[^"]+", \{' repo/machines/machines.loadout.ts || fail "init declares this machine: $(cat repo/machines/machines.loadout.ts)"
 git -C repo rev-parse --is-inside-work-tree >/dev/null || fail "init git-inits"
@@ -166,7 +166,7 @@ echo "$OUT" | grep -q "has no loadout.lock.json — compile it first" || fail "t
 OUT=$("$BIN" --machine kidbox init --parent "$PWD/dad" --name dad kid) || fail "init --parent scaffolds a child"
 echo "$OUT" | grep -q "^Next steps:" && echo "$OUT" | grep -qF "machines/kidbox.loadout.ts (import dad's from \"parent/…\")" ||
     fail "init --parent's next steps name the machine's file: $OUT"
-[ -f kid/loadout.ts ] && [ -f kid/tsconfig.json ] && [ -f kid/loadout.d.ts ] || fail "the child's root file is loadout.ts, beside tsconfig.json and the SDKs' types"
+[ -f kid/loadout.ts ] && [ -f kid/tsconfig.json ] && [ -f kid/node_modules/@types/loadout/index.d.ts ] || fail "the child's root file is loadout.ts, beside tsconfig.json and the SDKs' types"
 grep -qF "name: \"dad\"" kid/loadout.ts && grep -qF "path: \"$PWD/dad\"" kid/loadout.ts ||
     fail "the child's repo() names its parent: $(cat kid/loadout.ts)"
 grep -q '^  parent: {' kid/loadout.ts || fail "as its parent: $(cat kid/loadout.ts)"

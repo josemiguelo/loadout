@@ -6,7 +6,7 @@
 // differs from what the sources emit now. `bun run sdk-types` rewrites it,
 // and so does `bun run build`. Never part of the binary.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -94,7 +94,16 @@ function wrap(name: string, dts: string): string {
 export function typeCheck(files: Record<string, string>): { code: number; out: string } {
   const dir = mkdtempSync(join(tmpdir(), "loadout-types-"));
   try {
-    symlinkSync(join(checkout, "node_modules"), join(dir, "node_modules"));
+    // The checkout's packages (bun's types), linked one by one so the
+    // repo's own node_modules/@types/loadout can sit among them.
+    const modules = join(checkout, "node_modules");
+    mkdirSync(join(dir, "node_modules", "@types"), { recursive: true });
+    for (const name of readdirSync(modules)) {
+      if (name !== "@types") symlinkSync(join(modules, name), join(dir, "node_modules", name));
+    }
+    for (const name of readdirSync(join(modules, "@types"))) {
+      symlinkSync(join(modules, "@types", name), join(dir, "node_modules", "@types", name));
+    }
     for (const [p, text] of Object.entries(files)) {
       mkdirSync(dirname(join(dir, p)), { recursive: true });
       writeFileSync(join(dir, p), text);
