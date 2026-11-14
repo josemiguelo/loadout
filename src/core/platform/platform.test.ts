@@ -25,10 +25,12 @@ test("an interrupt is taken once", async () => {
   }
 });
 
-test("the clock reads to the nanosecond", () => {
-  // 9 fraction digits unless the nanoseconds happen to end in 000 (1 in 1000).
+test("the clock reads to the nanosecond on Linux, the microsecond on macOS", () => {
+  // All the digits the clock has, unless they happen to end in 000 (1 in 1000).
+  const digits = process.platform === "darwin" ? 6 : 9;
   const stamps = Array.from({ length: 5 }, () => nowIso());
-  expect(stamps.some((s) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{9}Z$/.test(s))).toBe(true);
+  const full = new RegExp(`^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{${digits}}Z$`);
+  expect(stamps.some((s) => full.test(s))).toBe(true);
   const at = Date.parse(stamps[0]!);
   expect(Math.abs(at - Date.now())).toBeLessThan(5000);
 });

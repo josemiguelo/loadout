@@ -41,9 +41,10 @@ export function uname(): UnameInfo {
 
 /**
  * nowIso is the current UTC time as ISO-8601: "2026-08-14T12:00:00Z", with
- * a fraction of 3, 6 or 9 digits when there is one. The clock reads to the
- * nanosecond (clock_gettime), so a timestamp has 9 digits; where libc's
- * clock can't be loaded, to the microsecond (performance's wall time).
+ * a fraction of 3, 6 or 9 digits when there is one. The clock is libc's
+ * (clock_gettime): to the nanosecond on Linux, so a timestamp has 9
+ * digits, and to the microsecond on macOS, 6. Where libc's clock can't be
+ * loaded, performance's wall time gives microseconds.
  */
 export function nowIso(): string {
   const nanos = realtimeNanos();
