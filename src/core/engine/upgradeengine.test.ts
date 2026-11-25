@@ -7,9 +7,9 @@ import { planSourceItems, planUpgrade, stepLabel, upgradableInstallers } from ".
 
 function upgradeManifest(): Manifest {
   return manifestOf((b) => {
-    b.installer("pm", { install: "install {pkg}", upgrade: "pm upgrade -y", check: "pm show {pkg}", regex: "([0-9.]+)" });
-    b.installer("rolling", { install: "roll {pkg}", upgrade: "roll -Syu", check: "roll -Q {pkg}", regex: "([0-9.]+)" });
-    b.installer("manual", { install: "by hand {pkg}", check: "true", regex: "([0-9.]+)" });
+    b.installer("pm", { install: "install {packageName}", upgrade: "pm upgrade -y", check: "pm show {packageName}", regex: "([0-9.]+)" });
+    b.installer("rolling", { install: "roll {packageName}", upgrade: "roll -Syu", check: "roll -Q {packageName}", regex: "([0-9.]+)" });
+    b.installer("manual", { install: "by hand {packageName}", check: "true", regex: "([0-9.]+)" });
     b.program("alpha", { install: via("pm") });
     b.program("bravo", { install: via("pm") });
     b.program("charlie", { install: via("rolling") });
@@ -35,12 +35,12 @@ test("an upgrade is always the whole mechanism", () => {
 test("a provided tool's folder leads and one plain command from two files runs once", () => {
   const m = forMachine(
     manifestOf((b) => {
-      b.installer("brewish", { probe: "brewish", install: "brewish install {pkg}", upgrade: "brewish upgrade", check: "brewish list {pkg}" });
+      b.installer("brewish", { probe: "brewish", install: "brewish install {packageName}", upgrade: "brewish upgrade", check: "brewish list {packageName}" });
       b.installer("brewish-tap", {
         probe: "brewish",
-        install: "brewish install tap/{pkg}",
+        install: "brewish install tap/{packageName}",
         upgrade: "brewish upgrade",
-        check: "brewish list {pkg}",
+        check: "brewish list {packageName}",
         origin: "programs/brewish",
       });
       b.program("setup-brewish", {
@@ -95,9 +95,9 @@ test("a custom source upgrades its items one at a time", () => {
 test("sudo declarations plan as usual", () => {
   const m = manifestOf((b) => {
     b.installer("omarchy-pkg", {
-      install: "omarchy pkg add {pkg}",
+      install: "omarchy pkg add {packageName}",
       upgrade: "omarchy update -y",
-      check: "pacman -Q {pkg}",
+      check: "pacman -Q {packageName}",
       regex: "([0-9.]+)",
       sudo: true,
     });

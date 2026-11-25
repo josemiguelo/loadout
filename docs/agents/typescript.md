@@ -28,17 +28,18 @@
   `DecodeDraft`): the manifest before assembly (machines unflattened,
   built-ins not merged), the profiles, the installers' extra requires, and
   what only compile reads: `spares`, `transitional`, `parent`. The SDK
-  desugars exactly as the lock reads: `managedBy` on a script is `file` +
-  `check: "file:x check \"$@\""`, on a variant `command: "file:x
-  install"`, `check: "file:x check"`, `present` unless a `regex` reads a
-  version; `installedBy` and `runScript()`/`file()` are the `file:`
+  desugars exactly as the lock reads: `module` on a script is `file`,
+  `module` and `check: "module:x check \"$@\""`, on a variant `command:
+  "module:x install"`, `check: "module:x check"`, `present` unless a `versionRegex` reads a
+  version; `runFile()`/`repoFile()` are the `file:`
   prefix; a version check gets `VERSION_REGEX` by default (installers
   always, as the built-ins); check and run lists are joined with `&&`, one
   holding `||` or `;` grouped in `{ …; }` (a single string too).
 - **References are values.** `program()`, `script()`, `installer()`,
-  `profile()` return `{ kind, name }` (a script's, and a script variant's, is
-  also a function, which a machine calls with arguments: `setupSsh("x")`; it
-  only builds the `run` entry, nothing runs); files import them from the file that
+  `profile()` return `{ kind, name }` (a script's is also a
+  function, which a machine calls with its module's options,
+  `t2ChargeLimit({ limit: 90 })`; it only builds
+  the `run` entry, nothing runs); files import them from the file that
   declared them (`export const x = …`), so a misspelt name is a type error
   and go-to-definition works. Lists of references are flattened wherever
   they're read (`Many<T>`), so a shared const of programs sits in any list.
@@ -62,13 +63,13 @@
   caller's stack frame), one line, which compile prints as `error: …`:
   a name declared twice (naming the first), a program with no way to
   install it, two variants of one key, settings that can't go together
-  (`version`/`present`/`managedBy`, `command`/`installedBy`/`managedBy`,
-  `file`/`managedBy`, `check`/`managedBy`, `setupOnly`/`maintainOnly`,
-  `outdated`/`updatesManagedBy`), `upgrade` without `outdated`, a `regex`
-  without `version`, an empty `later`/`spare` reason, a transitional script
-  without a check (or on a variant), a machine marked spare, a machine
+  (`versionCommand`/`isInstalled`, `isInstalled`/`module`, `installCommand`/`module`,
+  `module` with `runCommand`/`checkCommand`/`variants`, `setupOnly`/`notDuringSetup`,
+  `outdatedCommand`/`updates`, an unknown setting), `upgradeCommand` without `outdatedCommand`, a `versionRegex`
+  without `versionCommand`, an empty `canWait`/`keepUnused` reason, a transitional script
+  without a check, a machine with `keepUnused`, a machine
   installing a program twice, one with several variants without
-  `variant()`, a script run twice. Assembly's refusals (cycles, a variant a
+  saying which, a script run twice. Assembly's refusals (cycles, a variant a
   machine doesn't have, data against the schema) come after, as before.
 - **Gotchas.** Within one file a list can't use a declaration further down
   (the temporal dead zone): declare what a list uses first. Across files,
@@ -80,32 +81,32 @@
 - **House style** (the dotfiles, `init`'s scaffolds, the docs): the
   name is the first argument (`program("ripgrep", …)`), the export its
   camelCase (`export const gitDelta = program("git-delta", …)`);
-  `description` first; `install` lists the variants in the order they're
-  tried to read (installers as they are, `via()` when one needs a setting,
-  `custom()`); a machine's `install` groups programs by installer with
-  `via(installer, [...])`; a comment about an entry sits above it; a
+  `description` first; `canBeInstalled` lists the variants in the order they're
+  tried to read (installers as they are, called when one needs a setting,
+  `withCustomSteps()`); a machine's `install` groups programs by installer with
+  `withBrew(...)`; a comment about an entry sits above it; a
   blank line between declarations.
 - **Compile warns about what no machine uses** (compile/unused.ts): a
   profile no machine extends, a program none installs (dependencies
-  count), a script or script variant none runs, a repo installer nothing
+  count), a script none runs, a repo installer nothing
   in use goes through. A way to install a program that no machine picks is
   reported only when some machine uses that installer for OTHER programs
   ("machine 'm' installs other programs via 'dnf', but not fzf"):
   `install` lists every true claim, so a variant through an installer
   nobody uses is the recipe, not a mistake. Warnings, never refusals: the
-  lock is written either way. `spare: "reason"` marks one kept on purpose
-  (on the profile, program, variant, script variant, installer); a spare
-  profile's contents count as used, and a spare mark on something used is
-  itself a warning, so marks can't go stale. A machine can't be spare.
+  lock is written either way. `keepUnused: "reason"` marks one kept on purpose
+  (on the profile, program, variant, installer); a kept
+  profile's contents count as used, and a keepUnused on something used is
+  itself a warning, so marks can't go stale. A machine can't have one.
 - **Transitional scripts end themselves through compile**
   (`transitionalWarnings`): `transitional: true` marks a script that only
   exists until every machine has done it. It's a compile-time mark like
-  `spare`, carried in the draft and never in the lock. Compile reads
+  `keepUnused`, carried in the draft and never in the lock. Compile reads
   `<state>/<machine>.json` for every machine that runs it and warns
   "delete it" once all of them report it `done`; a machine without a state
   file hasn't done it. Done means its check passes (contract 7), so a
   transitional script needs a check (on itself, or on every variant).
-- **`later: "why"` is in the lock, unlike `spare`**: setup-new-machine
+- **`canWait: "why"` is in the lock, unlike `keepUnused`**: setup-new-machine
   reads only the lock, so the reason is written on the program or script
   (dropped when unset). A blank reason is refused, and so is a core step
   that waits on a later one (contract 6).
@@ -113,13 +114,12 @@
   (`src/compile/sdk/loadout.script.ts`), the binary's like the manifests'
   one, typed in the same `node_modules/@types/loadout`. It holds loadout's protocols for a
   script in TypeScript, so the script speaks them as the binary that runs
-  it does: `main(check, install)` (a managed script, contract 12), `run(step)`
-  (a `file` with its check inline), `oracle({ rows, update })` (an outdated
-  source: `Row`s printed by `formatRow`, `update <item>`), `programOracle({
-  latest, update })` (a program's own `updatesManagedBy`), `env` (the
+  it does: `runStep(step)`
+  (what a manifest runs as a command), `OutdatedItem` (what an `updates` module's
+  `listOutdated()` gives), `env` (the
   LOADOUT_* variables, typed), `clonesBehind`/`fastForward` (clones that
-  track their remote, as rows), and the Bun Shell helpers (`$`, `has`,
-  `out`, `ok`, `read`, `sudoWrite`, `mainCheckoutPath`, `reason`…). What's
+  track their remote, as rows), and the Bun Shell helpers (`$`, `isOnPath`,
+  `outputOf`, `succeeds`, `read`, `sudoWrite`, `mainCheckoutPath`, `reason`…). What's
   only one repo's (its brew prefix, its tools' modules) stays in the repo.
   A script needn't use it: contract 4's executables are any language.
 - **The editor is TypeScript's own**: completion, hover (the SDK's doc

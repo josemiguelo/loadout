@@ -26,8 +26,8 @@ test("a command needs sudo only when it runs sudo", () => {
 
 function sudoManifest(): Manifest {
   return manifestOf((b) => {
-    b.installer("sneaky", { install: "helper add {pkg}", upgrade: "helper update", sudo: true });
-    b.installer("plain", { install: "plain add {pkg}", upgrade: "plain update" });
+    b.installer("sneaky", { install: "helper add {packageName}", upgrade: "helper update", sudo: true });
+    b.installer("plain", { install: "plain add {packageName}", upgrade: "plain update" });
     b.program("visible", { install: variants(["pacman", newInstallVariant({ command: "sudo pacman -S visible" })]) });
     b.program("declared", { install: via("sneaky") });
     b.program("opted-out", { install: variants(["sneaky", newInstallVariant({ sudo: false })]) });
@@ -59,9 +59,9 @@ test("an upgrade needs sudo when its installer says so", () => {
 test("a script needs sudo when it says so or its command runs it", () => {
   const runner = newScriptRunner(newRunner(), repoFrame);
   const cases: [ScriptStep, boolean][] = [
-    [newScriptStep({ file: "x.sh", sudo: true }), true],
+    [newScriptStep({ run: "file:x.sh", sudo: true }), true],
     [newScriptStep({ run: "sudo systemctl enable --now x" }), true],
-    [newScriptStep({ file: "x.sh" }), false],
+    [newScriptStep({ run: "file:x.sh" }), false],
     [newScriptStep({ run: "systemctl --user enable x" }), false],
   ];
   for (const [step, want] of cases) expect([step, runner.needsSudo(step, "")]).toEqual([step, want]);
@@ -71,8 +71,8 @@ test("a script is pending unless its check passes", async () => {
   const fake = newRunner().onCommand("test -f done");
   const runner = newScriptRunner(fake, repoFrame);
   const pending = (step: ScriptStep, force: boolean) => runner.pending(step, force, "");
-  expect(await pending(newScriptStep({ file: "x.sh", check: "test -f done" }), false)).toBe(false); // a passing check is not pending
-  expect(await pending(newScriptStep({ file: "x.sh", check: "test -f done" }), true)).toBe(true); // force is pending
-  expect(await pending(newScriptStep({ file: "x.sh", check: "test -f missing" }), false)).toBe(true); // a failing check is pending
-  expect(await pending(newScriptStep({ file: "x.sh" }), false)).toBe(true); // no check is pending
+  expect(await pending(newScriptStep({ run: "file:x.sh", check: "test -f done" }), false)).toBe(false); // a passing check is not pending
+  expect(await pending(newScriptStep({ run: "file:x.sh", check: "test -f done" }), true)).toBe(true); // force is pending
+  expect(await pending(newScriptStep({ run: "file:x.sh", check: "test -f missing" }), false)).toBe(true); // a failing check is pending
+  expect(await pending(newScriptStep({ run: "file:x.sh" }), false)).toBe(true); // no check is pending
 });

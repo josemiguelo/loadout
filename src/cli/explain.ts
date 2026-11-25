@@ -1,5 +1,5 @@
 import { type AppContext, type ExplainedName, NoSuchItemError } from "../app/index.ts";
-import { dataLines, scriptEntry, sortStrings, sortedStrings } from "../model/index.ts";
+import { dataLines, sortStrings, sortedStrings } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import { exitWith } from "./errors.ts";
 import { commandHelp } from "./help.ts";
@@ -59,12 +59,7 @@ async function runExplain(a: AppContext, names: string[]): Promise<void> {
       rows.push({ label: "install " + v, value: sortStrings(byVariant.get(v)!).join(", ") });
     }
     if (machine !== undefined && machine.scripts.length > 0) {
-      const entries = machine.scripts.map((entry) => {
-        let [name] = scriptEntry(entry);
-        const variant = machine.scriptVariants.get(name);
-        if (variant !== undefined) name += " (" + variant + ")";
-        return name;
-      });
+      const entries = machine.scripts.map((entry) => entry.name);
       rows.push({ label: "run", value: entries.join(", ") });
     }
     const data = machine !== undefined ? machine.data : manifest.data;

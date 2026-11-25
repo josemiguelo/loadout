@@ -19,7 +19,7 @@ new_work() { mktemp -d -p "$WORK"; }
 # What every fragment ts_file writes imports from the SDK: fixtures use these
 # names as they are and never import "loadout" themselves (a second import of
 # one name is a syntax error).
-TS_PRELUDE='import { apt, brew, brewCask, custom, dnf, dnfCopr, dnfRepo, file, flag, flatpak, installer, list, machine, number, omarchy, omarchyAur, outdated, pacman, profile, program, requires, runScript, script, text, variant, via, whole } from "loadout";'
+TS_PRELUDE='import { installer, machine, outdated, profile, program, repoFile, runFile, script, withApt, withBrew, withBrewCask, withCustomSteps, withDnf, withDnfCopr, withDnfRepo, withFlatpak, withOmarchy, withOmarchyAur, withPacman } from "loadout";'
 
 # stdin as the fragment <path>, after TS_PRELUDE.
 ts_file() {
@@ -30,7 +30,7 @@ ts_file() {
 # The repo <dir>: tsconfig.json (the SDKs' types are the
 # node_modules/@types/loadout compile writes) and loadout.ts, a repo named test with its state in
 # machines/state/; each [option] is one more line of repo({...})
-# (`'configs: "configs"'`). stdin, when there is any, is root.loadout.ts:
+# (`'dotfiles: "configs"'`). stdin, when there is any, is root.loadout.ts:
 # declarations at the repo root.
 ts_root() {
     dir=$1; shift
@@ -48,13 +48,13 @@ ts_root() {
 JSON
     {
         cat <<'TS'
-import { flag, include, list, number, repo, text, whole } from "loadout";
+import { include, repo } from "loadout";
 
 await include("*.loadout.ts", "programs/**/*.loadout.ts", "maintenance/**/*.loadout.ts", "machines/**/*.loadout.ts");
 
 repo({
   name: "test",
-  state: "machines/state",
+  stateFolder: "machines/state",
 TS
         for option in "$@"; do printf '  %s,\n' "$option"; done
         printf '});\n'
@@ -66,7 +66,7 @@ TS
 # ts_root with nothing at the root: fixtures add fragments with ts_file.
 ts_repo() { ts_root "$@" </dev/null; }
 
-# Adds the option <option> (`'configs: "configs"'`) to the repo({...}) call
+# Adds the option <option> (`'dotfiles: "configs"'`) to the repo({...}) call
 # of loadout.ts <file>, as its first line. awk, not sed: BSD and GNU sed
 # disagree on inserting a line.
 repo_opt() {
@@ -94,29 +94,29 @@ git_repo() {
 basic_repo() {
     ts_root "$1" <<'TS'
 export const git = program("git", {
-  version: "git --version",
-  regex: "git version ([0-9.]+)",
-  install: [
-    via(dnf, { command: "sudo dnf install -y git" }),
-    custom("manual", { command: "echo install git yourself && false" }),
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [
+    withDnf({ installCommand: "sudo dnf install -y git" }),
+    withCustomSteps("manual", { installCommand: "echo install git yourself && false" }),
   ],
 });
 
 export const marker = script("marker", {
-  file: "scripts/marker.sh",
-  check: "test -f marker.txt",
+  runCommand: runFile("scripts/marker.sh"),
+  checkCommand: "test -f marker.txt",
 });
 TS
     ts_file "$1/machines/machines.loadout.ts" <<'TS'
 import { git, marker } from "../root.loadout.ts";
 
 machine("m1", {
-  install: [variant(git, "manual")],
+  install: [git("manual")],
   run: [marker],
 });
 
 machine("m2", {
-  install: [variant(git, "manual")],
+  install: [git("manual")],
 });
 TS
     mkdir -p "$1/scripts"
@@ -153,24 +153,24 @@ worktree_repo() {
 scripts_repo() {
     ts_root "$1" <<'TS'
 const fake = installer("fake", {
-  probe: "sh",
-  install: "echo installed-{pkg} > fake-install.txt",
-  check: "test -f fake-install.txt && echo mytool 1.0",
-  regex: "mytool ([0-9.]+)",
+  neededBinary: "sh",
+  installCommand: "echo installed-{packageName} > fake-install.txt",
+  checkCommand: "test -f fake-install.txt && echo mytool 1.0",
+  versionRegex: /mytool ([0-9.]+)/,
 });
 
-const mytool = program("mytool", { install: [fake] });
+const mytool = program("mytool", { canBeInstalled: [fake] });
 
-const healthy = script("healthy", { run: "true", check: "true" });
+const healthy = script("healthy", { runCommand: "true", checkCommand: "true" });
 
 const drifted = script("drifted", {
-  run: "true",
-  check: "echo missing: nodejs 16 npm firebase-tools; false",
+  runCommand: "true",
+  checkCommand: "echo missing: nodejs 16 npm firebase-tools; false",
 });
 
 const bootstrapOnly = script("bootstrap-only", {
-  run: "echo bootstrapped > bootstrap-marker.txt",
-  check: "test -f bootstrap-marker.txt",
+  runCommand: "echo bootstrapped > bootstrap-marker.txt",
+  checkCommand: "test -f bootstrap-marker.txt",
   setupOnly: true,
 });
 

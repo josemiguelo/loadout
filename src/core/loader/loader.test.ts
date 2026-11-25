@@ -26,6 +26,7 @@ import { ConfigException, ResolutionException, UpgradeException } from "../engin
 import { InterruptedByUser } from "../exec/exec.ts";
 import { GitException } from "../git/git.ts";
 import { loadRepo, parentChanged, parentRoot, readLayout, toolTooOld } from "./loader.ts";
+import { runs } from "../coretest/coretest.ts";
 
 // The lock reader: the only way the binary sees a repo's manifests.
 
@@ -153,8 +154,15 @@ test("an edit the lock hasn't seen is refused", () => {
 test("a newer lock format says to upgrade", () => {
   const root = repo();
   const path = root + "/loadout.lock.json";
-  put(path, readFileSync(path, "utf8").replace(`"format": 1`, `"format": 2`));
-  contains(refusal(root), "lock format 2", "run: loadout self-upgrade");
+  put(path, readFileSync(path, "utf8").replace(`"format": 2`, `"format": 3`));
+  contains(refusal(root), "lock format 3", "run: loadout self-upgrade");
+});
+
+test("an older lock format says to compile", () => {
+  const root = repo();
+  const path = root + "/loadout.lock.json";
+  put(path, readFileSync(path, "utf8").replace(`"format": 2`, `"format": 1`));
+  contains(refusal(root), "lock format 1", "run: loadout compile");
 });
 
 test("a lock from a newer minor is refused and a newer patch is not", () => {
@@ -190,8 +198,8 @@ function child(): [root: string, home: string] {
   const parent = newParentLayout({ name: "dotfiles", path: "~/dots", state: "state", sources: parentSources, hash: hash(parentDir, parentSources) });
   const m = manifestOf((b) => {
     b.meta("child", "");
-    b.script("helper", { file: "helper.sh", check: `file:helper.sh check "$@"`, origin: "parent:lib" });
-    b.machine("work", newMachineConfig({ scripts: ["helper"] }));
+    b.script("helper", { run: "file:helper.sh", check: `file:helper.sh check`, origin: "parent:lib" });
+    b.machine("work", newMachineConfig({ scripts: runs("helper") }));
   });
   const root = tempDir();
   put(root + "/loadout.ts", "repo {}\n");

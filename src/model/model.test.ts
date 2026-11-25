@@ -5,7 +5,7 @@ import { chezmoiDataFiles, chezmoiPartial, renderChezmoiData } from "./chezmoida
 import { type Errs, programToJSON, readProgram, readScript, scriptToJSON } from "./codec.ts";
 import { mapFS } from "./fsys.ts";
 import { globExpand, globMatches, globProblem } from "./glob.ts";
-import { type JSONValue, jsonString, floatNumber } from "./json.ts";
+import { type JSONValue, jsonString, floatNumber, parseJSON } from "./json.ts";
 import { decodeLock, encodeLock, type Lock, sourcesHash } from "./lock.ts";
 import { dataConflicts, mergeData, validateData } from "./machinedata.ts";
 import {
@@ -23,13 +23,15 @@ import {
   parentRoot,
   providedFolders,
   runsIn,
-  scriptEntry,
+  optionsWord,
+  sameRun,
   shellLine,
   shownLine,
   toolPathOf,
 } from "./manifest.ts";
 import { mapOf } from "./map.ts";
 import { isRefusal, ManifestException, ToolTooOldException } from "./refusal.ts";
+import { runs } from "../core/coretest/coretest.ts";
 
 const testdata = import.meta.dir + "/testdata/";
 
@@ -101,10 +103,10 @@ test("the lock round-trips", () => {
   const text = encodeLock({ format: 0, toolVersion: "3.0.0", sources: "abc", manifest: m });
   const lock = decodeLock(text);
   expectSame(encodeLock(lock), text);
-  expect([lock.format, lock.toolVersion, lock.sources]).toEqual([1, "3.0.0", "abc"]);
+  expect([lock.format, lock.toolVersion, lock.sources]).toEqual([2, "3.0.0", "abc"]);
   expect(lock.manifest.scripts.get("b")!.modes).toEqual([]);
   expect(runsIn(lock.manifest.scripts.get("a")!, "maintain")).toBe(true);
-  for (const want of ['"format": 1,', '"run": "x\\n\\"y\\"\\u0001"', '"run": "<&>"', '"modes": []', '"brew": {}']) {
+  for (const want of ['"format": 2,', '"run": "x\\n\\"y\\"\\u0001"', '"run": "<&>"', '"modes": []', '"brew": {}']) {
     expect(text).toContain(want);
   }
   expect(text.split('"modes"').length - 1).toBe(2);
@@ -216,8 +218,14 @@ test("problems name what's wrong", () => {
   for (const [pattern, want] of Object.entries(cases)) expect([pattern, globProblem(pattern)]).toEqual([pattern, want]);
 });
 
-test("a script entry's whitespace becomes single spaces", () => {
-  expect(scriptEntry("  name\n\ta \n  b  ")).toEqual(["name", "a b"]);
+test("options are one shell word of JSON, whatever they hold", () => {
+  const options = parseJSON(`{"limit":90,"to":["it's","$(x)","a  b"]}`);
+  expect(optionsWord(options)).toBe(`'{"limit":90,"to":["it'\\''s","$(x)","a  b"]}'`);
+  expect(optionsWord(undefined)).toBe("");
+  const other = parseJSON(`{"to":["it's","$(x)","a  b"],"limit":90}`);
+  expect(sameRun({ name: "x", options }, { name: "x", options: other })).toBe(true);
+  expect(sameRun({ name: "x", options }, { name: "x" })).toBe(false);
+  expect(sameRun({ name: "x" }, { name: "x" })).toBe(true);
 });
 
 test("shell line puts the bun folder first when set, and a shown line leaves it out", () => {
@@ -288,39 +296,20 @@ test("a machine sees its script variant and tool paths", () => {
         ]),
       }),
     ]),
-    installers: mapOf(["brew", newInstaller({ probe: "brew", install: "brew install {pkg}", upgrade: "brew upgrade" })]),
-    scripts: mapOf([
-      "keyboard",
-      newScriptStep({
-        description: "fn swap",
-        sudo: true,
-        check: "base-check",
-        after: ["programs.setup-brew"],
-        variants: mapOf(
-          ["arch", newScriptStep({ file: "arch.sh", after: ["scripts.x", "programs.setup-brew"], origin: "k" })],
-          ["fedora", newScriptStep({ file: "fedora.sh" })],
-        ),
-      }),
-    ]),
+    installers: mapOf(["brew", newInstaller({ probe: "brew", install: "brew install {packageName}", upgrade: "brew upgrade" })]),
+    scripts: mapOf(["keyboard", newScriptStep({ run: "true" })]),
     machines: mapOf([
       "m",
-      newMachineConfig({ pm: mapOf(["setup-brew", "linux"]), scripts: ["keyboard"], scriptVariants: mapOf(["keyboard", "arch"]) }),
+      newMachineConfig({ pm: mapOf(["setup-brew", "linux"]), scripts: runs("keyboard") }),
     ]),
   });
   const seen = forMachine(m, "m");
-  const step = seen.scripts.get("keyboard")!;
-  expect(step.file).toBe("arch.sh");
-  expect(step.sudo).toBe(true);
-  expect(step.description).toBe("fn swap");
-  expect(step.check).toBe("base-check");
-  expect(step.after.join(",")).toBe("programs.setup-brew,scripts.x");
-  expect(step.origin).toBe("k");
-  expect(step.variants.size).toBe(0);
+  expect(seen.scripts.get("keyboard")!.path).toEqual(["/home/linuxbrew/.linuxbrew/bin"]);
   expect(toolPathOf(seen, "brew")).toEqual(["/home/linuxbrew/.linuxbrew/bin"]);
   // A binary without `at` has no tool path.
   expect(seen.toolPaths.has("flatpak")).toBe(false);
   // forMachine doesn't change the manifest it was called on.
-  expect(m.scripts.get("keyboard")!.file).toBeUndefined();
+  expect(m.scripts.get("keyboard")!.path).toEqual([]);
 });
 
 test("parent root places its checkout", () => {

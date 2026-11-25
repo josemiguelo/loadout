@@ -27,6 +27,7 @@ import {
   type ParentLayout,
   type Program,
   type RepoLayout,
+  type ScriptRun,
   type ScriptStep,
   type VersionCheck,
 } from "./manifest.ts";
@@ -159,12 +160,19 @@ function variantToJSON(v: InstallVariant): JSONObject {
 }
 
 /** machineToJSON is a machine (or a draft's profile) as the lock writes it. */
+function runToJSON(run: ScriptRun): JSONValue {
+  if (run.options === undefined) return run.name;
+  const w = new ObjWriter();
+  w.str("name", run.name);
+  w.any("options", run.options);
+  return w.obj;
+}
+
 export function machineToJSON(c: MachineConfig): JSONObject {
   const w = new ObjWriter();
   w.list("extends", c.extends);
   w.strMap("pm", c.pm);
-  w.list("scripts", c.scripts);
-  w.strMap("script-variants", c.scriptVariants);
+  if (c.scripts.length > 0) w.any("scripts", c.scripts.map(runToJSON));
   w.data("data", c.data);
   return w.obj;
 }
@@ -202,14 +210,14 @@ function versionCheckToJSON(v: VersionCheck): JSONObject {
 export function scriptToJSON(s: ScriptStep): JSONObject {
   const w = new ObjWriter();
   w.strIf("description", s.description);
-  w.ptr("file", s.file);
+  w.ptr("module", s.module);
+  w.ptr("rules", s.rules);
   w.ptr("run", s.run);
   w.ptr("check", s.check);
   w.list("after", s.after);
   if (s.modes !== undefined && !isDefaultModes(s.modes)) w.any("modes", [...s.modes]);
   w.flag("sudo", s.sudo);
   w.strIf("later", s.later);
-  if (s.variants.size > 0) w.any("variants", objectsOf(s.variants, scriptToJSON));
   w.strIf("origin", s.origin);
   return w.obj;
 }
@@ -495,14 +503,24 @@ function readVariant(v: JSONValue, path: string, errs: Errs): InstallVariant {
   return iv;
 }
 
+/** readRun reads one script a machine runs: its name alone, or an object with its options. */
+function readRun(v: JSONValue, path: string, errs: Errs): ScriptRun {
+  if (typeof v === "string") return { name: v };
+  const r = new ObjReader(v, path, "loadout.core.model.ScriptRun", errs);
+  const run: ScriptRun = { name: r.reqStr("name") };
+  const options = r.get("options");
+  if (options !== undefined) run.options = options;
+  r.done();
+  return run;
+}
+
 /** readMachine reads a machine (or a draft's profile) as the lock writes it. */
 export function readMachine(v: JSONValue, path: string, errs: Errs): MachineConfig {
   const r = new ObjReader(v, path, "loadout.core.model.MachineConfig", errs);
   const c = newMachineConfig({
     extends: r.list("extends"),
     pm: r.strMap("pm"),
-    scripts: r.list("scripts"),
-    scriptVariants: r.strMap("script-variants"),
+    scripts: (r.array("scripts") ?? []).map((e, n) => readRun(e, `${path}.scripts[${n}]`, errs)),
     data: r.data("data"),
   });
   r.done();
@@ -541,7 +559,8 @@ export function readScript(v: JSONValue, path: string, errs: Errs): ScriptStep {
   const r = new ObjReader(v, path, "loadout.core.model.ScriptStep", errs);
   const s = newScriptStep({
     description: r.str("description"),
-    file: r.ptr("file"),
+    module: r.ptr("module"),
+    rules: r.ptr("rules"),
     run: r.ptr("run"),
     check: r.ptr("check"),
     after: r.list("after"),
@@ -549,7 +568,6 @@ export function readScript(v: JSONValue, path: string, errs: Errs): ScriptStep {
   if (r.array("modes") !== undefined) s.modes = r.list("modes");
   s.sudo = r.flag("sudo");
   s.later = r.str("later");
-  s.variants = r.map("variants", readScript);
   s.origin = r.str("origin");
   r.done();
   return s;

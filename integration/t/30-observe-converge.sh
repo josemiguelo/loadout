@@ -49,7 +49,7 @@ ok "setup-new-machine runs eligible scripts"
 # Skipped by converge, an error when explicitly requested, not observed.
 ts_file repo/programs/never.loadout.ts <<'TS'
 program("never-mapped", {
-  install: [custom("manual", { command: "false" })],
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 TS
 compile_repo repo
@@ -71,13 +71,13 @@ ok "setup-new-machine fails for a machine the repo doesn't declare"
 ts_repo pmrepo
 ts_file pmrepo/programs/tool.loadout.ts <<'TS'
 const pacmanLike = installer("pacman-like", {
-  probe: "pacman",
-  install: "sudo pacman -S --noconfirm {pkg}",
-  check: "pacman -Q {pkg}",
-  regex: "([0-9.]+)",
+  neededBinary: "pacman",
+  installCommand: "sudo pacman -S --noconfirm {packageName}",
+  checkCommand: "pacman -Q {packageName}",
+  versionRegex: /([0-9.]+)/,
 });
 
-const tool = program("tool", { install: [pacmanLike] });
+const tool = program("tool", { canBeInstalled: [pacmanLike] });
 
 machine("m1", { install: [tool] });
 TS
@@ -94,18 +94,18 @@ fi
 ts_repo providesrepo
 ts_file providesrepo/programs/tool.loadout.ts <<'TS'
 const flat = installer("flat", {
-  probe: "loadout-test-flat",
-  install: "loadout-test-flat install {pkg}",
-  check: "loadout-test-flat info {pkg}",
+  neededBinary: "loadout-test-flat",
+  installCommand: "loadout-test-flat install {packageName}",
+  checkCommand: "loadout-test-flat info {packageName}",
 });
 
 const flatRuntime = program("flat-runtime", {
-  install: [custom({ command: "false", provides: { "loadout-test-flat": {} } })],
+  canBeInstalled: [withCustomSteps({ installCommand: "false", addsToPath: { "loadout-test-flat": true } })],
 });
 
-requires(flat, [flatRuntime]);
+flat.needs(flatRuntime);
 
-const app = program("app", { install: [flat] });
+const app = program("app", { canBeInstalled: [flat] });
 
 machine("m1", { install: [flatRuntime, app] });
 TS
@@ -129,25 +129,25 @@ ts_repo landedrepo
 # Unquoted: the shell puts $LANDED's path in, so TypeScript sees a plain string.
 ts_file landedrepo/programs/tool.loadout.ts <<TS
 const brewish = installer("brewish", {
-  probe: "loadout-test-brewish",
-  install: "loadout-test-brewish install {pkg}",
-  check: "loadout-test-brewish list {pkg}",
+  neededBinary: "loadout-test-brewish",
+  installCommand: "loadout-test-brewish install {packageName}",
+  checkCommand: "loadout-test-brewish list {packageName}",
 });
 
 const setupBrewish = program("setup-brewish", {
-  install: [
-    custom({
-      command: "false",
-      present: "test -x $LANDED/loadout-test-brewish",
-      provides: { "loadout-test-brewish": { at: "$LANDED" } },
+  canBeInstalled: [
+    withCustomSteps({
+      installCommand: "false",
+      isInstalled: "test -x $LANDED/loadout-test-brewish",
+      addsToPath: { "loadout-test-brewish": "$LANDED" },
     }),
   ],
 });
 
-requires(brewish, [setupBrewish]);
+brewish.needs(setupBrewish);
 
-const app = program("app", { install: [brewish] });
-const other = program("other", { install: [brewish] });
+const app = program("app", { canBeInstalled: [brewish] });
+const other = program("other", { canBeInstalled: [brewish] });
 
 machine("m1", { install: [setupBrewish, app] });
 machine("m2", { install: [setupBrewish, app, other] });
@@ -164,7 +164,7 @@ OUT=$("$BIN" --repo repo --machine m1 explain git marker)
 echo "$OUT" | grep -q "program git" || fail "explain prints the program"
 echo "$OUT" | grep -qE "install\.manual +echo install git yourself && false +<- m1" || fail "explain marks this machine's mapped key"
 echo "$OUT" | grep -q "script marker" || fail "explain prints the script"
-echo "$OUT" | grep -qE "file +scripts/marker.sh" || fail "explain prints the script file"
+echo "$OUT" | grep -qE "run +file:scripts/marker.sh" || fail "explain prints the script file"
 "$BIN" --repo repo explain ghost-name >/dev/null 2>&1 && fail "explain of unknown name should fail" || true
 OUT=$("$BIN" --repo repo --machine m1 explain)
 echo "$OUT" | grep -q "program git" && echo "$OUT" | grep -q "script marker" || fail "bare explain covers the whole manifest"
@@ -178,18 +178,18 @@ ok "explain prints expanded programs and scripts (all of them with no names)"
 ts_repo probed
 ts_file probed/programs/probed.loadout.ts <<'TS'
 const ghostpm = installer("ghostpm", {
-  probe: "ghostpm-definitely-not-here",
-  install: "ghostpm-definitely-not-here install {pkg}",
-  check: "ghostpm-definitely-not-here query {pkg}",
-  regex: "([0-9.]+)",
+  neededBinary: "ghostpm-definitely-not-here",
+  installCommand: "ghostpm-definitely-not-here install {packageName}",
+  checkCommand: "ghostpm-definitely-not-here query {packageName}",
+  versionRegex: /([0-9.]+)/,
 });
 
-const viapm = program("viapm", { install: [ghostpm] });
+const viapm = program("viapm", { canBeInstalled: [ghostpm] });
 
 const byitself = program("byitself", {
-  version: "byitself-definitely-not-here --version",
-  regex: "([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "byitself-definitely-not-here --version",
+  versionRegex: /([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 
 machine("m1", { install: [viapm, byitself] });
@@ -208,18 +208,18 @@ ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'
 ts_repo vdeps
 ts_file vdeps/programs/vdeps.loadout.ts <<'TS'
 const prereq = program("prereq", {
-  install: [custom("manual", { command: "true" })],
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })],
 });
 
 const tool = program("tool", {
-  install: [
-    custom("withprereq", { command: "true", dependsOn: [prereq] }),
-    custom("plain", { command: "true" }),
+  canBeInstalled: [
+    withCustomSteps("withprereq", { installCommand: "true", dependsOn: [prereq] }),
+    withCustomSteps("plain", { installCommand: "true" }),
   ],
 });
 
-machine("m1", { install: [variant(tool, "withprereq"), prereq] });
-machine("m2", { install: [variant(tool, "plain")] });
+machine("m1", { install: [tool("withprereq"), prereq] });
+machine("m2", { install: [tool("plain")] });
 TS
 compile_repo vdeps
 OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
@@ -234,14 +234,14 @@ ok "a variant's depends-on is planned only on machines mapping that variant"
 # (A program's command runs in its own directory: the markers land in programs/.)
 ts_repo skipdeps
 ts_file skipdeps/programs/tool.loadout.ts <<'TS'
-const base = program("base", { install: [custom({ command: "false" })] });
+const base = program("base", { canBeInstalled: [withCustomSteps({ installCommand: "false" })] });
 
 const needsBase = program("needs-base", {
   dependsOn: [base],
-  install: [custom({ command: "touch needs-base.ran" })],
+  canBeInstalled: [withCustomSteps({ installCommand: "touch needs-base.ran" })],
 });
 
-const alone = program("alone", { install: [custom({ command: "touch alone.ran" })] });
+const alone = program("alone", { canBeInstalled: [withCustomSteps({ installCommand: "touch alone.ran" })] });
 
 machine("m1", { install: [base, needsBase, alone] });
 TS

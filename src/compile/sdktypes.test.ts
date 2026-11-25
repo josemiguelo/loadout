@@ -25,56 +25,59 @@ const typesPackage = Object.fromEntries(typesFiles.map((f) => [f.path, f.content
 /** A repo that uses most of both SDKs, as a config repo writes them. */
 const fixture: Record<string, string> = {
   "tsconfig.json": tsconfig,
-  "loadout.ts": `import { flag, include, list, repo, text } from "loadout";
+  "loadout.ts": `import { include, repo } from "loadout";
 
 await include("**/*.loadout.ts");
 
 repo({
   name: "fixture",
-  state: "machines/state",
-  configs: "configs",
-  minToolVersion: "0.1.0",
-  data: { git: { email: text("") }, gui: flag(false), fonts: list([]) },
+  stateFolder: "machines/state",
+  dotfiles: "configs",
+  minLoadoutVersion: "0.1.0",
+  data: { git: { email: "" }, gui: false, fonts: [] as string[] },
 });
 `,
-  "programs/cli.loadout.ts": `import { brew, custom, dnf, installer, omarchy, program, requires, runScript, via } from "loadout";
+  "programs/cli.loadout.ts": `import { installer, program, runFile, withBrew, withCustomSteps, withDnf, withOmarchy } from "loadout";
 
 export const mise = installer("mise", {
-  probe: "mise",
-  params: ["tool"],
-  install: "mise use -g {tool}",
-  outdatedAll: runScript(".loadout/mise.ts"),
+  neededBinary: "mise",
+  installerParams: ["tool"],
+  installCommand: "mise use -g {tool}",
+  allOutdatedCommand: runFile(".loadout/mise.ts"),
 });
 
-export const curl = program("curl", { install: [dnf, omarchy, brew] });
+export const curl = program("curl", { canBeInstalled: [withDnf, withOmarchy, withBrew] });
 
 export const ripgrep = program("ripgrep", {
   description: "fast grep",
   dependsOn: [curl],
-  install: [via(dnf, { pkg: "ripgrep" }), via(mise, { params: { tool: "ripgrep" } }), custom({ command: "true", present: "rg" })],
-  version: "rg --version",
+  canBeInstalled: [withDnf({ packageName: "ripgrep" }), mise({ tool: "ripgrep" }), withCustomSteps({ installCommand: "true", isInstalled: "rg" })],
+  versionCommand: "rg --version",
+  versionRegex: /ripgrep ([0-9.]+)/,
 });
 
-requires(mise, [curl]);
+mise.needs(curl);
 `,
-  "maintenance/scripts.loadout.ts": `import { file, outdated, runScript, script, variant } from "loadout";
+  "maintenance/scripts.loadout.ts": `import { outdated, runFile, script } from "loadout";
 import { ripgrep } from "../programs/cli.loadout.ts";
 
-export const marker = script("marker", { managedBy: ".loadout/marker.ts", runAfter: [ripgrep] });
+export const marker = script("marker", { module: () => import("./.loadout/marker.ts"), rules: () => import("./.loadout/marker.rules.ts"), runAfter: [ripgrep] });
 
 export const keyboard = script("keyboard", {
   description: "keyboard layout",
-  variants: { arch: { run: ["true", "true"] }, fedora: { file: "keyboard.sh", check: file("check.sh") } },
+  runCommand: runFile("keyboard.sh"),
+  checkCommand: ["true", "true"],
 });
 
-export const markerHello = marker("hello");
-export const archKeyboard = variant(keyboard, "arch")("us");
+export const limit = script("limit", { module: () => import("./.loadout/limit.ts"), rules: () => import("./.loadout/limit.rules.ts"), updates: () => import("./.loadout/pins.ts") });
 
-outdated("pins", { command: runScript(".loadout/pins.ts"), upgrade: runScript(".loadout/pins.ts update {item}") });
+export const markerHello = marker({ name: "hello" });
+
+outdated("pins", { command: runFile("pins.sh") });
 `,
-  "machines/machines.loadout.ts": `import { dnf, machine, profile, variant, via } from "loadout";
+  "machines/machines.loadout.ts": `import { machine, profile, withDnf } from "loadout";
 import { curl, ripgrep } from "../programs/cli.loadout.ts";
-import { archKeyboard, markerHello } from "../maintenance/scripts.loadout.ts";
+import { keyboard, limit, markerHello } from "../maintenance/scripts.loadout.ts";
 
 type Data = { git: { email: string }; gui: boolean };
 
@@ -82,29 +85,38 @@ export const base = profile<Data>("base", { install: [curl], data: { gui: false 
 
 machine<Data>("box", {
   extends: [base],
-  install: [via(dnf, [ripgrep]), variant(ripgrep, "dnf")],
-  run: [markerHello, archKeyboard],
+  install: [withDnf(ripgrep), ripgrep("custom")],
+  run: [markerHello, keyboard, limit({ percent: 90 })],
   data: { git: { email: "me@example.com" } },
 });
 `,
-  "maintenance/.loadout/marker.ts": `#!/usr/bin/env bun
-import { $, env, main, read } from "loadout/script";
+  "maintenance/.loadout/marker.ts": `import { $, env, read } from "loadout/script";
 
 const marker = env.fragmentDir + "/marker.txt";
-await main(
-  async (name) => (await read(marker)).trim() === name,
-  async (name) => {
-    await $\`echo \${name} > \${marker}\`;
-  },
-);
+import type { Options } from "./marker.rules.ts";
+export const check = async ({ name }: Options) => (await read(marker)).trim() === name;
+export async function install({ name }: Options) {
+  await $\`echo \${name} > \${marker}\`;
+}
 `,
-  "maintenance/.loadout/pins.ts": `#!/usr/bin/env bun
-import { clonesBehind, fastForward, formatRow, oracle, out, reason, type Row } from "loadout/script";
+  "maintenance/.loadout/limit.rules.ts": `export type Options = { percent: number };
+export const validate = ({ percent }: Options) => percent > 100 && "percent is at most 100";
+`,
+  "maintenance/.loadout/marker.rules.ts": `export type Options = { name: string };
+export const validate = (_: Options) => undefined;
+`,
+  "maintenance/.loadout/limit.ts": `import type { Options } from "./limit.rules.ts";
+export const check = async ({ percent }: Options) => percent > 0;
+export async function install(options: Options) {
+  if (!(await check(options))) throw new Error("no");
+}
+`,
+  "maintenance/.loadout/pins.ts": `import { clonesBehind, fastForward, formatOutdatedItem, outputOf, reason, type OutdatedItem } from "loadout/script";
 
 const clones = [{ name: "dots", dir: "/tmp/dots" }];
-const rows = async (): Promise<Row[]> => [...(await clonesBehind(clones)), { item: "x", current: "1", candidate: "2" }];
-await oracle({ rows, update: (item) => fastForward(clones.find((c) => c.name === item) ?? clones[0]!) });
-console.error(formatRow({ item: "x", current: "1", candidate: "2" }), reason(new Error("no")), typeof out);
+export const listOutdated = async (): Promise<OutdatedItem[]> => [...(await clonesBehind(clones)), { item: "x", current: "1", candidate: "2" }];
+export const update = (item: string) => fastForward(clones.find((c) => c.name === item) ?? clones[0]!);
+console.error(formatOutdatedItem({ item: "x", current: "1", candidate: "2" }), reason(new Error("no")), typeof outputOf);
 `,
 };
 
@@ -114,8 +126,8 @@ test("loadout.d.ts is what the SDK sources emit now (bun run sdk-types rewrites 
 });
 
 test("doc comments reach the types, for the editor's hover", () => {
-  expect(types).toContain("/** The built-in installers: shipped with loadout, `loadout installers` lists them. */\n  export const apt: Installer;");
-  expect(types).toMatch(/\/\*\*\n {3}\* A managed script \(`managedBy: "x.ts"`\)/);
+  expect(types).toContain("/** The built-in installers: shipped with loadout, `loadout installers` lists them. */\n  export const withApt: Installer<never>;");
+  expect(types).toMatch(/\/\*\*\n {3}\* A script a manifest runs as a command/);
 });
 
 test("a repo type-checks against node_modules/@types/loadout alone, and a wrong setting is a type error", () => {
@@ -127,7 +139,36 @@ test("a repo type-checks against node_modules/@types/loadout alone, and a wrong 
     ...typesPackage,
     "programs/typo.loadout.ts": 'import { program } from "loadout";\nprogram("x", { descripton: "", install: [] });\n',
   });
-  expect(typo.out).toContain("programs/typo.loadout.ts(2,16): error TS2561: Object literal may only specify known properties, but 'descripton' does not exist in type 'ProgramSpec'.");
+  expect(typo.out).toContain("programs/typo.loadout.ts(2,16): error TS2561: Object literal may only specify known properties, but 'descripton' does not exist in type 'ProgramSpec<Way>'.");
+  const options = typeCheck({
+    ...fixture,
+    ...typesPackage,
+    "maintenance/wrong.loadout.ts":
+      'import { machine, script } from "loadout";\nimport { limit } from "./scripts.loadout.ts";\nlimit({ percent: "90" });\nlimit();\nmachine("x", { run: [limit] });\nscript("y", { module: () => import("./.loadout/none.ts") });\n',
+  });
+  for (const line of ["(3,9)", "(4,1)", "(5,22)", "(6,36)"]) expect(options.out).toContain("maintenance/wrong.loadout.ts" + line + ": error");
+  const unvalidated = typeCheck({
+    ...fixture,
+    ...typesPackage,
+    "maintenance/.loadout/unvalidated.ts": "export const check = (o: { n: number }) => o.n > 0;\nexport const install = (o: { n: number }) => {};\n",
+    "maintenance/.loadout/plain.ts": "export const check = () => true;\nexport const install = () => {};\n",
+    "maintenance/.loadout/optional.ts":
+      "export type Options = { n: number };\nexport const check = (o?: Options) => true;\nexport const install = (o?: Options) => {};\n",
+    "maintenance/.loadout/optional.rules.ts": "export const validate = (o?: { n: number }) => undefined;\n",
+    "maintenance/wrong.loadout.ts":
+      'import { machine, script } from "loadout";\nscript("a", { module: () => import("./.loadout/unvalidated.ts") });\nconst plain = script("b", { module: () => import("./.loadout/plain.ts") });\nconst optional = script("c", { module: () => import("./.loadout/optional.ts"), rules: () => import("./.loadout/optional.rules.ts") });\nmachine("x", { run: [plain, optional, optional({ n: 1 })] });\nplain({ n: 1 });\nscript("d", { module: () => import("./.loadout/optional.ts"), rules: () => import("./.loadout/limit.rules.ts") });\n',
+  });
+  expect(unvalidated.out).toMatch(/wrong\.loadout\.ts\(2,\d+\): error/);
+  expect(unvalidated.out).toMatch(/wrong\.loadout\.ts\(6,\d+\): error/);
+  expect(unvalidated.out).toMatch(/wrong\.loadout\.ts\(7,\d+\): error/);
+  expect(unvalidated.out).not.toMatch(/wrong\.loadout\.ts\([345],/);
+  const installers = typeCheck({
+    ...fixture,
+    ...typesPackage,
+    "programs/wrong.loadout.ts":
+      'import { machine, program, withBrew } from "loadout";\nimport { curl, mise, ripgrep } from "./cli.loadout.ts";\nripgrep("linux");\ncurl("brew");\nprogram("a", { install: [mise] });\nmise({ packageName: "x" });\nwithBrew({ tool: "x" });\nmachine("m", { install: [withBrew] });\n',
+  });
+  for (const line of [3, 4, 5, 6, 7, 8]) expect(installers.out).toMatch(new RegExp(`programs/wrong\\.loadout\\.ts\\(${line},\\d+\\): error`));
   const none = typeCheck(fixture);
   expect(none.out).toContain("error TS2307: Cannot find module 'loadout'");
 });

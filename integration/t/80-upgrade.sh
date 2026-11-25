@@ -3,28 +3,28 @@
 ts_repo uprepo
 ts_file uprepo/programs/up.loadout.ts <<'TS'
 const pm = installer("pm", {
-  install: "echo installing {pkg}",
-  upgrade: "echo upgrading all pm",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9.]+)",
+  installCommand: "echo installing {packageName}",
+  upgradeCommand: "echo upgrading all pm",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9.]+)/,
 });
 
 const pmExtra = installer("pm-extra", {
-  install: "echo installing {pkg}",
-  upgrade: "echo upgrading all pm",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9.]+)",
+  installCommand: "echo installing {packageName}",
+  upgradeCommand: "echo upgrading all pm",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9.]+)/,
 });
 
 const byhand = installer("byhand", {
-  install: "echo installing {pkg}",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9.]+)",
+  installCommand: "echo installing {packageName}",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9.]+)/,
 });
 
-const alpha = program("alpha", { install: [pm] });
-const bravo = program("bravo", { install: [pmExtra] });
-const charlie = program("charlie", { install: [byhand] });
+const alpha = program("alpha", { canBeInstalled: [pm] });
+const bravo = program("bravo", { canBeInstalled: [pmExtra] });
+const charlie = program("charlie", { canBeInstalled: [byhand] });
 
 machine("m1", { install: [alpha, bravo, charlie] });
 TS
@@ -48,17 +48,17 @@ ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 # beside whole mechanisms in the same run.
 ts_root irepo <<'TS'
 const pm = installer("pm", {
-  install: "echo installing {pkg}",
-  upgrade: "echo swept > swept.txt",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9.]+)",
+  installCommand: "echo installing {packageName}",
+  upgradeCommand: "echo swept > swept.txt",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9.]+)/,
 });
 
-const alpha = program("alpha", { install: [pm] });
+const alpha = program("alpha", { canBeInstalled: [pm] });
 
 outdated("plugins", {
   command: "echo 'tpack aaa bbb'",
-  upgrade: "echo pulled > pulled-{item}.txt",
+  upgradeCommand: "echo pulled > pulled-{item}.txt",
 });
 
 outdated("readonly", { command: "echo 'x 1 2'" });

@@ -9,8 +9,8 @@ basic_repo dots
 cat >> dots/root.loadout.ts <<'TS'
 
 export const whereParent = script("where-parent", {
-  run: "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/parent.txt\"",
-  check: "test -f \"$WHERE_OUT/parent.txt\"",
+  runCommand: "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/parent.txt\"",
+  checkCommand: "test -f \"$WHERE_OUT/parent.txt\"",
 });
 TS
 compile_repo dots
@@ -21,8 +21,8 @@ PARENT=$(cd dots && pwd -P)
 child_repo() {
     ts_root "$1" "parent: { name: \"dots\", path: \"$PARENT\" }" <<'TS'
 export const whereChild = script("where-child", {
-  run: "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/child.txt\"",
-  check: "test -f \"$WHERE_OUT/child.txt\"",
+  runCommand: "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/child.txt\"",
+  checkCommand: "test -f \"$WHERE_OUT/child.txt\"",
 });
 TS
     # Unquoted for $PARENT.
@@ -31,15 +31,15 @@ import { git, whereParent } from "$PARENT/root.loadout.ts";
 import { whereChild } from "../root.loadout.ts";
 
 const worktool = program("worktool", {
-  version: "echo worktool 1.0",
-  regex: "worktool ([0-9.]+)",
-  install: [custom("manual", { command: "true" })],
+  versionCommand: "echo worktool 1.0",
+  versionRegex: /worktool ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })],
 });
 
-program("forgotten", { install: [custom("manual", { command: "true" })] });
+program("forgotten", { canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })] });
 
 machine("work", {
-  install: [variant(git, "manual"), worktool],
+  install: [git("manual"), worktool],
   run: [whereParent, whereChild],
 });
 TS
@@ -97,7 +97,7 @@ ok "a parent edit, a stale parent lock and a missing parent are each refused by 
 # --- one name, two repos ------------------------------------------------------
 cat >> work/machines/work.loadout.ts <<'TS'
 
-program("git", { install: [custom("manual", { command: "true" })] });
+program("git", { canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })] });
 TS
 OUT=$("$BIN" --repo work compile 2>&1) && fail "a name both repos declare must be refused"
 echo "$OUT" | grep -q "^error: machines/work.loadout.ts:[0-9]*,[0-9]*: program 'git' is declared twice; first at \.\./dots/root.loadout.ts:[0-9]*,[0-9]*" ||
@@ -135,11 +135,11 @@ chmod +x "$CZ/bin/chezmoi"
 export CZ
 cz_loadout() { PATH="$CZ/bin:$PATH" "$BIN" "$@"; }
 
-repo_opt dots/loadout.ts 'configs: "configs"'
-grep -q 'configs: "configs"' dots/loadout.ts || fail "the parent fixture declares configs"
+repo_opt dots/loadout.ts 'dotfiles: "configs"'
+grep -q 'dotfiles: "configs"' dots/loadout.ts || fail "the parent fixture declares configs"
 mkdir -p dots/configs
 "$BIN" --repo dots compile >/dev/null 2>&1 || fail "the parent compiles with configs"
-repo_opt work/loadout.ts 'configs: "configs"'
+repo_opt work/loadout.ts 'dotfiles: "configs"'
 mkdir -p work/configs
 OUT=$("$BIN" --repo work compile 2>&1) || fail "the child compiles with configs: $OUT"
 [ "$(grep -c '"configs": "configs"' work/loadout.lock.json)" = 2 ] || fail "the child's lock records its configs and the parent's"
@@ -201,7 +201,7 @@ git clone -q dots.git dots-elsewhere
 gitid dots-elsewhere
 cat >> dots-elsewhere/root.loadout.ts <<'TS'
 
-script("later", { run: "true", check: "true" });
+script("later", { runCommand: "true", checkCommand: "true" });
 TS
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's change compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "a later script" && git -C dots-elsewhere push -q 2>/dev/null
@@ -219,7 +219,7 @@ ok "a child's sync pulls its parent, recompiles when the parent changed, and com
 # applies from the new folder, not the one its lock named before the pull.
 git -C dots-elsewhere pull -q
 git -C dots-elsewhere mv configs dotfiles
-sed -i.bak 's|configs: "configs"|configs: "dotfiles"|' dots-elsewhere/loadout.ts && rm dots-elsewhere/loadout.ts.bak
+sed -i.bak 's|dotfiles: "configs"|dotfiles: "dotfiles"|' dots-elsewhere/loadout.ts && rm dots-elsewhere/loadout.ts.bak
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's rename compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "configs is dotfiles now" && git -C dots-elsewhere push -q 2>/dev/null
 : > "$CZ/log"
@@ -233,7 +233,7 @@ ok "a child's sync applies from a configs folder its parent renamed"
 # Offline, as in 50-diff-sync: a fake curl answers the release check and an
 # install that swaps a copy of the binary for a stub saying how it was run.
 git -C dots-elsewhere pull -q
-repo_opt dots-elsewhere/loadout.ts 'minToolVersion: "999.0.0"'
+repo_opt dots-elsewhere/loadout.ts 'minLoadoutVersion: "999.0.0"'
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's floor compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "floor" && git -C dots-elsewhere push -q 2>/dev/null
 mkdir -p self fakecurl
@@ -255,7 +255,7 @@ ok "a child's sync that compiles and then upgrades tells the next sync it compil
 # That next sync finds the lock compiled (parent unchanged since) and commits
 # it with the state.
 git -C dots-elsewhere pull -q
-sed -i.bak '/minToolVersion: "999.0.0"/d' dots-elsewhere/loadout.ts && rm dots-elsewhere/loadout.ts.bak
+sed -i.bak '/minLoadoutVersion: "999.0.0"/d' dots-elsewhere/loadout.ts && rm dots-elsewhere/loadout.ts.bak
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent drops its floor"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "no floor" && git -C dots-elsewhere push -q 2>/dev/null
 git -C dots pull -q
@@ -270,7 +270,7 @@ ok "the sync an upgrade starts commits the lock the sync before it compiled"
 # the child's sync recompiles against it.
 git -C dots-elsewhere pull -q
 ts_file dots-elsewhere/programs/newer.loadout.ts <<'TS'
-script("newer", { run: "true", check: "true" });
+script("newer", { runCommand: "true", checkCommand: "true" });
 TS
 "$BIN" --repo dots-elsewhere compile >/dev/null 2>&1 || fail "the parent's new manifest compiles"
 git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "a new manifest" && git -C dots-elsewhere push -q 2>/dev/null

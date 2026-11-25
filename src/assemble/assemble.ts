@@ -14,6 +14,7 @@ import {
   hasSpace,
   installerLibrary,
   installFilePrefix,
+  modulePrefix,
   isAbsPath,
   isBlank,
   isParentOrigin,
@@ -31,10 +32,8 @@ import {
   plus,
   type RepoFS,
   resolveInstall,
-  scriptArgs,
-  scriptEntry,
-  type ScriptStep,
-  scriptVariant,
+  sameRun,
+  type ScriptRun,
   sortedMap,
   sortStrings,
   trimPrefix,
@@ -166,18 +165,17 @@ export function checkFiles(manifest: Manifest, repo: RepoFS, parent: RepoFS | un
     }
   };
   const requireFile = (command: string | undefined, origin: string, label: string) => {
-    if (command === undefined || !command.startsWith(installFilePrefix)) return;
+    const prefix = [installFilePrefix, modulePrefix].find((p) => command?.startsWith(p));
+    if (command === undefined || prefix === undefined) return;
     // Anything after the first space is arguments, not path.
-    const [p] = cut(trimPrefix(command, installFilePrefix), " ");
+    const [p] = cut(trimPrefix(command, prefix), " ");
     requirePath(p, origin, label);
   };
   for (const [name, script] of manifest.scripts) {
-    const steps: [string, ScriptStep][] = [["", script]];
-    for (const [key, v] of script.variants) steps.push(["." + key, v]);
-    for (const [label, step] of steps) {
-      if (step.file !== undefined) requirePath(step.file, step.origin, "scripts." + name + label);
-      requireFile(step.check, step.origin, "scripts." + name + label + ".check");
-    }
+    if (script.module !== undefined) requirePath(script.module, script.origin, "scripts." + name);
+    if (script.rules !== undefined) requirePath(script.rules, script.origin, "scripts." + name + ".rules");
+    requireFile(script.run, script.origin, "scripts." + name);
+    requireFile(script.check, script.origin, "scripts." + name + ".check");
   }
   for (const [name, source] of manifest.outdated) {
     requireFile(source.command, source.origin, "outdated." + name);
@@ -342,7 +340,6 @@ function sorted(manifest: Manifest): Manifest {
     machines: mapValues(sortedMap(manifest.machines), (_, machine) => ({
       ...machine,
       pm: sortedMap(machine.pm),
-      scriptVariants: sortedMap(machine.scriptVariants),
       label: "",
     })),
     outdated: sortedMap(manifest.outdated),
@@ -350,8 +347,8 @@ function sorted(manifest: Manifest): Manifest {
   };
 }
 
-interface Pick {
-  value: string;
+interface Pick<V = string> {
+  value: V;
   profile: string;
 }
 
@@ -359,7 +356,7 @@ interface Pick {
  * flatten resolves `extends` lists into out: every machine becomes its
  * flattened self, downstream nothing knows profiles existed. A machine's
  * profiles are combined first — two of them setting a program's variant, a
- * script's arguments or variant, or a data key differently is an error, so
+ * script's options, or a data key differently is an error, so
  * their order never changes the result — then the machine itself overrides
  * them (pm per key, scripts by name, data table by table, lists replace).
  * Profiles are validated through the machines extending them, and each one
@@ -392,8 +389,7 @@ function flatten(
     }
     // program -> (variant, profile), script -> (entry, profile), script -> (variant, profile)
     const pm = new Map<string, Pick>();
-    const scripts = new Map<string, Pick>();
-    const variants = new Map<string, Pick>();
+    const scripts = new Map<string, Pick<ScriptRun>>();
     let data: JSONObject = new Map();
     parents.forEach((p, index) => {
       for (const [program, variant] of p.config.pm) {
@@ -408,24 +404,13 @@ function flatten(
         }
       }
       for (const entry of p.config.scripts) {
-        const [script, args] = scriptEntry(entry);
+        const script = entry.name;
         const previous = scripts.get(script);
         if (previous === undefined) {
           scripts.set(script, { value: entry, profile: p.name });
-        } else if (scriptEntry(previous.value)[1] !== args) {
+        } else if (!sameRun(previous.value, entry)) {
           errors.push(
-            config.label + ": profiles '" + previous.profile + "' and '" + p.name + "' run '" + script + "' with different arguments",
-          );
-        }
-      }
-      for (const [script, variant] of p.config.scriptVariants) {
-        const previous = variants.get(script);
-        if (previous === undefined) {
-          variants.set(script, { value: variant, profile: p.name });
-        } else if (previous.value !== variant) {
-          errors.push(
-            config.label + ": profiles '" + previous.profile + "' and '" + p.name + "' run '" + script +
-              "' as different variants ('" + previous.value + "' vs '" + variant + "')",
+            config.label + ": profiles '" + previous.profile + "' and '" + p.name + "' run '" + script + "' with different options",
           );
         }
       }
@@ -436,14 +421,10 @@ function flatten(
       }
       data = mergeData(data, p.config.data);
     });
-    const own = scriptArgs(config);
-    const inheritedScripts: string[] = [];
+    const own = new Set(config.scripts.map((run) => run.name));
+    const inheritedScripts: ScriptRun[] = [];
     for (const entry of scripts.values()) {
-      if (!own.has(scriptEntry(entry.value)[0])) inheritedScripts.push(entry.value);
-    }
-    const inherited = new Map<string, string>();
-    for (const [script, v] of variants) {
-      if (!own.has(script)) inherited.set(script, v.value);
+      if (!own.has(entry.value.name)) inheritedScripts.push(entry.value);
     }
     return {
       ...config,
@@ -452,7 +433,6 @@ function flatten(
         config.pm,
       ),
       scripts: [...inheritedScripts, ...config.scripts],
-      scriptVariants: plus(inherited, config.scriptVariants),
       data: mergeData(data, config.data),
     };
   };
@@ -473,7 +453,7 @@ function validate(manifest: Manifest): void {
 
   const minToolVersion = manifest.meta.minToolVersion;
   if (minToolVersion !== undefined && !dottedVersion.test(minToolVersion)) {
-    add("meta min-tool-version '" + minToolVersion + "' is not a dotted version number (e.g. \"0.2.0\")");
+    add("minLoadoutVersion '" + minToolVersion + "' is not a dotted version number (e.g. \"0.2.0\")");
   }
 
   for (const [name, installer] of manifest.installers) {
@@ -484,7 +464,7 @@ function validate(manifest: Manifest): void {
     if (installer.outdatedAll !== undefined && installer.regex === undefined) {
       add("installers." + name + " has an outdated-all command but no regex");
     }
-    if (installer.params.includes("pkg")) add("installers." + name + " declares param 'pkg', which is always available");
+    if (installer.params.includes("packageName")) add("installers." + name + " declares param 'packageName', which is always available");
     for (const required of installer.requires) {
       if (!manifest.programs.has(required)) add("installers." + name + " requires unknown program '" + required + "'");
     }
@@ -555,25 +535,15 @@ function validate(manifest: Manifest): void {
   }
 
   for (const [name, script] of manifest.scripts) {
-    let ways: [string, ScriptStep][] = [["scripts." + name, script]];
-    if (script.variants.size > 0) {
-      if (script.file !== undefined || script.run !== undefined) {
-        add("scripts." + name + " has variants, so its file or command belongs in each variant");
-      }
-      ways = [...script.variants].map(([key, variant]) => ["scripts." + name + "." + key, variant]);
-    }
-    for (const [label, step] of ways) {
-      if ((step.file === undefined) === (step.run === undefined)) {
-        add(label + " must define exactly one of a file or an inline command");
-      }
-      for (const ref of step.after) {
-        let valid = false;
-        const [p, isProgram] = cutPrefix(ref, "programs.");
-        const [s, isScript] = cutPrefix(ref, "scripts.");
-        if (isProgram) valid = manifest.programs.has(p);
-        else if (isScript) valid = manifest.scripts.has(s);
-        if (!valid) add(label + " after references unknown step '" + ref + "'");
-      }
+    const label = "scripts." + name;
+    if ((script.module === undefined) === (script.run === undefined)) add(label + " must define exactly one of a module or a command to run");
+    for (const ref of script.after) {
+      let valid = false;
+      const [p, isProgram] = cutPrefix(ref, "programs.");
+      const [s, isScript] = cutPrefix(ref, "scripts.");
+      if (isProgram) valid = manifest.programs.has(p);
+      else if (isScript) valid = manifest.scripts.has(s);
+      if (!valid) add(label + " after references unknown step '" + ref + "'");
     }
     const modes = modeList(script);
     if (modes.length === 0) add("scripts." + name + " has an empty modes list (it could never run; omit modes for both surfaces)");
@@ -586,26 +556,19 @@ function validate(manifest: Manifest): void {
     const label = config.label === "" ? "machine '" + machine + "'" : config.label;
     const counts = new Map<string, number>();
     for (const entry of config.scripts) {
-      const [n] = scriptEntry(entry);
+      const n = entry.name;
       counts.set(n, (counts.get(n) ?? 0) + 1);
     }
     for (const [n, count] of counts) {
       if (count > 1) add(label + " runs script '" + n + "' more than once");
     }
-    for (const [scriptName, args] of scriptArgs(config)) {
+    for (const run of config.scripts) {
+      const scriptName = run.name;
       const script = manifest.scripts.get(scriptName);
-      const variant = config.scriptVariants.get(scriptName);
       if (script === undefined) {
         add(label + " runs unknown script '" + scriptName + "'");
-      } else if (script.variants.size > 0 && variant === undefined) {
-        add(label + " runs '" + scriptName + "' without saying which variant (has: " + sortedKeys(script.variants) + ")");
-      } else if (variant !== undefined && !script.variants.has(variant)) {
-        const has = sortedKeys(script.variants) || "none";
-        add(label + " runs '" + scriptName + "' as '" + variant + "', which it doesn't have (has: " + has + ")");
-      } else if (args !== "" && (variant !== undefined ? scriptVariant(script, variant) : script).file === undefined) {
-        add(
-          label + " passes arguments to script '" + scriptName + "', " + "which is an inline command — arguments require a file script",
-        );
+      } else if (run.options !== undefined && script.rules === undefined) {
+        add(label + " passes options to script '" + scriptName + "', which has no rules: it takes none");
       }
     }
     for (const [programName, installKey] of config.pm) {
@@ -632,10 +595,8 @@ function validate(manifest: Manifest): void {
   const programCycle = findCycle(programEdges);
   if (programCycle !== undefined) add("dependency cycle among programs: " + programCycle.join(" -> "));
   const scriptEdges = mapValues(manifest.scripts, (_, s) => {
-    const refs = [...s.after];
-    for (const v of s.variants.values()) refs.push(...v.after);
     const edges: string[] = [];
-    for (const ref of refs) {
+    for (const ref of s.after) {
       const [n, ok] = cutPrefix(ref, "scripts.");
       if (ok) edges.push(n);
     }
@@ -653,17 +614,15 @@ function validate(manifest: Manifest): void {
     if (laterProgram(name)) continue;
     for (const dep of deps) {
       if (manifest.programs.has(dep) && laterProgram(dep)) {
-        add("program '" + name + "' depends on program '" + dep + "', which is later: mark " + name + " later too, or drop later from " + dep);
+        add("program '" + name + "' depends on program '" + dep + "', which is later: mark " + name + " canWait too, or drop canWait from " + dep);
       }
     }
   }
   for (const [name, s] of manifest.scripts) {
     if (s.later !== "") continue;
-    const refs = [...s.after];
-    for (const v of s.variants.values()) refs.push(...v.after);
     // Messages name both sides as `<kind> '<name>'`, the core one first:
     // that's where an editor places an error without a position.
-    for (const ref of distinct(refs)) {
+    for (const ref of distinct(s.after)) {
       let kind = "";
       let n = "";
       const [p, isProgram] = cutPrefix(ref, "programs.");
@@ -676,7 +635,7 @@ function validate(manifest: Manifest): void {
         n = sc;
       }
       if (kind !== "") {
-        add("script '" + name + "' runs after " + kind + " '" + n + "', which is later: mark " + name + " later too, or drop later from " + n);
+        add("script '" + name + "' runs after " + kind + " '" + n + "', which is later: mark " + name + " canWait too, or drop canWait from " + n);
       }
     }
   }

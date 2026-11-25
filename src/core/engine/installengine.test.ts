@@ -114,7 +114,7 @@ function sudoOf(items: readonly PlanItem[]): Record<string, boolean> {
 test("sudo declarations reach the plan", async () => {
   // `sudo` on an installer marks its installs; a variant's replaces it.
   const m = manifestOf((b) => {
-    b.installer("omarchy-pkg", { install: "omarchy pkg add {pkg}", sudo: true });
+    b.installer("omarchy-pkg", { install: "omarchy pkg add {packageName}", sudo: true });
     b.program("zsh", { install: via("omarchy-pkg") });
     b.program("plain", { install: custom("custom", "true") });
     b.machine("m", { pm: pm("zsh", "omarchy-pkg", "plain", "custom") });
@@ -151,7 +151,7 @@ test("a program's path comes first on the install command's PATH", async () => {
 test("an installer's requirement is planned first", async () => {
   const m = manifestOf((b) => {
     b.program("setup-brew", { install: custom("custom", "setup") });
-    b.installer("brew", { install: "brew install {pkg}" });
+    b.installer("brew", { install: "brew install {packageName}" });
     b.requires("brew", "setup-brew");
     b.program("jq", { install: via("brew") });
     b.machine("m", { pm: pm("setup-brew", "custom", "jq", "brew") });
@@ -210,10 +210,10 @@ test("fails when mapped pm is not installed", async () => {
 });
 
 test("probe provided by an earlier program in the plan", async () => {
-  const pkg = { probe: "pkg", install: "pkg add {pkg}", check: "pkg info {pkg}" };
+  const pkg = { probe: "pkg", install: "pkg add {packageName}", check: "pkg info {packageName}" };
   const m = manifestOf((b) => {
     b.installer("pkg", pkg);
-    b.installer("flat", { probe: "flat", install: "flat install {pkg}", check: "flat info {pkg}" });
+    b.installer("flat", { probe: "flat", install: "flat install {packageName}", check: "flat info {packageName}" });
     b.program("flat-runtime", { install: variants(["pkg", newInstallVariant({ provides: [{ binary: "flat" }] })]) });
     b.requires("flat", "flat-runtime");
     b.program("app", { install: via("flat") });
@@ -250,8 +250,8 @@ test("probe provided by an earlier program in the plan", async () => {
 test("a provided tool off PATH is found where it lands and runs from there", async () => {
   const m = forMachine(
     manifestOf((b) => {
-      b.installer("pkg", { probe: "pkg", install: "pkg add {pkg}", check: "pkg info {pkg}" });
-      b.installer("brewish", { probe: "brewish", install: "brewish install {pkg}", check: "brewish list {pkg}" });
+      b.installer("pkg", { probe: "pkg", install: "pkg add {packageName}", check: "pkg info {packageName}" });
+      b.installer("brewish", { probe: "brewish", install: "brewish install {packageName}", check: "brewish list {packageName}" });
       b.program("setup-brewish", {
         install: variants(
           ["linux", newInstallVariant({ command: "install-brewish", provides: [{ binary: "brewish", at: "/opt/brewish/bin" }] })],
@@ -295,8 +295,8 @@ test("installer mechanics resolve by mapped key", async () => {
   const m = manifestOf((b) => {
     b.installer("brew-cask", {
       probe: "brew",
-      install: "brew install --cask {pkg}",
-      check: "brew list --cask --versions {pkg}",
+      install: "brew install --cask {packageName}",
+      check: "brew list --cask --versions {packageName}",
       regex: "([0-9.]+)",
     });
     b.program("toolbox", { install: variants(["brew-cask", newInstallVariant({ pkg: "toolbox-linux" })]) });

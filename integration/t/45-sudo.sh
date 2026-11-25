@@ -13,12 +13,12 @@ touch plain-ran.txt
 SH
 ts_root srepo <<'TS'
 const needs = script("needs", {
-  file: "needs.sh",
-  check: "test -f needs-ran.txt",
+  runCommand: runFile("needs.sh"),
+  checkCommand: "test -f needs-ran.txt",
   needsSudo: true,
 });
 
-const plain = script("plain", { file: "plain.sh", check: "test -f plain-ran.txt" });
+const plain = script("plain", { runCommand: runFile("plain.sh"), checkCommand: "test -f plain-ran.txt" });
 
 machine("m1", { run: [needs, plain] });
 TS

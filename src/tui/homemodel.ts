@@ -29,7 +29,7 @@ import {
 import * as diff from "../core/diff/diff.ts";
 import * as engine from "../core/engine/index.ts";
 import * as exec from "../core/exec/index.ts";
-import { type Manifest, resolveInstall, runsIn, scriptArgs, shownLine, sortStrings, compareStrings } from "../model/index.ts";
+import { type Manifest, resolveInstall, runsIn, scriptOptions, shownLine, sortStrings, compareStrings } from "../model/index.ts";
 import * as style from "./style/index.ts";
 import type { Cmd, Msg } from "./messages.ts";
 import { newModel as newTermModel } from "./term/term.ts";
@@ -1027,7 +1027,7 @@ export function upgradeItem(step: engine.UpgradeStep, ans: Answered): PaneItem {
 export function scriptRowsOf(manifest: Manifest, system: SystemInfo, observed: MachineState | undefined): ScriptRow[] {
   const machine = manifest.machines.get(system.machine);
   if (machine === undefined) return [];
-  const enabled = scriptArgs(machine);
+  const enabled = scriptOptions(machine);
   const rows: ScriptRow[] = [];
   for (const name of scriptOrder(manifest, [...enabled.keys()])) {
     const args = enabled.get(name);

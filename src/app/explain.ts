@@ -10,7 +10,9 @@ import {
   originFolder,
   Refusal,
   resolveInstall,
-  scriptArgs,
+  dataLines,
+  isJSONObject,
+  jsonString,
   slicesEqual,
   type VersionCheck,
   versionCheckEqual,
@@ -193,22 +195,22 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
       const add = (label: string, value: string) => rows.push(row(label, value));
       const from = fromParent(script.origin);
       if (from !== undefined) add("from", from);
-      if (script.file !== undefined) add("file", script.file);
+      if (script.module !== undefined) add("module", script.module);
+      if (script.rules !== undefined) add("rules", script.rules);
       if (script.run !== undefined) add("run", script.run);
       if (script.check !== undefined) add("check", script.check);
-      if (script.variants.size > 0) add("variants", [...script.variants.keys()].join(", "));
       if (script.after.length > 0) add("after", script.after.join(", "));
       const modes = modeList(script);
       if (!slicesEqual(modes, ["setup", "maintain"])) add("modes", modes.join(", "));
       if (script.later !== "") add("later", script.later + "  (setup-new-machine runs it after everything else)");
       if (script.sudo) add("sudo", "yes — a run that runs it asks for the password first");
-      const args = machine !== undefined ? scriptArgs(machine).get(name) : undefined;
-      if (!declared || args === undefined) {
+      const run = machine?.scripts.find((r) => r.name === name);
+      if (!declared || run === undefined) {
         add("enabled", "no — run it in machine '" + system.machine + "' or a profile it extends");
-      } else if (args === "") {
-        add("enabled", "yes (" + system.machine + ")");
       } else {
-        add("enabled", "yes (" + system.machine + ", args: " + args + ")");
+        add("enabled", "yes (" + system.machine + ")");
+        if (isJSONObject(run.options)) for (const line of dataLines(run.options, "options.")) add(line.key, line.value);
+        else if (run.options !== undefined) add("options", jsonString(run.options));
       }
       const s = observed?.scripts.get(name);
       if (s !== undefined) add("observed", s.status + "  (" + statePath + ")");

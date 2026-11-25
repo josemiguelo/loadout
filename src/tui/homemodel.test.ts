@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import * as app from "../app/index.ts";
 import { newMachineState, type MachineState, type ScriptState, type ScriptStatus, type SystemInfo } from "../core/coremodel/coremodel.ts";
-import { manifestOf, pm, via } from "../core/coretest/coretest.ts";
+import { manifestOf, pm, runs, via } from "../core/coretest/coretest.ts";
 import type * as diff from "../core/diff/diff.ts";
 import type * as engine from "../core/engine/index.ts";
 import type { Manifest } from "../model/index.ts";
@@ -73,7 +73,7 @@ function manifestFor(): Manifest {
     b.program("kitty", { install: via("dnf") });
     b.script("dotfiles", { run: "true", check: "true" });
     b.script("bootstrap", { run: "true", modes: ["setup"] });
-    b.machine("m1", { pm: pm("git", "dnf", "kitty", "dnf"), scripts: ["dotfiles", "bootstrap"] });
+    b.machine("m1", { pm: pm("git", "dnf", "kitty", "dnf"), scripts: runs("dotfiles", "bootstrap") });
   });
 }
 
@@ -1487,7 +1487,7 @@ test("an obsolete sudo on a script still loads", () => {
   const manifest = manifestOf((b) => {
     b.script("hid", { run: "true", sudo: true });
     b.script("plain", { run: "true" });
-    b.machine("m1", { scripts: ["hid", "plain"] });
+    b.machine("m1", { scripts: runs("hid", "plain") });
   });
   expect(names(scriptRowsOf(manifest, system, undefined))).toEqual(["hid", "plain"]);
 });

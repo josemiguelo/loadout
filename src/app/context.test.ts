@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFi
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { installed, missing, newMachineState } from "../core/coremodel/coremodel.ts";
-import { custom, defaultRegex, manifestOf, pm, version, via } from "../core/coretest/coretest.ts";
+import { custom, defaultRegex, manifestOf, pm, runs, version, via } from "../core/coretest/coretest.ts";
 import { newDetection } from "../core/detect/detect.ts";
 import { exit, newRunner, type Runner, stderr, stdout } from "../core/exec/fakeexec/fakeexec.ts";
 import { dirFS, encodeLock, type Manifest, mapFS, newInstallVariant, newRepoLayout, sourcesHash } from "../model/index.ts";
@@ -104,8 +104,8 @@ test("every frame puts loadout itself first on PATH as bun", async () => {
 
 test("the outdated report orders rows by installer declaration, then release, then sources", async () => {
   const m = manifestOf((b) => {
-    b.installer("dnf", { probe: "dnf", install: "dnf install {pkg}", check: "rpm -q {pkg}", outdatedAll: "dnf-outdated", upgrade: "sudo dnf upgrade -y" });
-    b.installer("flatpak", { probe: "flatpak", install: "flatpak install {pkg}", check: "flatpak info {pkg}", outdatedAll: "flatpak-outdated" });
+    b.installer("dnf", { probe: "dnf", install: "dnf install {packageName}", check: "rpm -q {packageName}", outdatedAll: "dnf-outdated", upgrade: "sudo dnf upgrade -y" });
+    b.installer("flatpak", { probe: "flatpak", install: "flatpak install {packageName}", check: "flatpak info {packageName}", outdatedAll: "flatpak-outdated" });
     b.program("git", { install: via("dnf") });
     b.program("rg", { install: via("dnf") });
     b.program("slack", { install: new Map([["flatpak", newInstallVariant({ pkg: "com.slack.Slack" })]]) });
@@ -154,10 +154,10 @@ test("the outdated report orders rows by installer declaration, then release, th
 
 test("explain shows a program's variants, marks this machine's, and stops at an unknown name", async () => {
   const m = manifestOf((b) => {
-    b.installer("dnf", { probe: "dnf", install: "dnf install {pkg}" });
+    b.installer("dnf", { probe: "dnf", install: "dnf install {packageName}" });
     b.program("git", { description: "vcs", install: via("dnf"), version: version("git --version", defaultRegex) });
-    b.script("dots", { file: "dots.sh" });
-    b.machine("m1", { pm: pm("git", "dnf"), scripts: ["dots --all"] });
+    b.script("dots", { run: "file:dots.sh" });
+    b.machine("m1", { pm: pm("git", "dnf"), scripts: runs("dots") });
   });
   const root = repo(m);
   put(root + "/dots.sh", "#!/bin/sh\n");
@@ -174,8 +174,8 @@ test("explain shows a program's variants, marks this machine's, and stops at an 
   ]);
   expect(git.notes).toEqual([]);
   expect(explained[1]!.items[0]!.rows).toEqual([
-    { label: "file", value: "dots.sh", machine: "" },
-    { label: "enabled", value: "yes (m1, args: --all)", machine: "" },
+    { label: "run", value: "file:dots.sh", machine: "" },
+    { label: "enabled", value: "yes (m1)", machine: "" },
   ]);
   try {
     await a.explain(["git", "nope"]);

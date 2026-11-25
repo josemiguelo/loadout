@@ -1,7 +1,7 @@
 import { done, failed, type ScriptState } from "../coremodel/coremodel.ts";
 import { type CommandFrame, type ProcessRunner, success } from "../exec/index.ts";
 import { nowIso } from "../platform/platform.ts";
-import { installFilePrefix, type ScriptStep, shellLine } from "../../model/index.ts";
+import { modulePrefix, type ScriptStep, shellLine } from "../../model/index.ts";
 import { commandNeedsSudo } from "./sudo.ts";
 
 /** ScriptOutcome is what run did: alreadyDone (its check exited 0), or ran with state. */
@@ -19,33 +19,40 @@ export class ScriptRunner {
   ) {}
 
   /** needsSudo says whether running step needs sudo's password: it says so, or its command runs sudo. */
-  needsSudo(step: ScriptStep, args: string): boolean {
-    return step.sudo || commandNeedsSudo(commandFor(step, args));
+  needsSudo(step: ScriptStep, options: string): boolean {
+    return step.sudo || commandNeedsSudo(commandFor(step, options));
   }
 
   /**
    * pending says whether run would execute step: its `check` doesn't pass
    * (or force). Asks the check, as run will again.
    */
-  async pending(step: ScriptStep, force: boolean, args: string): Promise<boolean> {
-    if (force || step.check === undefined) return true;
-    const result = await this.runner.capture(this.frame.command(withArgs(step.check, args, step.path), step.origin));
+  async pending(step: ScriptStep, force: boolean, options: string): Promise<boolean> {
+    const check = scriptCheck(step, options);
+    if (force || check === undefined) return true;
+    const result = await this.runner.capture(this.frame.command(check, step.origin));
     return !success(result);
   }
 
+  /** check is whether step's check passes, and what it printed; undefined when it has none. Never runs step. */
+  async check(step: ScriptStep, options: string): Promise<{ done: boolean; output: string } | undefined> {
+    const check = scriptCheck(step, options);
+    if (check === undefined) return undefined;
+    const result = await this.runner.capture(this.frame.command(check, step.origin));
+    return { done: success(result), output: (result.stdout + result.stderr).trimEnd() };
+  }
+
   /**
-   * run runs step unless its `check` already passes (or force). args is the
-   * machine's argument string; it reaches both the `check` (as positional
-   * parameters) and a `file` script's argv. Output goes straight to the terminal.
+   * run runs step unless its check already passes (or force). options is
+   * the machine's, as one sh word. Output goes straight to the terminal.
    */
-  async run(step: ScriptStep, force: boolean, args: string): Promise<ScriptOutcome> {
-    if (!force && step.check !== undefined) {
-      const result = await this.runner.capture(this.frame.command(withArgs(step.check, args, step.path), step.origin));
+  async run(step: ScriptStep, force: boolean, options: string): Promise<ScriptOutcome> {
+    const check = scriptCheck(step, options);
+    if (!force && check !== undefined) {
+      const result = await this.runner.capture(this.frame.command(check, step.origin));
       if (success(result)) return { alreadyDone: true };
     }
-    // Validation guarantees exactly one of file/run is set, and that args
-    // are only used with file scripts.
-    const exit = await this.runner.inherit(this.frame.command(commandFor(step, args), step.origin));
+    const exit = await this.runner.inherit(this.frame.command(commandFor(step, options), step.origin));
     return { alreadyDone: false, state: { status: exit === 0 ? done : failed, lastRun: nowIso(), exitCode: exit } };
   }
 }
@@ -55,22 +62,20 @@ export function newScriptRunner(runner: ProcessRunner, frame: CommandFrame): Scr
   return new ScriptRunner(runner, frame);
 }
 
-/**
- * withArgs gives command (a check, `file:` prefix allowed) the machine's
- * script arguments as positional parameters, with path first on PATH.
- */
-export function withArgs(command: string, args: string, path: readonly string[]): string {
-  const expanded = shellLine(command, path);
-  if (args === "") return expanded;
-  return "set -- " + args + "; " + expanded;
+/** scriptCheck is the shell command that says whether step is done, undefined when it has none. */
+export function scriptCheck(step: ScriptStep, options: string): string | undefined {
+  if (step.module !== undefined) return moduleCommand(step, "check", options);
+  return step.check === undefined ? undefined : shellLine(step.check, step.path);
 }
 
 /** commandFor is the shell command that executes step itself (not its check). */
-export function commandFor(step: ScriptStep, args: string): string {
-  if (step.file !== undefined) return shellLine(installFilePrefix + step.file + argsSuffix(args), step.path);
+export function commandFor(step: ScriptStep, options: string): string {
+  if (step.module !== undefined) return moduleCommand(step, "install", options);
   return shellLine(step.run ?? "", step.path);
 }
 
-function argsSuffix(args: string): string {
-  return args === "" ? "" : " " + args;
+/** moduleCommand calls name in step's module, with its rules and options when the machine gives any. */
+function moduleCommand(step: ScriptStep, name: string, options: string): string {
+  const given = options === "" ? "" : " '" + (step.rules ?? "") + "' " + options;
+  return shellLine(modulePrefix + step.module + " " + name + given, step.path);
 }

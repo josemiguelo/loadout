@@ -47,9 +47,8 @@ src/
                    (fail(): file, line, column), the draft repo() prints,
                    include(), the import-graph sources
     sdk/loadout.script.ts  the script SDK, imported as "loadout/script"
-                   (the same way): main/run (a managed script's
-                   check/install), oracle and programOracle (outdated rows,
-                   Row/formatRow, update), env (LOADOUT_*),
+                   (the same way): runStep (a command's step), outdated rows (
+                   OutdatedItem/formatOutdatedItem, update), env (LOADOUT_*),
                    clonesBehind/fastForward, Bun Shell helpers
     sdk/loadout.d.ts  GENERATED (sdktypes.ts, committed): both SDKs'
                    declarations as `declare module` blocks, which compile
@@ -244,7 +243,7 @@ loadout wrote stay byte-identical.
   missing, not executable or different, through a temp file and a rename.
   `ensure()` is that folder, always. `AppContext.bunDir()` (once per
   process) feeds it to `frameOf`, which puts it first on PATH and sets
-  `LOADOUT_BUN_DIR`; `model.shellLine` puts it ahead of a `provides … at`
+  `LOADOUT_BUN_DIR`; `model.shellLine` puts it ahead of a `addsToPath`
   folder.
 - **The SDKs live only in the binary**: the preload registers
   `"loadout"` and `"loadout/script"` as virtual modules (`Bun.plugin`,

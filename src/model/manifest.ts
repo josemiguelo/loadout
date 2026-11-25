@@ -8,8 +8,8 @@
 // optional (undefined); a list is an array, always present, except
 // ScriptStep.modes, where undefined (the default) and empty differ.
 
-import { cleanPath, cut, cutPrefix, joinPath, sortedStrings, slicesEqual, trimPrefix, trimRight, trimSpace } from "./stdlib.ts";
-import type { JSONObject } from "./json.ts";
+import { cleanPath, cut, cutPrefix, joinPath, sortedStrings, slicesEqual, trimPrefix, trimRight } from "./stdlib.ts";
+import { jsonEqual, type JSONObject, jsonString, type JSONValue } from "./json.ts";
 import { concat, distinct, mapOf, mapValues, plus } from "./map.ts";
 import { ManifestException } from "./refusal.ts";
 
@@ -85,9 +85,9 @@ export function resolveInstall(m: Manifest, programName: string, key: string): R
   // names an installer uses it.
   const installer = m.installers.get(variant.installer ?? key);
   const pkg = variant.pkg ?? programName;
-  // {pkg} plus whatever the installer declared as params — validated at
+  // {packageName} plus whatever the installer declared as params — validated at
   // compile, so an unsubstituted placeholder can't reach a shell here.
-  const values = plus(mapOf(["pkg", pkg]), variant.with);
+  const values = plus(mapOf(["packageName", pkg]), variant.with);
   const sub = (s: string): string => {
     for (const [k, v] of values) s = s.replaceAll("{" + k + "}", v);
     return s;
@@ -203,21 +203,11 @@ export function dependenciesOf(m: Manifest, programName: string, key: string | u
   return distinct(concat(program.dependsOn, variantDeps, required));
 }
 
-/**
- * forMachine is this manifest as machine sees it: each script it runs as a
- * variant becomes that variant, so engines read scripts.get(name) and never
- * ask which variant a machine picked.
- */
+/** forMachine is this manifest as machine sees it. */
 export function forMachine(m: Manifest, machine: string): Manifest {
   const config = m.machines.get(machine);
   if (config === undefined) return m;
   const out: Manifest = { ...m };
-  if (config.scriptVariants.size > 0) {
-    out.scripts = mapValues(m.scripts, (name, step) => {
-      const pick = config.scriptVariants.get(name);
-      return pick !== undefined ? scriptVariant(step, pick) : step;
-    });
-  }
   const paths = new Map<string, string[]>();
   for (const [name, key] of config.pm) {
     const variant = m.programs.get(name)?.install.get(key);
@@ -313,18 +303,18 @@ export interface Installer {
    * the package id: `params = ["copr"]` makes `{copr}` substitutable in
    * every pattern below, and every variant using this installer must supply
    * it in its `with` table. Declared, never inferred — an undeclared `with`
-   * key and a missing declared one are both errors. "pkg" is reserved.
+   * key and a missing declared one are both errors. "packageName" is reserved.
    */
   params: string[];
-  /** install is the install command pattern; `{pkg}` is replaced with the package id. */
+  /** install is the install command pattern; `{packageName}` is replaced with the package id. */
   install?: string;
-  /** check is the version check command pattern; `{pkg}` is replaced with the package id. */
+  /** check is the version check command pattern; `{packageName}` is replaced with the package id. */
   check?: string;
   /** regex extracts the version from check's output (capture group 1). */
   regex?: string;
   /**
    * outdated is the pattern printing the version available from the remote
-   * source for `{pkg}` (nothing when up to date); regex extracts it. Powers
+   * source for `{packageName}` (nothing when up to date); regex extracts it. Powers
    * `loadout outdated`.
    */
   outdated?: string;
@@ -435,15 +425,8 @@ export interface MachineConfig {
    * uses, keyed by program name. Every program a machine installs must be mapped.
    */
   pm: Map<string, string>;
-  /**
-   * scripts this machine runs: entries are `"name"` or `"name args..."`
-   * (first word = script name, rest = arguments passed as positional
-   * parameters to `file` scripts and their checks). Scripts run and are
-   * observed only on machines that opt in.
-   */
-  scripts: string[];
-  /** scriptVariants is the variant this machine runs (`script-variants`), for each of its scripts that has variants. */
-  scriptVariants: Map<string, string>;
+  /** scripts this machine runs, and observes: only those it opts into. */
+  scripts: ScriptRun[];
   /** data is the machine's whole data: defaults, profiles, its own. */
   data: JSONObject;
   /**
@@ -455,30 +438,37 @@ export interface MachineConfig {
 
 /** newMachineConfig is a MachineConfig with every field not given empty. */
 export function newMachineConfig(c: Partial<MachineConfig> = {}): MachineConfig {
-  return { extends: [], pm: new Map(), scripts: [], scriptVariants: new Map(), data: new Map(), label: "", ...c };
+  return { extends: [], pm: new Map(), scripts: [], data: new Map(), label: "", ...c };
 }
 
-/** scriptArgs is c.scripts parsed into script name -> argument string (see scriptEntry). */
-export function scriptArgs(c: MachineConfig): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const entry of c.scripts) {
-    const [name, args] = scriptEntry(entry);
-    out.set(name, args);
-  }
-  return out;
+/** ScriptRun is one script a machine runs, with its module's options. */
+export interface ScriptRun {
+  name: string;
+  options?: JSONValue;
 }
 
-const whitespace = /[ \t\n\x0B\f\r]+/;
+/** sameRun says whether a and b call their script with the same options. */
+export function sameRun(a: ScriptRun, b: ScriptRun): boolean {
+  if (a.options === undefined || b.options === undefined) return a.options === b.options;
+  return jsonEqual(a.options, b.options);
+}
 
-/**
- * scriptEntry is one `scripts` entry as [name, arguments]: words split on
- * any whitespace and the arguments re-joined with single spaces. The
- * arguments are pasted into a shell command line, where a newline would end
- * the command.
- */
-export function scriptEntry(entry: string): [name: string, args: string] {
-  const words = trimSpace(entry).split(whitespace);
-  return [words[0]!, words.slice(1).join(" ")];
+/** plainWord matches a word no shell would split, expand or read as anything but itself. */
+const plainWord = /^[A-Za-z0-9_@%+=:,.\/-]+$/;
+
+/** shellWord is s as one sh word, quoted only when it needs to be. */
+export function shellWord(s: string): string {
+  return plainWord.test(s) ? s : "'" + s.replaceAll("'", "'\\''") + "'";
+}
+
+/** optionsWord is options as one sh word of JSON, "" when there are none. */
+export function optionsWord(options: JSONValue | undefined): string {
+  return options === undefined ? "" : shellWord(jsonString(options));
+}
+
+/** scriptOptions is c.scripts as script name -> its options as one sh word (optionsWord). */
+export function scriptOptions(c: MachineConfig): Map<string, string> {
+  return new Map(c.scripts.map((run) => [run.name, optionsWord(run.options)]));
 }
 
 /**
@@ -596,8 +586,33 @@ export function parentOrigin(folder: string): string {
  */
 export const installFilePrefix = "file:";
 
-/** expandFilePrefix expands a `file:path args…` command to fileLine(path, args); others pass through. */
+/**
+ * modulePrefix starts commands that run a module's `check` or `install`
+ * (`module:path check "$@"`), its path as installFilePrefix's.
+ */
+export const modulePrefix = "module:";
+
+/** moduleRunner is the file in the bun folder that runs a module's `check` or `install` (core/bun). */
+export const moduleRunner = ".run-module.ts";
+
+/** moduleLine runs the module at path with args: its mode, then the options' JSON. */
+export function moduleLine(path: string, args: string): string {
+  return 'bun "$' + bunDirVar + "/" + moduleRunner + "\" '" + path + "'" + (args === "" ? "" : " " + args);
+}
+
+/** moduleLineShape matches what moduleLine writes before the arguments: group 1 is the path. */
+const moduleLineShape = /bun "\$LOADOUT_BUN_DIR\/\.run-module\.ts" '([^']*)'/g;
+
+/**
+ * expandFilePrefix expands a `file:path args…` command to fileLine(path,
+ * args), a `module:` one to moduleLine; others pass through.
+ */
 export function expandFilePrefix(command: string): string {
+  const [module, isModule] = cutPrefix(command, modulePrefix);
+  if (isModule) {
+    const [p, args] = cut(module, " ");
+    return moduleLine(p, args);
+  }
   const [spec, ok] = cutPrefix(command, installFilePrefix);
   if (!ok) return command;
   const [p, args] = cut(spec, " ");
@@ -629,7 +644,7 @@ const fileLineShape =
  * its PATH (shellLine's, set only while it runs).
  */
 export function shownLine(line: string): string {
-  return line.replace(fileLineShape, "$1$2").replaceAll(bunFirst, "");
+  return line.replace(fileLineShape, "$1$2").replace(moduleLineShape, "$1").replaceAll(bunFirst, "");
 }
 
 /**
@@ -682,7 +697,7 @@ export interface Program {
    */
   path: string[];
   /**
-   * later is why this program can wait (`later = "…"`): setup-new-machine
+   * later is why this program can wait (`canWait: "…"`): setup-new-machine
    * installs it in its later phase, after every core program and script.
    * "" = core.
    */
@@ -760,11 +775,18 @@ export function isDefaultModes(modes: readonly string[]): boolean {
 /** ScriptStep is one idempotent setup step. */
 export interface ScriptStep {
   description: string;
-  /** file is the script file to execute, relative to the declaring file's directory. Exactly one of file/run. */
-  file?: string;
-  /** run is the inline shell command to execute. Exactly one of file/run. */
+  /**
+   * module is a TypeScript module exporting `check(options)` and
+   * `install(options)`, relative to the declaring file's directory; loadout's
+   * module runner (core/bun) calls it with the machine's options as one JSON
+   * argument. Exactly one of module/run.
+   */
+  module?: string;
+  /** rules is the module exporting `validate(options)`, which guards a module that takes options. */
+  rules?: string;
+  /** run is the shell command to execute (`file:` allowed). Exactly one of module/run. */
   run?: string;
-  /** check is a shell command; exit 0 means the step is already done and is skipped. */
+  /** check is run's shell command (`file:` allowed); exit 0 means the step is already done and is skipped. A module has its own. */
   check?: string;
   /** after holds ordering constraints: entries like "programs.git" or "scripts.dotfiles". */
   after: string[];
@@ -780,17 +802,11 @@ export interface ScriptStep {
   /** sudo says the script needs sudo's password without saying `sudo`; see Installer.sudo. */
   sudo: boolean;
   /**
-   * later is why this script can wait (`later = "…"`): setup-new-machine
-   * runs it in its later phase, after every core program and script. Shared
-   * by its variants. "" = core.
+   * later is why this script can wait (`canWait: "…"`): setup-new-machine
+   * runs it in its later phase, after every core program and script. ""
+   * = core.
    */
   later: string;
-  /**
-   * variants is the ways to do this one step, keyed by name; a machine
-   * running the script picks one. Each holds its own file/run, check and
-   * after; the step's own description, modes and sudo apply to all of them.
-   */
-  variants: Map<string, ScriptStep>;
   /**
    * origin is the repo-relative directory of the declaring file ("" = repo
    * root): paths resolve and commands run there.
@@ -807,7 +823,7 @@ export interface ScriptStep {
 
 /** newScriptStep is a ScriptStep with every field not given empty. */
 export function newScriptStep(s: Partial<ScriptStep> = {}): ScriptStep {
-  return { description: "", after: [], sudo: false, later: "", variants: new Map(), origin: "", path: [], ...s };
+  return { description: "", after: [], sudo: false, later: "", origin: "", path: [], ...s };
 }
 
 /** modeList is s.modes with the default applied. */
@@ -818,22 +834,6 @@ export function modeList(s: ScriptStep): string[] {
 /** runsIn says whether the step runs on the mode surface. */
 export function runsIn(s: ScriptStep, mode: string): boolean {
   return modeList(s).includes(mode);
-}
-
-/** scriptVariant is the step as variant name does it Assumes the variant exists. */
-export function scriptVariant(s: ScriptStep, name: string): ScriptStep {
-  const chosen = s.variants.get(name);
-  if (chosen === undefined) throw new Error(`script has no variant ${JSON.stringify(name)}`);
-  return {
-    ...s,
-    file: chosen.file,
-    run: chosen.run,
-    check: chosen.check ?? s.check,
-    after: distinct(concat(s.after, chosen.after)),
-    sudo: s.sudo || chosen.sudo,
-    variants: new Map(),
-    origin: chosen.origin,
-  };
 }
 
 /** OutdatedSource is one custom `outdated` oracle; see Manifest.outdated. */

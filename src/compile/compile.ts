@@ -81,7 +81,7 @@ export const typesFiles: { path: string; content: string }[] = [
  * only compile reads (the warnings' marks, the parent it names).
  */
 export interface Draft extends ManifestDraft {
-  /** spares is what `spare: "reason"` marked, keyed as warnings name it. */
+  /** spares is what `keepUnused: "reason"` says, keyed as warnings name it. */
   spares: Map<string, string>;
   /** transitional is the scripts marked transitional, in declaration order. */
   transitional: string[];

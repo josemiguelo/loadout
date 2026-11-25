@@ -12,7 +12,7 @@ export function newSelfUpgradeCmd(): Command {
   return subcommand(
     "self-upgrade",
     commandHelp(
-      "Replace the loadout binary with the latest release. Needs no config repo, so it works even under a min-tool-version refusal (`upgrade` is for programs).",
+      "Replace the loadout binary with the latest release. Needs no config repo, so it works even under a minLoadoutVersion refusal (`upgrade` is for programs).",
     ),
     [],
     async () => {

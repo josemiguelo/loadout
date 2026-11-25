@@ -47,7 +47,7 @@ test("a check through a tool that is not there is unknown not missing", async ()
 
 test("resolved checks carry their installer's probe", () => {
   const manifest = manifestOf((b) => {
-    b.installer("pm", { probe: "pm", install: "pm install {pkg}", check: "pm query {pkg}", regex: "([0-9.]+)" });
+    b.installer("pm", { probe: "pm", install: "pm install {packageName}", check: "pm query {packageName}", regex: "([0-9.]+)" });
     b.program("bat", { install: via("pm") });
     b.program("rg", {
       version: version("rg --version", "([0-9.]+)"),

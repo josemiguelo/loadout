@@ -48,11 +48,11 @@ test("the preload drops BUN_BE_BUN and registers the SDKs as modules, from the e
   expect(sdkModules[1]![1]).toBe(await Bun.file(import.meta.dir + "/../../compile/sdk/loadout.script.ts").text());
   const folder = ensure("/opt/loadout");
   const dir = mkdtempSync(tmpdir() + "/loadout-preload-");
-  writeFileSync(dir + "/a.ts", 'import { apt } from "loadout";\nexport const name = apt.name;\n');
+  writeFileSync(dir + "/a.ts", 'import { withApt } from "loadout";\nexport const name = withApt.name;\n');
   writeFileSync(
     dir + "/x.ts",
-    'import { apt, program } from "loadout";\nimport { formatRow } from "loadout/script";\nimport { name } from "./a.ts";\n' +
-      'console.log(typeof program, apt === (await import("loadout")).apt, name, formatRow({ item: "i", current: "1", candidate: "2" }), process.env.BUN_BE_BUN);\n',
+    'import { withApt, program } from "loadout";\nimport { formatOutdatedItem } from "loadout/script";\nimport { name } from "./a.ts";\n' +
+      'console.log(typeof program, withApt === (await import("loadout")).withApt, name, formatOutdatedItem({ item: "i", current: "1", candidate: "2" }), process.env.BUN_BE_BUN);\n',
   );
   const proc = Bun.spawn([process.execPath, "--preload", folder + "/" + preloadFile, dir + "/x.ts"], {
     cwd: dir,
@@ -76,7 +76,7 @@ test("ensure writes the wrapper executable, and rewrites it only when it differs
   expect(readFileSync(bun, "utf8")).toBe(wrapper("/usr/local/bin/loadout", folder));
   expect(readFileSync(folder + "/" + preloadFile, "utf8")).toBe(preload);
   expect(statSync(folder + "/" + preloadFile).mode & 0o111).toBe(0); // not a command on PATH
-  expect(readdirSync(folder).sort()).toEqual([".preload.js", "bun"]); // no temp file left behind
+  expect(readdirSync(folder).sort()).toEqual([".preload.js", ".run-module.ts", "bun"]); // no temp file left behind
 });
 
 test("ensure makes a wrapper that lost its executable bit executable again", () => {

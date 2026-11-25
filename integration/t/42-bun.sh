@@ -15,15 +15,15 @@ if (process.execPath !== "$BIN") throw new Error("loadout.ts ran with " + proces
 
 // A program whose provides folder holds a bun of its own, as brew's bin can.
 const brewish = program("brewish", {
-  install: [custom({ command: "true", provides: { brewish: { at: "$PWD/otherbin" } } })],
-  version: "echo 1.0",
+  canBeInstalled: [withCustomSteps({ installCommand: "true", addsToPath: { brewish: "$PWD/otherbin" } })],
+  versionCommand: "echo 1.0",
 });
 
-const hello = script("hello", { file: "hello.ts" });
+const hello = script("hello", { runCommand: runFile("hello.ts") });
 
-const inline = script("inline", { run: "bun inline.ts" });
+const inline = script("inline", { runCommand: "bun inline.ts" });
 
-const env = script("env", { run: "echo \"bun dir=[\$LOADOUT_BUN_DIR]\"" });
+const env = script("env", { runCommand: "echo \"bun dir=[\$LOADOUT_BUN_DIR]\"" });
 
 machine("m1", { install: [brewish], run: [hello, inline, env] });
 TS
@@ -89,6 +89,6 @@ ok "LOADOUT_BUN overrides loadout's bun, for compile and scripts"
 
 repo_opt repo/loadout.ts 'colour: "blue"'
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a repo with an unknown setting compiles: $OUT"
-echo "$OUT" | grep -q "error: loadout.ts:[0-9]*,[0-9]*: repo has no setting 'colour' (its settings: name, state, configs, minToolVersion, data, parent)" ||
+echo "$OUT" | grep -q "error: loadout.ts:[0-9]*,[0-9]*: repo has no setting 'colour' (its settings: name, stateFolder, dotfiles, minLoadoutVersion, data, parent)" ||
     fail "the refusal names the setting and lists the real ones: $OUT"
 ok "compile refuses a repo setting that doesn't exist"

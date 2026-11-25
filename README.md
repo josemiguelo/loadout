@@ -64,7 +64,7 @@ TypeScript scripts run with.
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
   pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
-  so `install: [dnf]` works in an empty repo. `loadout installers` shows
+  so `canBeInstalled: [withDnf]` works in an empty repo. `loadout installers` shows
   them, and an installer of your own with the same name replaces one.
 
 ## Commands
@@ -77,9 +77,10 @@ TypeScript scripts run with.
 | | `installers [name]` | The install mechanisms available here, built-in and your own |
 | | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `outdated` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
-| **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts; what's marked `later` (slow, optional) comes after all of it (`--skip-later` stops before) |
+| **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts; what's marked `canWait` (slow, optional) comes after all of it (`--skip-later` stops before) |
 | | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
+| | `check <scripts>` | Are those scripts done? Asks their checks and runs nothing (`--all`; `--options '<json>'` asks one module script with other options) |
 | | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
 | | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
@@ -101,25 +102,26 @@ $ loadout sync                               # publish (after adding a git remot
 
 ```ts
 // programs/cli.loadout.ts
-import { brew, dnf, pacman, program } from "loadout";
+import { program, withBrew, withDnf, withPacman } from "loadout";
 
 export const ripgrep = program("ripgrep", {
   description: "fast grep",
-  install: [dnf, pacman, brew],
+  canBeInstalled: [withDnf, withPacman, withBrew],
 });
 
 // machines/machines.loadout.ts
-import { dnf, machine, via } from "loadout";
+import { machine, withDnf } from "loadout";
 import { ripgrep } from "../programs/cli.loadout.ts";
 
-machine("laptop", { install: [via(dnf, [ripgrep])] });
+machine("laptop", { install: [withDnf(ripgrep)] });
 ```
 
 ## Editor support
 
-Scripts can be TypeScript too: `import { main } from "loadout/script"`
-gives a managed script loadout's `check`/`install` protocol, `oracle()` an
-outdated source's rows and `update`, and `env` the variables loadout sets
+Scripts can be TypeScript too: a module's `check` and `install` get the
+options the machine calls it with, checked by its types, and an `updates`
+module's `listOutdated` and `update` say what's behind. `"loadout/script"` gives them
+helpers, and `env` the variables loadout sets
 (both SDKs are built into loadout, and so are their types).
 
 Manifests are plain TypeScript, so any editor with TypeScript support

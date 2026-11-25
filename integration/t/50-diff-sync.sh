@@ -12,18 +12,18 @@ ts_file repo/programs/missing.loadout.ts <<'TS'
 import { git, marker } from "../root.loadout.ts";
 
 const missing = program("definitely-not-installed-xyz", {
-  version: "definitely-not-installed-xyz --version",
-  regex: "([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "definitely-not-installed-xyz --version",
+  versionRegex: /([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 
 machine("m1", {
-  install: [variant(git, "manual"), missing],
+  install: [git("manual"), missing],
   run: [marker],
 });
 
 machine("m2", {
-  install: [variant(git, "manual"), missing],
+  install: [git("manual"), missing],
 });
 TS
 : > repo/machines/machines.loadout.ts
@@ -64,9 +64,9 @@ ok "sync ends naming what this machine still lacks"
 # Offline: a fake curl answers the release check and the install script.
 # The install replaces a copy of the binary with a stub that says how it
 # was run, which is how the second sync is seen.
-grep -q 'minToolVersion' repo/loadout.ts && fail "fixture already declares a floor"
-repo_opt repo/loadout.ts 'minToolVersion: "999.0.0"'
-grep -q 'minToolVersion: "999.0.0"' repo/loadout.ts || fail "fixture floor not set"
+grep -q 'minLoadoutVersion' repo/loadout.ts && fail "fixture already declares a floor"
+repo_opt repo/loadout.ts 'minLoadoutVersion: "999.0.0"'
+grep -q 'minLoadoutVersion: "999.0.0"' repo/loadout.ts || fail "fixture floor not set"
 compile_repo repo
 git -C repo add -A && git -C repo commit -qm "floor" && git -C repo push -q 2>/dev/null
 mkdir -p self fakecurl

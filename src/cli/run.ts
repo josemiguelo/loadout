@@ -1,7 +1,7 @@
 import { scriptOrder } from "../assemble/index.ts";
 import { done, failed, type ScriptState } from "../core/coremodel/coremodel.ts";
 import * as engine from "../core/engine/index.ts";
-import { cut, scriptArgs, sortStrings } from "../model/index.ts";
+import { cut, scriptOptions, sortStrings } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import { askForSudoUpfront, machineOf } from "./converge.ts";
 import { exitWith, usageErr } from "./errors.ts";
@@ -37,7 +37,7 @@ async function runScripts(names: string[], all: boolean, force: boolean): Promis
   if (!all && names.length === 0) throw usageErr("Give at least one script, or --all");
   const unknown = names.filter((name) => !manifest.scripts.has(name));
   if (unknown.length > 0) throw usageErr("Unknown scripts: " + unknown.join(", "));
-  const enabled = scriptArgs(machineOf(manifest, system.machine));
+  const enabled = scriptOptions(machineOf(manifest, system.machine));
   let disabled = false;
   for (const name of names) {
     if (!enabled.has(name)) {

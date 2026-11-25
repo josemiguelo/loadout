@@ -32,8 +32,8 @@ echo "$OUT" | grep -q "beside loadouts/private_dot_config/.ripgrep.loadout.ts" &
     fail "init --configs's next steps name its layout: $OUT"
 [ "$(cat dots/.chezmoiroot)" = loadouts ] || fail "init --configs points chezmoi at loadouts/"
 [ -d dots/loadouts ] || fail "init --configs creates loadouts/"
-grep -q 'configs: "loadouts"' dots/loadout.ts || fail "init --configs declares configs in loadout.ts"
-[ ! -e repo/.chezmoiroot ] && ! grep -q 'configs:' repo/loadout.ts || fail "plain init has no configs"
+grep -q 'dotfiles: "loadouts"' dots/loadout.ts || fail "init --configs declares configs in loadout.ts"
+[ ! -e repo/.chezmoiroot ] && ! grep -q 'dotfiles:' repo/loadout.ts || fail "plain init has no configs"
 "$BIN" --repo dots compile >/dev/null 2>&1 || fail "init --configs compiles"
 [ -f dots/loadouts/.chezmoidata/loadout.json ] || fail "compile writes the templates' data"
 grep -qF '$table := get .loadout.machines $name' dots/loadouts/.chezmoitemplates/loadout/machine ||
@@ -57,8 +57,8 @@ ok "init --configs lays manifests out in loadouts/, where their files land"
 ts_file dots/loadouts/private_dot_config/.tool/.tool.loadout.ts <<'TS'
 const tool = script("tool", {
   description: "sets the tool up",
-  file: ".loadout/setup.sh",
-  check: "test -f setup-ran.txt",
+  runCommand: runFile(".loadout/setup.sh"),
+  checkCommand: "test -f setup-ran.txt",
 });
 
 machine("m1", { run: [tool] });
@@ -119,7 +119,7 @@ printf 'export const fdDescription = "find files";\n' > repo/programs/lib/fd.ts
 ts_file repo/programs/fd.loadout.ts <<'TS'
 import { fdDescription } from "./lib/fd.ts";
 
-program("fd", { description: fdDescription, install: [dnf], spare: "an example" });
+program("fd", { description: fdDescription, canBeInstalled: [withDnf], keepUnused: "an example" });
 TS
 "$BIN" --repo repo compile >/dev/null || fail "a manifest importing a helper compiles"
 grep -q '"programs/lib/fd.ts"' repo/loadout.lock.json || fail "the helper is among the lock's sources"
@@ -150,9 +150,9 @@ echo "$OUT" | grep -qE "omarchy +built-in +omarchy pkg add" || fail "installers 
 echo "$OUT" | grep -qE "omarchy-aur +built-in +omarchy pkg aur add" || fail "installers lists the built-in omarchy-aur: $OUT"
 echo "$OUT" | grep -q "built-in" || fail "installers marks built-ins"
 OUT=$("$BIN" --repo repo installers dnf)
-echo "$OUT" | grep -q "rpm -q {pkg}" || fail "installers <name> shows the definition"
+echo "$OUT" | grep -q "rpm -q {packageName}" || fail "installers <name> shows the definition"
 "$BIN" --repo repo installers ghost-installer >/dev/null 2>&1 && fail "unknown installer should fail" || true
-# The scaffold declares no installers, yet `install: [dnf, …]` resolves against the library.
+# The scaffold declares no installers, yet `install: [withDnf, …]` resolves against the library.
 OUT=$("$BIN" --repo repo explain ripgrep)
 echo "$OUT" | grep -q "sudo dnf install -y ripgrep" || fail "via resolves to a built-in installer"
 echo "$OUT" | grep -q "installer: dnf (built-in)" || fail "explain marks a built-in installer"
@@ -178,10 +178,10 @@ OUT=$("$BIN" --repo kid compile 2>&1) || fail "the child scaffold compiles again
 grep -q '"parent": {' kid/loadout.lock.json || fail "and its lock names the parent"
 # Its machine imports the parent's declarations through parent/….
 cat > kid/machines/kidbox.loadout.ts <<'TS'
-import { dnf, machine, via } from "loadout";
+import { machine, withDnf } from "loadout";
 import { ripgrep } from "parent/programs/cli.loadout.ts";
 
-machine("kidbox", { install: [via(dnf, [ripgrep])] });
+machine("kidbox", { install: [withDnf(ripgrep)] });
 TS
 OUT=$("$BIN" --repo kid compile 2>&1) || fail "a child machine importing from parent/… compiles: $OUT"
 "$BIN" --repo kid --machine kidbox explain ripgrep | grep -qE "install\.dnf +sudo dnf install -y ripgrep .*<- kidbox" || fail "the child installs the parent's program"
@@ -190,7 +190,7 @@ ok "init --parent scaffolds a child repo that compiles against its parent"
 "$BIN" --machine kidbox init --parent "$PWD/dad" --name dad --configs kiddots >/dev/null || fail "init --parent --configs scaffolds"
 [ "$(cat kiddots/.chezmoiroot)" = loadouts ] && [ -d kiddots/loadouts ] && [ ! -e kiddots/system ] && [ ! -e kiddots/programs ] || fail "a configs child has loadouts/ only"
 grep -qF '"loadouts/**/*.loadout.ts"' kiddots/loadout.ts || fail "a configs child includes loadouts/: $(cat kiddots/loadout.ts)"
-grep -q 'configs: "loadouts"' kiddots/loadout.ts || fail "a configs child declares configs: $(cat kiddots/loadout.ts)"
+grep -q 'dotfiles: "loadouts"' kiddots/loadout.ts || fail "a configs child declares configs: $(cat kiddots/loadout.ts)"
 OUT=$("$BIN" --repo kiddots compile 2>&1) || fail "the configs child compiles: $OUT"
 ok "init --parent --configs scaffolds a child laid out where files land"
 
@@ -198,7 +198,7 @@ ok "init --parent --configs scaffolds a child laid out where files land"
 # A file include()'s globs pick up that the lock has never seen makes it
 # stale, like an edit: status must not read a lock that misses it.
 ts_file repo/programs/fd.loadout.ts <<'TS'
-program("fd", { install: [dnf], spare: "an example" });
+program("fd", { canBeInstalled: [withDnf], keepUnused: "an example" });
 TS
 OUT=$("$BIN" --repo repo --machine m1 status 2>&1) && fail "a manifest the lock hasn't seen must be refused: $OUT"
 echo "$OUT" | grep -q "the manifests changed since loadout.lock.json was written — run: loadout compile" || fail "the stale lock is named: $OUT"

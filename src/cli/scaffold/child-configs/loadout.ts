@@ -10,8 +10,8 @@ await include("loadouts/**/*.loadout.ts", "machines/**/*.loadout.ts");
 
 repo({
   name: "my machines",
-  state: "machines/state",
-  configs: "loadouts",
+  stateFolder: "machines/state",
+  dotfiles: "loadouts",
   // The repo this one builds on.
   parent: { name: "{{.ParentName}}", path: "{{.ParentPath}}" },
 });

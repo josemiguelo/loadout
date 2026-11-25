@@ -5,17 +5,31 @@
 // repo: don't edit it, a compile puts it back.
 
 declare module "loadout" {
-  export type Installer = {
+  /**
+   * An installer, named for how it reads in `install`: as it is in a program
+   * (`canBeInstalled: [withBrew]`), called with what that program's package needs
+   * (`withOmarchy({ packageName: "mise-bin" })`, `withBrewTap({ tap: "hashicorp/tap" })`),
+   * and called with programs in a machine (`withBrew(just, vim)`).
+   */
+  export type Installer<Param extends string = never> = {
+    (settings: VariantSpec & {
+      readonly [P in Param]: string;
+    }): VariantEntry<never>;
+    (program: Many<Program>, ...more: Many<Program>[]): ProgramsWith;
+    /** Every install with it waits for these programs. */
+    needs(...programs: Many<Program>[]): void;
     readonly kind: "installer";
     readonly name: string;
   };
-  export type Program = {
+  /** Called in a machine with one of its `withCustomSteps()` ways to install: `setupBrew("linux")`. */
+  export type Program<Way extends string = never> = {
+    (way: Way): ProgramVariant;
     readonly kind: "program";
     readonly name: string;
   };
-  /** Called with a machine's arguments in its `run`: `setupSsh("id_ed25519")`, each one word or more. */
-  export type Script = {
-    (...args: string[]): ScriptArgs;
+  /** Called in a machine's `run` with its module's options, when it takes any: `t2ChargeLimit({ limit: 90 })`. */
+  export type Script<Args extends unknown[] = any> = {
+    (...args: Args): ScriptRun;
     readonly kind: "script";
     readonly name: string;
   };
@@ -23,156 +37,203 @@ declare module "loadout" {
     readonly kind: "profile";
     readonly name: string;
   };
-  /** A program through one of its variants: `variant(setupBrew, "linux")`. */
+  /** A program by one of its ways to install: `setupBrew("linux")`. */
   export type ProgramVariant = {
     readonly kind: "program-variant";
     readonly program: Program;
     readonly variant: string;
   };
-  /** A script through one of its variants: `variant(hidAppleKeyboard, "arch")`; called with arguments like a script. */
-  export type ScriptVariant = {
-    (...args: string[]): ScriptArgs;
-    readonly kind: "script-variant";
+  /** A script with its options: `t2ChargeLimit({ limit: 90 })`. */
+  export type ScriptRun = {
+    readonly kind: "script-run";
     readonly script: Script;
-    readonly variant: string;
+    readonly options?: unknown;
   };
-  /** A script with its arguments: `setupSsh("id_ed25519")`. */
-  export type ScriptArgs = {
-    readonly kind: "script-args";
-    readonly script: Script | ScriptVariant;
-    readonly args: string[];
-  };
-  /** Programs through an installer, in a machine: `via(omarchy, [curl, git])`. */
-  export type ViaGroup = {
-    readonly kind: "via-group";
-    readonly installer: Installer;
+  /** Programs with an installer, in a machine: `withOmarchy(curl, git)`. */
+  export type ProgramsWith = {
+    readonly kind: "programs-with";
+    readonly installer: {
+      readonly name: string;
+    };
     readonly programs: Program[];
   };
   /** One, or a list of them, nested as deep as shared lists nest: flattened wherever it's read. */
   export type Many<T> = T | readonly Many<T>[];
   /** The built-in installers: shipped with loadout, `loadout installers` lists them. */
-  export const apt: Installer;
-  export const brew: Installer;
-  export const brewCask: Installer;
-  export const dnf: Installer;
-  export const dnfCopr: Installer;
-  export const dnfRepo: Installer;
-  export const flatpak: Installer;
-  export const omarchy: Installer;
-  export const omarchyAur: Installer;
-  export const pacman: Installer;
+  export const withApt: Installer<never>;
+  export const withBrew: Installer<never>;
+  export const withBrewCask: Installer<never>;
+  export const withDnf: Installer<never>;
+  export const withDnfCopr: Installer<"copr">;
+  export const withDnfRepo: Installer<"repofile">;
+  export const withFlatpak: Installer<never>;
+  export const withOmarchy: Installer<never>;
+  export const withOmarchyAur: Installer<never>;
+  export const withPacman: Installer<never>;
   type Place = {
     file: string;
     line: string;
     col: string;
   };
   /**
-   * A repo file as a command (`runScript(".loadout/x.ts check")`) or a param
-   * value (`file("repos/x.repo")`): its path from the declaring file's folder,
-   * run with the interpreter its `#!` line names.
+   * The command that runs a repo file with arguments, each exactly one word
+   * (`{tap}` is still filled in): `runFile(".loadout/x.ts", "check")`. Its path
+   * is from the declaring file's folder, and it runs with the interpreter its
+   * `#!` line names.
    */
-  export const runScript: (command: string) => string;
-  export const file: (path: string) => string;
-  export type InstallerSpec = {
-    /** The binary whose presence says the installer is there. */
-    probe?: string;
-    /** Names a program's variant gives values for (`params = { tap = … }`), `{name}` in the commands. */
-    params?: string[];
-    install?: string;
-    check?: string;
-    regex?: string;
-    outdated?: string;
-    outdatedAll?: string;
-    upgrade?: string;
+  export function runFile(path: string, ...args: string[]): string;
+  /** A repo file as an installer param's value: `withDnfRepo({ repofile: repoFile("x.repo") })`, from the declaring file's folder. */
+  export const repoFile: (path: string) => string;
+  export type InstallerSpec<Param extends string = string> = {
+    /** The binary that must be there for it to work. */
+    neededBinary?: string;
+    /** What a program calls it with, besides the settings every installer takes (`withBrewTap({ tap: "…" })`); `{tap}` in the commands. */
+    installerParams?: readonly Param[];
+    /** Installs `{packageName}`. */
+    installCommand?: string;
+    /** Prints `{packageName}`'s version. */
+    checkCommand?: string;
+    /** Reads the version, as its first group, from what checkCommand prints. */
+    versionRegex?: RegExp;
+    /** Prints one package's newer version, when it's behind. */
+    outdatedCommand?: string;
+    /** Lists every package that's behind. */
+    allOutdatedCommand?: string;
+    /** Upgrades everything it installed. */
+    upgradeCommand?: string;
     needsSudo?: boolean;
-    spare?: string;
+    /** Why it stays although nothing uses it. */
+    keepUnused?: string;
   };
-  export function installer(name: string, spec: InstallerSpec): Installer;
-  /** Every install through installer waits for these programs. */
-  export function requires(installer: Installer, programs: Many<Program>): void;
+  export function installer<const Param extends string = never>(name: string, spec: InstallerSpec<Param>): Installer<Param>;
   /** How one variant installs, checks and is reached, beyond what its installer says. */
   export type VariantSpec = {
     /** The package name, when it isn't the program's. */
-    pkg?: string;
-    /** Values for the installer's params (`{ tap: "tmuxpack/tpack" }`); `file("x.repo")` for a repo file. */
-    params?: Record<string, string>;
-    /** Its own install command line; or installedBy / managedBy for a repo script. */
-    command?: string;
-    /** A repo script that installs it; `version` checks it. */
-    installedBy?: string;
-    /** A repo script with `check` and `install` modes; the check is presence unless `regex` reads a version from it. */
-    managedBy?: string;
-    /** A command printing the version (read by `regex`). */
-    version?: string;
+    packageName?: string;
+    /** Its own install command line (`runFile("x.sh")` for a repo script); or `module`, in TypeScript. */
+    installCommand?: string;
+    /**
+     * The repo module that installs it, `() => import("./.loadout/x.ts")`: it
+     * exports `install` and, unless `versionCommand` says how to check it,
+     * `check` (is it there? with `versionRegex`, the version is read from what
+     * it prints). Compile never runs it.
+     */
+    module?: () => Promise<Partial<Pick<PlainModule, "check">> & Pick<PlainModule, "install">>;
+    /** A command printing the version. */
+    versionCommand?: string;
     /** A command that passes when it's installed (no version). */
-    present?: string;
-    regex?: string;
-    probe?: string;
-    outdated?: string;
+    isInstalled?: string;
+    /** Reads the version, as its first group, from what the check prints. */
+    versionRegex?: RegExp;
+    /** The binary that must be there first, when it isn't the installer's. */
+    neededBinary?: string;
+    /** Prints the newer version, when this one is behind. */
+    outdatedCommand?: string;
     needsSudo?: boolean;
     dependsOn?: Many<Program>;
-    /** Binaries it puts on PATH, and where: `{ brew: { at: "/opt/homebrew/bin" } }`. */
-    provides?: Record<string, {
-      at?: string;
-    }>;
-    spare?: string;
+    /** Binaries it installs, and the folder each is in (`{ brew: "/opt/homebrew/bin" }`); true for one already on PATH. */
+    addsToPath?: Record<string, string | true>;
+    /** Why it stays although nothing uses it. */
+    keepUnused?: string;
   };
-  type VariantEntry = {
+  /** One way a program is installed; Way is its name when it's a `withCustomSteps()` one. */
+  export type VariantEntry<Way extends string = string> = {
     readonly kind: "variant";
     readonly key: string;
     readonly spec: VariantSpec;
+    /** The installer's params' values. */
+    readonly values?: Record<string, string>;
     readonly at: Place;
+    readonly way?: Way;
   };
-  /** A variant through installer that needs a setting: `via(brewTapCask, { params: { tap: "…" } })`. */
-  export function via(installer: Installer, spec: VariantSpec): VariantEntry;
-  /** In a machine: programs through installer, `via(omarchy, [curl, git])`. */
-  export function via(installer: Installer, programs: Many<Program>[]): ViaGroup;
-  /** Its own way to install (`custom("linux", {...})`); named "custom" when unnamed. */
-  export function custom(name: string, spec: VariantSpec): VariantEntry;
-  export function custom(spec: VariantSpec): VariantEntry;
-  export type ProgramSpec = {
+  /** Its own way to install (`withCustomSteps("linux", {...})`); named "custom" when unnamed. */
+  export function withCustomSteps<const Way extends string>(name: Way, spec: VariantSpec): VariantEntry<Way>;
+  export function withCustomSteps(spec: VariantSpec): VariantEntry<"custom">;
+  /** A way to install in a program: an installer that needs nothing said, one called with settings, or `withCustomSteps()`. */
+  type Way = Installer<never> | VariantEntry;
+  /** The names of the `withCustomSteps()` ways among W. */
+  type CustomName<W> = W extends VariantEntry<infer N> ? N : never;
+  export type ProgramSpec<W extends Way = Way> = {
     description?: string;
     tags?: string[];
     dependsOn?: Many<Program>;
-    /** Its ways to install, in order: installers as they are (`brew`), `via(...)`, `custom(...)`. */
-    install: (Installer | VariantEntry)[];
-    /** A version check every variant falls back to. */
-    version?: string;
-    regex?: string;
-    /** Folders put first on PATH for its commands. */
-    path?: string[];
+    /** Its ways to install, in order: `withBrew`, `withOmarchy({ packageName: "…" })`, `withCustomSteps(…)`. */
+    canBeInstalled: W[];
+    /** A command printing the version, for every way to install that has no check of its own. */
+    versionCommand?: string;
+    /** Reads the version, as its first group, from what versionCommand prints. */
+    versionRegex?: RegExp;
+    /** Folders put first on PATH for its own commands, for a tool that lands where a fresh shell doesn't look yet. */
+    searchPath?: string[];
     /** Its own outdated check, for a program no installer's oracle covers. */
-    outdated?: string;
-    upgrade?: string;
-    /** A repo script that's its outdated oracle: prints the newer version, `update` moves it. */
-    updatesManagedBy?: string;
+    outdatedCommand?: string;
+    /** Upgrades this program alone. */
+    upgradeCommand?: string;
+    /** The repo module that says whether it's behind, and updates it: `() => import("./.loadout/x.ts")`. */
+    updates?: () => Promise<ProgramUpdates>;
     /** Why setup-new-machine can do it last. */
-    later?: string;
-    spare?: string;
+    canWait?: string;
+    /** Why it stays although nothing uses it. */
+    keepUnused?: string;
   };
-  export function program(name: string, spec: ProgramSpec): Program;
-  /** A program or script through one of its variants. */
-  export function variant(program: Program, variant: string): ProgramVariant;
-  export function variant(script: Script, variant: string): ScriptVariant;
-  /** What a script, and each of its variants, runs. */
+  export function program<const W extends Way>(name: string, spec: ProgramSpec<W>): Program<CustomName<W>>;
+  /** What's wrong with the options, for what their type can't say; nothing when they're right. */
+  export type Validate<Options> = (options: Options) => string | false | undefined;
+  /** What a script's `rules` exports. */
+  export type Rules<Options> = {
+    validate: Validate<Options>;
+  };
+  /** What a script's `module` exports when it takes options: the machine calls the script with them. */
+  export type ScriptModule<Options> = {
+    /** Is it done? A check that throws isn't, and says why. */
+    check: (options: Options) => Promise<boolean> | boolean;
+    /** Does it; a throw is the failure's message. */
+    install: (options: Options) => unknown;
+  };
+  /** What a script's `module` exports when it takes no options. */
+  export type PlainModule = {
+    /** Is it done? A check that throws isn't, and says why. */
+    check: () => Promise<boolean> | boolean;
+    /** Does it; a throw is the failure's message. */
+    install: () => unknown;
+  };
+  /** One thing that's behind, as `updates` reports it. */
+  export type OutdatedItem = {
+    item: string;
+    current: string;
+    candidate: string;
+    note?: string;
+    link?: string;
+  };
+  /** What a script's `updates` module exports. */
+  export type ScriptUpdates = {
+    /** What's behind. A throw is shown as the source having failed, never as nothing outdated. */
+    listOutdated: () => Promise<OutdatedItem[]> | OutdatedItem[];
+    /** Moves one of them, by its item. */
+    update: (item: string) => unknown;
+  };
+  /** What a program's `updates` module exports. */
+  export type ProgramUpdates = {
+    /** The newest version when this one is behind, undefined otherwise. */
+    newerVersion: () => Promise<string | undefined> | string | undefined;
+    update: () => unknown;
+  };
+  /** What a script runs. */
   export type StepSpec = {
-    /** A repo script with `check` and `install` modes; the machine's arguments reach both. */
-    managedBy?: string;
-    /** A repo script run as it is, with `check` inline... */
-    file?: string;
-    /** ...or command lines, all of which must pass. */
-    run?: string | string[];
+    /** Command lines, all of which must pass; `runFile("x.sh")` for a repo script in any language. */
+    runCommand?: string | string[];
     /** Command lines that pass when it's done. */
-    check?: string | string[];
+    checkCommand?: string | string[];
     /** Programs and scripts it runs after, when the machine has them; never pulls them in. */
     runAfter?: Many<Program | Script>;
-    spare?: string;
+    /** Why it stays although nothing uses it. */
+    keepUnused?: string;
   };
-  /** An outdated oracle beside a script: rows of what's behind, and `upgrade` per row. */
+  /** An outdated oracle beside a script: what's behind, and `upgradeCommand` per item. */
   export type Oracle = {
     name?: string;
     command: string;
-    upgrade?: string;
+    upgradeCommand?: string;
     needsSudo?: boolean;
   };
   export type ScriptSpec = StepSpec & {
@@ -180,55 +241,74 @@ declare module "loadout" {
     needsSudo?: boolean;
     /** Only setup-new-machine runs it (a one-time bootstrap). */
     setupOnly?: boolean;
-    /** Only maintenance runs it, never setup-new-machine. */
-    maintainOnly?: boolean;
+    /** setup-new-machine never runs it. */
+    notDuringSetup?: boolean;
     /** Only until every machine has done it: compile says when to delete it. */
-    transitional?: boolean;
+    deleteOnceDone?: boolean;
     /** Why setup-new-machine can do it last. */
-    later?: string;
-    /** A repo script that's the outdated oracle of what this script set up: rows, and `update <item>`. */
-    updatesManagedBy?: string;
+    canWait?: string;
+    /**
+     * The repo module that says what of this script's is behind, and updates
+     * it: `() => import("./.loadout/x.ts")`; or several, each by the name of
+     * what it covers.
+     */
+    updates?: (() => Promise<ScriptUpdates>) | Record<string, () => Promise<ScriptUpdates>>;
+    /** Commands instead, in any language. */
     outdated?: Oracle[];
-    /** Different ways to do this one step, by name; a machine picks one with `variant()`. */
-    variants?: Record<string, StepSpec & {
-      transitional?: never;
-    }>;
   };
-  export function script(name: string, spec: ScriptSpec): Script;
+  /** A script done by a TypeScript module, which also says what options it takes. */
+  export type ModuleScriptSpec<Options> = Omit<ScriptSpec, "runCommand" | "checkCommand"> & {
+    /**
+     * The repo module that does it, `() => import("./.loadout/x.ts")`: it
+     * exports `check` and `install`, and the options they take are what a
+     * machine calls the script with. Compile never runs it.
+     */
+    module: () => Promise<ScriptModule<Options>>;
+    /**
+     * The repo module that says what's wrong with the options,
+     * `() => import("./.loadout/x.rules.ts")`: it exports `validate`, which
+     * compile calls with every machine's, and loadout before `check` and
+     * `install`. Nothing else goes in it: compile does run this one.
+     */
+    rules: () => Promise<Rules<NoInfer<Options>>>;
+  };
+  /** A script done by a TypeScript module that takes no options. */
+  export type PlainModuleScriptSpec = Omit<ScriptSpec, "runCommand" | "checkCommand"> & {
+    /** The repo module that does it, `() => import("./.loadout/x.ts")`: it exports `check` and `install`. Compile never runs it. */
+    module: () => Promise<PlainModule>;
+  };
+  export function script<Options = undefined>(name: string, spec: ModuleScriptSpec<Options>): Script<undefined extends Options ? [options?: Options] : [options: Options]>;
+  export function script(name: string, spec: PlainModuleScriptSpec): Script<[]>;
+  export function script(name: string, spec: ScriptSpec): Script<[]>;
   /** An outdated oracle of its own, outside any script. */
   export function outdated(name: string, oracle: Omit<Oracle, "name">): void;
-  /** A data setting's kind and default, in the repo's data schema. */
-  export const flag: (value: boolean) => boolean;
-  export const text: (value: string) => string;
-  export const number: (value: number) => number;
-  export const whole: (value: number) => number;
-  export const list: (value: string[]) => string[];
   type DeepPartial<T> = {
     [K in keyof T]?: T[K] extends readonly unknown[] ? T[K] : T[K] extends object ? DeepPartial<T[K]> : T[K];
   };
-  type RunEntry = Script | ScriptArgs | ScriptVariant;
+  /** A script as it is only when it can be called with nothing: one whose options are required has to be called. */
+  type RunEntry = Script<[]> | ScriptRun;
   export type MachineSpec<Data> = {
     /** Profiles it's built on, in order; a machine overrides them. */
     extends?: Many<Profile>;
     /** Its settings, over the profiles' and the schema's defaults. */
     data?: DeepPartial<Data>;
-    /** Programs through their one variant, `variant(p, "x")`, or `via(installer, [...])`. */
-    install?: Many<Program | ProgramVariant | ViaGroup>;
-    /** Scripts it runs: as they are, called with arguments (`setupSsh("id_ed25519")`), or through `variant(...)`; lists are flattened. */
+    /** Programs by their only way to install, by a named one (`setupBrew("linux")`), or with an installer (`withBrew(just, vim)`). */
+    install?: Many<Program | ProgramVariant | ProgramsWith>;
+    /** Scripts it runs: as they are, called with options (`t2ChargeLimit({ limit: 90 })`); lists are flattened. */
     run?: Many<RunEntry>;
-    /** A profile kept though no machine extends it (machines can't be spare). */
-    spare?: string;
+    /** Why a profile stays although no machine extends it (a machine can't). */
+    keepUnused?: string;
   };
   export function profile<Data = Record<string, unknown>>(name: string, spec: MachineSpec<Data>): Profile;
-  export function machine<Data = Record<string, unknown>>(name: string, spec: Omit<MachineSpec<Data>, "spare">): void;
+  export function machine<Data = Record<string, unknown>>(name: string, spec: Omit<MachineSpec<Data>, "keepUnused">): void;
   export type RepoSpec<Data> = {
     name: string;
     /** The folder each machine's state is written to. */
-    state: string;
+    stateFolder: string;
     /** The dotfiles folder (chezmoi's source), when the repo holds them. */
-    configs?: string;
+    dotfiles?: string;
     /** The oldest loadout that may read this repo. */
-    minToolVersion?: string;
+    minLoadoutVersion?: string;
     /** Every per-machine setting, with its default (a child repo's are its parent's). */
     data?: Data;
     /** The repo this one builds on (a child repo): its checkout, `~/…`, absolute, or relative to this one. */
@@ -274,24 +354,16 @@ declare module "loadout/script" {
   export const repoPath: (path: string) => string;
   type Step = (...args: string[]) => Promise<unknown> | unknown;
   /**
-   * A managed script (`managedBy: "x.ts"`): `check [args…]` exits 0 when it's
-   * done, 1 when not (a check that throws isn't done, and says why);
-   * `[install] [args…]` does it, and a failure exits 1 with its message. The
-   * machine's arguments reach both.
-   */
-  export function main(check: (...args: string[]) => Promise<boolean> | boolean, install: Step): Promise<void>;
-  /**
-   * A script with no check of its own (a manifest's `file`, its check
-   * inline): runs step with the arguments, and a failure exits 1 with its
+   * A script a manifest runs as a command (`runFile()`): runs step with the arguments, and a failure exits 1 with its
    * message.
    */
-  export function run(step: Step): Promise<void>;
+  export function runStep(step: Step): Promise<void>;
   /**
    * One thing that's behind, as an outdated source reports it: loadout reads
    * `<item> <current> <candidate> [note…]`, and a URL at the end of the note
    * is the row's link (opened with `K` on the home screen).
    */
-  export type Row = {
+  export type OutdatedItem = {
     item: string;
     current: string;
     candidate: string;
@@ -299,44 +371,24 @@ declare module "loadout/script" {
     link?: string;
   };
   /** row as loadout reads it, one line. */
-  export const formatRow: (row: Row) => string;
-  /**
-   * An outdated source (`updatesManagedBy: "x.ts"` on a script, or an
-   * oracle's command): with no arguments it prints a row per thing that's
-   * behind; `update <item>` moves that one. A failure exits 1 with its
-   * message, which loadout shows as the source having failed: a broken
-   * oracle never reads as "nothing outdated".
-   */
-  export function oracle(spec: {
-    rows: () => Promise<Row[]> | Row[];
-    update: (item: string) => Promise<unknown> | unknown;
-  }): Promise<void>;
-  /**
-   * A program's own outdated check (`updatesManagedBy: "x.ts"` on a
-   * program): with no arguments it prints the newest version when this one is
-   * behind, nothing otherwise; `update` moves it.
-   */
-  export function programOracle(spec: {
-    latest: () => Promise<string | undefined> | string | undefined;
-    update: () => Promise<unknown> | unknown;
-  }): Promise<void>;
+  export const formatOutdatedItem: (row: OutdatedItem) => string;
   /** A clone and the name its row goes by. */
   export type Clone = {
     name: string;
     dir: string;
   };
   /** A row per clone that's behind its remote's HEAD, by name; all fetched at once. What isn't a clone is skipped. */
-  export function clonesBehind(clones: Clone[]): Promise<Row[]>;
+  export function clonesBehind(clones: Clone[]): Promise<OutdatedItem[]>;
   /** Fast-forwards the clone to its remote; one that can't fails rather than rewriting history. */
   export function fastForward({ name, dir }: Clone): Promise<void>;
   /** Is it on PATH? (sh's `command -v`) */
-  export const has: (program: string) => boolean;
+  export const isOnPath: (program: string) => boolean;
   /** Print to stderr and exit 1. */
   export function fail(message: string): never;
   /** Its output, trimmed; throws when it fails. */
-  export const out: (command: ReturnType<typeof $>) => Promise<string>;
+  export const outputOf: (command: ReturnType<typeof $>) => Promise<string>;
   /** Did it succeed? Its output is discarded. */
-  export const ok: (command: ReturnType<typeof $>) => Promise<boolean>;
+  export const succeeds: (command: ReturnType<typeof $>) => Promise<boolean>;
   /**
    * A file's text, or "" when there's none. Node's readFile, not Bun.file: a
    * Bun.file that was stat'ed first reads only the size the stat gave, and

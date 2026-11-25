@@ -70,29 +70,29 @@ fi
 fake_release_cache
 ts_root orepo <<'TS'
 const quiet = installer("quiet", {
-  probe: "sh",
-  install: "echo installed-{pkg} > quiet-{pkg}.txt",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9][0-9.]*)",
-  outdatedAll: "true",
-  upgrade: "echo swept",
+  neededBinary: "sh",
+  installCommand: "echo installed-{packageName} > quiet-{packageName}.txt",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9][0-9.]*)/,
+  allOutdatedCommand: "true",
+  upgradeCommand: "echo swept",
 });
 
-const alpha = program("alpha", { install: [quiet] });
+const alpha = program("alpha", { canBeInstalled: [quiet] });
 
 machine("m1", { install: [alpha] });
 TS
 ts_root frepo <<'TS'
 const quiet = installer("quiet", {
-  probe: "sh",
-  install: "echo installed-{pkg} > quiet-{pkg}.txt",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9][0-9.]*)",
-  outdatedAll: "echo 'alpha 2.0'",
-  upgrade: "echo swept",
+  neededBinary: "sh",
+  installCommand: "echo installed-{packageName} > quiet-{packageName}.txt",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9][0-9.]*)/,
+  allOutdatedCommand: "echo 'alpha 2.0'",
+  upgradeCommand: "echo swept",
 });
 
-const alpha = program("alpha", { install: [quiet] });
+const alpha = program("alpha", { canBeInstalled: [quiet] });
 
 machine("m1", { install: [alpha] });
 TS
@@ -174,19 +174,19 @@ fi
 # upgrade writes its own file: only the filesystem can say which one ran.
 ts_root crepo <<'TS'
 const quiet = installer("quiet", {
-  probe: "sh",
-  install: "echo installed-{pkg} > quiet-{pkg}.txt",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9][0-9.]*)",
-  outdatedAll: "echo 'tpack 2.0'",
-  upgrade: "echo swept > the-tool-swept.txt",
+  neededBinary: "sh",
+  installCommand: "echo installed-{packageName} > quiet-{packageName}.txt",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9][0-9.]*)/,
+  allOutdatedCommand: "echo 'tpack 2.0'",
+  upgradeCommand: "echo swept > the-tool-swept.txt",
 });
 
-const tpack = program("tpack", { install: [quiet] });
+const tpack = program("tpack", { canBeInstalled: [quiet] });
 
 outdated("tmux-plugins", {
   command: "echo 'tpack aaa1111 bbb2222 156 commit(s) behind'",
-  upgrade: "echo pulled > pulled-{item}.txt",
+  upgradeCommand: "echo pulled > pulled-{item}.txt",
 });
 
 machine("m1", { install: [tpack] });
@@ -220,14 +220,14 @@ fi
 # --- sudo asks in the run panel, and is answered there ---------------------
 ts_root irepo <<'TS'
 const fake = installer("fake", {
-  probe: "sh",
-  install: "sudo sh -c 'echo installed-{pkg} > fake-{pkg}.txt'",
-  check: "test -f fake-{pkg}.txt && echo {pkg} 1.0",
-  regex: "([0-9][0-9.]*)",
+  neededBinary: "sh",
+  installCommand: "sudo sh -c 'echo installed-{packageName} > fake-{packageName}.txt'",
+  checkCommand: "test -f fake-{packageName}.txt && echo {packageName} 1.0",
+  versionRegex: /([0-9][0-9.]*)/,
 });
 
-const alpha = program("alpha", { install: [fake] });
-const beta = program("beta", { install: [fake] });
+const alpha = program("alpha", { canBeInstalled: [fake] });
+const beta = program("beta", { canBeInstalled: [fake] });
 
 machine("m1", { install: [alpha, beta] });
 TS
@@ -255,14 +255,14 @@ fi
 # --- sudo called from inside a command, declared ---------------------------
 ts_root hrepo <<'TS'
 const hidden = installer("hidden", {
-  probe: "sh",
-  install: "sh inner.sh {pkg}",
-  check: "test -f fake-{pkg}.txt && echo {pkg} 1.0",
-  regex: "([0-9][0-9.]*)",
+  neededBinary: "sh",
+  installCommand: "sh inner.sh {packageName}",
+  checkCommand: "test -f fake-{packageName}.txt && echo {packageName} 1.0",
+  versionRegex: /([0-9][0-9.]*)/,
   needsSudo: true,
 });
 
-const gamma = program("gamma", { install: [hidden] });
+const gamma = program("gamma", { canBeInstalled: [hidden] });
 
 machine("m1", { install: [gamma] });
 TS
@@ -288,15 +288,15 @@ fi
 # the screen drew.
 ts_root arepo <<'TS'
 const asks = installer("asks", {
-  probe: "sh",
-  install: "true",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9][0-9.]*)",
-  outdatedAll: "echo 'alpha 2.0'",
-  upgrade: "printf 'Ans\\167er me: '; read answer && echo \"answered-$answer\" > asked.txt",
+  neededBinary: "sh",
+  installCommand: "true",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9][0-9.]*)/,
+  allOutdatedCommand: "echo 'alpha 2.0'",
+  upgradeCommand: "printf 'Ans\\167er me: '; read answer && echo \"answered-$answer\" > asked.txt",
 });
 
-const alpha = program("alpha", { install: [asks] });
+const alpha = program("alpha", { canBeInstalled: [asks] });
 
 machine("m1", { install: [alpha] });
 TS
@@ -335,9 +335,9 @@ fi
 # Programs answer at once; a script's check takes seconds. The programs row
 # must stop spinning with its answer while the scripts row still spins.
 ts_root prepo <<'TS'
-const fast = program("fast", { install: [custom({ command: "true", present: "true" })] });
+const fast = program("fast", { canBeInstalled: [withCustomSteps({ installCommand: "true", isInstalled: "true" })] });
 
-const slow = script("slow", { run: "true", check: "sleep 4" });
+const slow = script("slow", { runCommand: "true", checkCommand: "sleep 4" });
 
 machine("m1", { install: [fast], run: [slow] });
 TS
@@ -420,7 +420,7 @@ if has_pty; then
     git -C urepo remote add origin "$PWD/uorigin.git" && git -C urepo push -qu origin HEAD 2>/dev/null
     git clone -q uorigin.git uother
     git -C uother config user.email test@example.com && git -C uother config user.name "Integration Test"
-    repo_opt uother/loadout.ts 'minToolVersion: "999.0.0"'
+    repo_opt uother/loadout.ts 'minLoadoutVersion: "999.0.0"'
     compile_repo uother
     git -C uother add -A && git -C uother commit -qm floor && git -C uother push -q 2>/dev/null
     "$BIN" --repo urepo --machine m1 status >/dev/null

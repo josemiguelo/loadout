@@ -1,19 +1,19 @@
 # What a compiled manifest means: params, file: paths, profiles, data,
-# script variants and yes/no checks; and the mistakes compile (or the
+# yes/no checks; and the mistakes compile (or the
 # binary reading the lock) refuses.
 
 # --- installer params ----------------------------------------------------
 ts_repo paramrepo
 ts_file paramrepo/programs/tool.loadout.ts <<'TS'
 const faux = installer("faux", {
-  params: ["flavor"],
-  install: "echo installing {pkg} from {flavor}",
-  check: "echo {pkg} 1.0",
-  regex: "([0-9.]+)",
+  installerParams: ["flavor"],
+  installCommand: "echo installing {packageName} from {flavor}",
+  checkCommand: "echo {packageName} 1.0",
+  versionRegex: /([0-9.]+)/,
 });
 
 const tool = program("tool", {
-  install: [via(faux, { params: { flavor: "vanilla" } })],
+  canBeInstalled: [faux({ flavor: "vanilla" })],
 });
 
 machine("m1", { install: [tool] });
@@ -22,9 +22,9 @@ compile_repo paramrepo
 OUT=$("$BIN" --repo paramrepo --machine m1 explain tool)
 echo "$OUT" | grep -q "echo installing tool from vanilla" || fail "installer params substitute"
 ts_file paramrepo/programs/tool.loadout.ts <<'TS'
-const faux = installer("faux", { params: ["flavor"], install: "echo {flavor}" });
+const faux = installer("faux", { installerParams: ["flavor"], installCommand: "echo {flavor}" });
 
-const tool = program("tool", { install: [faux] });
+const tool = program("tool", { canBeInstalled: [faux] });
 
 machine("m1", { install: [tool] });
 TS
@@ -37,17 +37,17 @@ ok "installers take declared params, and a missing one is a compile error"
 # declares it).
 ts_root fparam <<'TS'
 export const copyin = installer("copyin", {
-  params: ["src"],
-  install: "cp {src} installed-{pkg}.txt",
-  check: "cat installed-{pkg}.txt",
-  regex: "([0-9.]+)",
+  installerParams: ["src"],
+  installCommand: "cp {src} installed-{packageName}.txt",
+  checkCommand: "cat installed-{packageName}.txt",
+  versionRegex: /([0-9.]+)/,
 });
 TS
 ts_file fparam/programs/tool/tool.loadout.ts <<'TS'
 import { copyin } from "../../root.loadout.ts";
 
 const tool = program("tool", {
-  install: [via(copyin, { params: { src: file("payload.txt") } })],
+  canBeInstalled: [copyin({ src: repoFile("payload.txt") })],
 });
 
 machine("m1", { install: [tool] });
@@ -67,12 +67,12 @@ ts_file repo/programs/split.loadout.ts <<'TS'
 import { git } from "../root.loadout.ts";
 
 const splitprog = program("splitprog", {
-  version: "git --version",
-  regex: "git version ([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 
-machine("m3", { install: [variant(git, "manual"), splitprog] });
+machine("m3", { install: [git("manual"), splitprog] });
 TS
 compile_repo repo
 "$BIN" --repo repo --machine m3 status >/dev/null || fail "status with programs in another file"
@@ -87,7 +87,7 @@ ts_file repo/programs/profiles.loadout.ts <<'TS'
 import { git, marker } from "../root.loadout.ts";
 
 const testbase = profile("testbase", {
-  install: [variant(git, "manual")],
+  install: [git("manual")],
   run: [marker],
 });
 
@@ -108,8 +108,8 @@ ok "machines extend profiles, which are never machines themselves"
 ts_file repo/programs/profiles.loadout.ts <<'TS'
 import { git } from "../root.loadout.ts";
 
-const a = profile("a", { install: [variant(git, "manual")] });
-const b = profile("b", { install: [via(dnf, [git])] });
+const a = profile("a", { install: [git("manual")] });
+const b = profile("b", { install: [withDnf(git)] });
 
 machine("m9", { extends: [a, b] });
 TS
@@ -120,7 +120,7 @@ ok "two profiles of one machine that disagree are a compile error"
 ts_file repo/programs/profiles.loadout.ts <<'TS'
 import { git } from "../root.loadout.ts";
 
-machine("m9", { install: [variant(git, "manual"), via(dnf, [git])] });
+machine("m9", { install: [git("manual"), withDnf(git)] });
 TS
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a program installed twice must be refused"
 echo "$OUT" | grep -qE "^error: programs/profiles\.loadout\.ts:5,[0-9]+: machine 'm9' installs 'git' twice" || fail "the double mapping is named with its file, line and column: $OUT"
@@ -150,11 +150,11 @@ compile_repo repo
 ok "a program installed twice, or one that doesn't exist, doesn't compile"
 
 # --- data: declared once, overridden per profile and machine --------------
-ts_root datarepo 'data: { omarchy: flag(false), kitty: { opacity: number(0.85) } }' <<'TS'
+ts_root datarepo 'data: { omarchy: false, kitty: { opacity: 0.85 } }' <<'TS'
 export const git = program("git", {
-  version: "git --version",
-  regex: "git version ([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 TS
 ts_file datarepo/machines/machines.loadout.ts <<'TS'
@@ -188,7 +188,7 @@ ok "data defaults, profile and machine values merge, and explain shows them; a t
 
 # --- script file that doesn't exist ----------------------------------------
 ts_file repo/maintenance/ghost.loadout.ts <<'TS'
-script("ghost-script", { file: "scripts/does-not-exist.sh" });
+script("ghost-script", { runCommand: runFile("scripts/does-not-exist.sh") });
 TS
 OUT=$("$BIN" --repo repo compile 2>&1) && fail "a missing script file must fail the compile"
 echo "$OUT" | grep -q "file 'scripts/does-not-exist.sh' not found" || fail "the missing file is named: $OUT"
@@ -199,10 +199,10 @@ ok "a script file that doesn't exist is caught at compile"
 ts_repo badmap
 ts_file badmap/programs/tool.loadout.ts <<'TS'
 const tool = program("tool", {
-  install: [via(dnf, { command: "sudo dnf install -y tool" })],
+  canBeInstalled: [withDnf({ installCommand: "sudo dnf install -y tool" })],
 });
 
-machine("m1", { install: [via(brew, [tool])] });
+machine("m1", { install: [withBrew(tool)] });
 TS
 OUT=$("$BIN" --repo badmap compile 2>&1) && fail "a variant the program lacks must fail the compile"
 echo "$OUT" | grep -q "machine 'm1' installs 'tool' via 'brew', but it can't be installed that way (it can via: dnf)" || fail "bad-mapping message: $OUT"
@@ -211,9 +211,9 @@ ok "a machine can't install a program through a variant it doesn't have"
 # --- file: install values run as repo scripts, repo-root cwd, from anywhere
 ts_root filerepo <<'TS'
 const filetool = program("filetool", {
-  version: "test -f installed-marker.txt && echo filetool 1.0",
-  regex: "filetool ([0-9.]+)",
-  install: [custom("script", { installedBy: "scripts/install-filetool.sh install" })],
+  versionCommand: "test -f installed-marker.txt && echo filetool 1.0",
+  versionRegex: /filetool ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("script", { installCommand: runFile("scripts/install-filetool.sh", "install") })],
 });
 
 machine("m1", { install: [filetool] });
@@ -234,14 +234,14 @@ OUT=$("$BIN" --repo filerepo --machine m1 status 2>&1 || true)
 echo "$OUT" | grep -q "file 'scripts/install-filetool.sh' not found" || fail "missing file: script should error at load: $OUT"
 ok "a file: install script deleted after compile is caught when the lock is read"
 
-# runScript() works in check commands too.
+# runFile() works in check commands too.
 ts_root filerepo <<'TS'
 const filetool = program("filetool", {
-  install: [
-    custom("script", {
-      command: "true",
-      version: runScript("scripts/check-filetool.sh"),
-      regex: "(done)",
+  canBeInstalled: [
+    withCustomSteps("script", {
+      installCommand: "true",
+      versionCommand: runFile("scripts/check-filetool.sh"),
+      versionRegex: /(done)/,
     }),
   ],
 });
@@ -257,18 +257,22 @@ ok "file: works in check commands"
 # --- a yes/no check: installed, no version ----------------------------------
 ts_root yesno <<'TS'
 const setupThing = program("setup-thing", {
-  install: [custom({ managedBy: "setup-thing.sh" })],
+  canBeInstalled: [withCustomSteps({ module: () => import("./setup-thing.ts") })],
 });
 
 machine("m1", { install: [setupThing] });
 TS
-printf '#!/bin/sh\ncase "${1:-}" in check) test -f configured.txt ;; install) touch configured.txt ;; esac\n' > yesno/setup-thing.sh
+cat > yesno/setup-thing.ts <<'TS'
+import { existsSync } from "node:fs";
+export const check = () => existsSync("configured.txt");
+export const install = () => Bun.write("configured.txt", "");
+TS
 compile_repo yesno
 OUT=$("$BIN" --repo yesno --machine m1 explain setup-thing)
-echo "$OUT" | grep -q "file:setup-thing.sh check  (yes/no)" || fail "explain shows a yes/no check: $OUT"
+echo "$OUT" | grep -q "module:setup-thing.ts check  (yes/no)" || fail "explain shows a yes/no check: $OUT"
 OUT=$("$BIN" --repo yesno --machine m1 status)
 echo "$OUT" | grep -qE "setup-thing +missing" || fail "a failing yes/no check is missing: $OUT"
-"$BIN" --repo yesno --machine m1 install setup-thing --yes >/dev/null || fail "the managing script installs it"
+"$BIN" --repo yesno --machine m1 install setup-thing --yes >/dev/null || fail "the module installs it"
 OUT=$("$BIN" --repo yesno --machine m1 status)
 echo "$OUT" | grep -qE "setup-thing +installed +-" || fail "a passing yes/no check is installed, with no version: $OUT"
 ok "a yes/no check reports installed without a version"
@@ -280,8 +284,8 @@ ts_repo moved
 ts_file moved/maintenance/hello/hello.loadout.ts <<'TS'
 const hello = script("hello", {
   description: "says hello",
-  file: "hello.sh",
-  check: "test -f hello-ran.txt",
+  runCommand: runFile("hello.sh"),
+  checkCommand: "test -f hello-ran.txt",
 });
 
 machine("m1", { run: [hello] });
@@ -296,37 +300,8 @@ compile_repo moved
 "$BIN" --repo moved --machine m1 run hello --force >/dev/null || fail "the moved script runs with no edit"
 [ -f moved/maintenance/greetings/hello/hello-ran.txt ] || fail "the moved script ran in its new folder"
 OUT=$("$BIN" --repo moved explain hello)
-echo "$OUT" | grep -qE "file +hello.sh" || fail "explain shows the path as written: $OUT"
+echo "$OUT" | grep -qE "run +file:hello.sh" || fail "explain shows the path as written: $OUT"
 ok "a file's declarations take its folder, so moving it needs no edit"
-
-# --- script variants: the machine picks one ---------------------------------
-ts_repo variants
-ts_file variants/maintenance/keyboard.loadout.ts <<'TS'
-const keyboard = script("keyboard", {
-  description: "fn/ctrl swap",
-  variants: {
-    arch: { file: "arch.sh", check: "test -f arch-ran.txt" },
-    fedora: { file: "fedora.sh", check: "test -f fedora-ran.txt" },
-  },
-});
-
-machine("m1", { run: [variant(keyboard, "fedora")] });
-
-machine("m2", { run: [keyboard] });
-TS
-printf '#!/bin/sh\ntouch arch-ran.txt\n' > variants/maintenance/arch.sh
-printf '#!/bin/sh\ntouch fedora-ran.txt\n' > variants/maintenance/fedora.sh
-OUT=$("$BIN" --repo variants compile 2>&1) && fail "running a script with variants without picking one must fail"
-echo "$OUT" | grep -q "machine 'm2' runs 'keyboard' without saying which variant (has: arch, fedora)" || fail "the missing pick is named: $OUT"
-sed -i.bak '/^machine("m2"/d' variants/maintenance/keyboard.loadout.ts && rm variants/maintenance/keyboard.loadout.ts.bak
-compile_repo variants
-OUT=$("$BIN" --repo variants --machine m1 explain keyboard)
-echo "$OUT" | grep -qE "file +fedora.sh" || fail "explain shows the machine's variant: $OUT"
-"$BIN" --repo variants --machine m1 run keyboard >/dev/null || fail "the variant runs"
-[ -f variants/maintenance/fedora-ran.txt ] || fail "the machine's variant's file ran"
-[ -f variants/maintenance/arch-ran.txt ] && fail "the other variant must not run" || true
-grep -q '"status": "done"' variants/machines/state/m1.json || fail "the variant's own check observed it done"
-ok "a machine runs the script variant it picked, checked by that variant's check"
 
 # --- no lock, and a custom state directory ----------------------------------
 "$BIN" --repo /nonexistent status >/dev/null 2>&1 && fail "a missing repo should exit 1" || true
@@ -336,14 +311,14 @@ ok "a repo without a lock gives one clean line"
 
 ts_root custom <<'TS'
 const git = program("git", {
-  version: "git --version",
-  regex: "git version ([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 
 machine("m1", { install: [git] });
 TS
-sed -i.bak 's|state: "machines/state"|state: "observed"|' custom/loadout.ts && rm custom/loadout.ts.bak
+sed -i.bak 's|stateFolder: "machines/state"|stateFolder: "observed"|' custom/loadout.ts && rm custom/loadout.ts.bak
 rm -rf custom/state custom/machines/state
 compile_repo custom
 "$BIN" --repo custom --machine m1 status >/dev/null || fail "a custom state dir loads"
@@ -354,39 +329,39 @@ ok "state goes where the repo says"
 # --- compile warns about what no machine uses -------------------------------
 ts_repo unused
 ts_file unused/programs/tools.loadout.ts <<'TS'
-const tool = program("tool", { install: [dnf, brew] });
+const tool = program("tool", { canBeInstalled: [withDnf, withBrew] });
 
-program("orphan", { install: [dnf] });
+program("orphan", { canBeInstalled: [withDnf] });
 
-const jq = program("jq", { install: [brew] });
+const jq = program("jq", { canBeInstalled: [withBrew] });
 
-machine("m1", { install: [via(dnf, [tool]), jq] });
+machine("m1", { install: [withDnf(tool), jq] });
 TS
 OUT=$("$BIN" --repo unused compile 2>&1) || fail "warnings don't fail the compile: $OUT"
 echo "$OUT" | grep -q "wrote loadout.lock.json" || fail "the lock is written anyway: $OUT"
 echo "$OUT" | grep -q "program 'orphan' isn't installed on any machine" || fail "an unused program is named: $OUT"
 echo "$OUT" | grep -q "program 'tool': machine 'm1' installs other programs via 'brew', but not tool" || fail "an unpicked way through an installer in use is named: $OUT"
 ts_file unused/programs/tools.loadout.ts <<'TS'
-const tool = program("tool", { install: [dnf, via(brew, { spare: "for macOS" })] });
+const tool = program("tool", { canBeInstalled: [withDnf, withBrew({ keepUnused: "for macOS" })] });
 
-const orphan = program("orphan", { spare: "for later", install: [dnf] });
+const orphan = program("orphan", { keepUnused: "for later", canBeInstalled: [withDnf] });
 
-const jq = program("jq", { install: [brew] });
+const jq = program("jq", { canBeInstalled: [withBrew] });
 
-machine("m1", { install: [via(dnf, [tool, orphan]), jq] });
+machine("m1", { install: [withDnf(tool, orphan), jq] });
 TS
 OUT=$("$BIN" --repo unused compile 2>&1) || fail "spare marks compile: $OUT"
 echo "$OUT" | grep -q "tool" && fail "a spare variant isn't warned about: $OUT"
-echo "$OUT" | grep -q "program 'orphan' is marked spare, but machine 'm1' uses it" || fail "a stale spare mark is named: $OUT"
+echo "$OUT" | grep -q "program 'orphan' says keepUnused, but machine 'm1' uses it" || fail "a stale spare mark is named: $OUT"
 ok "compile warns about what no machine uses, unless it's marked spare"
 
 # A transitional script is named for deletion once every machine that runs
 # it reports it done, read from their state files.
 ts_root transit <<'TS'
 export const cleanup = script("cleanup", {
-  run: "rm -f old.txt",
-  check: "test ! -e old.txt",
-  transitional: true,
+  runCommand: "rm -f old.txt",
+  checkCommand: "test ! -e old.txt",
+  deleteOnceDone: true,
 });
 TS
 ts_file transit/machines/machines.loadout.ts <<'TS'
@@ -401,14 +376,14 @@ OUT=$("$BIN" --repo transit compile 2>&1) || fail "a transitional script compile
 OUT=$("$BIN" --repo transit --machine m1 status 2>&1 || true)
 echo "$OUT" | grep -q "cleanup" || fail "m1 runs the transitional script: $OUT"
 OUT=$("$BIN" --repo transit compile 2>&1)
-echo "$OUT" | grep -q "transitional" && fail "not done anywhere yet, nothing is said: $OUT"
+echo "$OUT" | grep -q "deleteOnceDone" && fail "not done anywhere yet, nothing is said: $OUT"
 rm transit/old.txt
 "$BIN" --repo transit --machine m1 status >/dev/null
 OUT=$("$BIN" --repo transit compile 2>&1)
-echo "$OUT" | grep -q "transitional" && fail "m2 has no state yet, so it hasn't done it: $OUT"
+echo "$OUT" | grep -q "deleteOnceDone" && fail "m2 has no state yet, so it hasn't done it: $OUT"
 "$BIN" --repo transit --machine m2 status >/dev/null
 OUT=$("$BIN" --repo transit compile 2>&1)
-echo "$OUT" | grep -q "script 'cleanup' is done on every machine that runs it (m1, m2): it's transitional, so delete it" ||
+echo "$OUT" | grep -q "script 'cleanup' is done on every machine that runs it (m1, m2): it says deleteOnceDone, so delete it" ||
     fail "done everywhere, it's named for deletion: $OUT"
 ok "compile names a transitional script every machine has done"
 
@@ -417,8 +392,8 @@ ok "compile names a transitional script every machine has done"
 ts_repo syntax
 ts_file syntax/maintenance/broken.loadout.ts <<'TS'
 script("broken", {
-  run: "true",
-  check: [
+  runCommand: "true",
+  checkCommand: [
 });
 TS
 OUT=$("$BIN" --repo syntax compile 2>&1) && fail "a syntax error must not compile"

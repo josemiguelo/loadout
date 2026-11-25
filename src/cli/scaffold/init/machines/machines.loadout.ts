@@ -3,10 +3,10 @@
 // it names.
 import { machine } from "loadout";
 import type { Data } from "./data.ts";
-// import { dnf, via } from "loadout";
+// import { withDnf } from "loadout";
 // import { ripgrep } from "../programs/cli.loadout.ts";
 
 machine<Data>("{{.Hostname}}", {
   // Pick how this machine installs ripgrep, then uncomment (and the imports):
-  // install: [via(dnf, [ripgrep])],
+  // install: [withDnf(ripgrep)],
 });

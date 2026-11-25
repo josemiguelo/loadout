@@ -7,6 +7,7 @@ import { type Manifest, mapOf, newMachineConfig, newProgram, newScriptStep } fro
 import { via, pm } from "../assemble/testhelpers.ts";
 import { compile, decodeDraft, doneScripts, writeIfChanged } from "./compile.ts";
 import { transitionalWarnings, unusedWarnings } from "./unused.ts";
+import { runs } from "../core/coretest/coretest.ts";
 
 /** draftOf assembles d (no file checks), for the warnings. */
 function draftOf(d: ManifestDraft): [ManifestDraft, Manifest] {
@@ -107,7 +108,7 @@ describe("warnings", () => {
     warnings = unusedWarnings(draft, manifest, spares, []);
     // A spare program isn't named.
     expect(warnings.filter((w) => w.includes("htop"))).toEqual([]);
-    contains(warnings, "program 'git' is marked spare");
+    contains(warnings, "program 'git' says keepUnused");
   });
 
   test("a child's warnings are about its own declarations", () => {
@@ -130,8 +131,8 @@ describe("warnings", () => {
           ...newManifestDraft().manifest,
           scripts: mapOf(["cleanup", newScriptStep({ run: "true", check: "true" })]),
           machines: mapOf(
-            ["a", newMachineConfig({ scripts: ["cleanup"], label: "machine 'a'" })],
-            ["b", newMachineConfig({ scripts: ["cleanup"], label: "machine 'b'" })],
+            ["a", newMachineConfig({ scripts: runs("cleanup"), label: "machine 'a'" })],
+            ["b", newMachineConfig({ scripts: runs("cleanup"), label: "machine 'b'" })],
           ),
         },
       }),

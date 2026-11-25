@@ -8,7 +8,7 @@ await include("programs/**/*.loadout.ts", "maintenance/**/*.loadout.ts", "machin
 
 repo({
   name: "my machines",
-  state: "machines/state",
+  stateFolder: "machines/state",
   // The repo this one builds on.
   parent: { name: "{{.ParentName}}", path: "{{.ParentPath}}" },
 });

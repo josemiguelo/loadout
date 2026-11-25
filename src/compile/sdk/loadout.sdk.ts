@@ -12,63 +12,106 @@
 //
 // A mistake the manifest language catches is thrown as one line naming the
 // file, line and column of the declaration, as compile prints it.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ─── references ─────────────────────────────────────────────────────────
 
-export type Installer = { readonly kind: "installer"; readonly name: string };
-export type Program = { readonly kind: "program"; readonly name: string };
-/** Called with a machine's arguments in its `run`: `setupSsh("id_ed25519")`, each one word or more. */
-export type Script = {
-  (...args: string[]): ScriptArgs;
+/**
+ * An installer, named for how it reads in `install`: as it is in a program
+ * (`canBeInstalled: [withBrew]`), called with what that program's package needs
+ * (`withOmarchy({ packageName: "mise-bin" })`, `withBrewTap({ tap: "hashicorp/tap" })`),
+ * and called with programs in a machine (`withBrew(just, vim)`).
+ */
+export type Installer<Param extends string = never> = {
+  (settings: VariantSpec & { readonly [P in Param]: string }): VariantEntry<never>;
+  (program: Many<Program>, ...more: Many<Program>[]): ProgramsWith;
+  /** Every install with it waits for these programs. */
+  needs(...programs: Many<Program>[]): void;
+  readonly kind: "installer";
+  readonly name: string;
+};
+/** Called in a machine with one of its `withCustomSteps()` ways to install: `setupBrew("linux")`. */
+export type Program<Way extends string = never> = {
+  (way: Way): ProgramVariant;
+  readonly kind: "program";
+  readonly name: string;
+};
+/** Called in a machine's `run` with its module's options, when it takes any: `t2ChargeLimit({ limit: 90 })`. */
+export type Script<Args extends unknown[] = any> = {
+  (...args: Args): ScriptRun;
   readonly kind: "script";
   readonly name: string;
 };
 export type Profile = { readonly kind: "profile"; readonly name: string };
 
-/** A program through one of its variants: `variant(setupBrew, "linux")`. */
+/** A program by one of its ways to install: `setupBrew("linux")`. */
 export type ProgramVariant = { readonly kind: "program-variant"; readonly program: Program; readonly variant: string };
-/** A script through one of its variants: `variant(hidAppleKeyboard, "arch")`; called with arguments like a script. */
-export type ScriptVariant = {
-  (...args: string[]): ScriptArgs;
-  readonly kind: "script-variant";
-  readonly script: Script;
-  readonly variant: string;
-};
-/** A script with its arguments: `setupSsh("id_ed25519")`. */
-export type ScriptArgs = { readonly kind: "script-args"; readonly script: Script | ScriptVariant; readonly args: string[] };
+/** A script with its options: `t2ChargeLimit({ limit: 90 })`. */
+export type ScriptRun = { readonly kind: "script-run"; readonly script: Script; readonly options?: unknown };
 
 /**
- * A reference with fields that is called with a machine's arguments.
- * defineProperty, since a function's own `name` can't be assigned.
+ * A reference that is called. defineProperty, since a function's own `name`
+ * can't be assigned.
  */
-function callable<F extends object>(fields: F): F & ((...args: string[]) => ScriptArgs) {
-  const ref = (...args: string[]): ScriptArgs => ({ kind: "script-args", script: ref as unknown as Script | ScriptVariant, args });
-  for (const [key, value] of Object.entries(fields)) Object.defineProperty(ref, key, { value, enumerable: true });
-  return ref as unknown as F & ((...args: string[]) => ScriptArgs);
+function callable<T>(kind: string, name: string, call: (args: any[], self: T) => unknown, more: object = {}): T {
+  const ref = ((...args: unknown[]) => call(args, ref)) as T;
+  for (const [key, value] of Object.entries({ kind, name, ...more })) Object.defineProperty(ref, key, { value, enumerable: true });
+  return ref;
 }
 
-/** Programs through an installer, in a machine: `via(omarchy, [curl, git])`. */
-export type ViaGroup = { readonly kind: "via-group"; readonly installer: Installer; readonly programs: Program[] };
+/** Programs with an installer, in a machine: `withOmarchy(curl, git)`. */
+export type ProgramsWith = { readonly kind: "programs-with"; readonly installer: { readonly name: string }; readonly programs: Program[] };
 
 /** One, or a list of them, nested as deep as shared lists nest: flattened wherever it's read. */
 export type Many<T> = T | readonly Many<T>[];
 const flat = <T>(xs: Many<T> | undefined): T[] => (xs === undefined ? [] : Array.isArray(xs) ? (xs as T[]).flat(Infinity as 1) as T[] : [xs as T]);
 
-const builtin = (name: string): Installer => ({ kind: "installer", name });
+/** An installer's reference: programs given make a machine's entry, settings a program's way to install. */
+const installerRef = <Param extends string = never>(name: string, params: readonly Param[] = []): Installer<Param> =>
+  callable<Installer<Param>>(
+    "installer",
+    name,
+    (args, self) => {
+      const [first] = args;
+      if (first === undefined) fail(`installer '${name}' is called with programs or with settings`);
+      const isSettings = typeof first === "object" && !Array.isArray(first);
+      if (!isSettings) return { kind: "programs-with", installer: self, programs: flat(args as Many<Program>) };
+      const { settings, values } = split(first, params);
+      for (const p of params) if (values[p] === undefined) fail(`installer '${name}' needs '${p}'`);
+      return { kind: "variant", key: name, spec: settings, values, at: caller() };
+    },
+    {
+      needs: (...programs: Many<Program>[]) => {
+        if (!ownFile(caller().file)) return;
+        requiresOf.set(name, [...(requiresOf.get(name) ?? []), ...flat(programs).map((p) => p.name)]);
+      },
+    },
+  );
+
+/** Settings without the installer's params, and the params' values. */
+function split(given: object, params: readonly string[]) {
+  const settings: JSON = {};
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(given)) {
+    if (params.includes(key)) values[key] = value;
+    else settings[key] = value;
+  }
+  return { settings: settings as VariantSpec, values };
+}
+
 /** The built-in installers: shipped with loadout, `loadout installers` lists them. */
-export const apt = builtin("apt");
-export const brew = builtin("brew");
-export const brewCask = builtin("brew-cask");
-export const dnf = builtin("dnf");
-export const dnfCopr = builtin("dnf-copr");
-export const dnfRepo = builtin("dnf-repo");
-export const flatpak = builtin("flatpak");
-export const omarchy = builtin("omarchy");
-export const omarchyAur = builtin("omarchy-aur");
-export const pacman = builtin("pacman");
+export const withApt = installerRef("apt");
+export const withBrew = installerRef("brew");
+export const withBrewCask = installerRef("brew-cask");
+export const withDnf = installerRef("dnf");
+export const withDnfCopr = installerRef("dnf-copr", ["copr"]);
+export const withDnfRepo = installerRef("dnf-repo", ["repofile"]);
+export const withFlatpak = installerRef("flatpak");
+export const withOmarchy = installerRef("omarchy");
+export const withOmarchyAur = installerRef("omarchy-aur");
+export const withPacman = installerRef("pacman");
 
 // ─── where a declaration is ─────────────────────────────────────────────
 
@@ -205,12 +248,12 @@ function clean(o: JSON): JSON {
 
 function spare(key: string, reason: string | undefined, at: Place) {
   if (reason === undefined) return;
-  if (!reason.trim()) fail(`${key}: spare needs a reason`, at);
+  if (!reason.trim()) fail(`${key}: keepUnused needs a reason`, at);
   spares.set(key, reason);
 }
 
 function reason(what: string, value: string | undefined, at: Place): string | undefined {
-  if (value !== undefined && !value.trim()) fail(`${what}: Empty reason; later = "why it can wait"`, at);
+  if (value !== undefined && !value.trim()) fail(`${what}: canWait needs a reason`, at);
   return value;
 }
 
@@ -220,66 +263,94 @@ function conflict(what: string, spec: object, names: string[], at: Place) {
   if (given.length > 1) fail(`${what}: ${given.join(" and ")} can't go together: give one`, at);
 }
 
+/** A regex as the lock holds it: its pattern, which has no flags. */
+function regexSource(regex: RegExp | undefined, at: Place): string | undefined {
+  if (regex === undefined) return undefined;
+  if (!(regex instanceof RegExp)) fail("versionRegex is a regex: /([0-9.]+)/", at);
+  if (regex.flags) fail(`versionRegex ${regex} can't have flags`, at);
+  return regex.source;
+}
+
 const VERSION_REGEX = "([0-9]+\\.[0-9][0-9.]*)";
 
 /**
- * A repo file as a command (`runScript(".loadout/x.ts check")`) or a param
- * value (`file("repos/x.repo")`): its path from the declaring file's folder,
- * run with the interpreter its `#!` line names.
+ * The command that runs a repo file with arguments, each exactly one word
+ * (`{tap}` is still filled in): `runFile(".loadout/x.ts", "check")`. Its path
+ * is from the declaring file's folder, and it runs with the interpreter its
+ * `#!` line names.
  */
-export const runScript = (command: string) => `file:${command}`;
-export const file = (path: string) => `file:${path}`;
+export function runFile(path: string, ...args: string[]): string {
+  if (path === "" || /[\s']/.test(path)) fail(`runFile: the file's path can't have spaces or quotes, and its arguments come after it: runFile("x.sh", "arg"), not '${path}'`);
+  const word = (arg: string) => (/^[\w@%+=:,./{}-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`);
+  return ["file:" + path, ...args.map(word)].join(" ");
+}
+
+/** A repo file as an installer param's value: `withDnfRepo({ repofile: repoFile("x.repo") })`, from the declaring file's folder. */
+export const repoFile = (path: string) => `file:${path}`;
 
 /**
  * Commands that must all pass, joined with `&&`; one holding `||` or `;` is
  * grouped in `{ …; }` first (a single one too), so the join can't change
  * what it means.
  */
-function allOf(commands: string | string[]): string {
+function allOf(commands: string | string[], at: Place): string {
+  if (Array.isArray(commands) && commands.length > 1 && commands.some((c) => c.startsWith("file:"))) fail("runFile() is the only command of its list", at);
   return (typeof commands === "string" ? [commands] : commands).map((c) => (c.includes("||") || c.includes(";") ? `{ ${c}; }` : c)).join(" && ");
+}
+
+/** Refuses a setting spec doesn't have: the editor's types say so too, but compile doesn't type-check. */
+function onlyKnown(what: string, spec: object, settings: Record<string, true>, at: Place) {
+  const unknown = Object.keys(spec).find((k) => !(k in settings));
+  if (unknown) fail(`${what} has no setting '${unknown}' (its settings: ${Object.keys(settings).join(", ")})`, at);
 }
 
 const distinct = <T>(xs: T[]) => [...new Set(xs)];
 
 // ─── installers ─────────────────────────────────────────────────────────
 
-export type InstallerSpec = {
-  /** The binary whose presence says the installer is there. */
-  probe?: string;
-  /** Names a program's variant gives values for (`params = { tap = … }`), `{name}` in the commands. */
-  params?: string[];
-  install?: string;
-  check?: string;
-  regex?: string;
-  outdated?: string;
-  outdatedAll?: string;
-  upgrade?: string;
+export type InstallerSpec<Param extends string = string> = {
+  /** The binary that must be there for it to work. */
+  neededBinary?: string;
+  /** What a program calls it with, besides the settings every installer takes (`withBrewTap({ tap: "…" })`); `{tap}` in the commands. */
+  installerParams?: readonly Param[];
+  /** Installs `{packageName}`. */
+  installCommand?: string;
+  /** Prints `{packageName}`'s version. */
+  checkCommand?: string;
+  /** Reads the version, as its first group, from what checkCommand prints. */
+  versionRegex?: RegExp;
+  /** Prints one package's newer version, when it's behind. */
+  outdatedCommand?: string;
+  /** Lists every package that's behind. */
+  allOutdatedCommand?: string;
+  /** Upgrades everything it installed. */
+  upgradeCommand?: string;
   needsSudo?: boolean;
-  spare?: string;
+  /** Why it stays although nothing uses it. */
+  keepUnused?: string;
 };
 
-export function installer(name: string, spec: InstallerSpec): Installer {
+const installerSpecSettings: Record<keyof InstallerSpec, true> = { neededBinary: true, installerParams: true, installCommand: true, checkCommand: true, versionRegex: true, outdatedCommand: true, allOutdatedCommand: true, upgradeCommand: true, needsSudo: true, keepUnused: true };
+
+export function installer<const Param extends string = never>(name: string, spec: InstallerSpec<Param>): Installer<Param> {
   const at = caller();
-  spare(`installer '${name}'`, spec.spare, at);
+  onlyKnown(`installer '${name}'`, spec, installerSpecSettings, at);
+  spare(`installer '${name}'`, spec.keepUnused, at);
+  const taken = spec.installerParams?.find((p) => p in variantSpecSettings);
+  if (taken) fail(`installer '${name}': '${taken}' is already a setting of every installer: name the param something else`, at);
   declare(draft.installers, "installer", name, at, clean({
-    probe: spec.probe,
-    params: spec.params,
-    install: spec.install,
-    check: spec.check,
-    regex: spec.regex ?? VERSION_REGEX,
-    outdated: spec.outdated,
-    "outdated-all": spec.outdatedAll,
-    upgrade: spec.upgrade,
+    probe: spec.neededBinary,
+    params: spec.installerParams,
+    install: spec.installCommand,
+    check: spec.checkCommand,
+    regex: regexSource(spec.versionRegex, at) ?? VERSION_REGEX,
+    outdated: spec.outdatedCommand,
+    "outdated-all": spec.allOutdatedCommand,
+    upgrade: spec.upgradeCommand,
     sudo: spec.needsSudo,
     origin: originOf(at.file) || undefined,
   }));
-  return { kind: "installer", name };
-}
-
-/** Every install through installer waits for these programs. */
-export function requires(installer: Installer, programs: Many<Program>) {
-  if (!ownFile(caller().file)) return;
-  requiresOf.set(installer.name, [...(requiresOf.get(installer.name) ?? []), ...flat(programs).map((p) => p.name)]);
+  return installerRef(name, spec.installerParams);
 }
 
 // ─── programs ───────────────────────────────────────────────────────────
@@ -287,275 +358,472 @@ export function requires(installer: Installer, programs: Many<Program>) {
 /** How one variant installs, checks and is reached, beyond what its installer says. */
 export type VariantSpec = {
   /** The package name, when it isn't the program's. */
-  pkg?: string;
-  /** Values for the installer's params (`{ tap: "tmuxpack/tpack" }`); `file("x.repo")` for a repo file. */
-  params?: Record<string, string>;
-  /** Its own install command line; or installedBy / managedBy for a repo script. */
-  command?: string;
-  /** A repo script that installs it; `version` checks it. */
-  installedBy?: string;
-  /** A repo script with `check` and `install` modes; the check is presence unless `regex` reads a version from it. */
-  managedBy?: string;
-  /** A command printing the version (read by `regex`). */
-  version?: string;
+  packageName?: string;
+  /** Its own install command line (`runFile("x.sh")` for a repo script); or `module`, in TypeScript. */
+  installCommand?: string;
+  /**
+   * The repo module that installs it, `() => import("./.loadout/x.ts")`: it
+   * exports `install` and, unless `versionCommand` says how to check it,
+   * `check` (is it there? with `versionRegex`, the version is read from what
+   * it prints). Compile never runs it.
+   */
+  module?: () => Promise<Partial<Pick<PlainModule, "check">> & Pick<PlainModule, "install">>;
+  /** A command printing the version. */
+  versionCommand?: string;
   /** A command that passes when it's installed (no version). */
-  present?: string;
-  regex?: string;
-  probe?: string;
-  outdated?: string;
+  isInstalled?: string;
+  /** Reads the version, as its first group, from what the check prints. */
+  versionRegex?: RegExp;
+  /** The binary that must be there first, when it isn't the installer's. */
+  neededBinary?: string;
+  /** Prints the newer version, when this one is behind. */
+  outdatedCommand?: string;
   needsSudo?: boolean;
   dependsOn?: Many<Program>;
-  /** Binaries it puts on PATH, and where: `{ brew: { at: "/opt/homebrew/bin" } }`. */
-  provides?: Record<string, { at?: string }>;
-  spare?: string;
+  /** Binaries it installs, and the folder each is in (`{ brew: "/opt/homebrew/bin" }`); true for one already on PATH. */
+  addsToPath?: Record<string, string | true>;
+  /** Why it stays although nothing uses it. */
+  keepUnused?: string;
 };
 
-type VariantEntry = { readonly kind: "variant"; readonly key: string; readonly spec: VariantSpec; readonly at: Place };
+/** One way a program is installed; Way is its name when it's a `withCustomSteps()` one. */
+export type VariantEntry<Way extends string = string> = {
+  readonly kind: "variant";
+  readonly key: string;
+  readonly spec: VariantSpec;
+  /** The installer's params' values. */
+  readonly values?: Record<string, string>;
+  readonly at: Place;
+  readonly way?: Way;
+};
 
-/** A variant through installer that needs a setting: `via(brewTapCask, { params: { tap: "…" } })`. */
-export function via(installer: Installer, spec: VariantSpec): VariantEntry;
-/** In a machine: programs through installer, `via(omarchy, [curl, git])`. */
-export function via(installer: Installer, programs: Many<Program>[]): ViaGroup;
-export function via(installer: Installer, arg: VariantSpec | Many<Program>[]): VariantEntry | ViaGroup {
-  if (Array.isArray(arg)) return { kind: "via-group", installer, programs: flat(arg) };
-  return { kind: "variant", key: installer.name, spec: arg, at: caller() };
+/** Its own way to install (`withCustomSteps("linux", {...})`); named "custom" when unnamed. */
+export function withCustomSteps<const Way extends string>(name: Way, spec: VariantSpec): VariantEntry<Way>;
+export function withCustomSteps(spec: VariantSpec): VariantEntry<"custom">;
+export function withCustomSteps(a: string | VariantSpec, b?: VariantSpec): VariantEntry {
+  return typeof a === "string" ? { kind: "variant", key: a, way: a, spec: b!, at: caller() } : { kind: "variant", key: "custom", way: "custom", spec: a, at: caller() };
 }
 
-/** Its own way to install (`custom("linux", {...})`); named "custom" when unnamed. */
-export function custom(name: string, spec: VariantSpec): VariantEntry;
-export function custom(spec: VariantSpec): VariantEntry;
-export function custom(a: string | VariantSpec, b?: VariantSpec): VariantEntry {
-  return typeof a === "string" ? { kind: "variant", key: a, spec: b!, at: caller() } : { kind: "variant", key: "custom", spec: a, at: caller() };
-}
+const variantSpecSettings: Record<keyof VariantSpec, true> = { packageName: true, installCommand: true, module: true, versionCommand: true, isInstalled: true, versionRegex: true, neededBinary: true, outdatedCommand: true, needsSudo: true, dependsOn: true, addsToPath: true, keepUnused: true };
 
-function variantJSON(what: string, v: VariantSpec, at: Place): JSON {
-  conflict(what, v, ["version", "present", "managedBy"], at);
-  conflict(what, v, ["command", "installedBy", "managedBy"], at);
-  let command = v.command;
+function variantJSON(what: string, v: VariantSpec, values: Record<string, string> | undefined, at: Place, program: Place): JSON {
+  onlyKnown(what, v, variantSpecSettings, at);
+  conflict(what, v, ["versionCommand", "isInstalled"], at);
+  conflict(what, v, ["module", "isInstalled"], at);
+  conflict(what, v, ["installCommand", "module"], at);
   let check: string | undefined;
-  let regex = v.regex;
+  let regex = regexSource(v.versionRegex, at);
   let present = false;
-  if (v.installedBy !== undefined) command = runScript(v.installedBy);
-  if (v.managedBy !== undefined) {
-    command = `${runScript(v.managedBy)} install`;
-    check = `${runScript(v.managedBy)} check`;
-    present = regex === undefined;
-  } else if (v.version !== undefined) {
-    check = v.version;
+  if (v.versionCommand !== undefined) {
+    check = v.versionCommand;
     regex ??= VERSION_REGEX;
-  } else if (v.present !== undefined) {
-    check = v.present;
+  } else if (v.isInstalled !== undefined) {
+    check = v.isInstalled;
     present = true;
+  } else if (v.module !== undefined) {
+    present = regex === undefined;
   }
-  return clean({
-    pkg: v.pkg,
-    command,
+  const value = clean({
+    pkg: v.packageName,
+    command: v.installCommand,
     check,
     regex,
     present,
-    probe: v.probe,
-    outdated: v.outdated,
-    with: v.params,
+    probe: v.neededBinary,
+    outdated: v.outdatedCommand,
+    with: values,
     // An explicit `needsSudo: false` is kept: it overrides the installer's.
     sudo: v.needsSudo === undefined ? undefined : v.needsSudo,
     "depends-on": v.dependsOn && distinct(flat(v.dependsOn).map((p) => p.name)),
-    provides: v.provides && Object.entries(v.provides).map(([binary, p]) => clean({ binary, at: p.at })),
+    provides: v.addsToPath && Object.entries(v.addsToPath).map(([binary, at]) => clean({ binary, at: at === true ? undefined : at })),
   });
+  if (v.module !== undefined && ownFile(program.file)) {
+    modules.push({
+      what,
+      module: v.module,
+      at,
+      from: program,
+      found: (path) => Object.assign(value, { command: `module:${path} install` }, check === undefined ? { check: `module:${path} check` } : {}),
+    });
+  }
+  return value;
 }
 
-export type ProgramSpec = {
+/** A way to install in a program: an installer that needs nothing said, one called with settings, or `withCustomSteps()`. */
+type Way = Installer<never> | VariantEntry;
+/** The names of the `withCustomSteps()` ways among W. */
+type CustomName<W> = W extends VariantEntry<infer N> ? N : never;
+
+export type ProgramSpec<W extends Way = Way> = {
   description?: string;
   tags?: string[];
   dependsOn?: Many<Program>;
-  /** Its ways to install, in order: installers as they are (`brew`), `via(...)`, `custom(...)`. */
-  install: (Installer | VariantEntry)[];
-  /** A version check every variant falls back to. */
-  version?: string;
-  regex?: string;
-  /** Folders put first on PATH for its commands. */
-  path?: string[];
+  /** Its ways to install, in order: `withBrew`, `withOmarchy({ packageName: "…" })`, `withCustomSteps(…)`. */
+  canBeInstalled: W[];
+  /** A command printing the version, for every way to install that has no check of its own. */
+  versionCommand?: string;
+  /** Reads the version, as its first group, from what versionCommand prints. */
+  versionRegex?: RegExp;
+  /** Folders put first on PATH for its own commands, for a tool that lands where a fresh shell doesn't look yet. */
+  searchPath?: string[];
   /** Its own outdated check, for a program no installer's oracle covers. */
-  outdated?: string;
-  upgrade?: string;
-  /** A repo script that's its outdated oracle: prints the newer version, `update` moves it. */
-  updatesManagedBy?: string;
+  outdatedCommand?: string;
+  /** Upgrades this program alone. */
+  upgradeCommand?: string;
+  /** The repo module that says whether it's behind, and updates it: `() => import("./.loadout/x.ts")`. */
+  updates?: () => Promise<ProgramUpdates>;
   /** Why setup-new-machine can do it last. */
-  later?: string;
-  spare?: string;
+  canWait?: string;
+  /** Why it stays although nothing uses it. */
+  keepUnused?: string;
 };
 
-export function program(name: string, spec: ProgramSpec): Program {
+const programSpecSettings: Record<keyof ProgramSpec, true> = { description: true, tags: true, dependsOn: true, canBeInstalled: true, versionCommand: true, versionRegex: true, searchPath: true, outdatedCommand: true, upgradeCommand: true, updates: true, canWait: true, keepUnused: true };
+
+export function program<const W extends Way>(name: string, spec: ProgramSpec<W>): Program<CustomName<W>> {
   const at = caller();
   const what = `program '${name}'`;
-  if (spec.regex !== undefined && spec.version === undefined) fail(`${what}: regex reads its version command's output: set version too`, at);
-  conflict(what, spec, ["outdated", "updatesManagedBy"], at);
-  if (spec.upgrade !== undefined && spec.updatesManagedBy !== undefined) fail(`${what}: updatesManagedBy updates through its script (\`<script> update\`): drop upgrade`, at);
-  if (spec.upgrade !== undefined && spec.outdated === undefined) fail(`${what}: upgrade moves the program outdated says is behind: set outdated too`, at);
+  onlyKnown(what, spec, programSpecSettings, at);
+  if (spec.versionRegex !== undefined && spec.versionCommand === undefined) fail(`${what}: versionRegex reads versionCommand's output: set it too`, at);
+  conflict(what, spec, ["outdatedCommand", "updates"], at);
+  conflict(what, spec, ["upgradeCommand", "updates"], at);
+  if (spec.upgradeCommand !== undefined && spec.outdatedCommand === undefined) fail(`${what}: upgradeCommand moves the program outdatedCommand says is behind: set it too`, at);
   const install: JSON = {};
-  for (const entry of spec.install) {
+  for (const entry of spec.canBeInstalled) {
     const key = entry.kind === "installer" ? entry.name : entry.key;
     if (key in install) fail(`${what} has two '${key}' variants`, entry.kind === "installer" ? at : entry.at);
     if (entry.kind === "installer") install[key] = {};
     else {
-      install[key] = variantJSON(`${what} via '${key}'`, entry.spec, entry.at);
-      spare(`${what} via '${key}'`, entry.spec.spare, entry.at);
+      install[key] = variantJSON(`${what} via '${key}'`, entry.spec, entry.values, entry.at, at);
+      spare(`${what} via '${key}'`, entry.spec.keepUnused, entry.at);
     }
   }
-  if (Object.keys(install).length === 0) fail(`${what} has no way to install it: list its installers or variants in install`, at);
-  spare(what, spec.spare, at);
+  if (Object.keys(install).length === 0) fail(`${what} has no way to install it: list them in canBeInstalled`, at);
+  spare(what, spec.keepUnused, at);
   const origin = originOf(at.file);
   if (!variantsOf.has(name)) variantsOf.set(name, Object.keys(install));
+  const updates: JSON = {};
+  if (spec.updates !== undefined && ownFile(at.file)) {
+    const found = (path: string) => Object.assign(updates, { command: `module:${path} newerVersion`, upgrade: `module:${path} update` });
+    modules.push({ what: `${what} updates`, module: spec.updates, at, from: at, found });
+  }
   declare(draft.programs, "program", name, at, clean({
     description: spec.description,
     tags: spec.tags,
     "depends-on": spec.dependsOn && distinct(flat(spec.dependsOn).map((p) => p.name)),
-    version: spec.version === undefined ? undefined : clean({ command: spec.version, regex: spec.regex ?? VERSION_REGEX, origin: origin || undefined, path: spec.path }),
+    version: spec.versionCommand === undefined ? undefined : clean({ command: spec.versionCommand, regex: regexSource(spec.versionRegex, at) ?? VERSION_REGEX, origin: origin || undefined, path: spec.searchPath }),
     install,
     outdated:
-      spec.updatesManagedBy !== undefined
-        ? { command: runScript(spec.updatesManagedBy), upgrade: `${runScript(spec.updatesManagedBy)} update` }
-        : spec.outdated !== undefined
-          ? clean({ command: spec.outdated, upgrade: spec.upgrade })
+      spec.updates !== undefined
+        ? Object.assign(updates, { command: "" })
+        : spec.outdatedCommand !== undefined
+          ? clean({ command: spec.outdatedCommand, upgrade: spec.upgradeCommand })
           : undefined,
-    path: spec.path,
-    later: reason(what, spec.later, at),
+    path: spec.searchPath,
+    later: reason(what, spec.canWait, at),
     origin: origin || undefined,
   }));
-  return { kind: "program", name };
-}
-
-/** A program or script through one of its variants. */
-export function variant(program: Program, variant: string): ProgramVariant;
-export function variant(script: Script, variant: string): ScriptVariant;
-export function variant(ref: Program | Script, variant: string): ProgramVariant | ScriptVariant {
-  return ref.kind === "program" ? { kind: "program-variant", program: ref, variant } : callable({ kind: "script-variant" as const, script: ref, variant });
+  return callable<Program<CustomName<W>>>("program", name, ([way], self) => {
+    const ways = spec.canBeInstalled.filter((w) => w.kind === "variant" && w.way !== undefined).map((w) => (w as VariantEntry).key);
+    if (!ways.includes(way)) fail(`${what} has no way to install named '${way}' (it has: ${ways.join(", ") || "none"})`, caller());
+    return { kind: "program-variant", program: self, variant: way };
+  });
 }
 
 // ─── scripts ────────────────────────────────────────────────────────────
 
-/** What a script, and each of its variants, runs. */
-export type StepSpec = {
-  /** A repo script with `check` and `install` modes; the machine's arguments reach both. */
-  managedBy?: string;
-  /** A repo script run as it is, with `check` inline... */
-  file?: string;
-  /** ...or command lines, all of which must pass. */
-  run?: string | string[];
-  /** Command lines that pass when it's done. */
-  check?: string | string[];
-  /** Programs and scripts it runs after, when the machine has them; never pulls them in. */
-  runAfter?: Many<Program | Script>;
-  spare?: string;
+/** What's wrong with the options, for what their type can't say; nothing when they're right. */
+export type Validate<Options> = (options: Options) => string | false | undefined;
+
+/** What a script's `rules` exports. */
+export type Rules<Options> = { validate: Validate<Options> };
+
+/** What a script's `module` exports when it takes options: the machine calls the script with them. */
+export type ScriptModule<Options> = {
+  /** Is it done? A check that throws isn't, and says why. */
+  check: (options: Options) => Promise<boolean> | boolean;
+  /** Does it; a throw is the failure's message. */
+  install: (options: Options) => unknown;
 };
 
-/** An outdated oracle beside a script: rows of what's behind, and `upgrade` per row. */
-export type Oracle = { name?: string; command: string; upgrade?: string; needsSudo?: boolean };
+/** What a script's `module` exports when it takes no options. */
+export type PlainModule = {
+  /** Is it done? A check that throws isn't, and says why. */
+  check: () => Promise<boolean> | boolean;
+  /** Does it; a throw is the failure's message. */
+  install: () => unknown;
+};
+
+/** One thing that's behind, as `updates` reports it. */
+export type OutdatedItem = { item: string; current: string; candidate: string; note?: string; link?: string };
+
+/** What a script's `updates` module exports. */
+export type ScriptUpdates = {
+  /** What's behind. A throw is shown as the source having failed, never as nothing outdated. */
+  listOutdated: () => Promise<OutdatedItem[]> | OutdatedItem[];
+  /** Moves one of them, by its item. */
+  update: (item: string) => unknown;
+};
+
+/** What a program's `updates` module exports. */
+export type ProgramUpdates = {
+  /** The newest version when this one is behind, undefined otherwise. */
+  newerVersion: () => Promise<string | undefined> | string | undefined;
+  update: () => unknown;
+};
+
+/** What a script runs. */
+export type StepSpec = {
+  /** Command lines, all of which must pass; `runFile("x.sh")` for a repo script in any language. */
+  runCommand?: string | string[];
+  /** Command lines that pass when it's done. */
+  checkCommand?: string | string[];
+  /** Programs and scripts it runs after, when the machine has them; never pulls them in. */
+  runAfter?: Many<Program | Script>;
+  /** Why it stays although nothing uses it. */
+  keepUnused?: string;
+};
+
+/** An outdated oracle beside a script: what's behind, and `upgradeCommand` per item. */
+export type Oracle = { name?: string; command: string; upgradeCommand?: string; needsSudo?: boolean };
 
 export type ScriptSpec = StepSpec & {
   description?: string;
   needsSudo?: boolean;
   /** Only setup-new-machine runs it (a one-time bootstrap). */
   setupOnly?: boolean;
-  /** Only maintenance runs it, never setup-new-machine. */
-  maintainOnly?: boolean;
+  /** setup-new-machine never runs it. */
+  notDuringSetup?: boolean;
   /** Only until every machine has done it: compile says when to delete it. */
-  transitional?: boolean;
+  deleteOnceDone?: boolean;
   /** Why setup-new-machine can do it last. */
-  later?: string;
-  /** A repo script that's the outdated oracle of what this script set up: rows, and `update <item>`. */
-  updatesManagedBy?: string;
+  canWait?: string;
+  /**
+   * The repo module that says what of this script's is behind, and updates
+   * it: `() => import("./.loadout/x.ts")`; or several, each by the name of
+   * what it covers.
+   */
+  updates?: (() => Promise<ScriptUpdates>) | Record<string, () => Promise<ScriptUpdates>>;
+  /** Commands instead, in any language. */
   outdated?: Oracle[];
-  /** Different ways to do this one step, by name; a machine picks one with `variant()`. */
-  variants?: Record<string, StepSpec & { transitional?: never }>;
+};
+
+const stepSettings = { runCommand: true, checkCommand: true, runAfter: true, keepUnused: true } as const;
+const scriptSettings: Record<keyof ScriptSpec | keyof ModuleScriptSpec<unknown>, true> = {
+  description: true, module: true, rules: true, ...stepSettings, needsSudo: true, setupOnly: true, notDuringSetup: true,
+  deleteOnceDone: true, canWait: true, updates: true, outdated: true,
 };
 
 function stepJSON(what: string, s: StepSpec, origin: string, at: Place): JSON {
-  conflict(what, s, ["file", "managedBy"], at);
-  conflict(what, s, ["check", "managedBy"], at);
   return clean({
-    file: s.managedBy ?? s.file,
-    run: s.run === undefined ? undefined : allOf(s.run),
-    check: s.managedBy !== undefined ? `${runScript(s.managedBy)} check "$@"` : s.check === undefined ? undefined : allOf(s.check),
+    run: s.runCommand === undefined ? undefined : allOf(s.runCommand, at),
+    check: s.checkCommand === undefined ? undefined : allOf(s.checkCommand, at),
     after: s.runAfter && distinct(flat(s.runAfter).map((r) => `${r.kind}s.${r.name}`)),
     origin: origin || undefined,
   });
 }
 
-export function script(name: string, spec: ScriptSpec): Script {
+/** A script done by a TypeScript module, which also says what options it takes. */
+export type ModuleScriptSpec<Options> = Omit<ScriptSpec, "runCommand" | "checkCommand"> & {
+  /**
+   * The repo module that does it, `() => import("./.loadout/x.ts")`: it
+   * exports `check` and `install`, and the options they take are what a
+   * machine calls the script with. Compile never runs it.
+   */
+  module: () => Promise<ScriptModule<Options>>;
+  /**
+   * The repo module that says what's wrong with the options,
+   * `() => import("./.loadout/x.rules.ts")`: it exports `validate`, which
+   * compile calls with every machine's, and loadout before `check` and
+   * `install`. Nothing else goes in it: compile does run this one.
+   */
+  rules: () => Promise<Rules<NoInfer<Options>>>;
+};
+
+/** A script done by a TypeScript module that takes no options. */
+export type PlainModuleScriptSpec = Omit<ScriptSpec, "runCommand" | "checkCommand"> & {
+  /** The repo module that does it, `() => import("./.loadout/x.ts")`: it exports `check` and `install`. Compile never runs it. */
+  module: () => Promise<PlainModule>;
+};
+
+/**
+ * Options as the lock holds them: what JSON would lose or change is refused.
+ * An undefined property is one left out.
+ */
+function plainOptions(what: string, options: unknown, at: Place): unknown {
+  const plain = (v: unknown, where: string): void => {
+    if (v === null || typeof v === "string" || typeof v === "boolean") return;
+    if (typeof v === "number" && Number.isFinite(v)) return;
+    if (Array.isArray(v)) return v.forEach((x, i) => plain(x, `${where}[${i}]`));
+    if (typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
+      return Object.entries(v as JSON).forEach(([k, x]) => x === undefined || plain(x, `${where}.${k}`));
+    }
+    fail(`${what}: ${where} can't be written to the lock: options are strings, numbers, booleans, null, lists and plain objects`, at);
+  };
+  plain(options, "options");
+  return options;
+}
+
+/**
+ * This repo's modules: once everything is declared, repo() tells each one's
+ * declaration (through found) its path from the declaring file (from).
+ */
+const modules: { what: string; module: () => Promise<unknown>; at: Place; from: Place; found: (path: string) => void }[] = [];
+
+/** Every call of a script with options, which repo() checks with the script's rules. */
+const calls: { what: string; rules: () => Promise<Rules<any>>; options: unknown; at: Place }[] = [];
+/** The rules files: compile runs them, so they're sources of the lock. */
+const ruleFiles: string[] = [];
+
+/** Checks every call's options. After findModules(), so each import here is a real one. */
+async function checkCalls() {
+  for (const { what, rules, options, at } of calls) {
+    const { validate } = await rules().catch((error) => fail(`${what}: its rules couldn't be loaded: ${(error as Error)?.message ?? error}`, at));
+    if (typeof validate !== "function") fail(`${what}: its rules export no validate()`, at);
+    const wrong = validate(options);
+    if (wrong) fail(`${what}: ${wrong}`, at);
+  }
+}
+
+/** The files import() asked for while a script's module is being found; undefined the rest of the time. */
+let imported: string[] | undefined;
+
+/** While `imported` is a list, an import is only noted: the importer gets an empty module, and nothing runs. */
+function noteImports() {
+  Bun.plugin({
+    name: "loadout modules",
+    setup(build) {
+      build.onResolve({ filter: /.*/ }, ({ path, importer }) => {
+        if (!imported) return undefined;
+        imported.push(/^\.\.?\//.test(path) ? resolve(dirname(importer), path) : path);
+        return { path, namespace: "loadout-module" };
+      });
+      build.onLoad({ filter: /.*/, namespace: "loadout-module" }, () => ({ contents: "export {}", loader: "ts" }));
+    },
+  });
+}
+
+/** Finds every module's path: what its `module` imports, without running it. */
+async function findModules() {
+  if (modules.length) noteImports();
+  for (const { what, module, at, from, found } of modules) {
+    imported = [];
+    try {
+      await module();
+    } catch (error) {
+      fail(`${what}: module failed while its import was looked up: ${(error as Error)?.message ?? error}`, at);
+    }
+    const files = imported;
+    imported = undefined;
+    const path = files[0] ?? "";
+    if (files.length !== 1 || !path.startsWith("/") || /[\s']/.test(path)) {
+      fail(`${what}: module imports one file of the repo: () => import("./x.ts"), a relative path without spaces or quotes`, at);
+    }
+    found(relative(dirname(from.file), path));
+  }
+}
+
+export function script<Options = undefined>(
+  name: string,
+  spec: ModuleScriptSpec<Options>,
+): Script<undefined extends Options ? [options?: Options] : [options: Options]>;
+export function script(name: string, spec: PlainModuleScriptSpec): Script<[]>;
+export function script(name: string, spec: ScriptSpec): Script<[]>;
+export function script(name: string, spec: ScriptSpec & { module?: () => Promise<unknown>; rules?: () => Promise<Rules<any>> }): Script {
   const at = caller();
   const what = `script '${name}'`;
+  onlyKnown(what, spec, scriptSettings, at);
   const origin = originOf(at.file);
-  conflict(what, spec, ["setupOnly", "maintainOnly"], at);
-  if (spec.later !== undefined && spec.maintainOnly) fail(`${what}: later orders a script within setup-new-machine, which a maintainOnly script isn't part of: drop one`, at);
+  conflict(what, spec, ["setupOnly", "notDuringSetup"], at);
+  if (spec.canWait !== undefined && spec.notDuringSetup) fail(`${what}: canWait orders a script within setup-new-machine, which a notDuringSetup script isn't part of: drop one`, at);
+  const { module, rules } = spec;
+  if (rules !== undefined && module === undefined) fail(`${what}: rules are a module's: give it one`, at);
+  for (const other of ["runCommand", "checkCommand"]) conflict(what, spec, ["module", other], at);
   const step = stepJSON(what, spec, origin, at);
-  const variants: JSON = {};
-  for (const [v, s] of Object.entries(spec.variants ?? {})) {
-    if ((s as JSON).transitional) fail(`${what}: transitional goes on the script, not on its '${v}' variant`, at);
-    variants[v] = stepJSON(`${what} as '${v}'`, s, origin, at);
-    spare(`${what} as '${v}'`, s.spare, at);
-  }
-  if (spec.transitional) {
-    const checkless = Object.keys(variants).length ? Object.values(variants).some((v) => !(v as JSON).check) : !step.check;
-    if (checkless) fail(`${what} is transitional, so it needs a check: it's done when the check passes`, at);
+  if (spec.deleteOnceDone) {
+    if (!step.check && !module) fail(`${what} sets deleteOnceDone, so it needs a check: it's done when the check passes`, at);
     if (ownFile(at.file) && !transitional.includes(name)) transitional.push(name);
   }
-  spare(what, spec.spare, at);
+  spare(what, spec.keepUnused, at);
   const { origin: _o, ...rest } = step;
-  declare(draft.scripts, "script", name, at, clean({
+  const value = clean({
     description: spec.description,
     ...rest,
-    modes: spec.setupOnly ? ["setup"] : spec.maintainOnly ? ["maintain"] : undefined,
+    modes: spec.setupOnly ? ["setup"] : spec.notDuringSetup ? ["maintain"] : undefined,
     sudo: spec.needsSudo,
-    later: reason(what, spec.later, at),
-    variants,
+    later: reason(what, spec.canWait, at),
     origin: origin || undefined,
-  }));
-  const oracles: [string, JSON][] = [];
-  if (spec.updatesManagedBy !== undefined) {
-    const s = runScript(spec.updatesManagedBy);
-    oracles.push([name, { command: s, upgrade: `${s} update {item}` }]);
+  });
+  declare(draft.scripts, "script", name, at, value);
+  if (module !== undefined && ownFile(at.file)) {
+    const found = (path: string) => Object.assign(value, { module: path });
+    modules.push({ what, module, at, from: at, found });
   }
-  for (const o of spec.outdated ?? []) oracles.push([o.name ?? name, clean({ command: o.command, upgrade: o.upgrade, sudo: o.needsSudo })]);
-  for (const [n, o] of oracles) declare(draft.outdated, "outdated source", n, at, { ...o, ...(origin ? { origin } : {}) });
-  return callable({ kind: "script" as const, name });
+  if (rules !== undefined && ownFile(at.file)) {
+    const found = (path: string) => {
+      value.rules = path;
+      // One that isn't there is assembly's to refuse, by its path.
+      const full = resolve(dirname(at.file), path);
+      if (existsSync(full)) ruleFiles.push(full);
+    };
+    modules.push({ what: `${what} rules`, module: rules, at, from: at, found });
+  }
+  const oracles: [string, JSON][] = [];
+  const sources = typeof spec.updates === "function" ? { [name]: spec.updates } : (spec.updates ?? {});
+  for (const [n, source] of Object.entries(sources)) {
+    const oracle: JSON = { command: "" };
+    oracles.push([n, oracle]);
+    if (!ownFile(at.file)) continue;
+    const found = (path: string) => Object.assign(oracle, { command: `module:${path} listOutdated`, upgrade: `module:${path} update {item}` });
+    modules.push({ what: `${what} updates '${n}'`, module: source, at, from: at, found });
+  }
+  for (const o of spec.outdated ?? []) oracles.push([o.name ?? name, clean({ command: o.command, upgrade: o.upgradeCommand, sudo: o.needsSudo })]);
+  for (const [n, o] of oracles) declare(draft.outdated, "outdated source", n, at, Object.assign(o, origin ? { origin } : {}));
+  return callable<Script>("script", name, ([options, ...rest], self) => {
+    const at = caller();
+    if (rest.length) fail(`${what} takes its options as one value`, at);
+    if (options === undefined) return { kind: "script-run", script: self };
+    if (module === undefined) fail(`${what} takes no options: only a module's script does`, at);
+    plainOptions(what, options, at);
+    if (rules === undefined) fail(`${what} takes options, so it needs rules: () => import("./.loadout/x.rules.ts")`, at);
+    calls.push({ what, rules, options, at });
+    return { kind: "script-run", script: self, options };
+  });
 }
 
 /** An outdated oracle of its own, outside any script. */
 export function outdated(name: string, oracle: Omit<Oracle, "name">) {
   const at = caller();
   const origin = originOf(at.file);
-  declare(draft.outdated, "outdated source", name, at, clean({ command: oracle.command, upgrade: oracle.upgrade, sudo: oracle.needsSudo, origin: origin || undefined }));
+  declare(draft.outdated, "outdated source", name, at, clean({ command: oracle.command, upgrade: oracle.upgradeCommand, sudo: oracle.needsSudo, origin: origin || undefined }));
 }
 
 // ─── data ───────────────────────────────────────────────────────────────
-
-/** A data setting's kind and default, in the repo's data schema. */
-export const flag = (value: boolean) => value;
-export const text = (value: string) => value;
-export const number = (value: number) => value;
-export const whole = (value: number) => value;
-export const list = (value: string[]) => value;
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends readonly unknown[] ? T[K] : T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
 // ─── machines and profiles ──────────────────────────────────────────────
 
-type RunEntry = Script | ScriptArgs | ScriptVariant;
+/** A script as it is only when it can be called with nothing: one whose options are required has to be called. */
+type RunEntry = Script<[]> | ScriptRun;
 
 export type MachineSpec<Data> = {
   /** Profiles it's built on, in order; a machine overrides them. */
   extends?: Many<Profile>;
   /** Its settings, over the profiles' and the schema's defaults. */
   data?: DeepPartial<Data>;
-  /** Programs through their one variant, `variant(p, "x")`, or `via(installer, [...])`. */
-  install?: Many<Program | ProgramVariant | ViaGroup>;
-  /** Scripts it runs: as they are, called with arguments (`setupSsh("id_ed25519")`), or through `variant(...)`; lists are flattened. */
+  /** Programs by their only way to install, by a named one (`setupBrew("linux")`), or with an installer (`withBrew(just, vim)`). */
+  install?: Many<Program | ProgramVariant | ProgramsWith>;
+  /** Scripts it runs: as they are, called with options (`t2ChargeLimit({ limit: 90 })`); lists are flattened. */
   run?: Many<RunEntry>;
-  /** A profile kept though no machine extends it (machines can't be spare). */
-  spare?: string;
+  /** Why a profile stays although no machine extends it (a machine can't). */
+  keepUnused?: string;
 };
 
+const machineSettings: Record<keyof MachineSpec<unknown>, true> = { extends: true, data: true, install: true, run: true, keepUnused: true };
+
 function machineConfig<Data>(label: string, spec: MachineSpec<Data>, at: Place): JSON {
+  onlyKnown(label, spec, machineSettings, at);
   const pm: Record<string, string> = {};
   const map = (program: string, v: string) => {
     if (program in pm) fail(`${label} installs '${program}' twice`, at);
@@ -563,57 +831,55 @@ function machineConfig<Data>(label: string, spec: MachineSpec<Data>, at: Place):
   };
   for (const p of flat(spec.install)) {
     if (p.kind === "program-variant") map(p.program.name, p.variant);
-    else if (p.kind === "via-group") for (const program of p.programs) map(program.name, p.installer.name);
+    else if (p.kind === "programs-with") for (const program of p.programs) map(program.name, p.installer.name);
     else {
       const keys = variantsOf.get(p.name) ?? [];
       if (keys.length === 1) map(p.name, keys[0]);
       else if (keys.length === 0) fail(`${label} installs '${p.name}', which has no install variants`, at);
-      else fail(`${label} installs '${p.name}' without saying how (it has: ${keys.join(", ")}): use variant()`, at);
+      else fail(`${label} installs '${p.name}' without saying how (it has: ${keys.join(", ")}): call an installer with it (withBrew(…)) or it with one of its own ways`, at);
     }
   }
-  const scripts: string[] = [];
-  const scriptVariants: Record<string, string> = {};
+  const scripts: JSON[] = [];
   for (const entry of flat(spec.run)) {
-    const target = entry.kind === "script-args" ? entry.script : entry;
-    const s = target.kind === "script-variant" ? target.script : target;
-    if (target.kind === "script-variant") scriptVariants[s.name] = target.variant;
-    if (scripts.some((e) => e.split(" ")[0] === s.name)) fail(`${label} runs '${s.name}' twice`, at);
-    scripts.push([s.name, ...(entry.kind === "script-args" ? entry.args : [])].join(" "));
+    const s = entry.kind === "script-run" ? entry.script : entry;
+    if (scripts.some((e) => e.name === s.name)) fail(`${label} runs '${s.name}' twice`, at);
+    const run: JSON = { name: s.name };
+    if (entry.kind === "script-run" && entry.options !== undefined) run.options = entry.options;
+    scripts.push(run);
   }
   return clean({
     extends: spec.extends && flat(spec.extends).map((p) => p.name),
     pm,
     scripts,
-    "script-variants": scriptVariants,
     data: spec.data as JSON | undefined,
   });
 }
 
 export function profile<Data = Record<string, unknown>>(name: string, spec: MachineSpec<Data>): Profile {
   const at = caller();
-  spare(`profile '${name}'`, spec.spare, at);
+  spare(`profile '${name}'`, spec.keepUnused, at);
   declare(draft.profiles, "profile", name, at, machineConfig(`profile '${name}'`, spec, at));
   return { kind: "profile", name };
 }
 
-export function machine<Data = Record<string, unknown>>(name: string, spec: Omit<MachineSpec<Data>, "spare">) {
+export function machine<Data = Record<string, unknown>>(name: string, spec: Omit<MachineSpec<Data>, "keepUnused">) {
   const at = caller();
-  if ((spec as JSON).spare !== undefined) fail(`machine '${name}' is marked spare, but only a profile can be: a machine is used by being declared`, at);
+  if ((spec as JSON).keepUnused !== undefined) fail(`machine '${name}' sets keepUnused, but only a profile can: a machine is used by being declared`, at);
   declare(draft.machines, "machine", name, at, machineConfig(`machine '${name}'`, spec, at));
 }
 
 // ─── the repo ───────────────────────────────────────────────────────────
 
-const repoSettings = ["name", "state", "configs", "minToolVersion", "data", "parent"];
+const repoSettings = ["name", "stateFolder", "dotfiles", "minLoadoutVersion", "data", "parent"];
 
 export type RepoSpec<Data> = {
   name: string;
   /** The folder each machine's state is written to. */
-  state: string;
+  stateFolder: string;
   /** The dotfiles folder (chezmoi's source), when the repo holds them. */
-  configs?: string;
+  dotfiles?: string;
   /** The oldest loadout that may read this repo. */
-  minToolVersion?: string;
+  minLoadoutVersion?: string;
   /** Every per-machine setting, with its default (a child repo's are its parent's). */
   data?: Data;
   /** The repo this one builds on (a child repo): its checkout, `~/…`, absolute, or relative to this one. */
@@ -658,7 +924,9 @@ function sourcesFrom(entries: string[]): string[] {
   const walk = (f: string) => {
     if (seen.has(f)) return;
     seen.add(f);
-    for (const { path } of transpiler.scanImports(readFileSync(f, "utf8"))) {
+    for (const { path, kind } of transpiler.scanImports(readFileSync(f, "utf8"))) {
+      // A script's module isn't part of the manifest.
+      if (kind === "dynamic-import") continue;
       if (sdkModules.includes(path)) continue;
       let resolved: string;
       try {
@@ -679,13 +947,18 @@ const entries = (m: Map<string, Entry>) => (m.size ? Object.fromEntries([...m].m
  * The repo itself: the last thing loadout.ts does, once its imports have
  * declared everything. Under `loadout compile` it prints the draft.
  */
-export function repo<Data>(spec: RepoSpec<Data>) {
+export function repo<Data>(spec: RepoSpec<Data>): void {
   const unknown = Object.keys(spec).filter((k) => !repoSettings.includes(k));
   if (unknown.length) fail(`repo has no setting '${unknown[0]}' (its settings: ${repoSettings.join(", ")})`);
-  if (!process.env.LOADOUT_COMPILE) return;
+  if (process.env.LOADOUT_COMPILE) void printDraft(spec);
+}
+
+async function printDraft<Data>(spec: RepoSpec<Data>) {
+  await findModules();
+  await checkCalls();
   const manifest = clean({
-    meta: clean({ name: spec.name, "min-tool-version": spec.minToolVersion }),
-    layout: clean({ state: spec.state, configs: spec.configs, sources: sourcesFrom([Bun.main, ...included]) }),
+    meta: clean({ name: spec.name, "min-tool-version": spec.minLoadoutVersion }),
+    layout: clean({ state: spec.stateFolder, configs: spec.dotfiles, sources: sourcesFrom([Bun.main, ...included, ...ruleFiles]) }),
     installers: entries(draft.installers),
     programs: entries(draft.programs),
     scripts: entries(draft.scripts),

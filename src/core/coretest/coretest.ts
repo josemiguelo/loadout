@@ -20,6 +20,7 @@ import {
   type OutdatedSource,
   type Program,
   type RepoLayout,
+  type ScriptRun,
   type ScriptStep,
   type VersionCheck,
 } from "../../model/index.ts";
@@ -95,6 +96,11 @@ export function custom(key: string, command: string): Map<string, InstallVariant
   return variants([key, newInstallVariant({ command })]);
 }
 
+/** runs is a machine's scripts, by name. */
+export function runs(...names: string[]): ScriptRun[] {
+  return names.map((name) => ({ name }));
+}
+
 /** pm is a machine's mapping from program, key pairs. */
 export function pm(...pairs: string[]): Map<string, string> {
   const out = new Map<string, string>();
@@ -117,9 +123,9 @@ export function example(): Manifest {
   return manifestOf((b) => {
     b.meta("example machines", "0.1.0");
     b.layout({ state: "state" });
-    b.installer("brew", { probe: "brew", install: "brew install {pkg}" });
-    b.installer("dnf", { probe: "dnf", install: "sudo dnf install -y {pkg}" });
-    b.installer("apt", { probe: "apt-get", install: "sudo apt-get install -y {pkg}" });
+    b.installer("brew", { probe: "brew", install: "brew install {packageName}" });
+    b.installer("dnf", { probe: "dnf", install: "sudo dnf install -y {packageName}" });
+    b.installer("apt", { probe: "apt-get", install: "sudo apt-get install -y {packageName}" });
     b.program("git", {
       description: "version control",
       install: via("brew", "dnf", "apt"),
@@ -139,7 +145,7 @@ export function example(): Manifest {
     });
     b.script("dotfiles", {
       description: "clone and link dotfiles",
-      file: "scripts/dotfiles.sh",
+      run: "file:scripts/dotfiles.sh",
       check: "test -d $HOME/.dotfiles",
       after: ["programs.git"],
     });

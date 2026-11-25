@@ -38,9 +38,9 @@ test("no output means up to date", async () => {
 test("outdated resolves through installer with pkg substitution", () => {
   const manifest = manifestOf((b) => {
     b.installer("dnf", {
-      install: "sudo dnf install -y {pkg}",
-      check: "rpm -q {pkg}",
-      outdated: "dnf -q check-update {pkg}",
+      install: "sudo dnf install -y {packageName}",
+      check: "rpm -q {packageName}",
+      outdated: "dnf -q check-update {packageName}",
       regex: "([0-9.]+)",
     });
     b.program("zlib-devel", { install: variants(["dnf", newInstallVariant({ pkg: "zlib-ng" })]) });
@@ -65,9 +65,9 @@ test("batch candidates parse pkg and candidate text", async () => {
 test("outdated-all resolves per installer and variant override wins", () => {
   const manifest = manifestOf((b) => {
     b.installer("dnf", {
-      install: "sudo dnf install -y {pkg}",
-      check: "rpm -q {pkg}",
-      outdated: "dnf -q check-update {pkg}",
+      install: "sudo dnf install -y {packageName}",
+      check: "rpm -q {packageName}",
+      outdated: "dnf -q check-update {packageName}",
       outdatedAll: "dnf -q check-update",
       regex: "([0-9.]+)",
     });
@@ -149,11 +149,11 @@ function installerOnly(installer: Partial<Installer>): () => unknown {
 }
 
 test("outdated-all without regex is rejected", async () => {
-  contains(await refused(ManifestException, installerOnly({ install: "install {pkg}", outdatedAll: "query" })), "outdated-all command but no regex");
+  contains(await refused(ManifestException, installerOnly({ install: "install {packageName}", outdatedAll: "query" })), "outdated-all command but no regex");
 });
 
 test("outdated without regex is rejected", async () => {
-  contains(await refused(ManifestException, installerOnly({ install: "install {pkg}", outdated: "query {pkg}" })), "outdated command but no regex");
+  contains(await refused(ManifestException, installerOnly({ install: "install {packageName}", outdated: "query {packageName}" })), "outdated command but no regex");
 });
 
 test("a program's path comes first for its outdated check", async () => {

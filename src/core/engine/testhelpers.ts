@@ -5,6 +5,7 @@ import type { SystemInfo } from "../coremodel/coremodel.ts";
 import { manifestOf, pm, variants, version } from "../coretest/coretest.ts";
 import { newCommandFrame } from "../exec/index.ts";
 import { type Manifest, newInstallVariant } from "../../model/index.ts";
+import { runs } from "../coretest/coretest.ts";
 
 export const repoFrame = newCommandFrame("/repo", undefined, undefined);
 
@@ -34,7 +35,7 @@ export function statusManifest(): Manifest {
     b.script("dotfiles", { run: "echo setup", check: "test -d $HOME/.dotfiles" });
     b.script("uncheckable", { run: "echo once" });
     b.script("not-opted-in", { run: "echo never", check: "true" });
-    b.machine("laptop", { pm: pm("git", "dnf"), scripts: ["dotfiles", "uncheckable"] });
+    b.machine("laptop", { pm: pm("git", "dnf"), scripts: runs("dotfiles", "uncheckable") });
   });
 }
 

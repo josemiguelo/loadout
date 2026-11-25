@@ -12,10 +12,10 @@ import {
 } from "../coremodel/coremodel.ts";
 import { type CommandFrame, line, type ProcessRunner, success } from "../exec/index.ts";
 import { nowIso } from "../platform/platform.ts";
-import { checkFor, compareStrings, isBlank, type Manifest, scriptArgs, shellLine, sortedStrings, type VersionCheck } from "../../model/index.ts";
+import { checkFor, compareStrings, isBlank, type Manifest, scriptOptions, shellLine, sortedStrings, type VersionCheck } from "../../model/index.ts";
 import { VERSION } from "../../version.ts";
 import type { ConfigEngine } from "./configengine.ts";
-import { withArgs } from "./scriptrunner.ts";
+import { scriptCheck } from "./scriptrunner.ts";
 import { lines } from "./text.ts";
 import { limiter, parallelism, type VersionChecker } from "./versionchecker.ts";
 
@@ -192,14 +192,14 @@ export class StatusEngine {
     const observed: ScriptObservation[] = [];
     const checks: Promise<void>[] = [];
     const gate = limiter(parallelism);
-    for (const [name, args] of config !== undefined ? scriptArgs(config) : new Map<string, string>()) {
+    for (const [name, options] of config !== undefined ? scriptOptions(config) : new Map<string, string>()) {
       const step = manifest.scripts.get(name);
       if (step === undefined) continue;
       let history = scriptRuns.get(name);
       if (history === undefined && previous !== undefined) history = previous.scripts.get(name);
       const o: ScriptObservation = { name };
-      if (step.check !== undefined) {
-        const check = withArgs(step.check, args, step.path);
+      const check = scriptCheck(step, options);
+      if (check !== undefined) {
         observed.push(o);
         checks.push(
           gate(async () => {

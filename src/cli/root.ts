@@ -19,6 +19,7 @@ import { newInitCmd } from "./init.ts";
 import { newInstallCmd } from "./install.ts";
 import { newInstallersCmd } from "./installers.ts";
 import { newOutdatedCmd } from "./outdated.ts";
+import { newCheckCmd } from "./check.ts";
 import { newRunCmd } from "./run.ts";
 import { newSelfUpgradeCmd } from "./selfupgrade.ts";
 import { newSetupCmd } from "./setup.ts";
@@ -97,6 +98,7 @@ export function newRoot(): Command {
     newInstallCmd(),
     newOutdatedCmd(),
     newRunCmd(),
+    newCheckCmd(),
     newApplyCmd(),
     newDiffCmd(),
     newSyncCmd(),

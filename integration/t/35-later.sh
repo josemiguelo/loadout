@@ -7,33 +7,33 @@
 later_repo() {
     ts_root "$1" <<'TS'
 const coreProg = program("core-prog", {
-  install: [
-    custom("manual", {
-      command: "echo core-prog >> order.log && touch core-prog.done",
-      present: "test -f core-prog.done",
+  canBeInstalled: [
+    withCustomSteps("manual", {
+      installCommand: "echo core-prog >> order.log && touch core-prog.done",
+      isInstalled: "test -f core-prog.done",
     }),
   ],
 });
 
 const laterProg = program("later-prog", {
-  later: "a big download",
-  install: [
-    custom("manual", {
-      command: "echo later-prog >> order.log && touch later-prog.done",
-      present: "test -f later-prog.done",
+  canWait: "a big download",
+  canBeInstalled: [
+    withCustomSteps("manual", {
+      installCommand: "echo later-prog >> order.log && touch later-prog.done",
+      isInstalled: "test -f later-prog.done",
     }),
   ],
 });
 
 const coreScript = script("core-script", {
-  run: "echo core-script >> order.log && touch core-script.done",
-  check: "test -f core-script.done",
+  runCommand: "echo core-script >> order.log && touch core-script.done",
+  checkCommand: "test -f core-script.done",
 });
 
 const laterScript = script("later-script", {
-  later: "gigabytes of models",
-  run: "echo later-script >> order.log && touch later-script.done",
-  check: "test -f later-script.done",
+  canWait: "gigabytes of models",
+  runCommand: "echo later-script >> order.log && touch later-script.done",
+  checkCommand: "test -f later-script.done",
   runAfter: [coreScript],
 });
 
@@ -83,13 +83,13 @@ ok "running setup again finishes what the later phase left"
 # --- a later program whose core dependency failed is skipped ---------------
 ts_root dep <<'TS'
 const base = program("base", {
-  install: [custom("manual", { command: "false", present: "test -f base.done" })],
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false", isInstalled: "test -f base.done" })],
 });
 
 const big = program("big", {
-  later: "large",
+  canWait: "large",
   dependsOn: [base],
-  install: [custom("manual", { command: "touch big.done", present: "test -f big.done" })],
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "touch big.done", isInstalled: "test -f big.done" })],
 });
 
 machine("m1", { install: [base, big] });
@@ -107,11 +107,11 @@ ok "explain shows why a step is later"
 
 ts_root bad <<'TS'
 const slow = program("slow", {
-  later: "slow",
-  install: [custom("manual", { command: "true", present: "true" })],
+  canWait: "slow",
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "true", isInstalled: "true" })],
 });
 
-const eager = script("eager", { run: "true", runAfter: [slow] });
+const eager = script("eager", { runCommand: "true", runAfter: [slow] });
 
 machine("m1", { install: [slow], run: [eager] });
 TS

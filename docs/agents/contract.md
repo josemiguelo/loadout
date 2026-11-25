@@ -4,7 +4,7 @@ Explicit user decisions; don't "improve" them away.
 
 1. **No package-manager auto-detection, no `--pm` flag or env override.**
    The only source of variant choice is the machine and the profiles it
-   extends (`via(dnf, [curl])` in its `install` names a program's variant
+   extends (`withDnf(curl)` in its `install` names a program's variant
    key).
 2. **Mapping = membership + strict fail-fast resolution.** A program a
    machine doesn't install is not in its loadout: converge skips it, status
@@ -13,10 +13,9 @@ Explicit user decisions; don't "improve" them away.
      profile, or one `machines.loadout.ts`): `profile("name", { … })` and
      `machine("hostname", { … })`, each with two verbs. `install: [...]`
      takes programs with exactly ONE variant (more is a compile error
-     naming them: no choosing for you), named variants (`variant(setupBrew,
-     "linux")`) and `via(installer, [programs…])`, which maps each program
+     naming them: no choosing for you), named variants (`setupBrew("linux")`) and `withBrew(programs…)`, which maps each program
      to that installer's variant, mixed. `run: [...]` opts scripts
-     in, `x` or with arguments `x("a")`; `variant(x, "arch")` picks a script variant. Lists of
+     in, `x` or with options `x({ … })`; Lists of
      references are flattened, so a shared list sits in either. A program
      installed twice or a script run twice in one machine is an error. A machine is named by its
      hostname, so the lock (and chezmoi templates reading it) find it; a
@@ -34,9 +33,8 @@ Explicit user decisions; don't "improve" them away.
      diffed or converged. No subtraction: a profile's entry is a promise
      every machine extending it keeps.
    - **`data`** is a typed schema: `repo({ data })` declares every key with
-     its default (`work: flag(false)`, a nested `kitty: { opacity:
-     number(0.85) }` for a table; `flag/text/number/whole/list` mark the
-     kinds). Its type (`typeof schema`) checks every `machine<Data>` and
+     its default (`work: false`, a nested `kitty: { opacity:
+     0.85 }` for a table; plain values: the default's type is the key's). Its type (`typeof schema`) checks every `machine<Data>` and
      `profile<Data>` in the editor, and assembly checks a machine's or
      profile's `data: { work: true }` against the defaults again (an
      unknown key, a wrong type or a table given a non-object is an error
@@ -49,10 +47,10 @@ Explicit user decisions; don't "improve" them away.
    executing anything if the machine isn't declared, an EXPLICITLY
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
-   `script` fallback. A variant with `provides: { flatpak: {} }` vouches for
+   `script` fallback. A variant with `addsToPath: { flatpak: true }` vouches for
    that binary to whatever installs AFTER it in the same plan (flatpak
    before every flatpak on Omarchy); one ordered after its dependents is
-   refused, naming the fix. `provides: { brew: { at: "/opt/homebrew/bin" } }`
+   refused, naming the fix. `addsToPath: { brew: "/opt/homebrew/bin" }`
    also says where it lands when a fresh shell doesn't have it on PATH:
    the probe counts as present there, and `ForMachine` records the mapped
    variants' folders in `toolPaths`, which `ResolveInstall`
@@ -75,15 +73,23 @@ Explicit user decisions; don't "improve" them away.
    loadout that last touched it. Nothing
    hand-edited goes in state, the lock or those; the tool never writes
    authored files, except `init` scaffolding.
-4. **Scripts: exactly one of `file` (path) or `run` (inline)**, per variant
-   when a script has variants. `run` and `check` take a string or a list of
+4. **Scripts: exactly one of `module` or `runCommand`**. A `module` is a TypeScript
+   module exporting `check(options)` and `install(options)`, run by
+   `core/bun`'s module runner, with the options as one JSON argument. One that
+   takes options has `rules: () => import("./x.rules.ts")`, a file exporting
+   `validate(options)`: compile runs it on every call (it's a source of the
+   lock) and the runner before `check` and `install`. The manifest names it `module: () =>
+   import("./x.ts")`: compile calls that with every import caught by a
+   plugin, so the path is Bun's own resolution of the import and the
+   module never runs at compile, nor is it a source of the lock. `updates` on a script
+   (`listOutdated`, `update(item)`) or a program (`newerVersion`, `update`) is a module the same way. A script in any other language is
+   `runCommand: runFile("x.sh")`. `runCommand` and `checkCommand` take a string or a list of
    commands, joined with `&&` (allOf); one holding `||` or `;` is grouped in
    `{ …; }` first, so the join can't change what it means (a single string
    goes through the same rule). Variant commands, installer patterns,
    oracles, `outdated` commands (program and custom source) and all check
-   commands may name a repo script: `runScript("x.sh args…")` (stored with
-   the `file:` prefix; `installedBy: "x.sh"` for a variant's install, and
-   `managedBy`, `updatesManagedBy` and a script's `file` imply it), so a
+   commands may name a repo script: `runFile("x.sh", "args…")` (stored with
+   the `file:` prefix), so a
    manifest never writes `file:` itself. Every path is relative to the
    directory of the file that declared it (its `origin`; "" = the repo
    root, also for built-in installers): a declaration's origin is its
@@ -96,17 +102,16 @@ Explicit user decisions; don't "improve" them away.
    after the first space are arguments, so script paths can't contain
    spaces. A file runs like an executable (`model.fileLine`): with the
    interpreter its `#!` line names (`#!/usr/bin/env bun`), else `sh`; a
-   script in TypeScript can speak loadout's protocols through
-   `"loadout/script"` (`main`, `run`, `oracle`, `programOracle`, `env`),
-   never required. The
+   command in TypeScript can use `"loadout/script"` (`runStep`, `env`), never
+   required. The
    line is read by the shell when the command runs, never by loadout, and
    the file needn't be executable; what's shown to the user is the script
    and its arguments (`model.shownLine`), not that launcher. Every script
-   command and custom `outdated` source gets the machine's `provides … at`
+   command and custom `outdated` source gets the machine's `addsToPath`
    folders first on PATH (`ScriptStep.path`, set by `ForMachine`), so a
    script's interpreter is found where its program put it (bun from brew
    on a fresh Mac) before any shell profile adds that folder. A variant's param value
-   given as `file("repos/x.repo")` (`params: { repofile: file(…) }`) is a
+   given as `repoFile("repos/x.repo")` (`withDnfRepo({ repofile: repoFile(…) })`) is a
    path too, relative to the program's directory and validated the same
    way; it is substituted as `$LOADOUT_REPO/<repo path>` because the
    installer pattern it lands in runs in the installer's directory.
@@ -124,7 +129,7 @@ Explicit user decisions; don't "improve" them away.
    parent's checkout with the parent's `LOADOUT_REPO`/`LOADOUT_CONFIGS`,
    and every command sees `LOADOUT_PARENT` (the parent's root).
    Every one of them gets loadout's bun folder first on PATH, and in
-   `LOADOUT_BUN_DIR`, which `model.shellLine` puts ahead of the `provides
+   `LOADOUT_BUN_DIR`, which `model.shellLine` puts ahead of the `addsToPath
    … at` folders (brew's bin may hold a bun of its own);
    `model.shownLine` leaves it out. The folder holds a `bun` wrapper
    (`BUN_BE_BUN=1 exec <loadout> "$@"`): loadout is the bun its scripts
@@ -145,13 +150,12 @@ Explicit user decisions; don't "improve" them away.
    transitively. A program's dependencies (`dependenciesOf`) are
    its own `depends_on`, the mapped variant's (a COPR's dnf-plugins-core
    never lands on a pacman machine), and what the variant's INSTALLER
-   `requires` of everything it installs (`requires(brew,
-   [setupBrew])`; the required program is exempt from its own
+   `requires` of everything it installs (`withBrew.needs(setupBrew)`; the required program is exempt from its own
    installer's rule). Validation and cycle detection count every variant's
    edges. An install whose dependency failed (or was itself skipped) is
    skipped, not tried (`InstallOutcome.skippedFor`), and counts as a
    failure: the run says what it skipped and why, and exits 1.
-   **Phases**: `later = "why"` on a program or script (the declaration, so
+   **Phases**: `canWait: "why"` on a program or script (the declaration, so
    every machine; never a variant) puts it in setup-new-machine's later
    phase, after every core program and script, so a slow, optional step
    never holds up the rest (the prompts a setup asks are all in core
@@ -164,7 +168,7 @@ Explicit user decisions; don't "improve" them away.
    program) belongs in the later phase. A later install whose
    dependency failed in the core phase is skipped
    (`InstallEngine.executeAfter`). `--skip-later` stops after the core
-   phase; `install`, `run` and `status` ignore phases. `later` on a
+   phase; `install`, `run` and `status` ignore phases. `canWait` on a
    `maintain_only` script is refused: it isn't part of setup.
 7. **Script status is observation**: every refresh re-runs each `check`
    (exit 0 => `done`, else `pending`), even right after a run; `lastRun`/
@@ -182,7 +186,7 @@ Explicit user decisions; don't "improve" them away.
    offered for install. Ceiling: a pipeline check (`tool | grep …`) exits
    with the LAST command's code and hides the tool's absence; write
    `x=$(tool …) && printf '%s\n' "$x" | grep …` so the failure propagates.
-   A **yes/no check** (`present: "…"`, `managedBy` without a `regex`)
+   A **yes/no check** (`isInstalled: "…"`, a `module` without a `versionRegex`)
    has no regex: exit 0 is installed with no version recorded, so a setup
    step that is a program (setup-dnf, a flatpak remote) needs no fake
    version string.
@@ -212,28 +216,22 @@ Explicit user decisions; don't "improve" them away.
     with nothing of the caller's environment but PATH and HOME, so its
     output doesn't depend on who compiles it; the rest is the author's
     discipline, which bun can't enforce.
-12. **Scripts are opt-in per machine**: `run: [x, y("a")]` in a
-    machine or profile. Each argument is one or more words;
-    the machine's entries are "name args…", parsed by `ScriptEntry` (args
-    re-joined with single spaces because they're pasted into a shell
-    command line, where a newline would run the next line as a command).
+12. **Scripts are opt-in per machine**: `run: [x, y({ … })]` in a
+    machine or profile. A run is its script's name and, for a module, its `options` (any
+    JSON); the shell text is made, quoted, only when it runs
+    (`model.optionsWord`).
     Only opted-in scripts converge and are observed; `run` errors on others.
-    Args become positional params for the file script AND its check (`set
-    --`, see engine.withArgs); `managedBy: "x.sh"` checks with `x.sh
-    check "$@"`, so a managing script gets them in both modes. Args on an
-    inline script are an error. No implicit script application, no OS or
+    A module's `check` and `install` get the options; a `run` script takes
+    none. No implicit script application, no OS or
     bootc detection deciding membership (the
     machine's opt-in decides). A script's modes (`setupOnly: true`,
-    `maintainOnly: true`, default both) scope EXECUTION only:
+    `notDuringSetup: true`, default both) scope EXECUTION only:
     setup-new-machine converges setup-mode scripts, the home screen's
     scripts picker lists maintain-mode ones; status observes all opted-in
-    scripts and `run` ignores modes. A script may declare `variants: {
-    name: { … } }` (each its own file/run, check, runAfter; description,
-    modes and needsSudo shared); a machine running it must pick one, and engines
-    only see the picked one (`ForMachine`).
+    scripts and `run` ignores modes.
 13. **Installers own mechanics; variants refine them.** An installer
-    (`probe`, `install`, `check`, `regex`, `outdated`, `outdatedAll`,
-    `upgrade`, `needsSudo`, `params`; `{pkg}` substituted) defines a
+    (`neededBinary`, `installCommand`, `checkCommand`, `versionRegex`, `outdatedCommand`, `allOutdatedCommand`,
+    `upgradeCommand`, `needsSudo`, `installerParams`; `{packageName}` substituted) defines a
     mechanism once, repo-unique. Loadout
     ships a library (`src/model/installerlibrary.ts`: dnf, dnf-repo,
     dnf-copr, brew, brew-cask, flatpak, pacman, omarchy, omarchy-aur with
@@ -242,42 +240,42 @@ Explicit user decisions; don't "improve" them away.
     assembly: a repo installer of the same name replaces the built-in
     outright, and
     `Manifest.builtinInstallers` records which survived so
-    `explain`/`installers` label `(built-in)` vs `(repo)`. `requires(x,
-    [programs…])` adds to any installer, built-ins included, without
+    `explain`/`installers` label `(built-in)` vs `(repo)`. `x.needs(programs…)` adds to any installer, built-ins included, without
     redefining it. Knowledge, never detection: nothing probes the machine
     to pick an installer.
-    A program lists its variants in `install: [...]`: an installer as it
-    is (`brew`), `via(brew, { pkg: "vim" })` for one configured where it's
-    named (`via(dnfCopr, { params: { copr: "x/y" } })`, `via(dnf, {
-    managedBy: "x.sh" })`), so a variant never reads like a command being
-    run, and `custom("linux", { … })`, the variant with no installer: a
-    command of its own (`custom({ … })` is named "custom", for a program
+    A program lists its variants in `canBeInstalled: [...]`: an installer as it
+    is (`withBrew`), `withBrew({ packageName: "vim" })` for one configured where it's
+    named (`withDnfCopr({ copr: "x/y" })`, `withDnf({
+    module: () => import("./x.ts") })`), so a variant never reads like a command being
+    run, and `withCustomSteps("linux", { … })`, the variant with no installer: a
+    command of its own (`withCustomSteps({ … })` is named "custom", for a program
     with one). Naming an installer twice is an error, so there is no hidden
     merge. Variants keep their order. Every field is optional and defaults from the installer;
-    `pkg` defaults to the program name. An installer may declare `params:
-    ["copr"]`: values a variant supplies (`params: { copr: … }`),
-    substituted like `{pkg}`. All declared, never inferred: a missing param
+    `pkg` defaults to the program name. An installer may declare `installerParams:
+    ["copr"]`: values a variant supplies (`withDnfCopr({ copr: … })`),
+    substituted like `{packageName}`. All declared, never inferred: a missing param
     or an undeclared one is an error, so an unsubstituted `{placeholder}`
     never reaches a shell.
     Resolution (`resolveInstall`/`CheckFor`, used by every
     engine/UI): command → installer install pattern (else error); check →
     variant check → installer check (else program `version`); probe →
     installer probe (else none); outdated → variant override, else
-    installer `outdatedAll` (one batch command per installer, per-program
+    installer `allOutdatedCommand` (one batch command per installer, per-program
     regex extracts; binaries that don't know it fall back to per-pkg), else
     installer per-pkg pattern, else no oracle (`outdated` skips and says
     so). These oracles' exit codes are always ignored. A program's
-    `path: [...]` puts directories first on PATH for its commands
+    `searchPath: [...]` puts directories first on PATH for its commands
     (`ShellLine`), so a check never needs `tool || $HOME/.local/bin/tool`.
     Repos may also declare custom `outdated` sources: on the script they're
     about (`outdated: [{ … }]` in `script()`, named after it unless it
     says `name`) or alone (`outdated("name", { command: … })`). The usual
-    form is `updatesManagedBy: "x.sh"`: `x.sh` lists, `x.sh update
-    <item>` updates one row (on a program, `x.sh` prints the newest version
-    and `x.sh update` updates it); `command`/`upgrade` is the long form for
+    form is `updates: () => import("./x.ts")`, whose `listOutdated()` lists and
+    `update(item)` updates one row (on a program, `newerVersion()` gives the newest
+    version and `update()` updates it; a script with several sources names
+    each: `updates: { name: () => import(…) }`); `command`/`upgrade` is the long form for
     anything else, a read-only source included (`<item> <current>
     <candidate> [note…]` lines; a URL in the note becomes the row's link,
-    opened with `K`; `runScript(…)` allowed, repo-unique). Unlike
+    opened with `K`; `runFile(…)` allowed, repo-unique). Unlike
     installer oracles, a source's exit code is NOT ignored: non-zero
     surfaces as `outdated source [name] failed: ...`, so a crashing oracle
     can't hide updates.
@@ -311,7 +309,7 @@ Explicit user decisions; don't "improve" them away.
     newer one is refused by name before anything else is read) and the
     `toolVersion` that wrote it: a binary refuses a lock from a newer MINOR
     (patch releases never change what a lock means), naming
-    `self-upgrade`. `meta minToolVersion` (`repo({ minToolVersion: … })`)
+    `self-upgrade`. `minLoadoutVersion` (`repo({ minLoadoutVersion: … })`)
     is a floor the repo declares on top.
     New lock fields are additive with defaults. State files with
     `schemaVersion > coremodel.schemaVersion` are skipped with a warning
@@ -330,7 +328,7 @@ Explicit user decisions; don't "improve" them away.
     installer this machine doesn't map, so a repo mapping nothing to brew
     can't sweep it.
     Custom `outdated` sources upgrade per item: their update command
-    (`x.sh update <item>` under `updatesManagedBy`, or `upgrade: "…
+    (`update(item)` of its `updates` module, or `upgrade: "…
     {item}"`) runs once per row (`upgrade --item <source>/<name>`),
     since items (a pin, a clone) are independent and one failure shouldn't
     stop the rest; a source without it is read-only (`[–]`). Afterwards
@@ -461,7 +459,7 @@ Explicit user decisions; don't "improve" them away.
       and merges them (`assemble.draftOver`): the
       parent's machines, meta and layout stay out; a name both declare, a
       machine in both and a child data schema are errors; the floor is the
-      higher `minToolVersion`, and the bun is the child's, else the
+      higher `minLoadoutVersion`, and the bun is the child's, else the
       parent's. A parent's mistakes are reported prefixed
       `parent <name>: `. Unused and transitional warnings are the child's
       own declarations' only.

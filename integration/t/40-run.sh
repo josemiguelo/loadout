@@ -32,11 +32,10 @@ echo "$OUT" | grep -q "is not run on machine 'm2'" || fail "not-enabled error me
 grep -q '"marker"' repo/machines/state/m2.json && fail "m2 must not observe un-opted script" || true
 ok "scripts are opt-in per machine"
 
-# Arguments flow to file scripts and their checks as positional params. The
+# A script file and its check run as declared. The
 # scripts sit in their file's folder, so they run (and write) there.
 mkdir -p repo/maintenance/args repo/maintenance/greet
-printf '#!/bin/sh\necho "$1" > arg-marker.txt\n' > repo/maintenance/args/argscript.sh
-printf '#!/bin/sh\nprintf "%%s\\n" "$#:$*" > argcount.txt\n' > repo/maintenance/args/argcount.sh
+printf '#!/bin/sh\nprintf "%%s|" "$@" > arg-marker.txt\n' > repo/maintenance/args/argscript.sh
 printf 'hello from greet\n' > repo/maintenance/greet/message.txt
 printf '#!/bin/sh\ncat message.txt > greeted.txt\nprintf "%%s|%%s|%%s|%%s\\n" "$LOADOUT_REPO" "$LOADOUT_FRAGMENT_DIR" "$LOADOUT_MACHINE" "$LOADOUT_OS" > env.txt\n' > repo/maintenance/greet/greet.sh
 ts_file repo/maintenance/args/args.loadout.ts <<'TS'
@@ -44,44 +43,36 @@ import { git } from "../../root.loadout.ts";
 import { greet } from "../greet/greet.loadout.ts";
 
 const argscript = script("argscript", {
-  file: "argscript.sh",
-  check: "test -f arg-marker.txt && grep -qx $1 arg-marker.txt",
+  runCommand: runFile("argscript.sh", "a  b", "it's", "$(touch pwned)"),
+  checkCommand: "test -f arg-marker.txt",
 });
 
-const argcount = script("argcount", { file: "argcount.sh" });
 
 machine("m3", {
-  install: [variant(git, "manual")],
+  install: [git("manual")],
   run: [
-    argscript("fedora"),
-    // A long entry may span lines: its lines are arguments, never commands.
-    // If the newline reached the shell, `touch pwned.txt` would run.
-    argcount("one\ntouch pwned.txt"),
+    argscript,
   ],
 });
 
 machine("m5", {
-  install: [variant(git, "manual")],
+  install: [git("manual")],
   run: [greet],
 });
 TS
 ts_file repo/maintenance/greet/greet.loadout.ts <<'TS'
 export const greet = script("greet", {
-  file: "greet.sh",
-  check: "test -f greeted.txt",
+  runCommand: runFile("greet.sh"),
+  checkCommand: "test -f greeted.txt",
 });
 TS
 compile_repo repo
-"$BIN" --repo repo --machine m3 run argscript >/dev/null || fail "run with args exits 0"
-grep -qx "fedora" repo/maintenance/args/arg-marker.txt || fail "argument reached the script"
+"$BIN" --repo repo --machine m3 run argscript >/dev/null || fail "run exits 0"
+[ "$(cat repo/maintenance/args/arg-marker.txt)" = "a  b|it's|\$(touch pwned)|" ] || fail "each argument arrives as one word: $(cat repo/maintenance/args/arg-marker.txt)"
+[ -e repo/maintenance/args/pwned ] && fail "an argument must never run as a command" || true
 OUT=$("$BIN" --repo repo --machine m3 run argscript)
-echo "$OUT" | grep -q "already done" || fail "check with args should pass after run"
-ok "script arguments reach the file script and its check"
-
-"$BIN" --repo repo --machine m3 run argcount >/dev/null || fail "run with a multi-line argument exits 0"
-grep -qx "3:one touch pwned.txt" repo/maintenance/args/argcount.txt || fail "a multi-line argument's lines arrive as arguments: $(cat repo/maintenance/args/argcount.txt)"
-[ -e repo/maintenance/args/pwned.txt ] && fail "a multi-line argument's line must never run as a command" || true
-ok "a multi-line script argument passes its lines as arguments"
+echo "$OUT" | grep -q "already done" || fail "its check should pass after run"
+ok "runFile() runs a file with its arguments as written, gated by its check"
 
 # A file's paths are relative to its folder, and its commands run there:
 # the script reads a sibling file with no $(dirname "$0").
@@ -105,18 +96,18 @@ printf '#!/bin/sh\necho "fakeinterp: $*" >> "$LOADOUT_FRAGMENT_DIR/ran.txt"\n[ "
 chmod +x "$TOOLS/loadout-test-interp"
 ts_file interp/maintenance/interp.loadout.ts <<TS
 export const interp = program("interp", {
-  install: [
-    custom({
-      command: "false",
-      present: "test -x $TOOLS/loadout-test-interp",
-      provides: { "loadout-test-interp": { at: "$TOOLS" } },
+  canBeInstalled: [
+    withCustomSteps({
+      installCommand: "false",
+      isInstalled: "test -x $TOOLS/loadout-test-interp",
+      addsToPath: { "loadout-test-interp": "$TOOLS" },
     }),
   ],
 });
 
-export const hashbang = script("hashbang", { managedBy: "hashbang.ts" });
+export const hashbang = script("hashbang", { runCommand: runFile("hashbang.ts"), checkCommand: runFile("hashbang.ts", "check") });
 
-export const plain = script("plain", { file: "plain.sh" });
+export const plain = script("plain", { runCommand: runFile("plain.sh") });
 TS
 printf '#!/usr/bin/env loadout-test-interp\nignored by sh\n' > interp/maintenance/hashbang.ts
 printf 'echo "sh: $0" > "$LOADOUT_FRAGMENT_DIR/plain-ran.txt"\n' > interp/maintenance/plain.sh

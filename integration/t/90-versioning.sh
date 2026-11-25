@@ -3,26 +3,26 @@
 
 ts_root verrepo <<'TS'
 program("git", {
-  version: "git --version",
-  regex: "git version ([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 TS
-repo_opt verrepo/loadout.ts 'minToolVersion: "999.0.0"'
+repo_opt verrepo/loadout.ts 'minLoadoutVersion: "999.0.0"'
 compile_repo verrepo
 OUT=$("$BIN" --repo verrepo status 2>&1 || true)
-echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "min-tool-version not enforced"
+echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "minLoadoutVersion not enforced"
 echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "refusal should point at loadout self-upgrade"
 "$BIN" --help | grep -q "self-upgrade" || fail "self-upgrade command should be registered"
-ok "a repo's min-tool-version blocks an outdated binary with recovery hint"
+ok "a repo's minLoadoutVersion blocks an outdated binary with recovery hint"
 
 # A lock compiled by a newer minor's loadout is refused the same way: it
 # may say what this binary would misread.
 ts_root verrepo <<'TS'
 const git = program("git", {
-  version: "git --version",
-  regex: "git version ([0-9.]+)",
-  install: [custom("manual", { command: "false" })],
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
 });
 
 machine("m1", { install: [git] });

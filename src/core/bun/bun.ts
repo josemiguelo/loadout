@@ -9,7 +9,7 @@
 // are loadout's own modules in every file it runs.
 
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { fileError, joinPath } from "../../model/index.ts";
+import { fileError, joinPath, moduleRunner } from "../../model/index.ts";
 import { envVar } from "../platform/platform.ts";
 // The SDKs' text, which bun inlines (`bun build --compile` too). TypeScript
 // types these imports as the modules themselves, which have no default.
@@ -76,6 +76,42 @@ export const preload =
   "});\n";
 
 /**
+ * runner is moduleRunner's text: `<module> <function> [argument…]` calls
+ * what the module exports by that name. check and install take a rules
+ * file and the options (JSON), and run only once its validate finds nothing
+ * wrong with them; update takes the item; check exits 0 when it's done and 1 when not, and
+ * listOutdated and newerVersion are printed as an outdated source's. A failure exits 1
+ * with one line saying why.
+ */
+export const runner = `import { resolve } from "node:path";
+import { fail, formatOutdatedItem, reason } from "loadout/script";
+
+const [file, name, argument, json] = process.argv.slice(2);
+try {
+  const call = (await import(resolve(file)))[name];
+  if (typeof call !== "function") throw new Error(file + " exports no " + name + "()");
+  if (name === "update") await call(argument);
+  else if (name === "listOutdated") for (const item of await call()) console.log(formatOutdatedItem(item));
+  else if (name === "newerVersion") {
+    const version = await call();
+    if (version) console.log(version);
+  } else {
+    const options = json === undefined ? undefined : JSON.parse(json);
+    if (options !== undefined) {
+      const { validate } = await import(resolve(argument));
+      if (typeof validate !== "function") throw new Error(argument + " exports no validate()");
+      const wrong = validate(options);
+      if (wrong) throw new Error(wrong);
+    }
+    const result = await call(options);
+    if (name === "check") process.exit(result ? 0 : 1);
+  }
+} catch (error) {
+  fail(reason(error));
+}
+`;
+
+/**
  * wrapper is the `bun` script that runs self (an executable's path) as the
  * bun CLI, with folder's preloadFile when it runs a file (`bun x.ts`, a
  * shebang's `bun /path/x.ts`, `bun run x.ts`). With $LOADOUT_BUN set, it
@@ -112,6 +148,7 @@ export function ensure(self: string = process.execPath): string {
 export function wrapperDir(self: string = process.execPath): string {
   const folder = home();
   put(folder, preloadFile, preload, 0o644);
+  put(folder, moduleRunner, runner, 0o644);
   put(folder, "bun", wrapper(self, folder), 0o755);
   return folder;
 }

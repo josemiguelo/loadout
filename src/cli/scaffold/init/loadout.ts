@@ -10,6 +10,6 @@ await include("programs/**/*.loadout.ts", "maintenance/**/*.loadout.ts", "machin
 
 repo({
   name: "my machines",
-  state: "machines/state",
+  stateFolder: "machines/state",
   data: schema,
 });

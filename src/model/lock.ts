@@ -31,7 +31,7 @@ export interface Lock {
 export const lockFileName = "loadout.lock.json";
 
 /** lockFormat is the lock layout this binary writes and reads. */
-export const lockFormat = 1;
+export const lockFormat = 2;
 
 /**
  * encodeLock is the lock's text: pretty-printed with a
@@ -95,6 +95,9 @@ function lockHeader(text: string, label: string): JSONObject {
   }
   if (format > lockFormat) {
     throw new ManifestException(`${label} was written by a newer loadout (lock format ${format}) — run: loadout self-upgrade`);
+  }
+  if (format < lockFormat) {
+    throw new ManifestException(`${label} was written by an older loadout (lock format ${format}) — run: loadout compile`);
   }
   return v;
 }

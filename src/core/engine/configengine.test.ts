@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { type ConfigState, configStateEqual, type MachineState, newMachineState } from "../coremodel/coremodel.ts";
-import { manifestOf, pm, via } from "../coretest/coretest.ts";
+import { manifestOf, pm, runs, via } from "../coretest/coretest.ts";
 import { exit, newRunner, type Runner, stderr, stdout } from "../exec/fakeexec/fakeexec.ts";
 import { mapOf } from "../../model/index.ts";
 import { type ConfigEngine, newConfigEngine, newSingleConfigEngine } from "./configengine.ts";
@@ -158,10 +158,10 @@ test("apply runs each source on its own targets, the parent's first", async () =
 // The refresh says once what couldn't answer: a tool its checks go through, and chezmoi.
 test("a refresh names the tools and configs that could not answer", async () => {
   const m = manifestOf((b) => {
-    b.installer("pm", { probe: "pm", install: "pm add {pkg}", check: "pm query {pkg}" });
+    b.installer("pm", { probe: "pm", install: "pm add {packageName}", check: "pm query {packageName}" });
     b.program("bat", { install: via("pm") });
     b.script("dotfiles", { run: "echo setup", check: "test -d $HOME/.dotfiles" });
-    b.machine("laptop", { pm: pm("bat", "pm"), scripts: ["dotfiles"] });
+    b.machine("laptop", { pm: pm("bat", "pm"), scripts: runs("dotfiles") });
   });
   const runner = newRunner();
   const checks = newVersionChecker(runner, repoFrame);

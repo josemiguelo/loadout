@@ -1,58 +1,58 @@
 # Installers supply the mechanics; outdated asks their oracles and any
 # custom outdated source; status reports script checks with detail.
 
-# --- {pkg} substitution in install + check, probe, via shorthand ---------
+# --- {packageName} substitution in install + check, probe, via shorthand ---------
 ts_root instrepo <<'TS'
 const fake = installer("fake", {
-  probe: "sh",
-  install: "echo installed-{pkg} > fake-install.txt",
-  check: "test -f fake-install.txt && echo mytool 1.0",
-  regex: "mytool ([0-9.]+)",
+  neededBinary: "sh",
+  installCommand: "echo installed-{packageName} > fake-install.txt",
+  checkCommand: "test -f fake-install.txt && echo mytool 1.0",
+  versionRegex: /mytool ([0-9.]+)/,
 });
 
-const mytool = program("mytool", { install: [fake] });
+const mytool = program("mytool", { canBeInstalled: [fake] });
 
 machine("m1", { install: [mytool] });
 TS
 compile_repo instrepo
 OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
-echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {pkg}"
+echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {packageName}"
 "$BIN" --repo instrepo --machine m1 setup-new-machine --yes >/dev/null || fail "installer-backed install exits 0"
 grep -q "installed-mytool" instrepo/fake-install.txt || fail "installer command ran"
 grep -q '"version": "1.0"' instrepo/machines/state/m1.json || fail "installer check observed the version"
-ok "installers supply install/check/probe mechanics via {pkg}"
+ok "installers supply install/check/probe mechanics via {packageName}"
 
 # --- outdated: each installer's oracle reports the remote candidate ------
 ts_root instrepo <<'TS'
 const fake = installer("fake", {
-  probe: "sh",
-  install: "echo installed-{pkg} > fake-install.txt",
-  check: "test -f fake-install.txt && echo mytool 1.0",
-  outdated: "echo 2.0",
-  regex: "([0-9][0-9.]*)",
+  neededBinary: "sh",
+  installCommand: "echo installed-{packageName} > fake-install.txt",
+  checkCommand: "test -f fake-install.txt && echo mytool 1.0",
+  outdatedCommand: "echo 2.0",
+  versionRegex: /([0-9][0-9.]*)/,
 });
 
 const fake2 = installer("fake2", {
-  probe: "sh",
-  install: "true",
-  check: "echo other 1.0",
-  outdated: "true",
-  regex: "([0-9][0-9.]*)",
+  neededBinary: "sh",
+  installCommand: "true",
+  checkCommand: "echo other 1.0",
+  outdatedCommand: "true",
+  versionRegex: /([0-9][0-9.]*)/,
 });
 
 const fake3 = installer("fake3", {
-  probe: "sh",
-  install: "true",
-  check: "echo batchtool 1.0",
-  outdatedAll: "printf 'batchtool 3.0\\nuptodate 1.0\\n'",
-  upgrade: runScript("upgrade-fake3.sh --all"),
-  regex: "([0-9][0-9.]*)",
+  neededBinary: "sh",
+  installCommand: "true",
+  checkCommand: "echo batchtool 1.0",
+  allOutdatedCommand: "printf 'batchtool 3.0\\nuptodate 1.0\\n'",
+  upgradeCommand: runFile("upgrade-fake3.sh", "--all"),
+  versionRegex: /([0-9][0-9.]*)/,
 });
 
-const mytool = program("mytool", { install: [fake] });
-const othertool = program("othertool", { install: [fake2] });
-const batchtool = program("batchtool", { install: [fake3] });
-const uptodate = program("uptodate", { install: [fake3] });
+const mytool = program("mytool", { canBeInstalled: [fake] });
+const othertool = program("othertool", { canBeInstalled: [fake2] });
+const batchtool = program("batchtool", { canBeInstalled: [fake3] });
+const uptodate = program("uptodate", { canBeInstalled: [fake3] });
 
 machine("m1", { install: [mytool, othertool, batchtool, uptodate] });
 TS
@@ -89,8 +89,8 @@ printf 'fooapp 1:1.2.0-1 -> 1:1.3.0-2\nnotmine 5.1-1 -> 5.2-1\n'
 SH
 chmod +x pacbin/pacman pacbin/checkupdates
 ts_file pacrepo/programs/pac.loadout.ts <<'TS'
-const fooapp = program("fooapp", { install: [pacman] });
-const barapp = program("barapp", { install: [pacman] });
+const fooapp = program("fooapp", { canBeInstalled: [withPacman] });
+const barapp = program("barapp", { canBeInstalled: [withPacman] });
 
 machine("m1", { install: [fooapp, barapp] });
 TS

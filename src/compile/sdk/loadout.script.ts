@@ -5,9 +5,8 @@
 // (`#!/usr/bin/env bun`, run with the bun loadout brings).
 //
 // It holds loadout's protocols, so a script speaks them as the binary that
-// runs it expects: a managed script's `check`/`install` (`main`), an
-// outdated oracle's rows and `update <item>` (`oracle`), a program's own
-// outdated check (`programOracle`), the LOADOUT_* environment (`env`); and
+// runs it expects: a command's step (`runStep`), an
+// updates module's rows (`OutdatedItem`), the LOADOUT_* environment (`env`); and
 // helpers that make commands as terse as sh's. Commands are Bun Shell's
 // $`…`: each ${value} is one argument, quoted for you, and a command that
 // fails throws, with its output.
@@ -55,33 +54,15 @@ function need(name: string): string {
 /** path in the repo loadout runs (`$LOADOUT_REPO`). */
 export const repoPath = (path: string) => join(env.repo, path);
 
-// ─── a managed script, and one with its check inline ───────────────────
+// ─── a script with its check inline ─────────────────────────────────────
 
 type Step = (...args: string[]) => Promise<unknown> | unknown;
 
 /**
- * A managed script (`managedBy: "x.ts"`): `check [args…]` exits 0 when it's
- * done, 1 when not (a check that throws isn't done, and says why);
- * `[install] [args…]` does it, and a failure exits 1 with its message. The
- * machine's arguments reach both.
- */
-export async function main(check: (...args: string[]) => Promise<boolean> | boolean, install: Step) {
-  const argv = Bun.argv.slice(2);
-  const mode = argv[0] === "check" || argv[0] === "install" ? argv.shift() : "install";
-  try {
-    if (mode === "check") process.exit((await check(...argv)) ? 0 : 1);
-    await install(...argv);
-  } catch (error) {
-    fail(reason(error));
-  }
-}
-
-/**
- * A script with no check of its own (a manifest's `file`, its check
- * inline): runs step with the arguments, and a failure exits 1 with its
+ * A script a manifest runs as a command (`runFile()`): runs step with the arguments, and a failure exits 1 with its
  * message.
  */
-export async function run(step: Step) {
+export async function runStep(step: Step) {
   try {
     await step(...Bun.argv.slice(2));
   } catch (error) {
@@ -96,53 +77,10 @@ export async function run(step: Step) {
  * `<item> <current> <candidate> [note…]`, and a URL at the end of the note
  * is the row's link (opened with `K` on the home screen).
  */
-export type Row = { item: string; current: string; candidate: string; note?: string; link?: string };
+export type OutdatedItem = { item: string; current: string; candidate: string; note?: string; link?: string };
 
 /** row as loadout reads it, one line. */
-export const formatRow = (row: Row) => [row.item, row.current, row.candidate, row.note, row.link].filter(Boolean).join(" ");
-
-/**
- * An outdated source (`updatesManagedBy: "x.ts"` on a script, or an
- * oracle's command): with no arguments it prints a row per thing that's
- * behind; `update <item>` moves that one. A failure exits 1 with its
- * message, which loadout shows as the source having failed: a broken
- * oracle never reads as "nothing outdated".
- */
-export async function oracle(spec: { rows: () => Promise<Row[]> | Row[]; update: (item: string) => Promise<unknown> | unknown }) {
-  const [mode, item, ...rest] = Bun.argv.slice(2);
-  try {
-    if (mode === undefined) {
-      for (const row of await spec.rows()) console.log(formatRow(row));
-      return;
-    }
-    if (mode !== "update" || !item || rest.length) throw new Error("usage: <oracle> [update <item>]");
-    await spec.update(item);
-  } catch (error) {
-    fail(reason(error));
-  }
-}
-
-/**
- * A program's own outdated check (`updatesManagedBy: "x.ts"` on a
- * program): with no arguments it prints the newest version when this one is
- * behind, nothing otherwise; `update` moves it.
- */
-export async function programOracle(spec: { latest: () => Promise<string | undefined> | string | undefined; update: () => Promise<unknown> | unknown }) {
-  const [mode, ...rest] = Bun.argv.slice(2);
-  try {
-    if (mode === undefined) {
-      const latest = await spec.latest();
-      if (latest) console.log(latest);
-      return;
-    }
-    if (mode !== "update" || rest.length) throw new Error("usage: <oracle> [update]");
-    await spec.update();
-  } catch (error) {
-    fail(reason(error));
-  }
-}
-
-// ─── clones that track their remote ─────────────────────────────────────
+export const formatOutdatedItem = (row: OutdatedItem) => [row.item, row.current, row.candidate, row.note, row.link].filter(Boolean).join(" ");
 
 /** A clone and the name its row goes by. */
 export type Clone = { name: string; dir: string };
@@ -168,7 +106,7 @@ async function githubOf(dir: string) {
  * adds the compare page of the two shas as the link. Leaves FETCH_HEAD at
  * the remote's HEAD.
  */
-async function rowOf({ name, dir }: Clone): Promise<Row | undefined> {
+async function rowOf({ name, dir }: Clone): Promise<OutdatedItem | undefined> {
   const head = await git(dir, "rev-parse", "HEAD");
   if (!head || (await git(dir, "fetch", "-q", "origin", "HEAD")) === undefined) return undefined;
   const tip = await git(dir, "rev-parse", "FETCH_HEAD");
@@ -186,9 +124,9 @@ async function rowOf({ name, dir }: Clone): Promise<Row | undefined> {
 }
 
 /** A row per clone that's behind its remote's HEAD, by name; all fetched at once. What isn't a clone is skipped. */
-export async function clonesBehind(clones: Clone[]): Promise<Row[]> {
+export async function clonesBehind(clones: Clone[]): Promise<OutdatedItem[]> {
   const rows = await Promise.all(clones.filter(({ dir }) => existsSync(`${dir}/.git`)).map(rowOf));
-  return rows.filter((row): row is Row => row !== undefined).sort((a, b) => (formatRow(a) < formatRow(b) ? -1 : formatRow(a) > formatRow(b) ? 1 : 0));
+  return rows.filter((row): row is OutdatedItem => row !== undefined).sort((a, b) => (formatOutdatedItem(a) < formatOutdatedItem(b) ? -1 : formatOutdatedItem(a) > formatOutdatedItem(b) ? 1 : 0));
 }
 
 /** Fast-forwards the clone to its remote; one that can't fails rather than rewriting history. */
@@ -201,7 +139,7 @@ export async function fastForward({ name, dir }: Clone) {
 // ─── helpers ────────────────────────────────────────────────────────────
 
 /** Is it on PATH? (sh's `command -v`) */
-export const has = (program: string) => Bun.which(program) !== null;
+export const isOnPath = (program: string) => Bun.which(program) !== null;
 
 /** Print to stderr and exit 1. */
 export function fail(message: string): never {
@@ -210,10 +148,10 @@ export function fail(message: string): never {
 }
 
 /** Its output, trimmed; throws when it fails. */
-export const out = async (command: ReturnType<typeof $>) => (await command.quiet().text()).trim();
+export const outputOf = async (command: ReturnType<typeof $>) => (await command.quiet().text()).trim();
 
 /** Did it succeed? Its output is discarded. */
-export const ok = async (command: ReturnType<typeof $>) => (await command.quiet().nothrow()).exitCode === 0;
+export const succeeds = async (command: ReturnType<typeof $>) => (await command.quiet().nothrow()).exitCode === 0;
 
 /**
  * A file's text, or "" when there's none. Node's readFile, not Bun.file: a

@@ -1,7 +1,7 @@
 import { scriptOrder } from "../assemble/index.ts";
 import { failed as scriptFailed, type ScriptState } from "../core/coremodel/coremodel.ts";
 import * as engine from "../core/engine/index.ts";
-import { runsIn, scriptArgs } from "../model/index.ts";
+import { runsIn, scriptOptions } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import {
   askForSudoUpfront,
@@ -57,7 +57,7 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
   const plan = await planPrograms(a, manifest, system, undefined);
   const frame = await a.frame(system);
   const scripts = engine.newScriptRunner(a.runner, frame);
-  const enabled = scriptArgs(machineOf(manifest, system.machine));
+  const enabled = scriptOptions(machineOf(manifest, system.machine));
   const coreScripts: string[] = [];
   let laterScripts: string[] = [];
   if (!skipScripts) {
