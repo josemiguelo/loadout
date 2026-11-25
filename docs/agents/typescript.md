@@ -36,7 +36,9 @@
   always, as the built-ins); check and run lists are joined with `&&`, one
   holding `||` or `;` grouped in `{ …; }` (a single string too).
 - **References are values.** `program()`, `script()`, `installer()`,
-  `profile()` return `{ kind, name }`; files import them from the file that
+  `profile()` return `{ kind, name }` (a script's, and a script variant's, is
+  also a function, which a machine calls with arguments: `setupSsh("x")`; it
+  only builds the `run` entry, nothing runs); files import them from the file that
   declared them (`export const x = …`), so a misspelt name is a type error
   and go-to-definition works. Lists of references are flattened wherever
   they're read (`Many<T>`), so a shared const of programs sits in any list.

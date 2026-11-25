@@ -52,7 +52,7 @@ outdated("pins", { command: runScript(".loadout/pins.ts"), upgrade: runScript(".
 TS
 ts_file repo/machines/m1.loadout.ts <<'TS'
 import { broken, marker } from "../programs/scripts.loadout.ts";
-machine("m1", { run: [args(marker, "hello"), broken] });
+machine("m1", { run: [marker("hello"), broken] });
 TS
 compile_repo repo
 grep -q '^declare module "loadout/script" {' repo/node_modules/@types/loadout/index.d.ts || fail "compile writes the script SDK's types: $(ls -R repo)"

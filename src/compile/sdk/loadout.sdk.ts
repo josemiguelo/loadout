@@ -20,15 +20,36 @@ import { fileURLToPath } from "node:url";
 
 export type Installer = { readonly kind: "installer"; readonly name: string };
 export type Program = { readonly kind: "program"; readonly name: string };
-export type Script = { readonly kind: "script"; readonly name: string };
+/** Called with a machine's arguments in its `run`: `setupSsh("id_ed25519")`, each one word or more. */
+export type Script = {
+  (...args: string[]): ScriptArgs;
+  readonly kind: "script";
+  readonly name: string;
+};
 export type Profile = { readonly kind: "profile"; readonly name: string };
 
 /** A program through one of its variants: `variant(setupBrew, "linux")`. */
 export type ProgramVariant = { readonly kind: "program-variant"; readonly program: Program; readonly variant: string };
-/** A script through one of its variants: `variant(hidAppleKeyboard, "arch")`. */
-export type ScriptVariant = { readonly kind: "script-variant"; readonly script: Script; readonly variant: string };
-/** A script with its arguments: `args(setupSsh, "id_ed25519")`. */
+/** A script through one of its variants: `variant(hidAppleKeyboard, "arch")`; called with arguments like a script. */
+export type ScriptVariant = {
+  (...args: string[]): ScriptArgs;
+  readonly kind: "script-variant";
+  readonly script: Script;
+  readonly variant: string;
+};
+/** A script with its arguments: `setupSsh("id_ed25519")`. */
 export type ScriptArgs = { readonly kind: "script-args"; readonly script: Script | ScriptVariant; readonly args: string[] };
+
+/**
+ * A reference with fields that is called with a machine's arguments.
+ * defineProperty, since a function's own `name` can't be assigned.
+ */
+function callable<F extends object>(fields: F): F & ((...args: string[]) => ScriptArgs) {
+  const ref = (...args: string[]): ScriptArgs => ({ kind: "script-args", script: ref as unknown as Script | ScriptVariant, args });
+  for (const [key, value] of Object.entries(fields)) Object.defineProperty(ref, key, { value, enumerable: true });
+  return ref as unknown as F & ((...args: string[]) => ScriptArgs);
+}
+
 /** Programs through an installer, in a machine: `via(omarchy, [curl, git])`. */
 export type ViaGroup = { readonly kind: "via-group"; readonly installer: Installer; readonly programs: Program[] };
 
@@ -407,7 +428,7 @@ export function program(name: string, spec: ProgramSpec): Program {
 export function variant(program: Program, variant: string): ProgramVariant;
 export function variant(script: Script, variant: string): ScriptVariant;
 export function variant(ref: Program | Script, variant: string): ProgramVariant | ScriptVariant {
-  return ref.kind === "program" ? { kind: "program-variant", program: ref, variant } : { kind: "script-variant", script: ref, variant };
+  return ref.kind === "program" ? { kind: "program-variant", program: ref, variant } : callable({ kind: "script-variant" as const, script: ref, variant });
 }
 
 // ─── scripts ────────────────────────────────────────────────────────────
@@ -496,11 +517,8 @@ export function script(name: string, spec: ScriptSpec): Script {
   }
   for (const o of spec.outdated ?? []) oracles.push([o.name ?? name, clean({ command: o.command, upgrade: o.upgrade, sudo: o.needsSudo })]);
   for (const [n, o] of oracles) declare(draft.outdated, "outdated source", n, at, { ...o, ...(origin ? { origin } : {}) });
-  return { kind: "script", name };
+  return callable({ kind: "script" as const, name });
 }
-
-/** A script with arguments, as the machine runs it: each is one word or more. */
-export const args = (script: Script | ScriptVariant, ...args: string[]): ScriptArgs => ({ kind: "script-args", script, args });
 
 /** An outdated oracle of its own, outside any script. */
 export function outdated(name: string, oracle: Omit<Oracle, "name">) {
@@ -531,7 +549,7 @@ export type MachineSpec<Data> = {
   data?: DeepPartial<Data>;
   /** Programs through their one variant, `variant(p, "x")`, or `via(installer, [...])`. */
   install?: Many<Program | ProgramVariant | ViaGroup>;
-  /** Scripts it runs, with `args(...)` and `variant(...)`; lists are flattened. */
+  /** Scripts it runs: as they are, called with arguments (`setupSsh("id_ed25519")`), or through `variant(...)`; lists are flattened. */
   run?: Many<RunEntry>;
   /** A profile kept though no machine extends it (machines can't be spare). */
   spare?: string;

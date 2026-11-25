@@ -53,10 +53,10 @@ const argcount = script("argcount", { file: "argcount.sh" });
 machine("m3", {
   install: [variant(git, "manual")],
   run: [
-    args(argscript, "fedora"),
+    argscript("fedora"),
     // A long entry may span lines: its lines are arguments, never commands.
     // If the newline reached the shell, `touch pwned.txt` would run.
-    args(argcount, "one\ntouch pwned.txt"),
+    argcount("one\ntouch pwned.txt"),
   ],
 });
 

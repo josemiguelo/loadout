@@ -57,7 +57,7 @@ export const ripgrep = program("ripgrep", {
 
 requires(mise, [curl]);
 `,
-  "maintenance/scripts.loadout.ts": `import { args, file, outdated, runScript, script, variant } from "loadout";
+  "maintenance/scripts.loadout.ts": `import { file, outdated, runScript, script, variant } from "loadout";
 import { ripgrep } from "../programs/cli.loadout.ts";
 
 export const marker = script("marker", { managedBy: ".loadout/marker.ts", runAfter: [ripgrep] });
@@ -67,8 +67,8 @@ export const keyboard = script("keyboard", {
   variants: { arch: { run: ["true", "true"] }, fedora: { file: "keyboard.sh", check: file("check.sh") } },
 });
 
-export const markerHello = args(marker, "hello");
-export const archKeyboard = variant(keyboard, "arch");
+export const markerHello = marker("hello");
+export const archKeyboard = variant(keyboard, "arch")("us");
 
 outdated("pins", { command: runScript(".loadout/pins.ts"), upgrade: runScript(".loadout/pins.ts update {item}") });
 `,

@@ -19,7 +19,7 @@ new_work() { mktemp -d -p "$WORK"; }
 # What every fragment ts_file writes imports from the SDK: fixtures use these
 # names as they are and never import "loadout" themselves (a second import of
 # one name is a syntax error).
-TS_PRELUDE='import { apt, args, brew, brewCask, custom, dnf, dnfCopr, dnfRepo, file, flag, flatpak, installer, list, machine, number, omarchy, omarchyAur, outdated, pacman, profile, program, requires, runScript, script, text, variant, via, whole } from "loadout";'
+TS_PRELUDE='import { apt, brew, brewCask, custom, dnf, dnfCopr, dnfRepo, file, flag, flatpak, installer, list, machine, number, omarchy, omarchyAur, outdated, pacman, profile, program, requires, runScript, script, text, variant, via, whole } from "loadout";'
 
 # stdin as the fragment <path>, after TS_PRELUDE.
 ts_file() {

@@ -13,7 +13,9 @@ declare module "loadout" {
     readonly kind: "program";
     readonly name: string;
   };
+  /** Called with a machine's arguments in its `run`: `setupSsh("id_ed25519")`, each one word or more. */
   export type Script = {
+    (...args: string[]): ScriptArgs;
     readonly kind: "script";
     readonly name: string;
   };
@@ -27,13 +29,14 @@ declare module "loadout" {
     readonly program: Program;
     readonly variant: string;
   };
-  /** A script through one of its variants: `variant(hidAppleKeyboard, "arch")`. */
+  /** A script through one of its variants: `variant(hidAppleKeyboard, "arch")`; called with arguments like a script. */
   export type ScriptVariant = {
+    (...args: string[]): ScriptArgs;
     readonly kind: "script-variant";
     readonly script: Script;
     readonly variant: string;
   };
-  /** A script with its arguments: `args(setupSsh, "id_ed25519")`. */
+  /** A script with its arguments: `setupSsh("id_ed25519")`. */
   export type ScriptArgs = {
     readonly kind: "script-args";
     readonly script: Script | ScriptVariant;
@@ -192,8 +195,6 @@ declare module "loadout" {
     }>;
   };
   export function script(name: string, spec: ScriptSpec): Script;
-  /** A script with arguments, as the machine runs it: each is one word or more. */
-  export const args: (script: Script | ScriptVariant, ...args: string[]) => ScriptArgs;
   /** An outdated oracle of its own, outside any script. */
   export function outdated(name: string, oracle: Omit<Oracle, "name">): void;
   /** A data setting's kind and default, in the repo's data schema. */
@@ -213,7 +214,7 @@ declare module "loadout" {
     data?: DeepPartial<Data>;
     /** Programs through their one variant, `variant(p, "x")`, or `via(installer, [...])`. */
     install?: Many<Program | ProgramVariant | ViaGroup>;
-    /** Scripts it runs, with `args(...)` and `variant(...)`; lists are flattened. */
+    /** Scripts it runs: as they are, called with arguments (`setupSsh("id_ed25519")`), or through `variant(...)`; lists are flattened. */
     run?: Many<RunEntry>;
     /** A profile kept though no machine extends it (machines can't be spare). */
     spare?: string;

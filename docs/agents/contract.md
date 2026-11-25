@@ -15,8 +15,8 @@ Explicit user decisions; don't "improve" them away.
      takes programs with exactly ONE variant (more is a compile error
      naming them: no choosing for you), named variants (`variant(setupBrew,
      "linux")`) and `via(installer, [programs…])`, which maps each program
-     to that installer's variant, mixed. `run: [...]` with `args(x, "a")`
-     opts scripts in; `variant(x, "arch")` picks a script variant. Lists of
+     to that installer's variant, mixed. `run: [...]` opts scripts
+     in, `x` or with arguments `x("a")`; `variant(x, "arch")` picks a script variant. Lists of
      references are flattened, so a shared list sits in either. A program
      installed twice or a script run twice in one machine is an error. A machine is named by its
      hostname, so the lock (and chezmoi templates reading it) find it; a
@@ -205,14 +205,14 @@ Explicit user decisions; don't "improve" them away.
     TypeScript, so the language allows anything; the
     convention is plain values: consts (shared lists: `everydayCli = [bat,
     eza]`) and functions that build references or arguments (`sshKey(name)`,
-    which saves repeating two `args(…)` entries in every machine). Nothing
+    which saves repeating two entries with the same argument in every machine). Nothing
     that generates programs or machines: every `program()`, `script()` and
     `machine()` is written out, so a reader finds every one by name in one
     place. A manifest reads no files, network or clock: compile runs it
     with nothing of the caller's environment but PATH and HOME, so its
     output doesn't depend on who compiles it; the rest is the author's
     discipline, which bun can't enforce.
-12. **Scripts are opt-in per machine**: `run: [x, args(x, "a")]` in a
+12. **Scripts are opt-in per machine**: `run: [x, y("a")]` in a
     machine or profile. Each argument is one or more words;
     the machine's entries are "name args…", parsed by `ScriptEntry` (args
     re-joined with single spaces because they're pasted into a shell
