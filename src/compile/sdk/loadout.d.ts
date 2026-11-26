@@ -305,8 +305,11 @@ declare module "loadout" {
     name: string;
     /** The folder each machine's state is written to. */
     stateFolder: string;
-    /** The dotfiles folder (chezmoi's source), when the repo holds them. */
-    dotfiles?: string;
+    /**
+     * The dotfiles, when the repo holds them: chezmoi's source folder, as you
+     * write it (`"loadouts"`), or tool folders compile builds chezmoi's sources from.
+     */
+    dotfiles?: string | ToolDotfiles;
     /** The oldest loadout that may read this repo. */
     minLoadoutVersion?: string;
     /** Every per-machine setting, with its default (a child repo's are its parent's). */
@@ -316,6 +319,29 @@ declare module "loadout" {
       name: string;
       path: string;
     };
+  };
+  /**
+   * Dotfiles kept with their tools: every folder `tools` matches is a tool
+   * (named after its folder), and in it `home/` is chezmoi source rooted at
+   * `$HOME` and `root/` chezmoi source rooted at `/`, both optional. Compile
+   * builds every tool's `home/` into `home` and every `root/` into `root`
+   * (files as symlinks, committed like the lock); loadout applies `home` as
+   * you and `root` as root. `from` is a chezmoi source tree merged into
+   * `home` as it stands, for what hasn't moved into a tool folder yet.
+   *
+   * ```ts
+   * dotfiles: { tools: "loadouts/*", home: ".chezmoi-home", root: ".chezmoi-root" }
+   * ```
+   */
+  export type ToolDotfiles = {
+    /** The tool folders, a glob relative to the repo root (`"loadouts/*"`). */
+    tools: string;
+    /** The folder compile builds the `$HOME` source into; `.chezmoiroot` names it, for plain chezmoi. */
+    home: string;
+    /** The folder compile builds the `/` source into; needed once a tool has `root/`. */
+    root?: string;
+    /** A chezmoi source tree merged into `home` as it is; apart from every tool folder. */
+    from?: string;
   };
   /**
    * Imports every repo file the globs match (Bun.Glob; `*` and `**` match dot

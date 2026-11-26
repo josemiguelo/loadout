@@ -876,8 +876,11 @@ export type RepoSpec<Data> = {
   name: string;
   /** The folder each machine's state is written to. */
   stateFolder: string;
-  /** The dotfiles folder (chezmoi's source), when the repo holds them. */
-  dotfiles?: string;
+  /**
+   * The dotfiles, when the repo holds them: chezmoi's source folder, as you
+   * write it (`"loadouts"`), or tool folders compile builds chezmoi's sources from.
+   */
+  dotfiles?: string | ToolDotfiles;
   /** The oldest loadout that may read this repo. */
   minLoadoutVersion?: string;
   /** Every per-machine setting, with its default (a child repo's are its parent's). */
@@ -885,6 +888,47 @@ export type RepoSpec<Data> = {
   /** The repo this one builds on (a child repo): its checkout, `~/…`, absolute, or relative to this one. */
   parent?: { name: string; path: string };
 };
+
+/**
+ * Dotfiles kept with their tools: every folder `tools` matches is a tool
+ * (named after its folder), and in it `home/` is chezmoi source rooted at
+ * `$HOME` and `root/` chezmoi source rooted at `/`, both optional. Compile
+ * builds every tool's `home/` into `home` and every `root/` into `root`
+ * (files as symlinks, committed like the lock); loadout applies `home` as
+ * you and `root` as root. `from` is a chezmoi source tree merged into
+ * `home` as it stands, for what hasn't moved into a tool folder yet.
+ *
+ * ```ts
+ * dotfiles: { tools: "loadouts/*", home: ".chezmoi-home", root: ".chezmoi-root" }
+ * ```
+ */
+export type ToolDotfiles = {
+  /** The tool folders, a glob relative to the repo root (`"loadouts/*"`). */
+  tools: string;
+  /** The folder compile builds the `$HOME` source into; `.chezmoiroot` names it, for plain chezmoi. */
+  home: string;
+  /** The folder compile builds the `/` source into; needed once a tool has `root/`. */
+  root?: string;
+  /** A chezmoi source tree merged into `home` as it is; apart from every tool folder. */
+  from?: string;
+};
+
+const toolDotfilesSettings = ["tools", "home", "root", "from"];
+
+/** The layout's dotfiles fields, from `dotfiles` as written. */
+function dotfilesLayout(dotfiles: RepoSpec<unknown>["dotfiles"]) {
+  if (dotfiles === undefined || typeof dotfiles === "string") return { configs: dotfiles };
+  if (typeof dotfiles !== "object" || dotfiles === null) fail("repo's dotfiles is a folder or { tools, home, root, from }");
+  const unknown = Object.keys(dotfiles).filter((k) => !toolDotfilesSettings.includes(k));
+  if (unknown.length) fail(`repo's dotfiles has no setting '${unknown[0]}' (its settings: ${toolDotfilesSettings.join(", ")})`);
+  for (const k of toolDotfilesSettings) {
+    const v = (dotfiles as Record<string, unknown>)[k];
+    if (v !== undefined && typeof v !== "string") fail(`repo's dotfiles.${k} is a path, not ${typeof v}`);
+  }
+  if (!dotfiles.tools) fail("repo's dotfiles needs tools: the glob of the tool folders (\"loadouts/*\")");
+  if (!dotfiles.home) fail("repo's dotfiles needs home: the folder compile builds the $HOME source into (\".chezmoi-home\")");
+  return { configs: dotfiles.home, "root-configs": dotfiles.root, build: clean({ tools: dotfiles.tools, from: dotfiles.from }) };
+}
 
 const included = new Set<string>();
 const includeGlobs: string[] = [];
@@ -950,6 +994,7 @@ const entries = (m: Map<string, Entry>) => (m.size ? Object.fromEntries([...m].m
 export function repo<Data>(spec: RepoSpec<Data>): void {
   const unknown = Object.keys(spec).filter((k) => !repoSettings.includes(k));
   if (unknown.length) fail(`repo has no setting '${unknown[0]}' (its settings: ${repoSettings.join(", ")})`);
+  dotfilesLayout(spec.dotfiles);
   if (process.env.LOADOUT_COMPILE) void printDraft(spec);
 }
 
@@ -958,7 +1003,7 @@ async function printDraft<Data>(spec: RepoSpec<Data>) {
   await checkCalls();
   const manifest = clean({
     meta: clean({ name: spec.name, "min-tool-version": spec.minLoadoutVersion }),
-    layout: clean({ state: spec.stateFolder, configs: spec.dotfiles, sources: sourcesFrom([Bun.main, ...included, ...ruleFiles]) }),
+    layout: clean({ state: spec.stateFolder, ...dotfilesLayout(spec.dotfiles), sources: sourcesFrom([Bun.main, ...included, ...ruleFiles]) }),
     installers: entries(draft.installers),
     programs: entries(draft.programs),
     scripts: entries(draft.scripts),

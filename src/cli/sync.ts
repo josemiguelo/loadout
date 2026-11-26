@@ -8,6 +8,7 @@ import { envVar, selfExecutable } from "../core/platform/platform.ts";
 import { chezmoiDataFiles, lockFileName, Refusal, ToolTooOldException, trimSpace } from "../model/index.ts";
 import { atLeast, installCommand, VERSION } from "../version.ts";
 import { refuseEdited } from "./apply-config.ts";
+import { askForSudoUpfront } from "./converge.ts";
 import type { Command } from "./args.ts";
 import { compileRepo } from "./compile.ts";
 import { exitWith } from "./errors.ts";
@@ -114,6 +115,7 @@ async function runSync(a: AppContext, noPush: boolean, message: string | undefin
   const configs = a.configs();
   if (configs !== undefined) {
     await refuseEdited(configs, undefined);
+    await askForSudoUpfront(a.runner, await configs.rootNeedsSudo(undefined));
     const apply = await configs.applyCommand(undefined, false);
     const result = await spinning("applying configs…", () => a.runner.capture(apply));
     if (!success(result)) {

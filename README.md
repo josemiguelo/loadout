@@ -41,7 +41,12 @@ TypeScript scripts run with.
 - **Your dotfiles are part of the loadout.** With `configs: …` in `repo()`, the
   repo holds chezmoi's source: `status` shows each config as applied or
   drifted, `diff` compares them across machines, `apply-config` writes them, and
-  `sync` applies them before publishing this machine's state.
+  `sync` applies them before publishing this machine's state. Keep them
+  with their tools if you like: with `dotfiles: { tools: "loadouts/*", … }`
+  each tool is one folder (its manifest, its scripts, `home/` for `$HOME`,
+  `root/` for `/`), compile builds chezmoi's sources from them, files outside
+  `$HOME` are applied as root, and `loadout chezmoi` runs chezmoi with the two
+  kept in step.
 - **Scripts in TypeScript, on a bare machine.** loadout is a bun: every
   command it runs finds `bun` first on PATH, and that bun is loadout
   itself, so a `#!/usr/bin/env bun` script works from the first step of a
@@ -82,7 +87,8 @@ TypeScript scripts run with.
 | | `install-program <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
 | | `run-script <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
-| | `apply-config [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
+| | `apply-config [configs]` | Write the repo's configs here through chezmoi (default: all; a tool's `/` files as root, `/<tool>`); stops on files edited on this machine unless `--force` |
+| | `chezmoi <command> [args…]` | chezmoi over this repo's configs, from any checkout; with tool folders, a path outside `$HOME` goes to the `/` configs, and what `re-add`, `add --tool <tool>`, `merge`, `chattr` and `forget` write lands in the tool's folder |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
 | | `compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `deleteOnceDone` scripts every machine has done |

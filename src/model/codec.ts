@@ -24,6 +24,7 @@ import {
   newScriptStep,
   newVersionCheck,
   type OutdatedSource,
+  type ConfigBuild,
   type ParentLayout,
   type Program,
   type RepoLayout,
@@ -92,15 +93,27 @@ function metaToJSON(m: Meta): JSONObject {
 }
 
 function layoutIsDefault(l: RepoLayout): boolean {
-  return l.state === "" && l.configs === undefined && l.sources.length === 0 && l.parent === undefined;
+  return (
+    l.state === "" && l.configs === undefined && l.rootConfigs === undefined && l.build === undefined && l.sources.length === 0 &&
+    l.parent === undefined
+  );
 }
 
 function layoutToJSON(l: RepoLayout): JSONObject {
   const w = new ObjWriter();
   w.strIf("state", l.state);
   w.ptr("configs", l.configs);
+  w.ptr("root-configs", l.rootConfigs);
+  if (l.build !== undefined) w.any("build", buildToJSON(l.build));
   w.list("sources", l.sources);
   if (l.parent !== undefined) w.any("parent", parentToJSON(l.parent));
+  return w.obj;
+}
+
+function buildToJSON(b: ConfigBuild): JSONObject {
+  const w = new ObjWriter();
+  w.str("tools", b.tools);
+  w.ptr("from", b.from);
   return w.obj;
 }
 
@@ -110,6 +123,8 @@ function parentToJSON(p: ParentLayout): JSONObject {
   w.str("path", p.path);
   w.str("state", p.state);
   w.ptr("configs", p.configs);
+  w.ptr("root-configs", p.rootConfigs);
+  if (p.build !== undefined) w.any("build", buildToJSON(p.build));
   w.list("sources", p.sources);
   w.strIf("hash", p.hash);
   return w.obj;
@@ -437,9 +452,20 @@ export function readManifest(v: JSONValue | undefined, path: string, errs: Errs)
   return m;
 }
 
+function readBuild(v: JSONValue, path: string, errs: Errs): ConfigBuild {
+  const br = new ObjReader(v, path, "loadout.core.model.ConfigBuild", errs);
+  const b: ConfigBuild = { tools: br.reqStr("tools") };
+  const from = br.ptr("from");
+  if (from !== undefined) b.from = from;
+  br.done();
+  return b;
+}
+
 function readLayout(v: JSONValue, path: string, errs: Errs): RepoLayout {
   const r = new ObjReader(v, path, "loadout.core.model.RepoLayout", errs);
-  const l = newRepoLayout({ state: r.str("state"), configs: r.ptr("configs"), sources: r.list("sources") });
+  const l = newRepoLayout({ state: r.str("state"), configs: r.ptr("configs"), rootConfigs: r.ptr("root-configs"), sources: r.list("sources") });
+  const build = r.get("build");
+  if (build !== undefined) l.build = readBuild(build, r.at("build"), errs);
   const parent = r.get("parent");
   if (parent !== undefined) {
     const pr = new ObjReader(parent, r.at("parent"), "loadout.core.model.ParentLayout", errs);
@@ -448,9 +474,12 @@ function readLayout(v: JSONValue, path: string, errs: Errs): RepoLayout {
       path: pr.reqStr("path"),
       state: pr.reqStr("state"),
       configs: pr.ptr("configs"),
+      rootConfigs: pr.ptr("root-configs"),
       sources: pr.list("sources"),
       hash: pr.str("hash"),
     });
+    const parentBuild = pr.get("build");
+    if (parentBuild !== undefined) l.parent.build = readBuild(parentBuild, pr.at("build"), errs);
     pr.done();
   }
   r.done();

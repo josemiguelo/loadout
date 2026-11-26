@@ -892,7 +892,7 @@ export function startScripts(m: HomeModel, picked: ReadonlySet<string>): void {
  * startConfigs asks about writing the ticked configs, then hands off to
  * `loadout apply-config <names>`. A file edited on this machine would stop `apply-config`,
  * so it stops here, before anything runs, naming the file: which version
- * wins is the user's call, made in a terminal (`chezmoi re-add`, or
+ * wins is the user's call, made in a terminal (`loadout chezmoi re-add`, or
  * `loadout apply-config --force`).
  */
 export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
@@ -926,12 +926,12 @@ export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
       // A refusal with a list: the toast says what happened, the dialog
       // lists the files.
       if (edited.length > 0) {
-        fail(m, "edited on this machine: " + edited.join(", ") + " — keep with chezmoi re-add, or run loadout apply-config --force");
+        fail(m, "edited on this machine: " + edited.join(", ") + " — keep with loadout chezmoi re-add, or run loadout apply-config --force");
         m.state.dialog = newDialog({
           kind: DialogKind.List,
           title: "Edited here",
           lines: edited,
-          summary: "Keep them with chezmoi re-add, or overwrite them with loadout apply-config --force, in a terminal.",
+          summary: "Keep them with loadout chezmoi re-add, or overwrite them with loadout apply-config --force, in a terminal.",
         });
         return;
       }

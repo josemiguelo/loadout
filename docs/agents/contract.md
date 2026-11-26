@@ -70,9 +70,16 @@ Explicit user decisions; don't "improve" them away.
    (`"loadout"`) and TypeScript scripts (`"loadout/script"`) import, which
    are the binary's own: for the editor, never committed, and refreshed
    by every command that reads the repo, so they're never older than the
-   loadout that last touched it. Nothing
+   loadout that last touched it. A repo with tool folders (contract 17)
+   also gets chezmoi's sources built from them (`layout configs` and
+   `root-configs`: symlinks to the tool folders' files, with the
+   templates' data): derived, never committed (the repo ignores them),
+   and rewritten like the types by every command that reads the repo,
+   since chezmoi must never read one behind its folders. Nothing
    hand-edited goes in state, the lock or those; the tool never writes
-   authored files, except `init` scaffolding.
+   authored files, except `init` scaffolding and what a `loadout chezmoi`
+   command the user ran wrote into a build (carried over to the tool
+   folder: chezmoi would have written the source itself).
 4. **Scripts: exactly one of `module` or `runCommand`**. A `module` is a TypeScript
    module exporting `check(options)` and `install(options)`, run by
    `core/bun`'s module runner, with the options as one JSON argument. One that
@@ -359,6 +366,9 @@ Explicit user decisions; don't "improve" them away.
     with `repo({ … })`, which prints the draft. Nothing else: no build
     files, no build folder, no npm. `repo({ state, configs })` names the
     state and chezmoi dirs; `state` is required, with no default.
+    `dotfiles: { tools, home, root, from }` declares tool folders instead
+    of an authored chezmoi dir (contract 17): every folder the `tools`
+    glob matches is a tool.
     Manifests import the SDK as `"loadout"` (the binary's, registered by
     the wrapper's preload; `node_modules/@types/loadout`, which compile writes, types it)
     and each other by relative path; a declaration's origin is the file that called it. The lock
@@ -394,7 +404,7 @@ Explicit user decisions; don't "improve" them away.
       terminal chezmoi aborts the whole apply on a file edited in place
       (it would ask), so both refuse first when a file they'd replace is
       edited AND drifted (`refuseEdited`, cli/apply-config.ts), naming the files:
-      keep them with `chezmoi re-add`, or replace them with `apply
+      keep them with `loadout chezmoi re-add`, or replace them with `apply
       --force`. `sync` = pull → (upgrade loadout, contract 15) → refuse
       edited → apply → refresh → name what's left (missing programs,
       scripts not done) → commit → push; nothing is committed after a
@@ -439,7 +449,72 @@ Explicit user decisions; don't "improve" them away.
       (`.etc/dnf/`).
       No `system/` beside it: one folder holds the whole loadout, and
       `include("loadouts/**/*.loadout.ts")` finds a manifest in any dot
-      folder. Plain `init` keeps `programs/` and `maintenance/`. Every
+      folder. Plain `init` keeps `programs/` and `maintenance/`.
+    - **Tool folders** (`repo({ dotfiles: { tools, home, root, from } })`,
+      core/configbuild): every folder `tools` matches is a tool, named
+      after its folder; its `home/` is chezmoi source rooted at `$HOME`,
+      its `root/` chezmoi source rooted at `/`, both optional, so a tool's
+      manifest, scripts and files sit in one folder. A non-dot folder in
+      a tool that isn't `home/` or `root/` is a compile warning (a
+      misspelling would otherwise deploy nothing). Compile builds every
+      `home/` (and `from`, an authored chezmoi tree merged as it stands,
+      apart from every tool folder) into `home` (`layout configs`, what
+      the rest of this contract reads) and every `root/` into `root`
+      (`layout root-configs`): real folders and relative symlinks to the
+      files (chezmoi follows a symlinked file, not a symlinked folder),
+      each part's `.chezmoiignore`/`.chezmoiremove` joined into one, the
+      root build linking the templates' data from the home build. A
+      target two tools land, two names for one target, a tool's `root/`
+      under `/home` or `/Users`, and `from` overlapping a tool are
+      refused. The builds and their data are never committed: compile
+      writes them, and so does every command as it reads the layout
+      (`AppContext.layout`, configbuild.refreshBuilds), so a fresh
+      checkout or a pulled change needs no step of its own, and plain
+      chezmoi works once any loadout command has run there (a repo's
+      bootstrap runs one before `chezmoi init --apply`). What a chezmoi
+      command wrote into a build (a symlink turned file: re-add, merge;
+      a file from no tool: add) is never overwritten: the refresh leaves
+      that build alone and every load refuses it, naming `loadout chezmoi
+      re-add <target>` (or a move into a tool's folder); compile refuses
+      it too. A build left behind (a checkout loadout can't write) is
+      refused with "run: loadout compile".
+    - **Root configs**: a root build is one more `ConfigEngine` source
+      (the parent's, then the child's), after `$HOME`'s. Its targets are
+      absolute (`/etc/…`) and its units are the tools they came from
+      (`/keychron`). Observing runs chezmoi as the user with an empty
+      config and root's state (left readable) and cache (`/var/lib/loadout`,
+      `/var/cache/loadout`; macOS `/var/db/loadout`, `/Library/Caches/loadout`),
+      retrying with `sudo -n` for a target the user can't read, else
+      `unknown`. Applying runs it as root (`sudo env HOME=… LOADOUT_*`, so
+      `.chezmoi.homeDir` is the user's) in two passes: chezmoi sets every
+      folder in its source to its own mode and replaces a symlinked
+      folder (macOS `/etc`), so pass one applies only the folders not
+      there yet and those whose source name carries an attribute, pass
+      two everything else with `--exclude dirs`. A root source with
+      nothing pending isn't applied, so nothing asks for sudo;
+      `apply-config` and `sync` ask once, first (askForSudoUpfront).
+      `setup-new-machine` applies drifted root configs after the core
+      programs (no package overwrites them) and before the core scripts
+      (which may read them), shown as `config` rows in its plan. Every
+      machine gets them; a tool's `.chezmoiignore` keeps them off one.
+      `LOADOUT_ROOT_DESTINATION` stands a folder in for `/`, applied
+      without sudo: for the integration suite.
+    - **`loadout chezmoi <command> [args…]`** (cli/chezmoi.ts): chezmoi
+      over this repo's own sources, with the source, `LOADOUT_REPO` and
+      `LOADOUT_MACHINE` given, so a worktree works as everywhere else. A
+      path outside `$HOME` goes to the root source, one inside to
+      `$HOME`'s; with neither, the commands about every target (apply,
+      diff, status, managed, verify, re-add, merge-all…) run over both.
+      `apply` to `/` goes through `applyCommand` (two passes, sudo first).
+      re-add, add, merge, merge-all, chattr, forget and edit are wrapped:
+      each build is snapshotted before and compared after, and what
+      chezmoi did is carried over (a symlink turned file is the tool
+      file's content, renamed is the tool file renamed, gone is the tool
+      file deleted, a new file goes into `--tool <name>`'s folder and is
+      refused without one), then the builds are rewritten. `source-path`
+      prints the tool's file, `cd` opens the tools' folder. init, update,
+      upgrade, purge, git, destroy and import are refused, each with what
+      to run instead. Every
       scaffold has a `tsconfig.json`, the SDKs' types (`node_modules/@types/loadout`), a `.gitignore` for node_modules, and a
       `package.json` whose `@types/bun` only the editor needs.
 
@@ -473,7 +548,11 @@ Explicit user decisions; don't "improve" them away.
       hasn't compiled is refused at load like a stale lock, and a missing
       parent by name and path.
     - **Runtime**: commands as in contract 5; configs are two chezmoi
-      sources, the parent's then the child's (`ConfigEngine`): units span
+      sources, the parent's then the child's (`ConfigEngine`). A parent
+      with tool folders (`layout.parent.build`) has no committed build to
+      read, so the child builds the parent's tool folders into its own
+      `.loadout-parent/home` and `/root` (ignored, refreshed as its own
+      builds are), and its scripts' `LOADOUT_CONFIGS` points there. Units span
       both, a target both manage is `unknown` and refused by `apply-config`, and
       chezmoi runs with `LOADOUT_REPO` (the child) and `LOADOUT_MACHINE` so
       the parent's partial finds the child's machine. `diff` and the fleet

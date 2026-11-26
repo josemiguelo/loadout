@@ -4,10 +4,11 @@
 // the home screen implements. Neither side owns these twice, and neither
 // imports the other.
 
-import { lstatSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { basename, dirname, relative, resolve } from "node:path";
 import { refreshTypes } from "../compile/compile.ts";
 import * as bun from "../core/bun/bun.ts";
+import { parentBuilds, refreshBuilds } from "../core/configbuild/configbuild.ts";
 import type { MachineState, ScriptState, SystemInfo } from "../core/coremodel/coremodel.ts";
 import { type Detection, newDetection } from "../core/detect/detect.ts";
 import * as engine from "../core/engine/index.ts";
@@ -103,6 +104,21 @@ export class AppContext {
     return this.current().layout.get(() => {
       const layout = loader.readLayout(this.repoRoot);
       refreshTypes(this.repoRoot);
+      // chezmoi's sources built from tool folders aren't committed: every
+      // command brings them up to date before chezmoi reads them.
+      if (layout.build !== undefined || layout.parent?.build !== undefined) {
+        let parentRoot = "";
+        try {
+          parentRoot = loader.parentRoot(this.repoRoot, layout, home());
+        } catch {
+          // A missing parent: the load says so.
+        }
+        try {
+          refreshBuilds(this.canonicalRoot(), loader.readManifest(this.repoRoot), parentRoot === "" ? "" : parentRoot);
+        } catch {
+          // The load says what's wrong.
+        }
+      }
       return layout;
     });
   }
@@ -167,6 +183,8 @@ export class AppContext {
    * variants picked): the lock, checked (contract 10).
    */
   loadManifest(): Manifest {
+    // The layout first: reading it brings the builds up to date, which the load checks.
+    this.layout();
     const manifest = loader.loadRepo(this.repoRoot, home());
     return forMachine(manifest, this.detectSystem().machine);
   }
@@ -198,7 +216,9 @@ export class AppContext {
     const root = this.canonicalRoot();
     const layout = this.layout();
     const parentRoot = this.parentRoot();
-    const parentConfigs = layout.parent?.configs;
+    // A parent built from tool folders has its configs built in this repo.
+    const parentConfigs =
+      layout.parent?.build !== undefined && parentRoot !== "" ? relative(parentRoot, root + "/" + parentBuilds + "/home") : layout.parent?.configs;
     return frameOf(root, system, layout.configs, parentRoot, parentConfigs, this.bunDir());
   }
 
@@ -223,13 +243,28 @@ export class AppContext {
       const root = this.canonicalRoot();
       const sources: engine.ConfigSource[] = [];
       const parent = layout.parent;
+      // A parent built from tool folders: its builds are this repo's .loadout-parent/.
+      const parentBuilt = parent?.build !== undefined;
       if (parent !== undefined && parent.configs !== undefined) {
         const parentRoot = this.parentRoot();
         if (parentRoot !== "") {
-          sources.push({ dir: parentRoot + "/" + parent.configs, label: "parent " + parent.name });
+          const dir = parentBuilt ? root + "/" + parentBuilds + "/home" : parentRoot + "/" + parent.configs;
+          sources.push({ dir, label: "parent " + parent.name });
         }
       }
       if (layout.configs !== undefined) sources.push({ dir: root + "/" + layout.configs, label: "" });
+      // What tool folders put outside $HOME, after $HOME's: the parent's, then this repo's.
+      if (parent !== undefined && parent.rootConfigs !== undefined) {
+        const parentRoot = this.parentRoot();
+        if (parentRoot !== "") {
+          const dir = parentBuilt ? root + "/" + parentBuilds + "/root" : parentRoot + "/" + parent.rootConfigs;
+          sources.push({ dir, label: "parent " + parent.name, root: rootSide(dir) });
+        }
+      }
+      if (layout.rootConfigs !== undefined) {
+        const dir = root + "/" + layout.rootConfigs;
+        sources.push({ dir, label: "", root: rootSide(dir) });
+      }
       if (sources.length === 0) return undefined;
       const env = { LOADOUT_REPO: root, LOADOUT_MACHINE: this.detectSystem().machine };
       return engine.newConfigEngine(this.runner, sources, env);
@@ -374,4 +409,41 @@ function evalSymlinks(path: string): string {
     }
     throw fileError(e, "lstat", path);
   }
+}
+
+/**
+ * rootDestinationVar names a folder that stands for / for root configs,
+ * applied there without sudo: for the integration suite, which can't be root.
+ */
+export const rootDestinationVar = "LOADOUT_ROOT_DESTINATION";
+
+/**
+ * rootSide is how the root source built at dir runs: to / with sudo (or
+ * LOADOUT_ROOT_DESTINATION's folder without), root's chezmoi state and cache
+ * where the OS keeps a system service's, and each target's tool read from
+ * the build's symlink (`<tool>/root/<path>`).
+ */
+function rootSide(dir: string): engine.RootSide {
+  const standIn = envVar(rootDestinationVar);
+  const destination = standIn !== undefined && standIn !== "" ? standIn : "/";
+  const mac = process.platform === "darwin";
+  const under = (p: string) => (destination === "/" ? p : destination.replace(/\/$/, "") + p);
+  return {
+    destination,
+    state: under(mac ? "/var/db/loadout/chezmoistate.boltdb" : "/var/lib/loadout/chezmoistate.boltdb"),
+    cache: under(mac ? "/Library/Caches/loadout/chezmoi" : "/var/cache/loadout/chezmoi"),
+    sudo: destination === "/",
+    home: envVar("HOME") ?? "",
+    toolOf(sourceRelative: string): string {
+      try {
+        const target = resolve(dir, dirname(sourceRelative), readlinkSync(resolve(dir, sourceRelative)));
+        const suffix = "/root/" + sourceRelative;
+        if (target.endsWith(suffix)) return basename(target.slice(0, -suffix.length));
+      } catch {
+        // Not a symlink: not from a tool folder.
+      }
+      return sourceRelative.split("/")[0]!;
+    },
+    exists: (p: string) => existsSync(p),
+  };
 }

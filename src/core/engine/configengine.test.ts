@@ -177,3 +177,98 @@ test("a refresh names the tools and configs that could not answer", async () => 
   expect(toolDownMessage(down[0]!)).toBe("pm is not on PATH — 1 program(s) not checked");
   expect(down[0]!.programs).toEqual(["bat"]);
 });
+
+// ─── a root source: tool folders' root/, applied to / (contract 17) ──
+
+const rootCz =
+  "chezmoi --source '/repo/.root' --destination '/' --config /dev/null --config-format toml" +
+  " --persistent-state '/var/lib/loadout/chezmoistate.boltdb' --cache '/var/cache/loadout/chezmoi' --no-pager";
+const sudoRootCz = "sudo env HOME='/home/u' LOADOUT_REPO='/repo' LOADOUT_MACHINE='laptop' " + rootCz;
+
+function withRoot(runner: Runner, there: string[] = ["/etc", "/etc/udev"]): ConfigEngine {
+  return newConfigEngine(
+    runner,
+    [
+      { dir: "/repo/configs", label: "" },
+      {
+        dir: "/repo/.root",
+        label: "",
+        root: {
+          destination: "/",
+          state: "/var/lib/loadout/chezmoistate.boltdb",
+          cache: "/var/cache/loadout/chezmoi",
+          sudo: true,
+          home: "/home/u",
+          toolOf: (rel) => (rel.startsWith("etc/udev") ? "keychron" : "t2"),
+          exists: (p) => there.includes(p),
+        },
+      },
+    ],
+    { LOADOUT_REPO: "/repo", LOADOUT_MACHINE: "laptop" },
+  );
+}
+
+const rootManaged = JSON.stringify({
+  "etc/udev/rules.d/50-k.rules": { absolute: "/etc/udev/rules.d/50-k.rules", sourceRelative: "etc/udev/rules.d/50-k.rules" },
+  "etc/modprobe.d/t2.conf": { absolute: "/etc/modprobe.d/t2.conf", sourceRelative: "etc/modprobe.d/t2.conf" },
+});
+const rootDirs = JSON.stringify({
+  etc: { absolute: "/etc", sourceRelative: "etc" },
+  "etc/udev": { absolute: "/etc/udev", sourceRelative: "etc/udev" },
+  "etc/udev/rules.d": { absolute: "/etc/udev/rules.d", sourceRelative: "etc/udev/rules.d" },
+  "etc/modprobe.d": { absolute: "/etc/modprobe.d", sourceRelative: "private_modprobe.d" },
+});
+
+function rootRunner(rootStatus: string): Runner {
+  return newRunner()
+    .onCommand(czManaged, stdout(".zshenv\n"))
+    .onCommand(czStatus, stdout(""))
+    .onCommand(rootCz + " managed --include files,symlinks --path-style all --format json", stdout(rootManaged))
+    .onCommand(rootCz + " managed --include dirs --path-style all --format json", stdout(rootDirs))
+    .onCommand(rootCz + " status --include files,symlinks", stdout(rootStatus))
+    .onCommand(rootCz + " status --exclude dirs", stdout(rootStatus));
+}
+
+test("a root source's units are the tools its files came from, its targets absolute", async () => {
+  const engine = withRoot(rootRunner(" A etc/udev/rules.d/50-k.rules\n"));
+  const units = await engine.units();
+  expect(units.map((u) => [u.name, u.targets])).toEqual([
+    [".zshenv", [".zshenv"]],
+    ["/keychron", ["/etc/udev/rules.d/50-k.rules"]],
+    ["/t2", ["/etc/modprobe.d/t2.conf"]],
+  ]);
+  const observed = await engine.observe(new Map());
+  configEq({ status: "drifted", files: ["/etc/udev/rules.d/50-k.rules"] }, observed.get("/keychron"));
+  configEq(applied(), observed.get("/t2"));
+});
+
+test("a root source applies as root in two passes, leaving folders already there alone", async () => {
+  const runner = rootRunner(" A etc/udev/rules.d/50-k.rules\n").onCommand(
+    rootCz + " status --exclude dirs '/etc/udev/rules.d/50-k.rules'",
+    stdout(" A etc/udev/rules.d/50-k.rules\n"),
+  );
+  const engine = withRoot(runner);
+  expect(await engine.rootNeedsSudo(undefined)).toBe(true);
+  const apply = await engine.applyCommand(["/etc/udev/rules.d/50-k.rules"], false);
+  const steps = apply.line.split(" && ");
+  expect(steps[0]).toBe("sudo mkdir -p '/var/lib/loadout' '/var/cache/loadout/chezmoi'");
+  // Pass 1: the folders not there yet, and the one whose source name carries an attribute.
+  expect(steps[1]).toBe(sudoRootCz + " apply --no-tty --include dirs '/etc/udev/rules.d' '/etc/modprobe.d'");
+  // Pass 2: everything else, without folders.
+  expect(steps[2]).toBe(sudoRootCz + " apply --no-tty --exclude dirs '/etc/udev/rules.d/50-k.rules'");
+  expect(steps[3]).toBe("if [ -e '/var/lib/loadout/chezmoistate.boltdb' ]; then sudo chmod 0644 '/var/lib/loadout/chezmoistate.boltdb'; fi");
+});
+
+test("a root source with nothing to do isn't applied, so nothing asks for sudo", async () => {
+  const engine = withRoot(rootRunner(""), ["/etc", "/etc/udev", "/etc/udev/rules.d", "/etc/modprobe.d"]);
+  expect(await engine.rootNeedsSudo(undefined)).toBe(false);
+  expect((await engine.applyCommand(undefined, false)).line).toBe(cz + " apply --no-tty");
+});
+
+test("a root target this user can't read is observed with sudo when that needs no password", async () => {
+  const runner = rootRunner("")
+    .onCommand(rootCz + " status --include files,symlinks", stderr("chezmoi: open /etc/sudoers.d/x: permission denied"), exit(1))
+    .onCommand(sudoRootCz.replace(/^sudo /, "sudo -n ") + " status --include files,symlinks", stdout(" M etc/modprobe.d/t2.conf\n"));
+  const observed = await withRoot(runner).observe(new Map());
+  configEq({ status: "drifted", files: ["/etc/modprobe.d/t2.conf"] }, observed.get("/t2"));
+});

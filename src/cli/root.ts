@@ -9,6 +9,7 @@ import { VERSION } from "../version.ts";
 import { type ArgSpec, Command, executeCommand, type Run } from "./args.ts";
 import { newApplyConfigCmd } from "./apply-config.ts";
 import { newBunCmd } from "./bun.ts";
+import { newChezmoiCmd } from "./chezmoi.ts";
 import { newCompileCmd } from "./compile.ts";
 import { newDiffCmd } from "./diff.ts";
 import { argsAtMost, exitWith, flagError, noSuchSubcommand, setRoot } from "./errors.ts";
@@ -100,6 +101,7 @@ export function newRoot(): Command {
     newRunScriptCmd(),
     newCheckScriptCmd(),
     newApplyConfigCmd(),
+    newChezmoiCmd(),
     newDiffCmd(),
     newSyncCmd(),
     newUpgradeCmd(),

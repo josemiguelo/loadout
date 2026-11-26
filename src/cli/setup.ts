@@ -17,6 +17,7 @@ import {
   type ProgramPlan,
 } from "./converge.ts";
 import { exitWith } from "./errors.ts";
+import { refuseEdited } from "./apply-config.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, spin } from "./spinner.ts";
@@ -74,9 +75,15 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
     if (manifest.programs.get(item.program)!.later !== "") later.items.push(item);
     else core.items.push(item);
   }
+  // What tool folders put outside $HOME lands after the core programs (so
+  // no package overwrites it) and before the core scripts (which may read it).
+  const configs = a.configs();
+  const rootDrift = configs !== undefined ? await configs.rootDrift() : new Map<string, string[]>();
+  const rootTargets = [...rootDrift.values()].flat();
+  const configRows: ExtraRow[] = [...rootDrift.keys()].map((name) => ({ name, label: "config" }));
   const laterTitle = skipLater ? "Later, skipped (--skip-later):" : "Later, after everything above:";
   echoSections(system.machine, [
-    { title: "", items: core.items, extra: scriptRows(coreScripts) },
+    { title: "", items: core.items, extra: [...configRows, ...scriptRows(coreScripts)] },
     { title: laterTitle, items: later.items, extra: scriptRows(laterScripts) },
   ]);
   if (skipLater) {
@@ -84,14 +91,18 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
     laterScripts = [];
   }
 
-  if (planInstalls(core).length === 0 && planInstalls(later).length === 0 && coreScripts.length === 0 && laterScripts.length === 0) {
+  if (
+    planInstalls(core).length === 0 && planInstalls(later).length === 0 && coreScripts.length === 0 && laterScripts.length === 0 &&
+    rootTargets.length === 0
+  ) {
     echo("\nNothing to do.");
     return;
   }
   if (dryRun) return;
   confirmOrAbort(yes);
   // One password for both phases, kept fresh until the later phase ends.
-  let needsSudo = false;
+  if (configs !== undefined && rootTargets.length > 0) await refuseEdited(configs, rootTargets);
+  let needsSudo = configs !== undefined && rootTargets.length > 0 && (await configs.rootNeedsSudo(rootTargets));
   for (const item of [...planInstalls(core), ...planInstalls(later)]) needsSudo = needsSudo || item.sudo;
   for (const name of [...coreScripts, ...laterScripts]) {
     if (needsSudo) break;
@@ -115,6 +126,11 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
   };
 
   let outcomes = await installPrograms(core, manifest);
+  if (configs !== undefined && rootTargets.length > 0) {
+    echo("\n" + Style.accent("==> configs " + [...rootDrift.keys()].join(", ")));
+    const code = await a.runner.inherit(await configs.applyCommand(rootTargets, false));
+    if (code !== 0) throw new engine.ConfigException("chezmoi apply failed (exit " + code + ")");
+  }
   await runScripts(coreScripts);
   if (planInstalls(later).length > 0 || laterScripts.length > 0) {
     echo(

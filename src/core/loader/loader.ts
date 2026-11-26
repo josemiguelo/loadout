@@ -5,10 +5,11 @@
 // is refused when it's missing, written by a newer loadout, below the
 // repo's version floor, or older than the sources it was compiled from, and
 // so is a repo whose chezmoi data or partial (model.chezmoiDataFiles)
-// doesn't match it. home is $HOME ("" when unset), for a parent at `~/…`.
+// doesn't match it, or whose builds (configbuild) don't match its tool folders. home is $HOME ("" when unset), for a parent at `~/…`.
 
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { checkFiles, invalid } from "../../assemble/index.ts";
+import { drift, driftMessage, parentPlan, planBuild } from "../configbuild/configbuild.ts";
 import {
   chezmoiDataFiles,
   decodeLock,
@@ -26,6 +27,11 @@ import {
   ToolTooOldException,
 } from "../../model/index.ts";
 import { atLeast, VERSION } from "../../version.ts";
+
+/** readManifest is the repo's manifest, from the lock alone (no staleness or file checks). */
+export function readManifest(repoRoot: string): Manifest {
+  return readLock(repoRoot).manifest;
+}
 
 /** readLayout is the repo's layout, from the lock alone (no staleness or file checks). */
 export function readLayout(repoRoot: string): RepoLayout {
@@ -70,6 +76,17 @@ export function loadRepo(repoRoot: string, home: string): Manifest {
         throw new ManifestException(path + " " + what + " — run: loadout compile");
       }
     }
+  }
+  // A repo with tool folders: its chezmoi sources are compile's builds, and
+  // chezmoi never reads one that's behind its tool folders, or holds what a
+  // chezmoi command wrote there.
+  for (const [where, build] of [
+    [repoRoot, planBuild(repoRoot, manifest.layout)],
+    [root, parentPlan(manifest, root, repoRoot)],
+  ] as const) {
+    if (build === undefined) continue;
+    const message = driftMessage(drift(where, build));
+    if (message !== undefined) throw new ManifestException(message);
   }
   const missing = checkFiles(manifest, dirFS(repoRoot), parentFS);
   if (missing.length > 0) throw invalid(missing);

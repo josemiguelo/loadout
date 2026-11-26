@@ -278,3 +278,44 @@ OUT=$(cz_loadout --repo work --machine work sync 2>&1) || fail "the child's sync
 echo "$OUT" | grep -q "parent dots changed: compiling" || fail "a parent's new manifest makes the child's sync recompile: $OUT"
 grep -q '"newer"' work/loadout.lock.json || fail "the child's lock has the script of the parent's new manifest"
 ok "a child's sync recompiles when its parent gained a manifest"
+
+# --- a parent with tool folders ---------------------------------------------------
+# Its builds aren't committed, and nothing writes under a parent: the child
+# builds the parent's tool folders into its own .loadout-parent/.
+basic_repo tfdots
+repo_opt tfdots/loadout.ts 'dotfiles: { tools: "tools/*", home: ".home", root: ".root" }'
+mkdir -p tfdots/tools/zsh/home tfdots/tools/kb/root/etc
+echo 'export ZDOTDIR' > tfdots/tools/zsh/home/dot_zshenv
+echo 'rule' > tfdots/tools/kb/root/etc/kb.rules
+cat >> tfdots/root.loadout.ts <<'TS'
+
+export const parentConfigs = script("parent-configs", {
+  runCommand: "printf '%s\\n' \"$LOADOUT_CONFIGS\" > \"$WHERE_OUT/configs.txt\"",
+  checkCommand: "false",
+});
+TS
+compile_repo tfdots
+TFP=$(cd tfdots && pwd -P)
+ts_root tfwork "parent: { name: \"tfdots\", path: \"$TFP\" }" </dev/null
+ts_file tfwork/machines/work.loadout.ts <<TS
+import { parentConfigs } from "$TFP/root.loadout.ts";
+machine("work", { run: [parentConfigs] });
+TS
+OUT=$("$BIN" --repo tfwork compile 2>&1) || fail "a child of a parent with tool folders compiles: $OUT"
+grep -q '"tools": "tools/\*"' tfwork/loadout.lock.json || fail "the child's lock records the parent's tool folders"
+before=$(cd tfdots && find . -path ./.git -prune -o -print | sort | xargs ls -ld 2>/dev/null | awk '{print $1, $NF}' | cksum)
+printf '.zshenv\n' > tfdots/tools/zsh/home/.stub-managed 2>/dev/null; rm -f tfdots/tools/zsh/home/.stub-managed
+OUT=$(cz_loadout --repo tfwork --machine work status 2>&1) || fail "the child's status runs: $OUT"
+after=$(cd tfdots && find . -path ./.git -prune -o -print | sort | xargs ls -ld 2>/dev/null | awk '{print $1, $NF}' | cksum)
+[ "$before" = "$after" ] || fail "nothing is written under the parent"
+CHILDP=$(cd tfwork && pwd -P)
+[ "$(cd tfwork && realpath .loadout-parent/home/dot_zshenv)" = "$TFP/tools/zsh/home/dot_zshenv" ] ||
+    fail "the child builds the parent's home/ files: $(ls -la tfwork/.loadout-parent/home 2>&1)"
+[ "$(cd tfwork && realpath .loadout-parent/root/etc/kb.rules)" = "$TFP/tools/kb/root/etc/kb.rules" ] || fail "and its root/ files"
+[ -f tfwork/.loadout-parent/home/.chezmoidata/loadout.json ] || fail "with the templates' data"
+grep -q "^loadout-parent managed\|^\.loadout-parent managed" "$CZ/log" || grep -q "loadout-parent" "$CZ/log" ||
+    fail "chezmoi reads the parent's configs from the child's build: $(tail -5 "$CZ/log")"
+mkdir -p where && export WHERE_OUT=$PWD/where
+"$BIN" --repo tfwork --machine work run-script parent-configs >/dev/null 2>&1
+[ "$(cat where/configs.txt 2>/dev/null)" = "$CHILDP/.loadout-parent/home" ] || fail "a parent's script sees its configs where the child built them: $(cat where/configs.txt 2>&1)"
+ok "a child builds its parent's tool folders into its own .loadout-parent/, and writes nothing in the parent"

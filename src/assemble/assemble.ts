@@ -112,12 +112,24 @@ function assembleWith(draft: ManifestDraft, files: Files | undefined): Manifest 
   if (trimSpace(state) === "") errors.push("layout state is missing (a directory)");
   const dirs: string[] = [];
   if (trimSpace(state) !== "") dirs.push(state);
-  if (manifest.layout.configs !== undefined) dirs.push(manifest.layout.configs);
+  const layout = manifest.layout;
+  if (layout.configs !== undefined) dirs.push(layout.configs);
+  if (layout.rootConfigs !== undefined) dirs.push(layout.rootConfigs);
+  if (layout.build?.from !== undefined) dirs.push(layout.build.from);
   for (const dir of dirs) {
     if (globHasWildcard(dir)) errors.push("layout '" + dir + "' is a directory, not a glob");
     const problem = globProblem(dir);
     if (problem !== "") errors.push("layout '" + dir + "' " + problem);
   }
+  if (layout.build !== undefined) {
+    const problem = globProblem(layout.build.tools);
+    if (problem !== "") errors.push("layout tools '" + layout.build.tools + "' " + problem);
+    const named = [layout.configs, layout.rootConfigs, layout.build.from].filter((d): d is string => d !== undefined);
+    for (const [i, d] of named.entries()) {
+      if (named.indexOf(d) !== i) errors.push("layout '" + d + "' is named twice: home, root and from are three folders");
+    }
+  }
+  if (layout.rootConfigs !== undefined && layout.build === undefined) errors.push("layout root-configs needs tool folders (dotfiles: { tools, home, root })");
   for (const [name, config] of plus(draft.profiles, manifest.machines)) {
     errors.push(...validateData(manifest.data, config.data, config.label === "" ? name : config.label, ""));
   }

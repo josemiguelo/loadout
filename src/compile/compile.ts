@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { assemble, declaredNames, draftOver, invalid, type ManifestDraft } from "../assemble/index.ts";
 import * as bun from "../core/bun/bun.ts";
+import { drift, driftMessage, planBuild, writeBuild } from "../core/configbuild/configbuild.ts";
 import {
   chezmoiDataFiles,
   cleanPath,
@@ -135,6 +136,8 @@ export async function compile(root: string): Promise<string[]> {
             path: d.parent.path,
             state: layout.state,
             configs: layout.configs,
+            rootConfigs: layout.rootConfigs,
+            build: layout.build,
             sources: layout.sources,
             hash: parent.hash,
           }),
@@ -147,6 +150,13 @@ export async function compile(root: string): Promise<string[]> {
   const repoFS = dirFS(root);
   const manifest = assemble(draft, repoFS, parentFS);
   const hash = sourcesHash(repoFS, manifest.layout.sources);
+  // Tool folders: what chezmoi wrote into a build is the user's to keep or
+  // drop (`loadout chezmoi`), never overwritten here.
+  const build = planBuild(root, manifest.layout);
+  if (build !== undefined) {
+    const off = drift(root, build);
+    if (off.writes.length > 0 || off.strays.length > 0) throw new ManifestException(driftMessage(off)!);
+  }
   const lock: Lock = { format: 0, toolVersion: VERSION, sources: hash, manifest };
   writeIfChanged(root, path.join(root, lockFileName), encodeLock(lock));
   const configs = manifest.layout.configs;
@@ -155,7 +165,9 @@ export async function compile(root: string): Promise<string[]> {
       writeIfChanged(root, path.join(root, p), text);
     }
   }
+  if (build !== undefined) writeBuild(root, build);
   const warnings = unusedWarnings(draft, manifest, d.spares, inherited);
+  if (build !== undefined) warnings.push(...build.warnings);
   if (d.transitional.length > 0) {
     const done = doneScripts(path.join(root, manifest.layout.state), [...manifest.machines.keys()]);
     warnings.push(...transitionalWarnings(manifest, d.transitional, done));

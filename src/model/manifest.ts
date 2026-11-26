@@ -493,8 +493,19 @@ export function newMeta(m: Partial<Meta> = {}): Meta {
 export interface RepoLayout {
   /** state is the state directory: one `<machine>.json` per machine. Required. */
   state: string;
-  /** configs is the chezmoi source root, when the repo holds dotfiles. */
+  /**
+   * configs is the chezmoi source applied to $HOME, when the repo holds
+   * dotfiles: authored as it is, or built by compile from build's tool
+   * folders.
+   */
   configs?: string;
+  /**
+   * rootConfigs is the chezmoi source applied to / as root, built by
+   * compile from each tool folder's root/; undefined when the repo has none.
+   */
+  rootConfigs?: string;
+  /** build is where compile builds configs (and rootConfigs) from; undefined when configs is authored. */
+  build?: ConfigBuild;
   /**
    * sources is the globs of the manifest sources, in compile order. The
    * lock's hash covers the files they match, so an edit the lock hasn't
@@ -503,6 +514,19 @@ export interface RepoLayout {
   sources: string[];
   /** parent is the repo this one builds on, for a child repo (contract 18); undefined for any other. */
   parent?: ParentLayout;
+}
+
+/**
+ * ConfigBuild is `repo({ dotfiles: { tools, from } })`: every folder tools
+ * matches is a tool, its home/ chezmoi source rooted at $HOME and its root/
+ * one rooted at /; from is a chezmoi source tree merged into configs as it
+ * stands (what hasn't moved into a tool folder yet).
+ */
+export interface ConfigBuild {
+  /** tools is the glob of the tool folders, relative to the repo root. */
+  tools: string;
+  /** from is the authored chezmoi tree merged into configs, undefined for none. */
+  from?: string;
 }
 
 /** newRepoLayout is a RepoLayout with every field not given empty. */
@@ -525,6 +549,14 @@ export interface ParentLayout {
   state: string;
   /** configs is its chezmoi source, applied beside the child's. */
   configs?: string;
+  /** rootConfigs is its chezmoi source for /, applied beside the child's. */
+  rootConfigs?: string;
+  /**
+   * build is its tool folders, when its configs are built from them: the
+   * child builds them into its own .loadout-parent/ (nothing is written
+   * under the parent).
+   */
+  build?: ConfigBuild;
   /** sources is its manifest globs, from its own lock. */
   sources: string[];
   /**

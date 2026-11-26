@@ -64,6 +64,13 @@ src/
                    partial) only when changed; doneScripts, writeIfChanged
     unused.ts      unusedWarnings, transitionalWarnings
   core/
+    configbuild/   chezmoi's sources built from tool folders (contract 17):
+                   planBuild (both builds, clashes refused, warnings),
+                   writeBuild, refreshBuilds (every command, from
+                   AppContext.layout; a child's builds of its parent's
+                   folders: parentPlan, .loadout-parent/), drift (chezmoi's
+                   writes, strays, stale) and driftMessage, snapshot (what
+                   `loadout chezmoi` compares)
     loader/        loadRepo: reads the lock: missing/newer/stale/floor
                    refusals, file: paths re-checked; readLayout reads it
                    alone; toolTooOld
@@ -86,8 +93,9 @@ src/
                    this machine can upgrade, one step per command, refusals;
                    `upgrade` runs and verifies, the home screen plans with it to
                    describe steps and refuse early), ScriptRunner, ConfigEngine
-                   (chezmoi over the repo's configs dir: units, drift, edited
-                   files, the apply command; contract 17), StatusEngine
+                   (chezmoi over the repo's configs dir, and root sources
+                   applied to / in two passes: units, drift, edited files,
+                   the apply command; contract 17), StatusEngine
                    (observes programs, scripts AND configs; all checks
                    concurrent, at most 8, read-only), sudo.ts (commandNeedsSudo,
                    the keepalive), text.ts (compileRegex: a manifest's RE2 regex
@@ -112,7 +120,7 @@ src/
                (what a confirmed action runs), registerScreen/newScreen
   cli/         one file per subcommand (status/explain/installers/
                setup-new-machine/install/upgrade/self-upgrade/outdated/run/
-               apply/diff/sync/init/compile/bun); args.ts (the command line:
+               apply/diff/sync/init/compile/bun/chezmoi); args.ts (the command line:
                commands, flags, help),
                root.ts (bare invocation without a TTY prints help), home.ts
                (starts the screen, prints what it ended with), style.ts,

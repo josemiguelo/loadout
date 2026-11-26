@@ -1,6 +1,6 @@
 import type { SystemInfo } from "../coremodel/coremodel.ts";
 import { envVar } from "../platform/platform.ts";
-import { bunDirVar, isParentOrigin, originFolder } from "../../model/index.ts";
+import { bunDirVar, isParentOrigin, joinPath, originFolder } from "../../model/index.ts";
 import type { ShellCommand } from "./exec.ts";
 
 /** FrameParent is a child repo's parent checkout and its commands' variables. */
@@ -92,7 +92,7 @@ export function frameOf(
   if (parentRoot !== "") common["LOADOUT_PARENT"] = parentRoot;
   const repoEnv = (root: string, configs: string | undefined): Record<string, string> => {
     const env: Record<string, string> = { ...common, LOADOUT_REPO: root };
-    if (configs !== undefined) env["LOADOUT_CONFIGS"] = root + "/" + configs;
+    if (configs !== undefined) env["LOADOUT_CONFIGS"] = joinPath(root, configs);
     return env;
   };
   const parent = parentRoot !== "" ? { root: parentRoot, env: repoEnv(parentRoot, parentConfigs) } : undefined;

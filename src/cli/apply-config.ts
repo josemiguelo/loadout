@@ -3,6 +3,7 @@ import * as engine from "../core/engine/index.ts";
 import { sortStrings } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import { exitWith, usageErr } from "./errors.ts";
+import { askForSudoUpfront } from "./converge.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, spinning } from "./spinner.ts";
@@ -42,6 +43,8 @@ async function runApply(names: string[], force: boolean): Promise<void> {
     }
   }
   if (!force) await refuseEdited(configs, targets);
+  // What tool folders put outside $HOME is written as root.
+  await askForSudoUpfront(a.runner, await configs.rootNeedsSudo(targets));
 
   const apply = await configs.applyCommand(targets, force);
   const code = await a.runner.inherit(apply);
@@ -73,6 +76,6 @@ export async function refuseEdited(configs: engine.ConfigEngine, targets: readon
   if (edited.length === 0) return;
   throw new engine.ConfigException(
     edited.length + " config file(s) edited on this machine: " + edited.join(", ") + " — " +
-      "keep your edits with `chezmoi re-add`, or replace them with `loadout apply-config --force`",
+      "keep your edits with `loadout chezmoi re-add`, or replace them with `loadout apply-config --force`",
   );
 }

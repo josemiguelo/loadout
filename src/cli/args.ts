@@ -398,7 +398,16 @@ export async function executeCommand(root: Command, args: readonly string[], hoo
   let parsed: { flags: Flags; args: string[] };
   if (cmd.passArgs && cmd.run !== undefined && cmd.parent !== undefined) {
     const own = cmd.parent === root ? argsAfterFirstX(args, root, cmd.name) : rest;
-    const flags = new Flags(cmd.flagSet());
+    // The flags before its name are loadout's (--repo, --machine); the rest are its own.
+    let flags = new Flags(cmd.flagSet());
+    if (cmd.parent === root) {
+      try {
+        flags = parseFlags(cmd, args.slice(0, args.length - own.length - 1)).flags;
+      } catch (e) {
+        if (e instanceof FlagError) throw hooks.flagError(cmd, e.message);
+        throw e;
+      }
+    }
     for (let c: Command | undefined = cmd; c !== undefined; c = c.parent) {
       if (c.persistentPreRun !== undefined) {
         await c.persistentPreRun(cmd, own, flags);
