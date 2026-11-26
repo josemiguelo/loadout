@@ -60,6 +60,18 @@ ok "sync with unchanged state commits nothing"
 echo "$OUT" | grep -q "1 program missing" || fail "sync names what's left to do: $OUT"
 ok "sync ends naming what this machine still lacks"
 
+# A machine still on the lock an older loadout wrote, when the remote has
+# this loadout's: sync pulls before it reads the lock, so the upgrade path
+# (self-upgrade, then sync) works.
+sed -i.bak 's/"format": 2,/"format": 1,/' repo/loadout.lock.json && rm repo/loadout.lock.json.bak
+git -C repo commit -qam "an older loadout's lock" && git -C repo push -q
+git -C repo revert --no-edit HEAD >/dev/null && git -C repo push -q
+git -C repo reset -q --hard HEAD~1
+grep -q '"format": 1,' repo/loadout.lock.json || fail "the test starts from the older lock"
+OUT=$("$BIN" --repo repo --machine m1 sync 2>&1) || fail "sync pulls the lock it can read before reading it: $OUT"
+grep -q '"format": 2,' repo/loadout.lock.json || fail "sync pulled this loadout's lock"
+ok "sync on a machine still holding an older loadout's lock pulls before reading it"
+
 # --- sync upgrades loadout when the pulled repo needs a newer one --------
 # Offline: a fake curl answers the release check and the install script.
 # The install replaces a copy of the binary with a stub that says how it

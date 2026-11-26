@@ -67,9 +67,17 @@ async function runSync(a: AppContext, noPush: boolean, message: string | undefin
     throw new GitException(a.repoRoot + " is not a git repository (run `loadout init` or `git init` first)");
   }
 
-  // A child repo (contract 18): the parent is pulled, nothing more. A lock
-  // this loadout can't read yet waits for the upgrade below, whose sync
-  // pulls it.
+  // The repo is pulled before anything reads its lock: the one here may be
+  // an older loadout's, which this one can't read, and the pull brings the
+  // one it can (the upgrade path is self-upgrade, then sync).
+  const hasUpstream = await repo.hasUpstream();
+  if (hasUpstream) await spin("pulling latest changes…", () => repo.pullRebase());
+  else echo(Style.dim("No upstream configured; skipping pull."));
+
+  // A child repo (contract 18): the parent its pulled lock names is pulled,
+  // nothing more. A lock this loadout can't read yet waits for the upgrade
+  // below, whose sync pulls it.
+  a.reloadLayout();
   const parent = attempt(() => a.parentRoot());
   const parentRoot = "value" in parent ? parent.value : "";
   if (parentRoot !== "") {
@@ -78,10 +86,6 @@ async function runSync(a: AppContext, noPush: boolean, message: string | undefin
       await spin("pulling parent " + parentName(a) + "…", () => parentGit.pullRebase());
     }
   }
-
-  const hasUpstream = await repo.hasUpstream();
-  if (hasUpstream) await spin("pulling latest changes…", () => repo.pullRebase());
-  else echo(Style.dim("No upstream configured; skipping pull."));
 
   // A parent whose manifests moved needs the child compiled against them;
   // a compile that fails stops here with what it said. It reads the lock,
