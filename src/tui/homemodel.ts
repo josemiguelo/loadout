@@ -823,7 +823,7 @@ export function startUpgrade(m: HomeModel, ans: Answered, selection: ReadonlySet
 
 /**
  * startInstalls asks about installing the ticked missing programs, then
- * hands off to `loadout install <names>`. Planned with InstallEngine like the
+ * hands off to `loadout install-program <names>`. Planned with InstallEngine like the
  * command (dependencies first, refusals before anything runs).
  */
 export function startInstalls(m: HomeModel, chosen: ReadonlySet<string>): void {
@@ -868,7 +868,7 @@ export function startInstalls(m: HomeModel, chosen: ReadonlySet<string>): void {
 
 /**
  * startScripts asks about running the ticked scripts, then hands off to
- * `loadout run <names> --force` (a ticked script runs even when done). `run`
+ * `loadout run-script <names> --force` (a ticked script runs even when done). `run-script`
  * records each one and re-asks its check.
  */
 export function startScripts(m: HomeModel, picked: ReadonlySet<string>): void {
@@ -890,10 +890,10 @@ export function startScripts(m: HomeModel, picked: ReadonlySet<string>): void {
 
 /**
  * startConfigs asks about writing the ticked configs, then hands off to
- * `loadout apply <names>`. A file edited on this machine would stop `apply`,
+ * `loadout apply-config <names>`. A file edited on this machine would stop `apply-config`,
  * so it stops here, before anything runs, naming the file: which version
  * wins is the user's call, made in a terminal (`chezmoi re-add`, or
- * `loadout apply --force`).
+ * `loadout apply-config --force`).
  */
 export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
   if (m.state.dialog !== undefined) return;
@@ -926,12 +926,12 @@ export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
       // A refusal with a list: the toast says what happened, the dialog
       // lists the files.
       if (edited.length > 0) {
-        fail(m, "edited on this machine: " + edited.join(", ") + " — keep with chezmoi re-add, or run loadout apply --force");
+        fail(m, "edited on this machine: " + edited.join(", ") + " — keep with chezmoi re-add, or run loadout apply-config --force");
         m.state.dialog = newDialog({
           kind: DialogKind.List,
           title: "Edited here",
           lines: edited,
-          summary: "Keep them with chezmoi re-add, or overwrite them with loadout apply --force, in a terminal.",
+          summary: "Keep them with chezmoi re-add, or overwrite them with loadout apply-config --force, in a terminal.",
         });
         return;
       }

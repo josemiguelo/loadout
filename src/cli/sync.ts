@@ -7,7 +7,7 @@ import * as loader from "../core/loader/loader.ts";
 import { envVar, selfExecutable } from "../core/platform/platform.ts";
 import { chezmoiDataFiles, lockFileName, Refusal, ToolTooOldException, trimSpace } from "../model/index.ts";
 import { atLeast, installCommand, VERSION } from "../version.ts";
-import { refuseEdited } from "./apply.ts";
+import { refuseEdited } from "./apply-config.ts";
 import type { Command } from "./args.ts";
 import { compileRepo } from "./compile.ts";
 import { exitWith } from "./errors.ts";

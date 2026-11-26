@@ -66,7 +66,7 @@ TS
 mkdir -p dots/loadouts/private_dot_config/.tool/.loadout
 printf '#!/bin/sh\ntouch setup-ran.txt\n' > dots/loadouts/private_dot_config/.tool/.loadout/setup.sh
 OUT=$("$BIN" --repo dots compile 2>&1) || fail "a dot-folder manifest compiles: $OUT"
-"$BIN" --repo dots --machine m1 run tool >/dev/null || fail "the dot-folder's script runs"
+"$BIN" --repo dots --machine m1 run-script tool >/dev/null || fail "the dot-folder's script runs"
 [ -f dots/loadouts/private_dot_config/.tool/setup-ran.txt ] || fail "the dot-folder's script ran in its file's folder"
 ok "a tool's dot-folder compiles, and its script runs from that folder"
 

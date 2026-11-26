@@ -140,17 +140,17 @@ The child is started with `LOADOUT_HANDOFF=1`: it traps SIGINT
   asks chezmoi which ticked files were edited on this machine
   (`ConfigEngine.edited`): any, and an Error toast names them plus a list
   dialog of the files, and nothing runs (the choice between `chezmoi
-  re-add` and `apply --force` is made in a terminal, never from the
-  screen); none, and it asks, then runs `apply <names>`. The fleet subject
+  re-add` and `apply-config --force` is made in a terminal, never from the
+  screen); none, and it asks, then runs `apply-config <names>`. The fleet subject
   and its table count config drift too.
 - **Scripts**: maintain-mode scripts in run order with their last verdict;
   anything not done pre-ticked (`preselect`, re-applied after every
-  refresh). Enter runs the ticks as `run <names> --force`, which
+  refresh). Enter runs the ticks as `run-script <names> --force`, which
   re-verifies and names scripts that exited 0 but still fail their check.
   **Programs**: every program this machine maps with its verdict (missing
   first); only missing ones tick, planned with the InstallEngine's plan
-  (dependencies first, the same refusals as `install`) and run as
-  `install <names> --yes`. **Fleet**: the drifting programs and configs,
+  (dependencies first, the same refusals as `install-program`) and run as
+  `install-program <names> --yes`. **Fleet**: the drifting programs and configs,
   machines as columns.
 - **Inspector** (`i`, user decision): the row's program, script or config
   as `explain` resolves it (`app.explain`, shared with the CLI: no explain

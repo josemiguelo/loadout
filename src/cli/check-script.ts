@@ -1,34 +1,32 @@
 import { scriptOrder } from "../assemble/index.ts";
 import * as engine from "../core/engine/index.ts";
-import { optionsWord, parseJSON, scriptOptions } from "../model/index.ts";
+import { scriptOptions } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import { machineOf } from "./converge.ts";
 import { exitWith, usageErr } from "./errors.ts";
-import { boolFlag, commandHelp, stringFlag } from "./help.ts";
+import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo } from "./spinner.ts";
 import { Style } from "./style.ts";
 
-/** newCheckCmd is `loadout check`. */
-export function newCheckCmd(): Command {
+/** newCheckScriptCmd is `loadout check-script`. */
+export function newCheckScriptCmd(): Command {
   const cmd = subcommand(
-    "check",
+    "check-script",
     commandHelp(
       "Ask scripts whether they're done, without running them.",
       "<scripts...>  script names (must be opted in by this machine)",
       "--all         every script this machine opts into, instead of names",
-      "--options     JSON to ask one module script with, instead of the machine's",
     ),
     [{ name: "scripts", help: "Script names from the manifest", optional: true, multiple: true }],
-    (_cmd, args, flags) => checkScripts(args, flags.bool("all"), flags.string("options")),
+    (_cmd, args, flags) => checkScripts(args, flags.bool("all")),
   );
   boolFlag(cmd, "all", "", "Check every script this machine opts into");
-  stringFlag(cmd, "options", "", "", "Options to check one module script with, as JSON");
   return cmd;
 }
 
-/** checkScripts prints each script's answer; exits 1 unless all are done. It writes nothing. */
-async function checkScripts(names: string[], all: boolean, options: string): Promise<void> {
+/** checkScripts prints each script's answer, asked with this machine's options; exits 1 unless all are done. It writes nothing. */
+async function checkScripts(names: string[], all: boolean): Promise<void> {
   const a = appCtx();
   const manifest = a.loadManifest();
   const system = a.detectSystem();
@@ -37,16 +35,6 @@ async function checkScripts(names: string[], all: boolean, options: string): Pro
   const unknown = names.filter((name) => !manifest.scripts.has(name));
   if (unknown.length > 0) throw usageErr("Unknown scripts: " + unknown.join(", "));
   const enabled = scriptOptions(machineOf(manifest, system.machine));
-  if (options !== "") {
-    if (names.length !== 1 || manifest.scripts.get(names[0]!)!.rules === undefined) throw usageErr("--options goes with one script that takes options");
-    let parsed;
-    try {
-      parsed = parseJSON(options);
-    } catch {
-      throw usageErr("--options isn't valid JSON");
-    }
-    enabled.set(names[0]!, optionsWord(parsed));
-  }
   const off = names.filter((name) => !enabled.has(name));
   if (off.length > 0) {
     for (const name of off) {

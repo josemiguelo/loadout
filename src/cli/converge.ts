@@ -1,4 +1,4 @@
-// The program half of converging, shared by `install` and
+// The program half of converging, shared by `install-program` and
 // `setup-new-machine` — observe, plan, show, confirm, execute. The two
 // commands differ in what they target and in what ELSE they do (scripts are
 // setup's alone), never in this sequence; keeping it in one place is what

@@ -11,10 +11,10 @@ import { exitText } from "./setup.ts";
 import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
-/** newRunCmd is `loadout run`. */
-export function newRunCmd(): Command {
+/** newRunScriptCmd is `loadout run-script`. */
+export function newRunScriptCmd(): Command {
   const cmd = subcommand(
-    "run",
+    "run-script",
     commandHelp(
       "Run the named scripts from the manifest.",
       "<scripts...>  script names (must be opted in by this machine)",
@@ -51,7 +51,7 @@ async function runScripts(names: string[], all: boolean, force: boolean): Promis
   if (disabled) throw exitWith(1);
 
   // --all is the machine's opt-in list itself — membership, not modes:
-  // `run` is the explicit escape hatch and ignores setup/maintain. Acting
+  // `run-script` is the explicit escape hatch and ignores setup/maintain. Acting
   // on the last status's verdict is the home screen's job (its scripts row
   // pre-ticks what isn't done); here you name what you want.
   const targets = all ? [...enabled.keys()] : names;

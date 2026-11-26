@@ -15,13 +15,13 @@ import { echo, spin } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /**
- * newInstallCmd is the targeted installer: named programs (or --all, this
+ * newInstallProgramCmd is the targeted installer: named programs (or --all, this
  * machine's whole mapped membership), dependencies first. Scripts are
- * `run`'s job; programs *and* scripts together are `setup-new-machine`'s.
+ * `run-script`'s job; programs *and* scripts together are `setup-new-machine`'s.
  */
-export function newInstallCmd(): Command {
+export function newInstallProgramCmd(): Command {
   const cmd = subcommand(
-    "install",
+    "install-program",
     commandHelp(
       "Install the named programs on this machine, dependencies first.",
       "<programs...>  programs from the manifest (+ depends-on)",

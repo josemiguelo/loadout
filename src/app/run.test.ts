@@ -31,7 +31,7 @@ test("run command is the child loadout with the handoff env", () => {
 test("run command runs closed's command", () => {
   const a = appOf("/repo");
   const cmd = a.runCommand({ action: ActionHandOff, handoff: { kind: PaneScripts, args: ["s1"] } });
-  expect(cmd?.argv.slice(1)).toEqual(["--repo", "/repo", "run", "s1", "--force"]);
+  expect(cmd?.argv.slice(1)).toEqual(["--repo", "/repo", "run-script", "s1", "--force"]);
   expect(a.runCommand({ action: ActionNone })).toBeUndefined();
 });
 

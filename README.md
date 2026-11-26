@@ -40,7 +40,7 @@ TypeScript scripts run with.
   packages, hardware) in `loadouts/.etc/<concern>/`.
 - **Your dotfiles are part of the loadout.** With `configs: …` in `repo()`, the
   repo holds chezmoi's source: `status` shows each config as applied or
-  drifted, `diff` compares them across machines, `apply` writes them, and
+  drifted, `diff` compares them across machines, `apply-config` writes them, and
   `sync` applies them before publishing this machine's state.
 - **Scripts in TypeScript, on a bare machine.** loadout is a bun: every
   command it runs finds `bun` first on PATH, and that bun is loadout
@@ -77,15 +77,15 @@ TypeScript scripts run with.
 | | `installers [name]` | The install mechanisms available here, built-in and your own |
 | | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `outdated` sources included |
 | | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
+| | `check-script <scripts>` | Are those scripts done? Asks their checks with this machine's options, runs nothing, writes nothing; exit 1 unless all are (`--all` = every script this machine opts into) |
 | **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts; what's marked `canWait` (slow, optional) comes after all of it (`--skip-later` stops before) |
-| | `install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
+| | `install-program <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
 | | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
-| | `check <scripts>` | Are those scripts done? Asks their checks and runs nothing (`--all`; `--options '<json>'` asks one module script with other options) |
-| | `run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
-| | `apply [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
+| | `run-script <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
+| | `apply-config [configs]` | Write the repo's configs here through chezmoi (default: all); stops on files edited on this machine unless `--force` |
 | **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
 | | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
-| | `compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `transitional` scripts every machine has done |
+| | `compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `deleteOnceDone` scripts every machine has done |
 | | `init` | Scaffold a new config repo (`loadout.ts`, a tsconfig and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
 | | `bun [args…]` | The bun built into loadout, the one scripts run with: `loadout bun --version`, `loadout bun run x.ts`; needs no repo |
 

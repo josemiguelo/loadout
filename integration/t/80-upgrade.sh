@@ -39,7 +39,7 @@ echo "$OUT" | grep -q "upgrades are whole-mechanism" || fail "naming a program p
 "$BIN" --repo uprepo --machine m1 upgrade >/dev/null 2>&1 && fail "upgrade with no target should fail" || true
 # Converge still never upgrades: that separation is the whole point.
 "$BIN" --repo uprepo --machine m1 status >/dev/null
-OUT=$("$BIN" --repo uprepo --machine m1 install --all --dry-run)
+OUT=$("$BIN" --repo uprepo --machine m1 install-program --all --dry-run)
 echo "$OUT" | grep -qi "upgrad" && fail "install must not mention upgrading" || true
 ok "upgrade runs whole mechanisms, deduped by command; converge still doesn't"
 

@@ -24,7 +24,7 @@ export class ScriptRunner {
   }
 
   /**
-   * pending says whether run would execute step: its `check` doesn't pass
+   * pending says whether run-script would execute step: its `check` doesn't pass
    * (or force). Asks the check, as run will again.
    */
   async pending(step: ScriptStep, force: boolean, options: string): Promise<boolean> {

@@ -26,18 +26,18 @@ ok "setup-new-machine --dry-run plans without executing"
 ok "setup-new-machine with everything installed is a no-op"
 
 # --- install (targeted programs; scripts are run's job) ------------------
-OUT=$("$BIN" --repo repo --machine m1 install git --dry-run) || fail "install with names exits 0"
+OUT=$("$BIN" --repo repo --machine m1 install-program git --dry-run) || fail "install with names exits 0"
 echo "$OUT" | grep -q "git" || fail "install plans the named program"
 echo "$OUT" | grep -q "marker" && fail "install must not touch scripts" || true
-"$BIN" --repo repo --machine m1 install ghost-prog --dry-run >/dev/null 2>&1 && fail "unknown program should fail" || true
+"$BIN" --repo repo --machine m1 install-program ghost-prog --dry-run >/dev/null 2>&1 && fail "unknown program should fail" || true
 "$BIN" --repo repo --machine m1 setup-new-machine git --dry-run >/dev/null 2>&1 && fail "setup-new-machine must not accept names" || true
 ok "install targets named programs; setup-new-machine takes no names"
 
-OUT=$("$BIN" --repo repo --machine m1 install --all --dry-run) || fail "install --all exits 0"
+OUT=$("$BIN" --repo repo --machine m1 install-program --all --dry-run) || fail "install --all exits 0"
 echo "$OUT" | grep -q "git" || fail "install --all plans every mapped program"
 echo "$OUT" | grep -q "marker" && fail "install --all must not touch scripts" || true
-"$BIN" --repo repo --machine m1 install --all git --dry-run >/dev/null 2>&1 && fail "--all with names should fail" || true
-"$BIN" --repo repo --machine m1 install --dry-run >/dev/null 2>&1 && fail "install with no names and no --all should fail" || true
+"$BIN" --repo repo --machine m1 install-program --all git --dry-run >/dev/null 2>&1 && fail "--all with names should fail" || true
+"$BIN" --repo repo --machine m1 install-program --dry-run >/dev/null 2>&1 && fail "install with no names and no --all should fail" || true
 ok "install --all covers this machine's mapped programs, and rejects names alongside it"
 
 # --- setup-new-machine runs eligible scripts -----------------------------
@@ -55,8 +55,8 @@ TS
 compile_repo repo
 OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --dry-run) || fail "converge with unmapped program should succeed"
 echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
-"$BIN" --repo repo --machine m1 install never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
-OUT=$("$BIN" --repo repo --machine m1 install never-mapped --dry-run 2>&1 || true)
+"$BIN" --repo repo --machine m1 install-program never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
+OUT=$("$BIN" --repo repo --machine m1 install-program never-mapped --dry-run 2>&1 || true)
 echo "$OUT" | grep -q "program 'never-mapped' isn't installed on machine 'm1'" || fail "unmapped-program error message: $OUT"
 "$BIN" --repo repo --machine m1 status >/dev/null
 grep -q '"never-mapped"' repo/machines/state/m1.json && fail "unmapped program must not be observed" || true
@@ -110,7 +110,7 @@ const app = program("app", { canBeInstalled: [flat] });
 machine("m1", { install: [flatRuntime, app] });
 TS
 compile_repo providesrepo
-OUT=$("$BIN" --repo providesrepo --machine m1 install app --dry-run 2>&1) || fail "provided probe refused: $OUT"
+OUT=$("$BIN" --repo providesrepo --machine m1 install-program app --dry-run 2>&1) || fail "provided probe refused: $OUT"
 echo "$OUT" | grep -q "flat-runtime" || fail "provider not planned: $OUT"
 echo "$OUT" | grep -q "loadout-test-flat install app" || fail "app not planned: $OUT"
 OUT=$("$BIN" --repo providesrepo --machine m1 explain flat-runtime)
@@ -155,7 +155,7 @@ TS
 compile_repo landedrepo
 OUT=$("$BIN" --repo landedrepo --machine m1 status 2>&1) || fail "status: $OUT"
 echo "$OUT" | grep -E "app .*1\.2\.3" >/dev/null || fail "check didn't run from where the tool lands: $OUT"
-OUT=$("$BIN" --repo landedrepo --machine m2 install other --dry-run 2>&1) || fail "tool off PATH refused: $OUT"
+OUT=$("$BIN" --repo landedrepo --machine m2 install-program other --dry-run 2>&1) || fail "tool off PATH refused: $OUT"
 echo "$OUT" | grep -qF "PATH=\"$LANDED:" || fail "install doesn't put where it lands first on PATH: $OUT"
 ok "a provided tool off PATH is found, checked and run where its variant says it lands"
 
@@ -222,9 +222,9 @@ machine("m1", { install: [tool("withprereq"), prereq] });
 machine("m2", { install: [tool("plain")] });
 TS
 compile_repo vdeps
-OUT=$("$BIN" --repo vdeps --machine m1 install tool --dry-run) || fail "dry-run with a variant dependency"
+OUT=$("$BIN" --repo vdeps --machine m1 install-program tool --dry-run) || fail "dry-run with a variant dependency"
 echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
-OUT=$("$BIN" --repo vdeps --machine m2 install tool --dry-run) || fail "the other variant needs no mapping for it"
+OUT=$("$BIN" --repo vdeps --machine m2 install-program tool --dry-run) || fail "the other variant needs no mapping for it"
 echo "$OUT" | grep -q "prereq" && fail "another variant's dependency must not be planned" || true
 OUT=$("$BIN" --repo vdeps --machine m1 explain tool)
 echo "$OUT" | grep -qE "depends-on.withprereq +prereq" || fail "explain shows a variant's depends-on"

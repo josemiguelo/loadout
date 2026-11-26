@@ -7,7 +7,7 @@ import { type AppContext, hasScreen, newApp } from "../app/index.ts";
 import { envVar, isStdoutTty } from "../core/platform/platform.ts";
 import { VERSION } from "../version.ts";
 import { type ArgSpec, Command, executeCommand, type Run } from "./args.ts";
-import { newApplyCmd } from "./apply.ts";
+import { newApplyConfigCmd } from "./apply-config.ts";
 import { newBunCmd } from "./bun.ts";
 import { newCompileCmd } from "./compile.ts";
 import { newDiffCmd } from "./diff.ts";
@@ -16,11 +16,11 @@ import { newExplainCmd } from "./explain.ts";
 import { home } from "./home.ts";
 import { boolFlag, helpFlag, printHelp, stringFlag } from "./help.ts";
 import { newInitCmd } from "./init.ts";
-import { newInstallCmd } from "./install.ts";
+import { newInstallProgramCmd } from "./install-program.ts";
 import { newInstallersCmd } from "./installers.ts";
 import { newOutdatedCmd } from "./outdated.ts";
-import { newCheckCmd } from "./check.ts";
-import { newRunCmd } from "./run.ts";
+import { newCheckScriptCmd } from "./check-script.ts";
+import { newRunScriptCmd } from "./run-script.ts";
 import { newSelfUpgradeCmd } from "./selfupgrade.ts";
 import { newSetupCmd } from "./setup.ts";
 import { echo } from "./spinner.ts";
@@ -95,11 +95,11 @@ export function newRoot(): Command {
     newExplainCmd(),
     newInstallersCmd(),
     newSetupCmd(),
-    newInstallCmd(),
+    newInstallProgramCmd(),
     newOutdatedCmd(),
-    newRunCmd(),
-    newCheckCmd(),
-    newApplyCmd(),
+    newRunScriptCmd(),
+    newCheckScriptCmd(),
+    newApplyConfigCmd(),
     newDiffCmd(),
     newSyncCmd(),
     newUpgradeCmd(),

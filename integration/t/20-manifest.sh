@@ -54,7 +54,7 @@ machine("m1", { install: [tool] });
 TS
 printf 'tool 4.2\n' > fparam/programs/tool/payload.txt
 compile_repo fparam
-"$BIN" --repo fparam --machine m1 install tool --yes >/dev/null 2>&1 || fail "an install with a file: param runs"
+"$BIN" --repo fparam --machine m1 install-program tool --yes >/dev/null 2>&1 || fail "an install with a file: param runs"
 grep -qx "tool 4.2" fparam/installed-tool.txt || fail "the file: param reached the file next to the program's file"
 rm fparam/programs/tool/payload.txt
 OUT=$("$BIN" --repo fparam --machine m1 explain tool 2>&1) && fail "a missing file: param must fail the load"
@@ -272,7 +272,7 @@ OUT=$("$BIN" --repo yesno --machine m1 explain setup-thing)
 echo "$OUT" | grep -q "module:setup-thing.ts check  (yes/no)" || fail "explain shows a yes/no check: $OUT"
 OUT=$("$BIN" --repo yesno --machine m1 status)
 echo "$OUT" | grep -qE "setup-thing +missing" || fail "a failing yes/no check is missing: $OUT"
-"$BIN" --repo yesno --machine m1 install setup-thing --yes >/dev/null || fail "the module installs it"
+"$BIN" --repo yesno --machine m1 install-program setup-thing --yes >/dev/null || fail "the module installs it"
 OUT=$("$BIN" --repo yesno --machine m1 status)
 echo "$OUT" | grep -qE "setup-thing +installed +-" || fail "a passing yes/no check is installed, with no version: $OUT"
 ok "a yes/no check reports installed without a version"
@@ -292,12 +292,12 @@ machine("m1", { run: [hello] });
 TS
 printf '#!/bin/sh\ntouch hello-ran.txt\n' > moved/maintenance/hello/hello.sh
 compile_repo moved
-"$BIN" --repo moved --machine m1 run hello >/dev/null || fail "the script runs where it's declared"
+"$BIN" --repo moved --machine m1 run-script hello >/dev/null || fail "the script runs where it's declared"
 [ -f moved/maintenance/hello/hello-ran.txt ] || fail "the script ran in its file's folder"
 mkdir -p moved/maintenance/greetings
 mv moved/maintenance/hello moved/maintenance/greetings/hello
 compile_repo moved
-"$BIN" --repo moved --machine m1 run hello --force >/dev/null || fail "the moved script runs with no edit"
+"$BIN" --repo moved --machine m1 run-script hello --force >/dev/null || fail "the moved script runs with no edit"
 [ -f moved/maintenance/greetings/hello/hello-ran.txt ] || fail "the moved script ran in its new folder"
 OUT=$("$BIN" --repo moved explain hello)
 echo "$OUT" | grep -qE "run +file:hello.sh" || fail "explain shows the path as written: $OUT"

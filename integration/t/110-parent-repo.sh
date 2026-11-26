@@ -62,7 +62,7 @@ mkdir -p where
 WHERE_OUT=$PWD/where
 export WHERE_OUT
 CHILD=$(cd work && pwd -P)
-OUT=$("$BIN" --repo work --machine work run where-parent where-child 2>&1) || fail "the child runs both repos' scripts: $OUT"
+OUT=$("$BIN" --repo work --machine work run-script where-parent where-child 2>&1) || fail "the child runs both repos' scripts: $OUT"
 [ "$(cat where/parent.txt)" = "$PARENT|$PARENT|$PARENT" ] ||
     fail "a parent's script runs in the parent with the parent's LOADOUT_REPO: $(cat where/parent.txt)"
 [ "$(cat where/child.txt)" = "$CHILD|$CHILD|$PARENT" ] ||
@@ -151,7 +151,7 @@ echo "$OUT" | grep -qE "zsh +drifted" || fail "a unit spanning both repos drifts
 echo "$OUT" | grep -qE "\.zshenv +applied" || fail "the parent's unit is there too: $OUT"
 grep -q "dots managed .* repo=$CHILD machine=work" "$CZ/log" || fail "chezmoi sees the child as LOADOUT_REPO and the machine: $(cat "$CZ/log")"
 : > "$CZ/log"
-cz_loadout --repo work --machine work apply >/dev/null 2>&1 || fail "apply runs over both sources"
+cz_loadout --repo work --machine work apply-config >/dev/null 2>&1 || fail "apply runs over both sources"
 grep -n ' apply ' "$CZ/log" | head -1 | grep -q '^[0-9]*:dots apply' || fail "the parent's source applies first: $(cat "$CZ/log")"
 grep -q '^work apply' "$CZ/log" || fail "then the child's: $(cat "$CZ/log")"
 ok "a child's configs are its parent's and its own: units span both, chezmoi sees the child, the parent applies first"
@@ -161,7 +161,7 @@ printf '.config/git/config\n' >> dots/configs/.stub-managed
 OUT=$(cz_loadout --repo work --machine work status 2>&1)
 echo "$OUT" | grep -q ".config/git/config is managed by parent dots and this repo — a file belongs to one repo" ||
     fail "a file both repos manage is named in status: $OUT"
-OUT=$(cz_loadout --repo work --machine work apply git 2>&1) && fail "applying a file both repos manage must be refused"
+OUT=$(cz_loadout --repo work --machine work apply-config git 2>&1) && fail "applying a file both repos manage must be refused"
 echo "$OUT" | grep -q "a file belongs to one repo" || fail "and apply says why: $OUT"
 ok "a file both repos manage is reported and refused, naming both"
 

@@ -12,7 +12,7 @@ export interface ConfigUnit {
 
 /**
  * ConfigEntry is one line of `chezmoi status`, target relative to the
- * destination. drifted: `apply` would change it (the second column).
+ * destination. drifted: `apply-config` would change it (the second column).
  * edited: it changed since chezmoi last wrote it (the first column).
  */
 export interface ConfigEntry {
@@ -99,7 +99,7 @@ export class ConfigEngine {
 
   /**
    * edited is the targets apply would change that also changed since chezmoi
-   * last wrote them: `apply` asks before overwriting those, so they need a
+   * last wrote them: `apply-config` asks before overwriting those, so they need a
    * decision. Limited to targets when not undefined.
    */
   async edited(targets: readonly string[] | undefined): Promise<string[]> {

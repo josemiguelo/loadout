@@ -8,10 +8,10 @@ import { appCtx, subcommand } from "./root.ts";
 import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
-/** newApplyCmd is `loadout apply`. */
-export function newApplyCmd(): Command {
+/** newApplyConfigCmd is `loadout apply-config`. */
+export function newApplyConfigCmd(): Command {
   const cmd = subcommand(
-    "apply",
+    "apply-config",
     commandHelp(
       "Write the repo's configs to this machine (chezmoi apply), then refresh its state.",
       "<configs...>  config names as status lists them (default: all)",
@@ -73,6 +73,6 @@ export async function refuseEdited(configs: engine.ConfigEngine, targets: readon
   if (edited.length === 0) return;
   throw new engine.ConfigException(
     edited.length + " config file(s) edited on this machine: " + edited.join(", ") + " — " +
-      "keep your edits with `chezmoi re-add`, or replace them with `loadout apply --force`",
+      "keep your edits with `chezmoi re-add`, or replace them with `loadout apply-config --force`",
   );
 }

@@ -9,7 +9,7 @@ grep -q '"status": "installed"' wt/machines/state/m1.json || fail "status observ
 grep -q '"status": "pending"' wt/machines/state/m1.json || fail "the unrun script is observed from inside the worktree"
 ok "status works against a worktree path"
 
-"$BIN" --repo wt --machine m1 run marker >/dev/null || fail "run exits 0 against a worktree path"
+"$BIN" --repo wt --machine m1 run-script marker >/dev/null || fail "run exits 0 against a worktree path"
 [ -f wt/marker.txt ] || fail "run executed the script inside the worktree"
 ok "run works against a worktree path"
 

@@ -168,13 +168,15 @@ Explicit user decisions; don't "improve" them away.
    program) belongs in the later phase. A later install whose
    dependency failed in the core phase is skipped
    (`InstallEngine.executeAfter`). `--skip-later` stops after the core
-   phase; `install`, `run` and `status` ignore phases. `canWait` on a
+   phase; `install-program`, `run-script` and `status` ignore phases. `canWait` on a
    `maintain_only` script is refused: it isn't part of setup.
 7. **Script status is observation**: every refresh re-runs each `check`
    (exit 0 => `done`, else `pending`), even right after a run; `lastRun`/
    `exitCode` are only history of tool-run executions. Check-less scripts
-   carry only run history. Install success = exit 0 AND a re-run version
-   check no longer says missing. **A check that couldn't run is not
+   carry only run history. `check-script` asks the same checks for the
+   scripts it names, with the machine's options, and writes nothing.
+   Install success = exit 0 AND a re-run version check no longer says
+   missing. **A check that couldn't run is not
    "missing"**: a check that goes THROUGH a tool (`VersionCheck.probe`, from
    the installer's/variant's probe) and dies with the shell's 127/126 is
    `unknown`, with `ProgramState.reason` set to the shell's line; a check
@@ -220,7 +222,7 @@ Explicit user decisions; don't "improve" them away.
     machine or profile. A run is its script's name and, for a module, its `options` (any
     JSON); the shell text is made, quoted, only when it runs
     (`model.optionsWord`).
-    Only opted-in scripts converge and are observed; `run` errors on others.
+    Only opted-in scripts converge and are observed; `run-script` and `check-script` refuse others.
     A module's `check` and `install` get the options; a `run` script takes
     none. No implicit script application, no OS or
     bootc detection deciding membership (the
@@ -228,7 +230,7 @@ Explicit user decisions; don't "improve" them away.
     `notDuringSetup: true`, default both) scope EXECUTION only:
     setup-new-machine converges setup-mode scripts, the home screen's
     scripts picker lists maintain-mode ones; status observes all opted-in
-    scripts and `run` ignores modes.
+    scripts and `run-script` ignores modes.
 13. **Installers own mechanics; variants refine them.** An installer
     (`neededBinary`, `installCommand`, `checkCommand`, `versionRegex`, `outdatedCommand`, `allOutdatedCommand`,
     `upgradeCommand`, `needsSudo`, `installerParams`; `{packageName}` substituted) defines a
@@ -285,12 +287,12 @@ Explicit user decisions; don't "improve" them away.
     `needsSudo: true` (installer, variant, script, `outdated` source)
     declares a command that needs sudo's password without saying `sudo`
     itself (`omarchy pkg add`, a repo script); a variant's replaces its
-    installer's. `setup-new-machine`, `install`, `run` and `upgrade` ask
+    installer's. `setup-new-machine`, `install-program`, `run-script` and `upgrade` ask
     for the password once, after the confirmation and before the first
     step (`askForSudoUpfront` in cli/converge.ts), when their plan holds a
     step that needs it: declared, or a command matching `commandNeedsSudo`
     (core/engine/sudo.ts: the word sudo, not "pseudo"). Scripts count only
-    while pending (`ScriptRunner.pending` asks the check, which `run` asks
+    while pending (`ScriptRunner.pending` asks the check, which `run-script` asks
     again). Valid credentials ask nothing; a refusal stops the run before
     any step. A background shell loop then runs `sudo -n -v` every 50s
     while loadout's pid lives, checked every second (`SudoKeepalive`), so
@@ -317,7 +319,7 @@ Explicit user decisions; don't "improve" them away.
     SchemaVersion only for a real schema break; handle older schemas via
     defaults.
 15. **Converge installs; `upgrade` upgrades, a whole mechanism at a time.**
-    `setup-new-machine`/`install` add what's MISSING and never touch a
+    `setup-new-machine`/`install-program` add what's MISSING and never touch a
     version already there. Moving versions is its own verb, `loadout upgrade
     <installers…>|--all` (`UpgradeEngine`), never single packages: naming a
     program is an error pointing at its mechanism. Mechanisms sharing a
@@ -379,7 +381,7 @@ Explicit user decisions; don't "improve" them away.
       is chezmoi's membership. A unit may share a program's name (tmux);
       `explain <name>` shows both.
     - **Drift is observation** (contract 7): one `chezmoi status --include
-      files,symlinks` per refresh. Its second column is what `apply` would
+      files,symlinks` per refresh. Its second column is what `apply-config` would
       change (the same answer as `chezmoi verify`, in one call); a unit with
       any such file is `drifted`, with them in `ConfigState.files`. Its
       first column marks a file edited since chezmoi last wrote it.
@@ -391,7 +393,7 @@ Explicit user decisions; don't "improve" them away.
       (a unit = its targets, absolute via `chezmoi target-path`). Without a
       terminal chezmoi aborts the whole apply on a file edited in place
       (it would ask), so both refuse first when a file they'd replace is
-      edited AND drifted (`refuseEdited`, cli/apply.ts), naming the files:
+      edited AND drifted (`refuseEdited`, cli/apply-config.ts), naming the files:
       keep them with `chezmoi re-add`, or replace them with `apply
       --force`. `sync` = pull → (upgrade loadout, contract 15) → refuse
       edited → apply → refresh → name what's left (missing programs,
@@ -472,7 +474,7 @@ Explicit user decisions; don't "improve" them away.
       parent by name and path.
     - **Runtime**: commands as in contract 5; configs are two chezmoi
       sources, the parent's then the child's (`ConfigEngine`): units span
-      both, a target both manage is `unknown` and refused by `apply`, and
+      both, a target both manage is `unknown` and refused by `apply-config`, and
       chezmoi runs with `LOADOUT_REPO` (the child) and `LOADOUT_MACHINE` so
       the parent's partial finds the child's machine. `diff` and the fleet
       row are the parent's machines and the child's (the parent's state

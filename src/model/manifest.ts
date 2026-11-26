@@ -796,7 +796,7 @@ export interface ScriptStep {
    * scripts picker). undefined means the default, both (defaultModes); an
    * empty list is an empty list, which validation refuses. Governs
    * execution only — `status` observes every opted-in script regardless,
-   * and `run <name>` is the explicit escape hatch.
+   * and `run-script <name>` is the explicit escape hatch.
    */
   modes?: string[];
   /** sudo says the script needs sudo's password without saying `sudo`; see Installer.sudo. */

@@ -25,7 +25,7 @@ TS
 compile_repo srepo
 fake_sudo
 
-OUT=$(PATH="$FAKE_SUDO_PATH:$PATH" "$BIN" --repo srepo --machine m1 run plain </dev/null 2>&1)
+OUT=$(PATH="$FAKE_SUDO_PATH:$PATH" "$BIN" --repo srepo --machine m1 run-script plain </dev/null 2>&1)
 echo "$OUT" | grep -q "sudo" && fail "a run with nothing needing sudo asks nothing" || true
 [ -f srepo/plain-ran.txt ] || fail "the plain script ran"
 ok "a run with no step needing sudo doesn't ask for it"
@@ -38,7 +38,7 @@ if has_pty; then
     # Three wrong passwords: the run stops before the step.
     { wait_screen sudo-refused.log '\[sudo\] password for tester'; printf 'a\r'
       wait_screen sudo-refused.log 'Sorry, try again'; printf 'b\r'; sleep 0.5; printf 'c\r'; sleep 1; } \
-        | PATH="$FAKE_SUDO_PATH:$PATH" pty_run sudo-refused.log --repo srepo --machine m1 run needs
+        | PATH="$FAKE_SUDO_PATH:$PATH" pty_run sudo-refused.log --repo srepo --machine m1 run-script needs
     seen sudo-refused.log "A step needs your sudo password" || fail_screen sudo-refused.log "the run says why it asks"
     seen sudo-refused.log "Aborted" || fail_screen sudo-refused.log "a refused password stops the run"
     [ -f srepo/needs-ran.txt ] && fail "nothing runs without the password" || true
@@ -46,7 +46,7 @@ if has_pty; then
 
     # The right one, once: the script's own `sudo -n` finds it cached.
     { wait_screen sudo-asked.log '\[sudo\] password for tester'; printf 'secret\r'; sleep 1; } \
-        | PATH="$FAKE_SUDO_PATH:$PATH" pty_run sudo-asked.log --repo srepo --machine m1 run needs
+        | PATH="$FAKE_SUDO_PATH:$PATH" pty_run sudo-asked.log --repo srepo --machine m1 run-script needs
     [ "$(plain_screen sudo-asked.log | grep -c '\[sudo\] password for tester')" = 1 ] ||
         fail_screen sudo-asked.log "sudo asks exactly once"
     [ -f srepo/needs-ran.txt ] || fail_screen sudo-asked.log "the step ran on the password asked for upfront"
@@ -64,14 +64,14 @@ fi
 # Done already: nothing pending needs sudo, so nothing asks, even with no
 # credentials cached.
 rm -f "$FAKE_SUDO_STAMP"; touch srepo/needs-ran.txt
-OUT=$(PATH="$FAKE_SUDO_PATH:$PATH" "$BIN" --repo srepo --machine m1 run needs </dev/null 2>&1)
+OUT=$(PATH="$FAKE_SUDO_PATH:$PATH" "$BIN" --repo srepo --machine m1 run-script needs </dev/null 2>&1)
 echo "$OUT" | grep -q "sudo password" && fail "a done step asks nothing" || true
 echo "$OUT" | grep -q "already done" || fail "the done step is skipped"
 ok "a step that needs sudo but is already done asks nothing"
 
 # Credentials still cached: nothing to ask, the step just runs.
 touch "$FAKE_SUDO_STAMP"; rm -f srepo/needs-ran.txt
-OUT=$(PATH="$FAKE_SUDO_PATH:$PATH" "$BIN" --repo srepo --machine m1 run needs </dev/null 2>&1)
+OUT=$(PATH="$FAKE_SUDO_PATH:$PATH" "$BIN" --repo srepo --machine m1 run-script needs </dev/null 2>&1)
 echo "$OUT" | grep -q "sudo password" && fail "cached credentials ask nothing" || true
 [ -f srepo/needs-ran.txt ] || fail "the step ran on the cached credentials"
 ok "with sudo's credentials still cached, nothing is asked"

@@ -106,16 +106,16 @@ ok "diff compares configs per machine and exits 1 on drift"
 # --- apply ----------------------------------------------------------------
 printf 'MM .config/zsh/.zshrc\n M .zshenv\n' > "$CZ/status"
 : > "$CZ/log"
-OUT=$(cz_loadout --repo repo --machine m1 apply 2>&1) && fail "apply refuses files edited here"
+OUT=$(cz_loadout --repo repo --machine m1 apply-config 2>&1) && fail "apply refuses files edited here"
 echo "$OUT" | grep -q "edited on this machine: .config/zsh/.zshrc" || fail "the edited file is named: $OUT"
 grep -q " apply" "$CZ/log" && fail "nothing is applied after a refusal"
 ok "apply stops on files edited on this machine, naming them"
 
-OUT=$(cz_loadout --repo repo --machine m1 apply nope 2>&1) && fail "an unknown config is refused"
+OUT=$(cz_loadout --repo repo --machine m1 apply-config nope 2>&1) && fail "an unknown config is refused"
 echo "$OUT" | grep -q "Unknown configs: nope" || fail "says which: $OUT"
 ok "apply refuses a config that doesn't exist"
 
-OUT=$(cz_loadout --repo repo --machine m1 apply --force zsh) || fail "apply --force exits 0: $OUT"
+OUT=$(cz_loadout --repo repo --machine m1 apply-config --force zsh) || fail "apply --force exits 0: $OUT"
 grep -q "apply --no-tty --force $CZ/home/.config/zsh/.zshrc $CZ/home/.config/zsh/conf.d/a.zsh$" "$CZ/log" ||
     fail "apply hands chezmoi the unit's targets: $(cat "$CZ/log")"
 echo "$OUT" | grep -q "applied zsh" || fail "apply says what it applied: $OUT"
@@ -124,7 +124,7 @@ ok "apply --force writes the named configs and refreshes state"
 
 printf ' M .zshenv\n' > "$CZ/status"
 touch "$CZ/apply-fails"
-OUT=$(cz_loadout --repo repo --machine m1 apply 2>&1) && fail "a failing chezmoi apply exits 1"
+OUT=$(cz_loadout --repo repo --machine m1 apply-config 2>&1) && fail "a failing chezmoi apply exits 1"
 echo "$OUT" | grep -q "error: chezmoi apply failed" || fail "says chezmoi failed: $OUT"
 rm "$CZ/apply-fails"
 ok "a failing chezmoi apply is an error"
@@ -183,7 +183,7 @@ if has_pty; then
         (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; screen_run tui-configs --repo repo --machine m1)
     [ -f tui-configs.first ] || fail_frame tui-configs "the configs subject counts what drifted"
     [ -f tui-configs.list ] || fail_frame tui-configs "the list ticks the drifted config, naming its file"
-    grep -qE 'Run .*loadout apply zsh' tui-configs.done || fail_frame tui-configs "enter runs apply on the ticked configs"
+    grep -qE 'Run .*loadout apply-config zsh' tui-configs.done || fail_frame tui-configs "enter runs apply on the ticked configs"
     grep -q " apply" "$CZ/log" || fail "chezmoi applied"
     ok "the home screen's configs subject applies drifted configs in the run panel"
 

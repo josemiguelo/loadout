@@ -1,7 +1,7 @@
 # diff compares the fleet; sync publishes this machine's state.
 
 basic_repo repo
-"$BIN" --repo repo --machine m1 run marker >/dev/null
+"$BIN" --repo repo --machine m1 run-script marker >/dev/null
 "$BIN" --repo repo --machine m1 status >/dev/null
 "$BIN" --repo repo --machine m2 status >/dev/null
 "$BIN" --repo repo diff >/dev/null || fail "diff exits 0 when in sync"

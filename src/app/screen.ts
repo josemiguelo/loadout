@@ -107,13 +107,13 @@ export function closedCommand(c: Closed): ClosedCommand | undefined {
       const args = [...c.handoff.args];
       switch (c.handoff.kind) {
         case PaneInstall:
-          return { name: "install", args: [...args, "--yes"] };
+          return { name: "install-program", args: [...args, "--yes"] };
         case PaneScripts:
-          // `run` has no confirmation; --force runs a ticked script even when done.
-          return { name: "run", args: [...args, "--force"] };
+          // `run-script` has no confirmation; --force runs a ticked script even when done.
+          return { name: "run-script", args: [...args, "--force"] };
         case PaneConfigs:
           // The screen already refused files edited here; never --force from it.
-          return { name: "apply", args };
+          return { name: "apply-config", args };
         default:
           return { name: "upgrade", args: [...args, "--yes"] };
       }

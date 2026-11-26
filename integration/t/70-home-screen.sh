@@ -140,11 +140,11 @@ if has_pty; then
     [ -f tui-scripts.ask ] || fail_frame tui-scripts "the confirm dialog asks before running scripts"
     grep -qa "bootstrap-only" tui-scripts.ask && fail "the picker must not list setup-only scripts"
     [ -f tui-scripts.done ] || fail_frame tui-scripts "the run ends with a toast"
-    grep -qE 'Run .*loadout run drifted healthy --force .*✓ done' tui-scripts.done || fail_frame tui-scripts "the panel names the command and its verdict"
+    grep -qE 'Run .*loadout run-script drifted healthy --force .*✓ done' tui-scripts.done || fail_frame tui-scripts "the panel names the command and its verdict"
     grep -q "ran drifted (exit 0)" tui-scripts.done || fail_frame tui-scripts "the command's output is in the panel"
     grep -q "still not done: drifted (missing: nodejs 16" tui-scripts.done \
         || fail "run re-checks and names what is still not done, with what its check printed"
-    grep -qE '✓ run drifted healthy' tui-scripts.done || fail "the run is in the sidebar's Runs"
+    grep -qE '✓ run-script drifted healthy' tui-scripts.done || fail "the run is in the sidebar's Runs"
     grep -q '"drifted"' srepo/machines/state/m1.json || fail "the run records the scripts in the state file"
     grep -q '"status": "pending"' srepo/machines/state/m1.json || fail "the recorded status comes from the rerun check"
     [ "$(grep -ao "$(printf '\033')\[?1049l" tui-scripts.log | wc -l)" -eq 1 ] \
@@ -154,7 +154,7 @@ if has_pty; then
     grep -qE 'gg/G start/end' tui-scripts.kept || fail_frame tui-scripts "with the run panel's own keys on the help line"
     [ -f tui-scripts.closed ] || fail_frame tui-scripts "esc closes it"
     grep -qE 'Run .*✓ done' tui-scripts.closed && fail_frame tui-scripts "esc right after a run closes its panel"
-    grep -qE '✓ run drifted healthy' tui-scripts.closed || fail "a closed run stays in the sidebar's Runs"
+    grep -qE '✓ run-script drifted healthy' tui-scripts.closed || fail "a closed run stays in the sidebar's Runs"
     ok "esc closes a finished run's panel, wherever the focus is"
 
     # A state write that fails must be said out loud, not swallowed.

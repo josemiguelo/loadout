@@ -152,7 +152,7 @@ ok "a custom source's row keeps the page its note pointed at"
 scripts_repo scriptsrepo
 OUT=$("$BIN" --repo scriptsrepo --machine m1 setup-new-machine --dry-run)
 echo "$OUT" | grep -qE "~ bootstrap-only +script" || fail "setup converges setup-only scripts"
-"$BIN" --repo scriptsrepo --machine m1 run bootstrap-only >/dev/null || fail "run ignores modes"
+"$BIN" --repo scriptsrepo --machine m1 run-script bootstrap-only >/dev/null || fail "run ignores modes"
 OUT=$("$BIN" --repo scriptsrepo --machine m1 status) || fail "status exits 0 even with pending scripts"
 echo "$OUT" | grep -qE "bootstrap-only +done" || fail "status observes setup-only scripts"
 echo "$OUT" | grep -qE "healthy +done" || fail "status lists passing scripts"

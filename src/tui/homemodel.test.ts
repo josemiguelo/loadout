@@ -1072,8 +1072,8 @@ test("a run starts in the panel and ends with a toast", () => {
   m.state.dark = true;
   const f = runSomething(m);
   expect(m.active !== undefined && m.shown === m.active).toBe(true);
-  expect(m.active!.command).toBe("loadout run pull --force");
-  expect(m.active!.label).toBe("run pull");
+  expect(m.active!.command).toBe("loadout run-script pull --force");
+  expect(m.active!.label).toBe("run-script pull");
   expect(f.cmd).toBeDefined(); // the command started in the terminal
   expect(f.bgColor).toEqual(style.dark().bgBase); // the terminal answers colour queries with the theme
   expect(m.jobs.isHeld()).toBe(true); // no background check runs beside the command
@@ -1094,7 +1094,7 @@ test("a run starts in the panel and ends with a toast", () => {
   expect(m.shown).toBe(m.runs[0]!); // the run stays in the panel
   expect(focusOf(m)).toBe(FocusArea.Main); // focus leaves the finished terminal
   expect(toastKind(m)).toBe(style.ToastKind.OK);
-  expect(message(m)).toBe("run pull done");
+  expect(message(m)).toBe("run-script pull done");
   expect(m.jobs.isHeld()).toBe(false); // the checks are back
   expect(f.closed).toBe(false); // the newest run keeps its emulator
   press(m, HomeKey.Tab);
@@ -1350,14 +1350,14 @@ test("a failed or interrupted run says so", () => {
   let f = runSomething(m);
   runExited(m, exited(f, 130, true));
   expect(toastKind(m)).toBe(style.ToastKind.Warning);
-  expect(message(m)).toBe("run pull interrupted");
+  expect(message(m)).toBe("run-script pull interrupted");
   expect(m.runs[0]!.status()).toBe("interrupted");
 
   f = runSomething(m);
   expect(m.runs[0]!.released).toBe(true); // an older run gives its emulator back
   runExited(m, exited(f, 3));
   expect(toastKind(m)).toBe(style.ToastKind.Error);
-  expect(message(m)).toBe("run pull: exit 3");
+  expect(message(m)).toBe("run-script pull: exit 3");
   expect(runsNewestFirst(m).map((r) => r.status())).toEqual(["failed", "interrupted"]);
 });
 
@@ -1457,7 +1457,7 @@ test("the frame is exactly the screen in both layouts", () => {
         runSomething(m);
         const panel = strip(screenLines(m, 0).join("\n"));
         // (A short screen's toast may cover the panel's title.)
-        expect(h < 20 || panel.includes("loadout run pull --force")).toBe(true); // the run panel names the command
+        expect(h < 20 || panel.includes("loadout run-script pull --force")).toBe(true); // the run panel names the command
         m.state.dialog = newDialog({ kind: DialogKind.Confirm, pane: app.PaneScripts, row: -1, items: [{ name: "pull", text: "Pull the dotfiles repo" }] });
       }
       const lines = screenLines(m, 0);
@@ -1678,10 +1678,10 @@ test("the breadcrumb says which page", () => {
   const f = runSomething(m);
   expect(crumb().startsWith("loadout › programs › run ✓")).toBe(true); // a running command's own page names no ⟳
   press(m, HomeKey.Leave);
-  expect(crumb().startsWith("loadout › programs ⟳ run pull ✓")).toBe(true); // behind the list, it says it's still going
+  expect(crumb().startsWith("loadout › programs ⟳ run-script pull ✓")).toBe(true); // behind the list, it says it's still going
   press(m, HomeKey.Esc);
   expect(focusOf(m)).toBe(FocusArea.Sidebar);
-  expect(crumb().startsWith("loadout › m1 ⟳ run pull")).toBe(true);
+  expect(crumb().startsWith("loadout › m1 ⟳ run-script pull")).toBe(true);
   runExited(m, exited(f, 0));
   expect(crumb()).not.toContain("⟳"); // done
   press(m, HomeKey.Down, HomeKey.Down, HomeKey.Down, HomeKey.Down, HomeKey.Down);
@@ -1748,7 +1748,7 @@ test("a stacked run has its own page", () => {
 
   runExited(m, exited(f, 0));
   expect(focusOf(m)).toBe(FocusArea.Terminal); // finished, it stays on its output
-  expect(message(m)).toBe("run pull done");
+  expect(message(m)).toBe("run-script pull done");
   press(m, HomeKey.Zoom);
   expect(m.state.maximized).toBe(false); // z means nothing: the run page is already full
   press(m, HomeKey.Esc);
