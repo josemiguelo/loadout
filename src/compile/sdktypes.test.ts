@@ -126,7 +126,7 @@ test("loadout.d.ts is what the SDK sources emit now (bun run sdk-types rewrites 
 });
 
 test("doc comments reach the types, for the editor's hover", () => {
-  expect(types).toContain("/** The built-in installers: shipped with loadout, `loadout installers` lists them. */\n  export const withApt: Installer<never>;");
+  expect(types).toContain("/** The built-in installers: shipped with loadout, `loadout installer list` lists them. */\n  export const withApt: Installer<never>;");
   expect(types).toMatch(/\/\*\*\n {3}\* A script a manifest runs as a command/);
 });
 

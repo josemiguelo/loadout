@@ -1,6 +1,6 @@
 # AGENTS.md — loadout
 
-`loadout` is one executable, TypeScript compiled by bun (`src/`, bun inside, so it is also its own bun), that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, importing the SDK built into loadout as `"loadout"`, typed by the `node_modules/@types/loadout` loadout writes into the repo); each machine picks its variants and scripts. `loadout compile` runs them with loadout itself as bun and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE full-screen terminal UI, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic.
+`loadout` is one executable, TypeScript compiled by bun (`src/`, bun inside, so it is also its own bun), that sets up unix-like machines from a shared git "config repo" and tracks installed versions across them. Users declare installers, programs (install variants over those installers) and scripts in TypeScript manifests (`loadout.ts`, importing the SDK built into loadout as `"loadout"`, typed by the `node_modules/@types/loadout` loadout writes into the repo); each machine picks its variants and scripts. `loadout repo compile` runs them with loadout itself as bun and turns them into the committed `loadout.lock.json`, which every other command reads. A CLI plus ONE full-screen terminal UI, the home screen (bare `loadout`), which runs every action as the matching subcommand and owns no domain logic.
 
 ## Build, run, test
 
@@ -15,7 +15,7 @@ bun test src                                         # unit tests (<name>.test.t
 
 Cross-compile a release target: `bun build --compile --minify --target=bun-<linux-x64-baseline|linux-arm64|darwin-arm64|darwin-x64> src/main.ts --outfile <path>`. The bun version is package.json's `packageManager`.
 
-All suites pass before work is called done. Manual target: the user's live config repo (`$LOADOUT_REPO`, `~/.local/share/chezmoi`). `status`, `diff` and `--dry-run` against it are fine; installing or removing packages or pushing git needs the user's OK. Opening the home screen writes the machine's state file there.
+All suites pass before work is called done. Manual target: the user's live config repo (`$LOADOUT_REPO`, `~/.local/share/chezmoi`). `machine status`, `machine diff` and `--dry-run` against it are fine; installing or removing packages or pushing git needs the user's OK. Opening the home screen writes the machine's state file there.
 
 ## Design contract
 
@@ -35,7 +35,7 @@ Explicit user decisions, numbered (code, the wiki and `.dotfiles` cite them as "
 12. Scripts are opt-in per machine.
 13. Installers own mechanics; variants refine them. Declared, never inferred.
 14. Versioning: deliberate breaks only, announced in release notes; outputs stay additive.
-15. Converge installs what's missing; `upgrade` moves a whole mechanism.
+15. Converge installs what's missing; `installer upgrade` moves a whole mechanism.
 16. The repo's shape is declared by `loadout.ts` and what it includes, never assumed.
 17. Configs are chezmoi's, observed like everything else.
 18. A child repo inherits a parent; nothing flows back.

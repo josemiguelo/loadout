@@ -1,4 +1,4 @@
-# `later = "…"`: setup-new-machine's later phase, after every core program
+# `later = "…"`: machine new's later phase, after every core program
 # and script; --skip-later stops before it; compile refuses a core step that
 # waits on a later one.
 
@@ -48,35 +48,35 @@ TS
 later_repo repo
 
 # --- the plan --------------------------------------------------------------
-OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --dry-run)
+OUT=$("$BIN" --repo repo --machine m1 machine new --dry-run)
 core_at=$(echo "$OUT" | grep -n "core-script" | cut -d: -f1)
 title_at=$(echo "$OUT" | grep -n "Later, after everything above:" | cut -d: -f1)
 later_at=$(echo "$OUT" | grep -n "later-prog" | cut -d: -f1)
 [ -n "$title_at" ] || { echo "$OUT"; fail "the plan has a later section"; }
 [ "$core_at" -lt "$title_at" ] && [ "$title_at" -lt "$later_at" ] || { echo "$OUT"; fail "core rows, then the later heading, then later rows"; }
 [ ! -f repo/order.log ] || fail "dry-run must not execute"
-ok "setup-new-machine --dry-run shows what's later under its own heading"
+ok "machine new --dry-run shows what's later under its own heading"
 
 # --- --skip-later ----------------------------------------------------------
-OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --yes --skip-later 2>&1) || { echo "$OUT"; fail "--skip-later exits 0"; }
+OUT=$("$BIN" --repo repo --machine m1 machine new --yes --skip-later 2>&1) || { echo "$OUT"; fail "--skip-later exits 0"; }
 echo "$OUT" | grep -q "Later, skipped (--skip-later):" || { echo "$OUT"; fail "the plan says what it skips"; }
 [ "$(cat repo/order.log)" = "core-prog
 core-script" ] || { cat repo/order.log; fail "only the core steps ran"; }
-ok "setup-new-machine --skip-later runs the core phase only"
+ok "machine new --skip-later runs the core phase only"
 
 # --- both phases, in order -------------------------------------------------
 rm -f repo/order.log repo/*.done
-OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --yes 2>&1) || { echo "$OUT"; fail "setup exits 0"; }
+OUT=$("$BIN" --repo repo --machine m1 machine new --yes 2>&1) || { echo "$OUT"; fail "setup exits 0"; }
 [ "$(cat repo/order.log)" = "core-prog
 core-script
 later-prog
 later-script" ] || { cat repo/order.log; fail "core programs, core scripts, later programs, later scripts"; }
 echo "$OUT" | grep -q "==> later: what can wait" || { echo "$OUT"; fail "the later phase is announced"; }
-ok "setup-new-machine runs the later phase after every core step"
+ok "machine new runs the later phase after every core step"
 
 # Run again after a stop: only what's left, the core already done.
 rm -f repo/order.log repo/later-script.done
-"$BIN" --repo repo --machine m1 setup-new-machine --yes >/dev/null 2>&1 || fail "the rerun exits 0"
+"$BIN" --repo repo --machine m1 machine new --yes >/dev/null 2>&1 || fail "the rerun exits 0"
 [ "$(cat repo/order.log)" = "later-script" ] || { cat repo/order.log; fail "only the unfinished later step runs"; }
 ok "running setup again finishes what the later phase left"
 
@@ -95,14 +95,14 @@ const big = program("big", {
 machine("m1", { install: [base, big] });
 TS
 compile_repo dep
-OUT=$("$BIN" --repo dep --machine m1 setup-new-machine --yes 2>&1) && { echo "$OUT"; fail "a failed install exits 1"; }
+OUT=$("$BIN" --repo dep --machine m1 machine new --yes 2>&1) && { echo "$OUT"; fail "a failed install exits 1"; }
 echo "$OUT" | grep -q "skipping big" || { echo "$OUT"; fail "the later phase skips what the core phase failed"; }
 [ ! -f dep/big.done ] || fail "big must not install"
 ok "a later install whose dependency failed in the core phase is skipped"
 
 # --- explain and compile -----------------------------------------------------
-"$BIN" --repo repo --machine m1 explain later-prog | grep -q "canWait .*a big download" || fail "explain shows a program's canWait"
-"$BIN" --repo repo --machine m1 explain later-script | grep -q "canWait .*gigabytes of models" || fail "explain shows a script's canWait"
+"$BIN" --repo repo --machine m1 program explain later-prog | grep -q "canWait .*a big download" || fail "explain shows a program's canWait"
+"$BIN" --repo repo --machine m1 script explain later-script | grep -q "canWait .*gigabytes of models" || fail "explain shows a script's canWait"
 ok "explain shows why a step is later"
 
 ts_root bad <<'TS'
@@ -115,7 +115,7 @@ const eager = script("eager", { runCommand: "true", runAfter: [slow] });
 
 machine("m1", { install: [slow], run: [eager] });
 TS
-OUT=$("$BIN" --repo bad compile 2>&1) && fail "compile refuses a core step after a later one"
+OUT=$("$BIN" --repo bad repo compile 2>&1) && fail "compile refuses a core step after a later one"
 echo "$OUT" | grep -q "script 'eager' runs after program 'slow', which is later" || { echo "$OUT"; fail "compile names the step and the fix"; }
 [ ! -f bad/loadout.lock.json ] || fail "nothing is written when compile refuses"
 ok "compile refuses a core script that runs after a later program"

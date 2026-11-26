@@ -31,12 +31,12 @@ export function runCommand(a: AppContext, closed: Closed): ChildCommand | undefi
   if (command === undefined) return undefined;
   const self = selfExecutable();
   if (self === "") throw new HandoffException("can't find loadout's own binary to run the command");
-  return childCommand(a, self, command.name, command.args);
+  return childCommand(a, self, command.words, command.args);
 }
 
-/** childCommand is runCommand's command for self running name with args. */
-export function childCommand(a: AppContext, self: string, name: string, args: readonly string[]): ChildCommand {
-  const argv = selfArgv(a, self, name, ...args);
+/** childCommand is runCommand's command for self running the command words with args. */
+export function childCommand(a: AppContext, self: string, words: readonly string[], args: readonly string[]): ChildCommand {
+  const argv = selfArgv(a, self, ...words, ...args);
   return { argv, env: { ...process.env, LOADOUT_HANDOFF: "1", PAGER: "cat", GIT_PAGER: "cat" } };
 }
 

@@ -1,10 +1,10 @@
 # diff compares the fleet; sync publishes this machine's state.
 
 basic_repo repo
-"$BIN" --repo repo --machine m1 run-script marker >/dev/null
-"$BIN" --repo repo --machine m1 status >/dev/null
-"$BIN" --repo repo --machine m2 status >/dev/null
-"$BIN" --repo repo diff >/dev/null || fail "diff exits 0 when in sync"
+"$BIN" --repo repo --machine m1 script run marker >/dev/null
+"$BIN" --repo repo --machine m1 machine status >/dev/null
+"$BIN" --repo repo --machine m2 machine status >/dev/null
+"$BIN" --repo repo machine diff >/dev/null || fail "diff exits 0 when in sync"
 ok "diff exits 0 when machines agree"
 
 # A program in a file of its own, installed on both machines.
@@ -28,14 +28,14 @@ machine("m2", {
 TS
 : > repo/machines/machines.loadout.ts
 compile_repo repo
-"$BIN" --repo repo --machine m1 status >/dev/null
-"$BIN" --repo repo --machine m2 status >/dev/null
-"$BIN" --repo repo diff >/dev/null 2>&1 && fail "diff should exit 1 on missing" || true
-OUT=$("$BIN" --repo repo diff || true)
+"$BIN" --repo repo --machine m1 machine status >/dev/null
+"$BIN" --repo repo --machine m2 machine status >/dev/null
+"$BIN" --repo repo machine diff >/dev/null 2>&1 && fail "diff should exit 1 on missing" || true
+OUT=$("$BIN" --repo repo machine diff || true)
 echo "$OUT" | grep -q "missing" || fail "diff shows missing"
 ok "diff exits 1 and reports missing programs"
 
-OUT=$("$BIN" --repo repo diff --machines m1 || true)
+OUT=$("$BIN" --repo repo machine diff --machines m1 || true)
 echo "$OUT" | grep -q "m2" && fail "--machines filter leaked m2" || true
 ok "diff --machines filters columns"
 
@@ -45,16 +45,16 @@ git init -q --bare origin.git
 git -C repo remote add origin "$PWD/origin.git"
 git -C repo push -qu origin HEAD 2>/dev/null
 
-"$BIN" --repo repo --machine m1 sync -m "m1: test sync" >/dev/null || fail "sync exits 0"
+"$BIN" --repo repo --machine m1 machine sync -m "m1: test sync" >/dev/null || fail "sync exits 0"
 git -C origin.git log --oneline | grep -q "m1: test sync" && ok "sync commits and pushes state" || {
     # State may have been unchanged; force a change and retry.
     rm repo/machines/state/m1.json
-    "$BIN" --repo repo --machine m1 sync -m "m1: test sync 2" >/dev/null || fail "sync exits 0 (retry)"
+    "$BIN" --repo repo --machine m1 machine sync -m "m1: test sync 2" >/dev/null || fail "sync exits 0 (retry)"
     git -C origin.git log --oneline | grep -q "m1: test sync 2" || fail "sync pushed to remote"
     ok "sync commits and pushes state"
 }
 
-OUT=$("$BIN" --repo repo --machine m1 sync)
+OUT=$("$BIN" --repo repo --machine m1 machine sync)
 echo "$OUT" | grep -q "nothing to commit" || fail "unchanged sync is a no-op"
 ok "sync with unchanged state commits nothing"
 echo "$OUT" | grep -q "1 program missing" || fail "sync names what's left to do: $OUT"
@@ -62,13 +62,13 @@ ok "sync ends naming what this machine still lacks"
 
 # A machine still on the lock an older loadout wrote, when the remote has
 # this loadout's: sync pulls before it reads the lock, so the upgrade path
-# (self-upgrade, then sync) works.
+# (self upgrade, then sync) works.
 sed -i.bak 's/"format": 2,/"format": 1,/' repo/loadout.lock.json && rm repo/loadout.lock.json.bak
 git -C repo commit -qam "an older loadout's lock" && git -C repo push -q
 git -C repo revert --no-edit HEAD >/dev/null && git -C repo push -q
 git -C repo reset -q --hard HEAD~1
 grep -q '"format": 1,' repo/loadout.lock.json || fail "the test starts from the older lock"
-OUT=$("$BIN" --repo repo --machine m1 sync 2>&1) || fail "sync pulls the lock it can read before reading it: $OUT"
+OUT=$("$BIN" --repo repo --machine m1 machine sync 2>&1) || fail "sync pulls the lock it can read before reading it: $OUT"
 grep -q '"format": 2,' repo/loadout.lock.json || fail "sync pulled this loadout's lock"
 ok "sync on a machine still holding an older loadout's lock pulls before reading it"
 
@@ -93,17 +93,17 @@ esac
 EOF2
 chmod +x fakecurl/curl
 echo 998.0.0 > fakecurl/latest
-OUT=$(PATH="$PWD/fakecurl:$PATH" self/loadout --repo repo --machine m1 sync -m "after floor" 2>&1) && fail "an unreleased floor can't be upgraded to"
+OUT=$(PATH="$PWD/fakecurl:$PATH" self/loadout --repo repo --machine m1 machine sync -m "after floor" 2>&1) && fail "an unreleased floor can't be upgraded to"
 echo "$OUT" | grep -q "requires loadout >= 999.0.0, but the latest release is 998.0.0" || fail "names the floor and the latest release: $OUT"
 cmp -s self/loadout "$BIN" || fail "nothing is installed when no release is new enough"
 ok "sync refuses a floor no release meets, installing nothing"
 
 echo 999.0.0 > fakecurl/latest
-OUT=$(PATH="$PWD/fakecurl:$PATH" self/loadout --repo repo --machine m1 sync -m "after floor" 2>&1) || fail "sync upgrades and carries on: $OUT"
+OUT=$(PATH="$PWD/fakecurl:$PATH" self/loadout --repo repo --machine m1 machine sync -m "after floor" 2>&1) || fail "sync upgrades and carries on: $OUT"
 echo "$OUT" | grep -q "needs loadout >= 999.0.0" || fail "says why it upgrades: $OUT"
-echo "$OUT" | grep -q "new loadout: 1 --repo repo --machine m1 sync --message after floor" || fail "the new loadout runs the same sync: $OUT"
+echo "$OUT" | grep -q "new loadout: 1 --repo repo --machine m1 machine sync --message after floor" || fail "the new loadout runs the same sync: $OUT"
 ok "sync upgrades loadout when the pulled repo needs it, then syncs with the new one"
 
-OUT=$(LOADOUT_SYNC_UPGRADED=1 "$BIN" --repo repo --machine m1 sync 2>&1) && fail "a second upgrade must not start"
+OUT=$(LOADOUT_SYNC_UPGRADED=1 "$BIN" --repo repo --machine m1 machine sync 2>&1) && fail "a second upgrade must not start"
 echo "$OUT" | grep -q "loadout was upgraded, but .* is still" || fail "says the upgrade didn't take: $OUT"
 ok "a sync started by an upgrade never upgrades again"

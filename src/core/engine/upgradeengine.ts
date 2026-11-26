@@ -51,7 +51,7 @@ export function stepLabel(s: UpgradeStep): string {
 // from".
 //
 // A planner only: it decides WHAT runs and refuses
-// what mustn't. `loadout upgrade` runs the steps on the terminal (sudo may
+// what mustn't. `loadout installer upgrade` runs the steps on the terminal (sudo may
 // prompt there); the home screen plans with it too, to describe each step
 // and refuse before handing off. Verification is not here either:
 // re-observe everything the way `status` does and diff the versions.
@@ -152,7 +152,7 @@ export function planUpgrade(manifest: Manifest, machine: string, installers: rea
       } else if (manifest.programs.has(name)) {
         errors.push(
           "'" + name + "' is a program — upgrades are whole-mechanism, so name its " +
-            "installer instead (see `loadout explain " + name + "`)",
+            "installer instead (see `loadout program explain " + name + "`)",
         );
       } else {
         errors.push("unknown installer '" + name + "'");

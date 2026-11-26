@@ -105,7 +105,7 @@ test("drift tells chezmoi's writes and strays from a build that's behind", () =>
   const p2 = planBuild(fresh, layout())!;
   writeBuild(fresh, p2);
   fs.writeFileSync(path.join(fresh, "tools/zsh/home/dot_zprofile"), "");
-  expect(driftMessage(drift(fresh, planBuild(fresh, layout())!))).toBe(".home/dot_zprofile doesn't match the tool folders — run: loadout compile");
+  expect(driftMessage(drift(fresh, planBuild(fresh, layout())!))).toBe(".home/dot_zprofile doesn't match the tool folders — run: loadout repo compile");
 });
 
 test("writeBuild removes what no tool has any more and keeps compile's own files", () => {

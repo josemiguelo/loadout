@@ -12,7 +12,7 @@ export interface Writer {
 /**
  * fdWriter writes synchronously to fd, so nothing is lost when loadout
  * exits right after (process.exit doesn't wait for queued writes). When the
- * reader has gone (`loadout status | head -1`), loadout stops quietly with
+ * reader has gone (`loadout machine status | head -1`), loadout stops quietly with
  * 141, the status of a process a broken pipe ends.
  */
 export function fdWriter(fd: number): Writer {

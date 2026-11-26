@@ -24,7 +24,7 @@ import { newCheckScriptCmd } from "./check-script.ts";
 import { newRunScriptCmd } from "./run-script.ts";
 import { newSelfUpgradeCmd } from "./selfupgrade.ts";
 import { newSetupCmd } from "./setup.ts";
-import { echo } from "./spinner.ts";
+import { echo, echoErr } from "./spinner.ts";
 import { Style } from "./style.ts";
 import { newSyncCmd } from "./sync.ts";
 import { newUpgradeCmd } from "./upgrade.ts";
@@ -91,24 +91,41 @@ export function newRoot(): Command {
   boolFlag(root, "verbose", "v", "Verbose output", true);
   helpFlag(root);
 
+  // Commands that act on one kind of thing are its verbs: `loadout script
+  // run`. The rest act across them and are a word each.
+  const groups: [string, string, Command[]][] = [
+    [
+      "machine",
+      "This machine: set it up, check it, see what's behind, sync it with the repo, compare it with the others.",
+      [newSetupCmd(), newStatusCmd(), newOutdatedCmd(), newSyncCmd(), newDiffCmd(), newExplainCmd("explain", "machine")],
+    ],
+    ["repo", "The config repo: scaffold one, compile its manifests.", [newInitCmd(), newCompileCmd()]],
+    ["program", "Programs: install them, explain them.", [newInstallProgramCmd(), newExplainCmd("explain", "program")]],
+    ["script", "Scripts: run them, ask whether they're done, explain them.", [newRunScriptCmd(), newCheckScriptCmd(), newExplainCmd("explain", "script")]],
+    ["config", "Configs (chezmoi's): write them to this machine, explain them.", [newApplyConfigCmd(), newExplainCmd("explain", "config")]],
+    ["installer", "Installers: list them, and upgrade what one installed.", [newInstallersCmd(), newUpgradeCmd()]],
+    ["self", "loadout itself: upgrade it.", [newSelfUpgradeCmd()]],
+  ];
   for (const sub of [
-    newStatusCmd(),
-    newExplainCmd(),
-    newInstallersCmd(),
-    newSetupCmd(),
-    newInstallProgramCmd(),
-    newOutdatedCmd(),
-    newRunScriptCmd(),
-    newCheckScriptCmd(),
-    newApplyConfigCmd(),
+    ...groups.map(([name, help, verbs]) => group(name, help, verbs)),
     newChezmoiCmd(),
-    newDiffCmd(),
-    newSyncCmd(),
-    newUpgradeCmd(),
-    newSelfUpgradeCmd(),
-    newInitCmd(),
-    newCompileCmd(),
     newBunCmd(),
+    // loadout 6.0's names, kept working until 7.0, each saying where it went.
+    renamed(newSetupCmd("setup-new-machine"), "machine new"),
+    renamed(newStatusCmd("status"), "machine status"),
+    renamed(newOutdatedCmd("outdated"), "machine outdated"),
+    renamed(newSyncCmd("sync"), "machine sync"),
+    renamed(newDiffCmd("diff"), "machine diff"),
+    renamed(newExplainCmd("explain"), "program explain, script explain, config explain or machine explain"),
+    renamed(newInitCmd("init"), "repo init"),
+    renamed(newCompileCmd("compile"), "repo compile"),
+    renamed(newInstallProgramCmd("install-program"), "program install"),
+    renamed(newRunScriptCmd("run-script"), "script run"),
+    renamed(newCheckScriptCmd("check-script"), "script check"),
+    renamed(newApplyConfigCmd("apply-config"), "config apply"),
+    renamed(newInstallersCmd("installers"), "installer list"),
+    renamed(newUpgradeCmd("upgrade"), "installer upgrade"),
+    renamed(newSelfUpgradeCmd("self-upgrade"), "self upgrade"),
   ]) {
     // A command that passes its arguments on passes --help on too.
     if (!sub.passArgs) helpFlag(sub);
@@ -122,6 +139,37 @@ export function newRoot(): Command {
   return root;
 }
 
+
+/** group is a command that's only its verbs: run bare, it shows them. */
+function group(name: string, help: string, verbs: Command[]): Command {
+  const g = new Command(name);
+  g.help = help;
+  // Bare, it lists its verbs; a word it doesn't have is an error, never its help.
+  g.run = async (cmd, args) => {
+    if (args.length > 0) throw noSuchSubcommand(cmd, args[0]!);
+    Style.init();
+    printHelp(cmd);
+  };
+  for (const v of verbs) {
+    helpFlag(v);
+    g.addCommand(v);
+  }
+  return g;
+}
+
+/**
+ * renamed is cmd under the name loadout 6.0 gave it: hidden, working as
+ * before, saying on stderr what to run now. 7.0 drops them.
+ */
+function renamed(cmd: Command, now: string): Command {
+  cmd.hidden = true;
+  const run = cmd.run!;
+  cmd.run = async (c, args, flags) => {
+    echoErr(Style.dim("loadout " + cmd.name + " is now loadout " + now));
+    return run(c, args, flags);
+  };
+  return cmd;
+}
 
 /**
  * subcommand is a subcommand named name with help (commandHelp's) and its

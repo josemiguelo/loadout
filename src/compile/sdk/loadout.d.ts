@@ -1,7 +1,7 @@
 // loadout's types: the modules manifests import as "loadout" and TypeScript
 // scripts as "loadout/script". The modules themselves are inside loadout,
 // which provides them whenever it runs this repo's files. Written by
-// `loadout compile` (and `loadout init`) from the loadout that compiles the
+// `loadout repo compile` (and `loadout repo init`) from the loadout that compiles the
 // repo: don't edit it, a compile puts it back.
 
 declare module "loadout" {
@@ -59,7 +59,7 @@ declare module "loadout" {
   };
   /** One, or a list of them, nested as deep as shared lists nest: flattened wherever it's read. */
   export type Many<T> = T | readonly Many<T>[];
-  /** The built-in installers: shipped with loadout, `loadout installers` lists them. */
+  /** The built-in installers: shipped with loadout, `loadout installer list` lists them. */
   export const withApt: Installer<never>;
   export const withBrew: Installer<never>;
   export const withBrewCask: Installer<never>;
@@ -171,7 +171,7 @@ declare module "loadout" {
     upgradeCommand?: string;
     /** The repo module that says whether it's behind, and updates it: `() => import("./.loadout/x.ts")`. */
     updates?: () => Promise<ProgramUpdates>;
-    /** Why setup-new-machine can do it last. */
+    /** Why loadout machine new can do it last. */
     canWait?: string;
     /** Why it stays although nothing uses it. */
     keepUnused?: string;
@@ -239,13 +239,13 @@ declare module "loadout" {
   export type ScriptSpec = StepSpec & {
     description?: string;
     needsSudo?: boolean;
-    /** Only setup-new-machine runs it (a one-time bootstrap). */
+    /** Only loadout machine new runs it (a one-time bootstrap). */
     setupOnly?: boolean;
-    /** setup-new-machine never runs it. */
+    /** loadout machine new never runs it. */
     notDuringSetup?: boolean;
     /** Only until every machine has done it: compile says when to delete it. */
     deleteOnceDone?: boolean;
-    /** Why setup-new-machine can do it last. */
+    /** Why loadout machine new can do it last. */
     canWait?: string;
     /**
      * The repo module that says what of this script's is behind, and updates
@@ -353,7 +353,7 @@ declare module "loadout" {
   export function include(...globs: string[]): Promise<void>;
   /**
    * The repo itself: the last thing loadout.ts does, once its imports have
-   * declared everything. Under `loadout compile` it prints the draft.
+   * declared everything. Under `loadout repo compile` it prints the draft.
    */
   export function repo<Data>(spec: RepoSpec<Data>): void;
   export {};

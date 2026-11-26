@@ -40,10 +40,10 @@ Explicit user decisions; don't "improve" them away.
      unknown key, a wrong type or a table given a non-object is an error
      naming the machine and key), recorded as written, which keeps the
      profile-conflict error. Every machine ends up with all
-     declared keys (model/machinedata.ts; bare `explain` shows them); the
+     declared keys (model/machinedata.ts; `machine explain` shows them); the
      lock holds each machine's merged table.
 
-   `setup-new-machine` refuses (ResolutionException) before
+   `machine new` refuses (ResolutionException) before
    executing anything if the machine isn't declared, an EXPLICITLY
    requested program is unmapped, a mapped program's dependency is
    unmapped, or a mapped known PM's binary is absent (probed). No automatic
@@ -163,7 +163,7 @@ Explicit user decisions; don't "improve" them away.
    skipped, not tried (`InstallOutcome.skippedFor`), and counts as a
    failure: the run says what it skipped and why, and exits 1.
    **Phases**: `canWait: "why"` on a program or script (the declaration, so
-   every machine; never a variant) puts it in setup-new-machine's later
+   every machine; never a variant) puts it in machine new's later
    phase, after every core program and script, so a slow, optional step
    never holds up the rest (the prompts a setup asks are all in core
    steps). The reason is required and lands in the lock. A core step that
@@ -175,12 +175,12 @@ Explicit user decisions; don't "improve" them away.
    program) belongs in the later phase. A later install whose
    dependency failed in the core phase is skipped
    (`InstallEngine.executeAfter`). `--skip-later` stops after the core
-   phase; `install-program`, `run-script` and `status` ignore phases. `canWait` on a
+   phase; `program install`, `script run` and `status` ignore phases. `canWait` on a
    `maintain_only` script is refused: it isn't part of setup.
 7. **Script status is observation**: every refresh re-runs each `check`
    (exit 0 => `done`, else `pending`), even right after a run; `lastRun`/
    `exitCode` are only history of tool-run executions. Check-less scripts
-   carry only run history. `check-script` asks the same checks for the
+   carry only run history. `script check` asks the same checks for the
    scripts it names, with the machine's options, and writes nothing.
    Install success = exit 0 AND a re-run version check no longer says
    missing. **A check that couldn't run is not
@@ -229,15 +229,15 @@ Explicit user decisions; don't "improve" them away.
     machine or profile. A run is its script's name and, for a module, its `options` (any
     JSON); the shell text is made, quoted, only when it runs
     (`model.optionsWord`).
-    Only opted-in scripts converge and are observed; `run-script` and `check-script` refuse others.
+    Only opted-in scripts converge and are observed; `script run` and `script check` refuse others.
     A module's `check` and `install` get the options; a `run` script takes
     none. No implicit script application, no OS or
     bootc detection deciding membership (the
     machine's opt-in decides). A script's modes (`setupOnly: true`,
     `notDuringSetup: true`, default both) scope EXECUTION only:
-    setup-new-machine converges setup-mode scripts, the home screen's
+    machine new converges setup-mode scripts, the home screen's
     scripts picker lists maintain-mode ones; status observes all opted-in
-    scripts and `run-script` ignores modes.
+    scripts and `script run` ignores modes.
 13. **Installers own mechanics; variants refine them.** An installer
     (`neededBinary`, `installCommand`, `checkCommand`, `versionRegex`, `outdatedCommand`, `allOutdatedCommand`,
     `upgradeCommand`, `needsSudo`, `installerParams`; `{packageName}` substituted) defines a
@@ -249,7 +249,7 @@ Explicit user decisions; don't "improve" them away.
     assembly: a repo installer of the same name replaces the built-in
     outright, and
     `Manifest.builtinInstallers` records which survived so
-    `explain`/`installers` label `(built-in)` vs `(repo)`. `x.needs(programs…)` adds to any installer, built-ins included, without
+    `explain`/`installer list` label `(built-in)` vs `(repo)`. `x.needs(programs…)` adds to any installer, built-ins included, without
     redefining it. Knowledge, never detection: nothing probes the machine
     to pick an installer.
     A program lists its variants in `canBeInstalled: [...]`: an installer as it
@@ -294,12 +294,12 @@ Explicit user decisions; don't "improve" them away.
     `needsSudo: true` (installer, variant, script, `outdated` source)
     declares a command that needs sudo's password without saying `sudo`
     itself (`omarchy pkg add`, a repo script); a variant's replaces its
-    installer's. `setup-new-machine`, `install-program`, `run-script` and `upgrade` ask
+    installer's. `machine new`, `program install`, `script run` and `installer upgrade` ask
     for the password once, after the confirmation and before the first
     step (`askForSudoUpfront` in cli/converge.ts), when their plan holds a
     step that needs it: declared, or a command matching `commandNeedsSudo`
     (core/engine/sudo.ts: the word sudo, not "pseudo"). Scripts count only
-    while pending (`ScriptRunner.pending` asks the check, which `run-script` asks
+    while pending (`ScriptRunner.pending` asks the check, which `script run` asks
     again). Valid credentials ask nothing; a refusal stops the run before
     any step. A background shell loop then runs `sudo -n -v` every 50s
     while loadout's pid lives, checked every second (`SudoKeepalive`), so
@@ -318,16 +318,28 @@ Explicit user decisions; don't "improve" them away.
     newer one is refused by name before anything else is read) and the
     `toolVersion` that wrote it: a binary refuses a lock from a newer MINOR
     (patch releases never change what a lock means), naming
-    `self-upgrade`. `minLoadoutVersion` (`repo({ minLoadoutVersion: … })`)
+    `self upgrade`. `minLoadoutVersion` (`repo({ minLoadoutVersion: … })`)
     is a floor the repo declares on top.
     New lock fields are additive with defaults. State files with
     `schemaVersion > coremodel.schemaVersion` are skipped with a warning
     (`StateStore.lastWarnings`; new read paths must echo/log them). Bump
     SchemaVersion only for a real schema break; handle older schemas via
-    defaults.
-15. **Converge installs; `upgrade` upgrades, a whole mechanism at a time.**
-    `setup-new-machine`/`install-program` add what's MISSING and never touch a
-    version already there. Moving versions is its own verb, `loadout upgrade
+    defaults. Commands are a noun and its verb (root.ts's groups):
+    `machine` (new, status, outdated, sync, diff, explain), `repo` (init,
+    compile), `program` (install, explain), `script` (run, check,
+    explain), `config` (apply, explain), `installer` (list, upgrade),
+    `self` (upgrade); only `chezmoi` and `bun`, other tools' command lines
+    passed through, stand alone. No command name is a compound. A bare
+    group prints its verbs; a verb it doesn't have is refused; each kind's
+    `explain` points a name of another kind at its own. 6.0's names
+    (`status`, `outdated`, `sync`, `diff`, `explain`, `init`, `compile`,
+    `setup-new-machine`, `install-program`, `run-script`, `check-script`,
+    `apply-config`, `installers`, `upgrade`, `self-upgrade`) are hidden
+    aliases that work as before and say on stderr what to run now
+    (`renamed`); 7.0 drops them.
+15. **Converge installs; `installer upgrade` upgrades, a whole mechanism at a time.**
+    `machine new`/`program install` add what's MISSING and never touch a
+    version already there. Moving versions is its own verb, `loadout installer upgrade
     <installers…>|--all` (`UpgradeEngine`), never single packages: naming a
     program is an error pointing at its mechanism. Mechanisms sharing a
     command (dnf, dnf-repo, dnf-copr all run `dnf upgrade -y`; omarchy and
@@ -338,12 +350,12 @@ Explicit user decisions; don't "improve" them away.
     can't sweep it.
     Custom `outdated` sources upgrade per item: their update command
     (`update(item)` of its `updates` module, or `upgrade: "…
-    {item}"`) runs once per row (`upgrade --item <source>/<name>`),
+    {item}"`) runs once per row (`installer upgrade --item <source>/<name>`),
     since items (a pin, a clone) are independent and one failure shouldn't
     stop the rest; a source without it is read-only (`[–]`). Afterwards
     EVERY mapped program is re-checked, since the transaction can move
     packages loadout doesn't declare. The binary's own update is
-    `self-upgrade`, which needs no repo, so it survives a version-floor
+    `self upgrade`, which needs no repo, so it survives a version-floor
     refusal. Both refusals of a too-old binary (floor, newer minor) are
     `model.ToolTooOldException`, carrying the version needed. `sync`
     catches it after its pull: it refuses when the latest release is still
@@ -389,9 +401,9 @@ Explicit user decisions; don't "improve" them away.
       first path segment (`.zshenv`, `.local`), from one `chezmoi managed
       --include files,symlinks` per refresh. Not opted in: `.chezmoiignore`
       is chezmoi's membership. A unit may share a program's name (tmux);
-      `explain <name>` shows both.
+      `config explain <name>` shows both.
     - **Drift is observation** (contract 7): one `chezmoi status --include
-      files,symlinks` per refresh. Its second column is what `apply-config` would
+      files,symlinks` per refresh. Its second column is what `config apply` would
       change (the same answer as `chezmoi verify`, in one call); a unit with
       any such file is `drifted`, with them in `ConfigState.files`. Its
       first column marks a file edited since chezmoi last wrote it.
@@ -399,7 +411,7 @@ Explicit user decisions; don't "improve" them away.
       units last seen are `unknown` with chezmoi's line as the reason, and
       `status` says it once (`StatusEngine.lastConfigsDown`); never a
       refusal for status.
-    - **Writing**: `apply [unit…]` and `sync` run `chezmoi apply --no-tty`
+    - **Writing**: `config apply [unit…]` and `machine sync` run `chezmoi apply --no-tty`
       (a unit = its targets, absolute via `chezmoi target-path`). Without a
       terminal chezmoi aborts the whole apply on a file edited in place
       (it would ask), so both refuse first when a file they'd replace is
@@ -418,7 +430,7 @@ Explicit user decisions; don't "improve" them away.
       so repos without configs write what they always did and older
       readers ignore it (schema stays 1). `diff` shows a CONFIG table (`-` =
       the machine doesn't report that unit) and exits 1 on config drift.
-    - **Templates' data**: `loadout compile` writes `<configs>/
+    - **Templates' data**: `loadout repo compile` writes `<configs>/
       .chezmoidata/loadout.json` (`model.chezmoiDataFiles`), which chezmoi
       loads into every template as `.loadout`: `loadout.defaults` (every
       declared key) and `loadout.machines.<hostname>` (each machine's
@@ -486,7 +498,7 @@ Explicit user decisions; don't "improve" them away.
       compile refuses it too. A joined `.chezmoiignore`/`.chezmoiremove` no
       part has any more is a leftover the refresh removes, never a stray.
       A build left behind (a checkout loadout can't write) is refused with
-      "run: loadout compile". The loader compares builds from the canonical
+      "run: loadout repo compile". The loader compares builds from the canonical
       repo root, as the refresh makes them, so a checkout reached through a
       symlink loads.
     - **Root configs**: a root build is one more `ConfigEngine` source
@@ -500,7 +512,7 @@ Explicit user decisions; don't "improve" them away.
       error is chezmoi's answer, never re-run as root), and when sudo wants
       a password the source is `unknown` with "(it needs sudo)"
       (`ConfigNeedsSudoException`): one source chezmoi can't answer for takes
-      down its own units only. A command that applies (`apply-config`,
+      down its own units only. A command that applies (`config apply`,
       `sync`, setup) asks for the password on that and tries again
       (`withSudo`). Both sides run under `umask 022`, since chezmoi computes
       a file's mode from the umask: an observer with another umask would
@@ -523,8 +535,8 @@ Explicit user decisions; don't "improve" them away.
       root's state (and its folder) readable whatever the passes did. A
       root source with
       nothing pending isn't applied, so nothing asks for sudo;
-      `apply-config` and `sync` ask once, first (askForSudoUpfront).
-      `setup-new-machine` applies drifted root configs after the core
+      `config apply` and `sync` ask once, first (askForSudoUpfront).
+      `machine new` applies drifted root configs after the core
       programs (no package overwrites them) and before the core scripts
       (which may read them), shown as `config` rows in its plan; when the
       plan can't read them (chezmoi not installed yet, or sudo needed) they
@@ -605,7 +617,7 @@ Explicit user decisions; don't "improve" them away.
       read, so the child builds the parent's tool folders into its own
       `.loadout-parent/home` and `/root` (ignored, refreshed as its own
       builds are), and its scripts' `LOADOUT_CONFIGS` points there. Units span
-      both, a target both manage is `unknown` and refused by `apply-config`, and
+      both, a target both manage is `unknown` and refused by `config apply`, and
       chezmoi runs with `LOADOUT_REPO` (the child) and `LOADOUT_MACHINE` so
       the parent's partial finds the child's machine. `diff` and the fleet
       row are the parent's machines and the child's (the parent's state

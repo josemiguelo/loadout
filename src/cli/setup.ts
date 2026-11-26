@@ -23,10 +23,10 @@ import { appCtx, subcommand } from "./root.ts";
 import { echo, spin } from "./spinner.ts";
 import { Style } from "./style.ts";
 
-/** newSetupCmd is `loadout setup-new-machine`. */
-export function newSetupCmd(): Command {
+/** newSetupCmd is `loadout machine new`. */
+export function newSetupCmd(name = "new"): Command {
   const cmd = subcommand(
-    "setup-new-machine",
+    name,
     commandHelp(
       "Set up this machine: install every missing program, then run its setup scripts; what's marked later comes last.",
       "--dry-run       print the plan, execute nothing",

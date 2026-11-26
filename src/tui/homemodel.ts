@@ -160,7 +160,7 @@ export interface Answered {
   sources: Map<string, boolean>;
   /**
    * programUpgrades is the programs this machine maps that declare their own
-   * `upgrade`: each is upgraded alone (`loadout upgrade <name>`), whatever
+   * `upgrade`: each is upgraded alone (`loadout installer upgrade <name>`), whatever
    * installer its variant names.
    */
   programUpgrades: Set<string>;
@@ -762,7 +762,7 @@ function fleet(m: HomeModel): diff.DiffReport | undefined {
 
 /**
  * startUpgrade asks about upgrading the ticked tools and source items, then
- * hands off to `loadout upgrade`. Planned with the same engine, so refusals
+ * hands off to `loadout installer upgrade`. Planned with the same engine, so refusals
  * show before anything runs.
  */
 export function startUpgrade(m: HomeModel, ans: Answered, selection: ReadonlySet<string>): void {
@@ -823,7 +823,7 @@ export function startUpgrade(m: HomeModel, ans: Answered, selection: ReadonlySet
 
 /**
  * startInstalls asks about installing the ticked missing programs, then
- * hands off to `loadout install-program <names>`. Planned with InstallEngine like the
+ * hands off to `loadout program install <names>`. Planned with InstallEngine like the
  * command (dependencies first, refusals before anything runs).
  */
 export function startInstalls(m: HomeModel, chosen: ReadonlySet<string>): void {
@@ -868,7 +868,7 @@ export function startInstalls(m: HomeModel, chosen: ReadonlySet<string>): void {
 
 /**
  * startScripts asks about running the ticked scripts, then hands off to
- * `loadout run-script <names> --force` (a ticked script runs even when done). `run-script`
+ * `loadout script run <names> --force` (a ticked script runs even when done). `script run`
  * records each one and re-asks its check.
  */
 export function startScripts(m: HomeModel, picked: ReadonlySet<string>): void {
@@ -890,10 +890,10 @@ export function startScripts(m: HomeModel, picked: ReadonlySet<string>): void {
 
 /**
  * startConfigs asks about writing the ticked configs, then hands off to
- * `loadout apply-config <names>`. A file edited on this machine would stop `apply-config`,
+ * `loadout config apply <names>`. A file edited on this machine would stop `config apply`,
  * so it stops here, before anything runs, naming the file: which version
  * wins is the user's call, made in a terminal (`loadout chezmoi re-add`, or
- * `loadout apply-config --force`).
+ * `loadout config apply --force`).
  */
 export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
   if (m.state.dialog !== undefined) return;
@@ -926,12 +926,12 @@ export function startConfigs(m: HomeModel, picked: ReadonlySet<string>): void {
       // A refusal with a list: the toast says what happened, the dialog
       // lists the files.
       if (edited.length > 0) {
-        fail(m, "edited on this machine: " + edited.join(", ") + " — keep with loadout chezmoi re-add, or run loadout apply-config --force");
+        fail(m, "edited on this machine: " + edited.join(", ") + " — keep with loadout chezmoi re-add, or run loadout config apply --force");
         m.state.dialog = newDialog({
           kind: DialogKind.List,
           title: "Edited here",
           lines: edited,
-          summary: "Keep them with loadout chezmoi re-add, or overwrite them with loadout apply-config --force, in a terminal.",
+          summary: "Keep them with loadout chezmoi re-add, or overwrite them with loadout config apply --force, in a terminal.",
         });
         return;
       }

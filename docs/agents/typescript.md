@@ -1,7 +1,7 @@
 # TypeScript manifests: the SDK and compile
 
 - **Manifests are TypeScript, run by bun; every other command reads JSON.**
-  `loadout compile` is compile/compile.ts's `compile` under a spinner: it writes the
+  `loadout repo compile` is compile/compile.ts's `compile` under a spinner: it writes the
   SDKs' types (`node_modules/@types/loadout`, generated from
   `src/compile/sdk/`) into the repo, runs `bun run loadout.ts` there with nothing of the caller's
   environment but PATH and HOME (and `LOADOUT_COMPILE=1`), reads the draft
@@ -106,7 +106,7 @@
   "delete it" once all of them report it `done`; a machine without a state
   file hasn't done it. Done means its check passes (contract 7), so a
   transitional script needs a check (on itself, or on every variant).
-- **`canWait: "why"` is in the lock, unlike `keepUnused`**: setup-new-machine
+- **`canWait: "why"` is in the lock, unlike `keepUnused`**: machine new
   reads only the lock, so the reason is written on the program or script
   (dropped when unset). A blank reason is refused, and so is a core step
   that waits on a later one (contract 6).

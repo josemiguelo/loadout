@@ -40,7 +40,7 @@ src/
                installOrder/scriptOrder (ties by name). assembleWithoutFiles is
                TEST-ONLY. draftover.ts: a child's draft over its parent's
                (contract 18)
-  compile/     `loadout compile`: the TypeScript manifests
+  compile/     `loadout repo compile`: the TypeScript manifests
     sdk/loadout.sdk.ts  the SDK, imported as "loadout" (embedded by
                    core/bun, a module of the wrapper's preload): the manifest
                    language, its references, the language's own rules
@@ -92,7 +92,7 @@ src/
                    oracles; exit code deliberately ignored), InstallEngine
                    (plan/execute), upgradeengine.ts (planner only: which mechanisms
                    this machine can upgrade, one step per command, refusals;
-                   `upgrade` runs and verifies, the home screen plans with it to
+                   `installer upgrade` runs and verifies, the home screen plans with it to
                    describe steps and refuse early), ScriptRunner, ConfigEngine
                    (chezmoi over the repo's configs dir, and root sources
                    applied to / in two passes: units, drift, edited files,
@@ -120,14 +120,14 @@ src/
                interface (run → Ended), HomeAction, Handoff, closedCommand
                (what a confirmed action runs), registerScreen/newScreen
   cli/         one file per subcommand (status/explain/installers/
-               setup-new-machine/install/upgrade/self-upgrade/outdated/run/
+               machine/program/script/config/installer/self (groups of verbs), outdated/
                apply/diff/sync/init/compile/bun/chezmoi); args.ts (the command line:
                commands, flags, help),
                root.ts (bare invocation without a TTY prints help), home.ts
                (starts the screen, prints what it ended with), style.ts,
                table.ts, spinner.ts, help.ts, errors.ts (usage errors),
                converge.ts; scaffold.ts embeds
-               scaffold/, `init`'s templates. `self-upgrade` shells to
+               scaffold/, `init`'s templates. `self upgrade` shells to
                installCommand and needs no repo, so it works under a
                min-tool-version refusal (which points at it)
   theme/       Tokyo Night / Day palettes, detectDarkTerminal, forcedDark

@@ -39,7 +39,7 @@ test("a scaffold's files come in walk order, the SDKs' types last", () => {
   ]);
 });
 
-test("every scaffold type-checks against the node_modules/@types/loadout init writes, and only with it", () => {
+test("every scaffold type-checks against the node_modules/@types/loadout repo init writes, and only with it", () => {
   for (const kind of ["init", "init-configs", "child", "child-configs"]) {
     const files = renderScaffold(kind, { hostname: "box", parentName: "dad", parentPath: "../dad", parentImport: "../dad" });
     const repo = Object.fromEntries(files.map((f) => [f.path, f.content]));

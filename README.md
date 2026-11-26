@@ -39,9 +39,9 @@ TypeScript scripts run with.
   tool where its files land, and what lands outside your home (system
   packages, hardware) in `loadouts/.etc/<concern>/`.
 - **Your dotfiles are part of the loadout.** With `configs: …` in `repo()`, the
-  repo holds chezmoi's source: `status` shows each config as applied or
-  drifted, `diff` compares them across machines, `apply-config` writes them, and
-  `sync` applies them before publishing this machine's state. Keep them
+  repo holds chezmoi's source: `machine status` shows each config as applied or
+  drifted, `machine diff` compares them across machines, `config apply` writes them, and
+  `machine sync` applies them before publishing this machine's state. Keep them
   with their tools if you like: with `dotfiles: { tools: "loadouts/*", … }`
   each tool is one folder (its manifest, its scripts, `home/` for `$HOME`,
   `root/` for `/`), compile builds chezmoi's sources from them, files outside
@@ -69,41 +69,47 @@ TypeScript scripts run with.
   fix.
 - **Mechanics ship with the tool; intent lives in your repo.** dnf, apt,
   pacman, omarchy, omarchy-aur, brew, brew-cask and flatpak are built in,
-  so `canBeInstalled: [withDnf]` works in an empty repo. `loadout installers` shows
+  so `canBeInstalled: [withDnf]` works in an empty repo. `loadout installer list` shows
   them, and an installer of your own with the same name replaces one.
 
 ## Commands
 
 | | Command | What it does |
 |---|---|---|
-| **start here** | `loadout` | The home screen: every subject (programs, scripts, configs, remote, fleet) with its verdict, its list beside it. Tick rows, press enter, confirm: the command runs in a panel inside the screen, where sudo and prompts are answered (`ctrl+]` back to the dashboard, Ctrl-C stops it). `i` explains a row, `/` filters, ctrl+p lists every command, ctrl+g every key; r/S/U/C re-check, sync, self-upgrade, set up; `t` switches dark/light. A pipe gets help instead |
-| **observe** | `status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
-| | `explain [names]` | Programs, scripts or configs exactly as the engine resolves them (default: every program and script) |
-| | `installers [name]` | The install mechanisms available here, built-in and your own |
-| | `outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), the tool itself and custom `outdated` sources included |
-| | `diff` | The fleet side by side; exit 1 on drift (cron/CI-friendly) |
-| | `check-script <scripts>` | Are those scripts done? Asks their checks with this machine's options, runs nothing, writes nothing; exit 1 unless all are (`--all` = every script this machine opts into) |
-| **converge** | `setup-new-machine` | The whole loadout: every missing program, then the setup scripts; what's marked `canWait` (slow, optional) comes after all of it (`--skip-later` stops before) |
-| | `install-program <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
-| | `upgrade <installers>` | Newer versions, a whole mechanism at a time (`upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
-| | `run-script <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
-| | `apply-config [configs]` | Write the repo's configs here through chezmoi (default: all; a tool's `/` files as root, `/<tool>`); stops on files edited on this machine unless `--force` |
-| | `chezmoi <command> [args…]` | chezmoi over this repo's configs, from any checkout; with tool folders, a path outside `$HOME` goes to the `/` configs, and what `re-add`, `add --tool <tool>`, `merge`, `chattr` and `forget` write lands in the tool's folder |
-| **fleet** | `sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
-| | `self-upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
-| | `compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `deleteOnceDone` scripts every machine has done |
-| | `init` | Scaffold a new config repo (`loadout.ts`, a tsconfig and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
+| **start here** | `loadout` | The home screen: every subject (programs, scripts, configs, remote, fleet) with its verdict, its list beside it. Tick rows, press enter, confirm: the command runs in a panel inside the screen, where sudo and prompts are answered (`ctrl+]` back to the dashboard, Ctrl-C stops it). `i` explains a row, `/` filters, ctrl+p lists every command, ctrl+g every key; r/S/U/C re-check, sync, self upgrade, set up; `t` switches dark/light. A pipe gets help instead |
+| **machine** | `machine status` | This machine vs its loadout: every check re-asked, drift explained, state file written |
+| | `machine new` | Set it up: every missing program, then the setup scripts; what's marked `canWait` (slow, optional) comes after all of it (`--skip-later` stops before) |
+| | `machine outdated` | What newer versions exist (dnf/brew/flathub/…, one batch call each), loadout itself and custom `outdated` sources included |
+| | `machine sync` | Pull, apply configs, refresh state, commit *only this machine's state file*, push; upgrades loadout first when the pulled repo needs a newer one, and ends naming what's left to install or run |
+| | `machine diff` | This machine beside the others, every machine's state side by side; exit 1 on drift (cron/CI-friendly) |
+| | `machine explain` | The profiles it extends, what it installs and runs, its merged data |
+| **program** | `program install <programs>` | Just those programs, dependencies first (`--all` = every program this machine maps, no scripts) |
+| | `program explain [names]` | Programs exactly as the engine resolves them (default: all) |
+| **script** | `script run <scripts>` | Just those scripts (check-gated; `--all` = every script this machine opts into, `--force` runs them anyway) |
+| | `script check <scripts>` | Are those scripts done? Asks their checks with this machine's options, runs nothing, writes nothing; exit 1 unless all are (`--all` = every script this machine opts into) |
+| | `script explain [names]` | Scripts exactly as the engine resolves them (default: all) |
+| **config** | `config apply [configs]` | Write the repo's configs here through chezmoi (default: all; a tool's `/` files as root, `/<tool>`); stops on files edited on this machine unless `--force` |
+| | `config explain [names]` | Each config's files and last verdict (default: all) |
+| **installer** | `installer list [name]` | The install mechanisms available here, built-in and your own |
+| | `installer upgrade <installers>` | Newer versions, a whole mechanism at a time (`installer upgrade dnf brew`, `--all`), never a single package; `--item <source>/<name>` updates one item of a custom `outdated` source |
+| **repo** | `repo compile` | Run the repo's TypeScript manifests into `loadout.lock.json`, which every other command reads; warns about what no machine uses, and about `deleteOnceDone` scripts every machine has done |
+| | `repo init` | Scaffold a new config repo (`loadout.ts`, a tsconfig and a few example files); `--configs` holds your dotfiles too; `--parent <path>` makes a child repo of a compiled one |
+| **self** | `self upgrade` | Replace the loadout binary; needs no repo, works under a version-floor refusal |
+| **tools** | `chezmoi <command> [args…]` | chezmoi over this repo's configs, from any checkout; with tool folders, a path outside `$HOME` goes to the `/` configs, and what `re-add`, `add --tool <tool>`, `merge`, `chattr` and `forget` write lands in the tool's folder |
 | | `bun [args…]` | The bun built into loadout, the one scripts run with: `loadout bun --version`, `loadout bun run x.ts`; needs no repo |
+
+loadout 6.0's names (`status`, `sync`, `compile`, `explain`, `setup-new-machine`, `run-script`, and the
+rest) still work until 7.0, each saying what to run now.
 
 ## Quickstart
 
 ```console
-$ loadout init ~/loadouts && cd ~/loadouts
+$ loadout repo init ~/loadouts && cd ~/loadouts
 $ $EDITOR programs/ machines/               # declare programs; say what this machine installs
-$ loadout compile                            # writes loadout.lock.json (commit it)
-$ loadout status                             # observe
-$ loadout setup-new-machine                  # converge
-$ loadout sync                               # publish (after adding a git remote)
+$ loadout repo compile                            # writes loadout.lock.json (commit it)
+$ loadout machine status                             # observe
+$ loadout machine new                  # converge
+$ loadout machine sync                               # publish (after adding a git remote)
 ```
 
 ```ts
@@ -169,7 +175,7 @@ $ ./integration/run-tests.sh [binary] [pattern]    # black-box suite (default bu
 Targets: linux-x64, linux-arm64, macos-arm64, macos-x64, all
 cross-compiled from one machine (`bun build --compile --target=…`). A `v*` tag builds and attaches a release
 tarball for each (the binary alone), which the install one-liner and
-`loadout self-upgrade` download.
+`loadout self upgrade` download.
 
 Stack: TypeScript on [Bun](https://bun.sh), compiled to one executable
 per target · the home screen draws itself (in

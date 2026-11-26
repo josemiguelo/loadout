@@ -1,7 +1,7 @@
 // The loader module reads a config repo's lock: the only manifest the binary
 // knows.
 //
-// The manifests themselves are TypeScript, run by `loadout compile`; the lock
+// The manifests themselves are TypeScript, run by `loadout repo compile`; the lock
 // is refused when it's missing, written by a newer loadout, below the
 // repo's version floor, or older than the sources it was compiled from, and
 // so is a repo whose chezmoi data or partial (model.chezmoiDataFiles)
@@ -47,7 +47,7 @@ export function loadRepo(repoRoot: string, home: string): Manifest {
   const lock = readLock(repoRoot);
   const manifest = lock.manifest;
   if (sourcesHash(dirFS(repoRoot), manifest.layout.sources) !== lock.sources) {
-    throw new ManifestException("the manifests changed since " + lockFileName + " was written — run: loadout compile");
+    throw new ManifestException("the manifests changed since " + lockFileName + " was written — run: loadout repo compile");
   }
   // A child's lock holds its parent's declarations as they were: a parent
   // edit it hasn't seen is refused the same way (contract 18).
@@ -58,7 +58,7 @@ export function loadRepo(repoRoot: string, home: string): Manifest {
     parentFS = dirFS(root);
     if (sourcesHash(parentFS, parent.sources) !== parent.hash) {
       throw new ManifestException(
-        "parent " + parent.name + ": the manifests changed since " + lockFileName + " was written — run: loadout compile",
+        "parent " + parent.name + ": the manifests changed since " + lockFileName + " was written — run: loadout repo compile",
       );
     }
   }
@@ -73,7 +73,7 @@ export function loadRepo(repoRoot: string, home: string): Manifest {
       }
       if (current === undefined || !current.equals(Buffer.from(expected))) {
         const what = current === undefined ? "is missing" : "doesn't match " + lockFileName;
-        throw new ManifestException(path + " " + what + " — run: loadout compile");
+        throw new ManifestException(path + " " + what + " — run: loadout repo compile");
       }
     }
   }
@@ -145,7 +145,7 @@ function readLock(repoRoot: string): Lock {
     text = readFileSync(path, "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new ManifestException("no " + lockFileName + " in " + repoRoot + " — run: loadout compile");
+      throw new ManifestException("no " + lockFileName + " in " + repoRoot + " — run: loadout repo compile");
     }
     throw fileError(e, undefined, path);
   }
@@ -155,7 +155,7 @@ function readLock(repoRoot: string): Lock {
   const lock = decodeLock(text, "", (toolVersion) => {
     if (!atLeast(minor(VERSION), minor(toolVersion))) {
       throw new ToolTooOldException(
-        lockFileName + " was compiled by loadout " + toolVersion + " (you have " + VERSION + ") — run: loadout self-upgrade",
+        lockFileName + " was compiled by loadout " + toolVersion + " (you have " + VERSION + ") — run: loadout self upgrade",
         minor(toolVersion) + ".0",
       );
     }
@@ -163,7 +163,7 @@ function readLock(repoRoot: string): Lock {
   const required = lock.manifest.meta.minToolVersion;
   if (required !== undefined && !atLeast(VERSION, required)) {
     throw new ToolTooOldException(
-      "this config repo requires loadout >= " + required + " (you have " + VERSION + ") — run: loadout self-upgrade",
+      "this config repo requires loadout >= " + required + " (you have " + VERSION + ") — run: loadout self upgrade",
       required,
     );
   }

@@ -392,11 +392,11 @@ function askMachine(m: HomeModel, action: app.HomeAction): void {
       break;
     case app.ActionUpgrade:
       d.title = "Upgrade loadout";
-      d.items = [{ name: "self-upgrade", text: "installs the latest release; the screen ends afterwards" }];
+      d.items = [{ name: "self upgrade", text: "installs the latest release; the screen ends afterwards" }];
       break;
     case app.ActionSetup:
       d.title = "Set up";
-      d.items = [{ name: "setup-new-machine", text: "installs what's missing and runs the setup scripts; it shows its plan and asks first" }];
+      d.items = [{ name: "loadout machine new", text: "installs what's missing and runs the setup scripts; it shows its plan and asks first" }];
       break;
   }
   m.state.dialog = d;

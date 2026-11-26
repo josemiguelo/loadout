@@ -10,10 +10,10 @@ program("git", {
 TS
 repo_opt verrepo/loadout.ts 'minLoadoutVersion: "999.0.0"'
 compile_repo verrepo
-OUT=$("$BIN" --repo verrepo status 2>&1 || true)
+OUT=$("$BIN" --repo verrepo machine status 2>&1 || true)
 echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "minLoadoutVersion not enforced"
-echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "refusal should point at loadout self-upgrade"
-"$BIN" --help | grep -q "self-upgrade" || fail "self-upgrade command should be registered"
+echo "$OUT" | grep -q "run: loadout self upgrade" || fail "refusal should point at loadout self upgrade"
+"$BIN" --help | grep -q "self upgrade" || fail "self upgrade command should be registered"
 ok "a repo's minLoadoutVersion blocks an outdated binary with recovery hint"
 
 # A lock compiled by a newer minor's loadout is refused the same way: it
@@ -30,12 +30,12 @@ TS
 compile_repo verrepo
 cp verrepo/loadout.lock.json lock.good
 sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/' lock.good > verrepo/loadout.lock.json
-OUT=$("$BIN" --repo verrepo status 2>&1) && fail "a lock from a newer loadout must be refused"
+OUT=$("$BIN" --repo verrepo machine status 2>&1) && fail "a lock from a newer loadout must be refused"
 echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "the newer lock is named: $OUT"
-echo "$OUT" | grep -q "run: loadout self-upgrade" || fail "and points at self-upgrade: $OUT"
+echo "$OUT" | grep -q "run: loadout self upgrade" || fail "and points at self upgrade: $OUT"
 # A field the newer minor added is never reached: the version is read first.
 sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/; s/"manifest": {/"manifest": { "fromTheFuture": true,/' lock.good > verrepo/loadout.lock.json
-OUT=$("$BIN" --repo verrepo status 2>&1) && fail "a newer lock with a field this binary lacks must be refused"
+OUT=$("$BIN" --repo verrepo machine status 2>&1) && fail "a newer lock with a field this binary lacks must be refused"
 echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "it is refused by version, not by the field: $OUT"
 cp lock.good verrepo/loadout.lock.json
 ok "a lock compiled by a newer loadout is refused with recovery hint, before its body is read"
@@ -44,8 +44,8 @@ cat > verrepo/machines/state/future.json <<'JSON'
 {"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
  "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}
 JSON
-"$BIN" --repo verrepo --machine m1 status >/dev/null || fail "status works despite future state file"
-OUT=$("$BIN" --repo verrepo diff 2>&1 || true)
+"$BIN" --repo verrepo --machine m1 machine status >/dev/null || fail "status works despite future state file"
+OUT=$("$BIN" --repo verrepo machine diff 2>&1 || true)
 echo "$OUT" | grep -q "newer loadout" || fail "future state file should warn"
 echo "$OUT" | grep -q "future" && echo "$OUT" | grep -q '"future"' && fail "future machine must not appear as data" || true
 ok "state files from a newer loadout are skipped with a warning"

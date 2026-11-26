@@ -29,7 +29,7 @@ resolves latest via the GitHub API (pin: LOADOUT_VERSION) and installs the
 one binary to ~/.local/bin (LOADOUT_INSTALL_DIR); keep its target names in
 sync with release.yml. On a musl Linux it refuses: the builds link glibc. A `~/.local/share/loadout` it finds is left as
 it was: install.sh never deletes what it didn't write. It reads the installed version BEFORE
-overwriting, so an upgrade (including `loadout self-upgrade`, which shells
+overwriting, so an upgrade (including `loadout self upgrade`, which shells
 out to it) says "was vX" and skips the first-install "Next steps".
 Testable offline via LOADOUT_DOWNLOAD_BASE=file://… against a local
 tarball; run-tests.sh covers both paths on both platforms, staging one

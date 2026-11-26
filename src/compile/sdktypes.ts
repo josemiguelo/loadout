@@ -29,7 +29,7 @@ const header =
   "// loadout's types: the modules manifests import as \"loadout\" and TypeScript\n" +
   '// scripts as "loadout/script". The modules themselves are inside loadout,\n' +
   "// which provides them whenever it runs this repo's files. Written by\n" +
-  "// `loadout compile` (and `loadout init`) from the loadout that compiles the\n" +
+  "// `loadout repo compile` (and `loadout repo init`) from the loadout that compiles the\n" +
   "// repo: don't edit it, a compile puts it back.\n";
 
 /** generate is loadout.d.ts's text, emitted from the SDK sources now. Throws when tsc fails. */

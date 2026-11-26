@@ -375,7 +375,7 @@ test("execute skips what a failed install was needed for", async () => {
 });
 
 test("execute after skips what an earlier phase failed", async () => {
-  // setup-new-machine's later phase: ripgrep's dependency git failed in the
+  // machine new's later phase: ripgrep's dependency git failed in the
   // core phase, so ripgrep isn't tried; with git done earlier, it is.
   const runner = newRunner().onCommand("sudo dnf install -y ripgrep").onCommand("rg --version", stdout("ripgrep 14.1.0"));
   const m = example();

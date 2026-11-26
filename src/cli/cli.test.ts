@@ -33,8 +33,8 @@ function golden(name: string): string {
 test("help is laid out as the golden files have it", () => {
   const root = newRoot();
   expect(renderHelp(root).startsWith(golden("root-help-head.txt"))).toBe(true);
-  const upgrade = root.commands.find((sub) => sub.name === "upgrade")!;
-  expect(renderHelp(upgrade)).toBe(golden("upgrade-help.txt"));
+  const upgrade = root.commands.find((sub) => sub.name === "installer")!.commands.find((sub) => sub.name === "upgrade")!;
+  expect(renderHelp(upgrade)).toBe(golden("installer-upgrade-help.txt"));
 });
 
 test("command help aligns the detail lines", () => {
@@ -84,4 +84,51 @@ test("output to a reader that has gone stops quietly, with a broken pipe's 141",
   const r = Bun.spawnSync(["bash", "-c", 'set -o pipefail; "$0" -e "$1" | head -c1 >/dev/null', process.execPath, script], { stderr: "pipe" });
   expect(r.stderr.toString()).toBe("");
   expect(r.exitCode).toBe(141);
+});
+
+test("loadout 6.0's names are hidden aliases of the grouped commands, saying where they went", async () => {
+  const root = newRoot();
+  const moved: [string, string[]][] = [
+    ["setup-new-machine", ["machine", "new"]],
+    ["install-program", ["program", "install"]],
+    ["run-script", ["script", "run"]],
+    ["check-script", ["script", "check"]],
+    ["apply-config", ["config", "apply"]],
+    ["installers", ["installer", "list"]],
+    ["upgrade", ["installer", "upgrade"]],
+    ["self-upgrade", ["self", "upgrade"]],
+    ["status", ["machine", "status"]],
+    ["outdated", ["machine", "outdated"]],
+    ["sync", ["machine", "sync"]],
+    ["diff", ["machine", "diff"]],
+    ["init", ["repo", "init"]],
+    ["compile", ["repo", "compile"]],
+  ];
+  for (const [old, now] of moved) {
+    const alias = root.commands.find((c) => c.name === old)!;
+    const verb = root.commands.find((c) => c.name === now[0])!.commands.find((c) => c.name === now[1])!;
+    expect([old, alias.hidden]).toEqual([old, true]);
+    expect([old, alias.help]).toEqual([old, verb.help]);
+    expect(alias.opts.map((o) => o.long)).toEqual(verb.opts.map((o) => o.long));
+  }
+  // explain was every kind at once: hidden too, the kinds' own verbs listed instead.
+  expect(root.commands.find((c) => c.name === "explain")?.hidden).toBe(true);
+  for (const kind of ["program", "script", "config", "machine"]) {
+    expect([kind, root.commands.find((c) => c.name === kind)!.commands.some((c) => c.name === "explain")]).toEqual([kind, true]);
+  }
+  // Hidden from the help, the new names listed instead.
+  const help = renderHelp(root);
+  for (const [old] of moved) expect([old, new RegExp("^  " + old + " ", "m").test(help)]).toEqual([old, false]);
+  expect(help).toContain("  script run ");
+  // Run, an alias says what to run now, then runs.
+  const alias = root.commands.find((c) => c.name === "check-script")!;
+  let err = "";
+  const saved = streams.stderr;
+  streams.stderr = { write: (t) => void (err += t) };
+  try {
+    await alias.run!(alias, [], { bool: () => false, string: () => "", strings: () => [] } as never).catch(() => {});
+  } finally {
+    streams.stderr = saved;
+  }
+  expect(err).toContain("loadout check-script is now loadout script check");
 });

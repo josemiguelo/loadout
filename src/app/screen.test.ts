@@ -23,21 +23,21 @@ import {
 
 test("each confirmed action runs the command it names", () => {
   const cases: [Closed, string][] = [
-    [{ action: ActionUpgrade }, "self-upgrade"],
-    [{ action: ActionSync }, "sync"],
-    [{ action: ActionSetup }, "setup-new-machine"],
+    [{ action: ActionUpgrade }, "self upgrade"],
+    [{ action: ActionSync }, "machine sync"],
+    [{ action: ActionSetup }, "machine new"],
     // The pane already asked: the command's own confirmation is skipped.
-    [{ action: ActionHandOff, handoff: { kind: PaneInstall, args: ["fd", "rg"] } }, "install-program fd rg --yes"],
-    [{ action: ActionHandOff, handoff: { kind: PaneScripts, args: ["dots"] } }, "run-script dots --force"],
+    [{ action: ActionHandOff, handoff: { kind: PaneInstall, args: ["fd", "rg"] } }, "program install fd rg --yes"],
+    [{ action: ActionHandOff, handoff: { kind: PaneScripts, args: ["dots"] } }, "script run dots --force"],
     // The screen already refused files edited here; never --force from it.
-    [{ action: ActionHandOff, handoff: { kind: PaneConfigs, args: ["zsh"] } }, "apply-config zsh"],
-    [{ action: ActionHandOff, handoff: { kind: PaneUpgrade, args: ["brew"] } }, "upgrade brew --yes"],
-    [{ action: ActionHandOff, handoff: { kind: PaneList, args: ["--item", "pins/x"] } }, "upgrade --item pins/x --yes"],
+    [{ action: ActionHandOff, handoff: { kind: PaneConfigs, args: ["zsh"] } }, "config apply zsh"],
+    [{ action: ActionHandOff, handoff: { kind: PaneUpgrade, args: ["brew"] } }, "installer upgrade brew --yes"],
+    [{ action: ActionHandOff, handoff: { kind: PaneList, args: ["--item", "pins/x"] } }, "installer upgrade --item pins/x --yes"],
   ];
   for (const [closed, want] of cases) {
     const command = closedCommand(closed);
     expect(command).toBeDefined();
-    expect([command!.name, ...command!.args].join(" ")).toBe(want);
+    expect([...command!.words, ...command!.args].join(" ")).toBe(want);
   }
 });
 

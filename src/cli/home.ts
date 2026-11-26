@@ -6,7 +6,7 @@ import { echo } from "./spinner.ts";
  * home shows the home screen until the user quits. Every action runs inside
  * it (a child loadout in the screen's run panel), so this only starts it and
  * prints what it ended with, once the normal screen is back: after a
- * self-upgrade (or a sync that upgraded) that is the run's output and how to
+ * self upgrade (or a sync that upgraded) that is the run's output and how to
  * go on, since the binary on disk is then a different version.
  */
 export async function home(a: AppContext): Promise<void> {

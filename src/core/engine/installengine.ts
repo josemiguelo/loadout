@@ -209,7 +209,7 @@ export class InstallEngine {
 
   /**
    * executeAfter is execute continuing an earlier run in the same command
-   * (setup-new-machine's later phase after its core one): an install whose
+   * (loadout machine new's later phase after its core one): an install whose
    * dependency failed or was skipped in earlier is skipped too. Only the new
    * outcomes are returned. An interrupted install rejects; the outcomes so
    * far are lost with it.

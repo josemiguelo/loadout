@@ -23,31 +23,31 @@ test("bad command lines are refused with the command's usage and one Error: line
   const cases: [string[], string][] = [
     [["help"], root + "no such subcommand help"],
     [["--bogus", "status"], root + "no such option --bogus. Did you mean --verbose?"],
-    [["status", "--jsn"], "Usage: loadout status [<options>]\n\nError: no such option --jsn. Did you mean --json?"],
+    [["machine", "status", "--jsn"], "Usage: loadout machine status [<options>]\n\nError: no such option --jsn. Did you mean --json?"],
     [
-      ["status", "--json=maybe"],
-      'Usage: loadout status [<options>]\n\nError: invalid argument "maybe" for "--json" flag: parsing "maybe": invalid syntax',
+      ["machine", "status", "--json=maybe"],
+      'Usage: loadout machine status [<options>]\n\nError: invalid argument "maybe" for "--json" flag: parsing "maybe": invalid syntax',
     ],
-    [["init", "a", "b"], "Usage: loadout init [<options>] [<path>]\n\nError: got unexpected extra argument (b)"],
-    [["installers", "a", "b", "c"], "Usage: loadout installers [<options>] [<name>]\n\nError: got unexpected extra arguments (b c)"],
+    [["repo", "init", "a", "b"], "Usage: loadout repo init [<options>] [<path>]\n\nError: got unexpected extra argument (b)"],
+    [["installer", "list", "a", "b", "c"], "Usage: loadout installer list [<options>] [<name>]\n\nError: got unexpected extra arguments (b c)"],
     [["---x"], root + "bad flag syntax: ---x"],
     [["--version", "extra"], root + "no such subcommand extra"],
-    [["init", "--parent"], "Usage: loadout init [<options>] [<path>]\n\nError: option --parent requires a value"],
-    [["sync", "-m"], "Usage: loadout sync [<options>]\n\nError: option -m requires a value"],
-    [["sync", "-mx", "--nope"], "Usage: loadout sync [<options>]\n\nError: no such option --nope. Did you mean --no-push?"],
-    [["status", "--", "--json"], "Usage: loadout status [<options>]\n\nError: got unexpected extra argument (--json)"],
+    [["repo", "init", "--parent"], "Usage: loadout repo init [<options>] [<path>]\n\nError: option --parent requires a value"],
+    [["machine", "sync", "-m"], "Usage: loadout machine sync [<options>]\n\nError: option -m requires a value"],
+    [["machine", "sync", "-mx", "--nope"], "Usage: loadout machine sync [<options>]\n\nError: no such option --nope. Did you mean --no-push?"],
+    [["machine", "status", "--", "--json"], "Usage: loadout machine status [<options>]\n\nError: got unexpected extra argument (--json)"],
     [["-Vx"], root + "no such option -x"],
     [["-h extra"], root + "no such option - "],
     [["--version extra"], root + "no such option --version. (Possible options: --version, --verbose)"],
-    [["--", "status"], root + "no such subcommand status. Did you mean status?"],
+    [["--", "status"], root + "no such subcommand status"],
     [["--repo"], root + "option --repo requires a value"],
   ];
   for (const [args, want] of cases) expect([args, await refusal(args)]).toEqual([args, want]);
 });
 
 test("help wins over the arguments' check, and a flag error over help", async () => {
-  expect(await refusal(["status", "-h", "extra"])).toBe("");
-  expect(await refusal(["status", "-h", "--bogus"])).toBe("Usage: loadout status [<options>]\n\nError: no such option --bogus");
+  expect(await refusal(["machine", "status", "-h", "extra"])).toBe("");
+  expect(await refusal(["machine", "status", "-h", "--bogus"])).toBe("Usage: loadout machine status [<options>]\n\nError: no such option --bogus");
 });
 
 test("the command is found past persistent flags and their values", () => {
@@ -96,4 +96,29 @@ test("a command that passes its arguments on gets them as given, after its name 
     await executeCommand(root, args, { flagError, printHelp: () => {} });
     expect([args, got]).toEqual([args, want]);
   }
+});
+
+test("a group runs bare as its help, and refuses a verb it doesn't have", async () => {
+  const root = newRoot();
+  let helped = "";
+  await executeCommand(root, ["script"], { flagError, printHelp: (c) => void (helped = c.name) });
+  // A bare group prints its own help (through printHelp, off a terminal).
+  let refused = "";
+  try {
+    await executeCommand(root, ["script", "nope"], { flagError, printHelp: () => {} });
+  } catch (e) {
+    if (e instanceof UsageError) refused = e.render();
+    else throw e;
+  }
+  expect(refused).toBe("Usage: loadout script [<options>] <command> [<args>]...\n\nError: no such subcommand nope");
+  // A verb mistyped is suggested from its group.
+  let typo = "";
+  try {
+    await executeCommand(root, ["machine", "stauts"], { flagError, printHelp: () => {} });
+  } catch (e) {
+    if (e instanceof UsageError) typo = e.render();
+    else throw e;
+  }
+  expect(typo).toContain("no such subcommand stauts. Did you mean status?");
+  expect(helped === "" || helped === "script").toBe(true);
 });

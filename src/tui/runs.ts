@@ -63,7 +63,7 @@ export class Run {
   constructor(
     readonly closed: app.Closed,
     /**
-     * command is the whole command line ("loadout upgrade brew --yes"),
+     * command is the whole command line ("loadout installer upgrade brew --yes"),
      * label the short name the Runs list shows ("upgrade brew").
      */
     readonly command: string,
@@ -103,8 +103,8 @@ export class Run {
 
 /** commandLine is closed's command as the user would type it, and its short label. */
 export function commandLine(closed: app.Closed): [line: string, label: string] {
-  const command = app.closedCommand(closed) ?? { name: "", args: [] };
-  const words = [command.name, ...command.args];
+  const command = app.closedCommand(closed) ?? { words: [], args: [] };
+  const words = [...command.words, ...command.args];
   const short = words.filter((w) => w !== "--yes" && w !== "--force");
   return ["loadout " + words.join(" "), short.join(" ")];
 }
@@ -216,14 +216,14 @@ export function runExited(m: HomeModel, msg: ExitMsg): void {
   else if (r.err !== null) fail(m, r.label + ": " + firstLine(r.err.message));
   else fail(m, `${r.label}: exit ${r.code}`);
   m.jobs.release();
-  // The binary on disk is another version now: self-upgrade, or a sync that
+  // The binary on disk is another version now: self upgrade, or a sync that
   // pulled a repo this binary can't read (it upgraded loadout to carry on).
   // This one can't go on reading the repo.
   if (r.closed.action === app.ActionUpgrade) {
-    let message = "loadout self-upgrade finished — run loadout again to use the new version";
+    let message = "loadout self upgrade finished — run loadout again to use the new version";
     let code = 0;
     if (!ok) {
-      message = `loadout self-upgrade failed (exit ${r.code})`;
+      message = `loadout self upgrade failed (exit ${r.code})`;
       code = r.code;
     }
     end(m, r, message, code);

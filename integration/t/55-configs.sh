@@ -48,11 +48,11 @@ grep -q '"machines"' "$DATA" && grep -q '"m1"' "$DATA" && grep -q '"defaults"' "
     fail "the data holds the defaults and every machine's table: $(cat "$DATA")"
 cp "$DATA" data.bak
 printf '{"loadout": {}}\n' > "$DATA"
-OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "edited chezmoi data must be refused"
-echo "$OUT" | grep -q "configs/.chezmoidata/loadout.json doesn't match loadout.lock.json — run: loadout compile" ||
+OUT=$(cz_loadout --repo repo --machine m1 machine status 2>&1) && fail "edited chezmoi data must be refused"
+echo "$OUT" | grep -q "configs/.chezmoidata/loadout.json doesn't match loadout.lock.json — run: loadout repo compile" ||
     fail "the edited data is named: $OUT"
 rm "$DATA"
-OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "missing chezmoi data must be refused"
+OUT=$(cz_loadout --repo repo --machine m1 machine status 2>&1) && fail "missing chezmoi data must be refused"
 echo "$OUT" | grep -q "configs/.chezmoidata/loadout.json is missing" || fail "the missing data is named: $OUT"
 cp data.bak "$DATA"
 PARTIAL=repo/configs/.chezmoitemplates/loadout/machine
@@ -60,14 +60,14 @@ grep -qF '$name := env "LOADOUT_MACHINE" | default .chezmoi.hostname' "$PARTIAL"
     fail "compile writes the loadout/machine partial: $(cat "$PARTIAL" 2>&1)"
 cp "$PARTIAL" partial.bak
 printf '{{ .chezmoi.hostname }}\n' > "$PARTIAL"
-OUT=$(cz_loadout --repo repo --machine m1 status 2>&1) && fail "an edited partial must be refused"
-echo "$OUT" | grep -q "configs/.chezmoitemplates/loadout/machine doesn't match loadout.lock.json — run: loadout compile" ||
+OUT=$(cz_loadout --repo repo --machine m1 machine status 2>&1) && fail "an edited partial must be refused"
+echo "$OUT" | grep -q "configs/.chezmoitemplates/loadout/machine doesn't match loadout.lock.json — run: loadout repo compile" ||
     fail "the edited partial is named: $OUT"
 cp partial.bak "$PARTIAL"
 ok "compile writes the templates' data and partial, and a status refuses them edited or missing"
 
 # --- status ---------------------------------------------------------------
-OUT=$(cz_loadout --repo repo --machine m1 status) || fail "status exits 0 with configs"
+OUT=$(cz_loadout --repo repo --machine m1 machine status) || fail "status exits 0 with configs"
 echo "$OUT" | grep -q "CONFIG" || fail "status has a configs section: $OUT"
 echo "$OUT" | grep -qE "zsh +drifted" || fail "a unit with a file apply would change is drifted: $OUT"
 echo "$OUT" | grep -q "\.config/zsh/\.zshrc" || fail "the drifted file is named: $OUT"
@@ -78,27 +78,27 @@ grep -q -- "--source $(cd repo && pwd -P)/configs" "$CZ/log" || fail "chezmoi re
 ok "status observes each config unit through chezmoi and writes it to state"
 
 basic_repo plain
-"$BIN" --repo plain --machine m1 status | grep -q "CONFIG" && fail "no configs section without the layout's configs" || true
+"$BIN" --repo plain --machine m1 machine status | grep -q "CONFIG" && fail "no configs section without the layout's configs" || true
 grep -q '"configs"' plain/machines/state/m1.json && fail "no configs key without the layout's configs" || true
 ok "a repo without configs never asks chezmoi and writes no configs"
 
-OUT=$(cz_loadout --repo repo --machine m1 explain zsh) || fail "explain a config exits 0"
+OUT=$(cz_loadout --repo repo --machine m1 config explain zsh) || fail "explain a config exits 0"
 echo "$OUT" | grep -q "config zsh" || fail "explain names the config: $OUT"
 echo "$OUT" | grep -q "\.config/zsh/conf.d/a.zsh" || fail "explain lists its targets: $OUT"
 ok "explain shows a config's targets and last verdict"
 
 touch "$CZ/absent"
-OUT=$(cz_loadout --repo repo --machine m1 status) || fail "status exits 0 without chezmoi"
+OUT=$(cz_loadout --repo repo --machine m1 machine status) || fail "status exits 0 without chezmoi"
 echo "$OUT" | grep -qE "zsh +not checked" || fail "units last seen are not checked: $OUT"
 echo "$OUT" | grep -q "configs not checked: chezmoi is not on PATH" || fail "says why, once: $OUT"
 rm "$CZ/absent"
 ok "without chezmoi the configs are not checked, and status says why"
 
 # --- diff -----------------------------------------------------------------
-cz_loadout --repo repo --machine m1 status >/dev/null
+cz_loadout --repo repo --machine m1 machine status >/dev/null
 : > "$CZ/status"
-cz_loadout --repo repo --machine m2 status >/dev/null
-OUT=$(cz_loadout --repo repo diff) && fail "diff exits 1 when a config drifted"
+cz_loadout --repo repo --machine m2 machine status >/dev/null
+OUT=$(cz_loadout --repo repo machine diff) && fail "diff exits 1 when a config drifted"
 echo "$OUT" | grep -qE "zsh +drifted \(1\) +applied" || fail "diff shows each machine's config verdict: $OUT"
 echo "$OUT" | grep -q "1 config(s) drifted" || fail "diff counts drifted configs: $OUT"
 ok "diff compares configs per machine and exits 1 on drift"
@@ -106,16 +106,16 @@ ok "diff compares configs per machine and exits 1 on drift"
 # --- apply ----------------------------------------------------------------
 printf 'MM .config/zsh/.zshrc\n M .zshenv\n' > "$CZ/status"
 : > "$CZ/log"
-OUT=$(cz_loadout --repo repo --machine m1 apply-config 2>&1) && fail "apply refuses files edited here"
+OUT=$(cz_loadout --repo repo --machine m1 config apply 2>&1) && fail "apply refuses files edited here"
 echo "$OUT" | grep -q "edited on this machine: .config/zsh/.zshrc" || fail "the edited file is named: $OUT"
 grep -q " apply" "$CZ/log" && fail "nothing is applied after a refusal"
 ok "apply stops on files edited on this machine, naming them"
 
-OUT=$(cz_loadout --repo repo --machine m1 apply-config nope 2>&1) && fail "an unknown config is refused"
+OUT=$(cz_loadout --repo repo --machine m1 config apply nope 2>&1) && fail "an unknown config is refused"
 echo "$OUT" | grep -q "Unknown configs: nope" || fail "says which: $OUT"
 ok "apply refuses a config that doesn't exist"
 
-OUT=$(cz_loadout --repo repo --machine m1 apply-config --force zsh) || fail "apply --force exits 0: $OUT"
+OUT=$(cz_loadout --repo repo --machine m1 config apply --force zsh) || fail "apply --force exits 0: $OUT"
 grep -q "apply --no-tty --force $CZ/home/.config/zsh/.zshrc $CZ/home/.config/zsh/conf.d/a.zsh$" "$CZ/log" ||
     fail "apply hands chezmoi the unit's targets: $(cat "$CZ/log")"
 echo "$OUT" | grep -q "applied zsh" || fail "apply says what it applied: $OUT"
@@ -124,24 +124,24 @@ ok "apply --force writes the named configs and refreshes state"
 
 printf ' M .zshenv\n' > "$CZ/status"
 touch "$CZ/apply-fails"
-OUT=$(cz_loadout --repo repo --machine m1 apply-config 2>&1) && fail "a failing chezmoi apply exits 1"
+OUT=$(cz_loadout --repo repo --machine m1 config apply 2>&1) && fail "a failing chezmoi apply exits 1"
 echo "$OUT" | grep -q "error: chezmoi apply failed" || fail "says chezmoi failed: $OUT"
 rm "$CZ/apply-fails"
 ok "a failing chezmoi apply is an error"
 
 # --- sync -----------------------------------------------------------------
 # Committed while .zshenv is drifted, so the sync's apply changes the state.
-cz_loadout --repo repo --machine m1 status >/dev/null
+cz_loadout --repo repo --machine m1 machine status >/dev/null
 git -C repo add -A && git -C repo commit -qm "fixture"
 printf 'MM .config/zsh/.zshrc\n' > "$CZ/status"
-OUT=$(cz_loadout --repo repo --machine m1 sync 2>&1) && fail "sync stops on files edited here"
+OUT=$(cz_loadout --repo repo --machine m1 machine sync 2>&1) && fail "sync stops on files edited here"
 echo "$OUT" | grep -q "edited on this machine" || fail "sync says why: $OUT"
 [ "$(git -C repo log --oneline | wc -l)" -eq 1 ] || fail "sync commits nothing after stopping"
 ok "sync stops before committing when a config file was edited here"
 
 printf ' M .zshenv\n' > "$CZ/status"
 : > "$CZ/log"
-cz_loadout --repo repo --machine m1 sync -m "m1: synced" >/dev/null || fail "sync exits 0"
+cz_loadout --repo repo --machine m1 machine sync -m "m1: synced" >/dev/null || fail "sync exits 0"
 sed -nE 's/^--source [^ ]+ --no-pager ([a-z-]+).*/\1/p' "$CZ/log" | tr '\n' ' ' | grep -q "^status apply managed status" ||
     fail "sync checks, applies, then observes: $(cat "$CZ/log")"
 git -C repo log --oneline | grep -q "m1: synced" || fail "sync commits the state"
@@ -161,7 +161,7 @@ compile_repo elsewhere
 git -C elsewhere add -A && git -C elsewhere commit -qm "configs is dots now" && git -C elsewhere push -q 2>/dev/null
 printf ' M .zshenv\n' > "$CZ/status"
 : > "$CZ/log"
-OUT=$(cz_loadout --repo repo --machine m1 sync 2>&1) || fail "sync applies from the folder its pull renamed: $OUT"
+OUT=$(cz_loadout --repo repo --machine m1 machine sync 2>&1) || fail "sync applies from the folder its pull renamed: $OUT"
 grep -q "^--source [^ ]*/repo/dots --no-pager apply" "$CZ/log" || fail "the apply's source is the renamed folder: $(cat "$CZ/log")"
 grep -q "/repo/configs " "$CZ/log" && fail "nothing reads the old folder: $(cat "$CZ/log")"
 ok "sync applies from a configs folder its own pull renamed"
@@ -172,7 +172,7 @@ ok "sync applies from a configs folder its own pull renamed"
 if has_pty; then
     fake_release_cache
     printf ' M .config/zsh/.zshrc\n' > "$CZ/status"
-    cz_loadout --repo repo --machine m1 status >/dev/null
+    cz_loadout --repo repo --machine m1 machine status >/dev/null
     # 3 shows the configs (programs, scripts, configs), l goes into the list
     # with the drifted one ticked, enter asks, enter applies in the panel.
     { wait_settled tui-configs; wait_frame tui-configs 'configs +1 drifted' && cp tui-configs.screen tui-configs.first
@@ -183,12 +183,12 @@ if has_pty; then
         (PATH="$CZ/bin:$PATH" XDG_CACHE_HOME=$FAKE_CACHE; export PATH; screen_run tui-configs --repo repo --machine m1)
     [ -f tui-configs.first ] || fail_frame tui-configs "the configs subject counts what drifted"
     [ -f tui-configs.list ] || fail_frame tui-configs "the list ticks the drifted config, naming its file"
-    grep -qE 'Run .*loadout apply-config zsh' tui-configs.done || fail_frame tui-configs "enter runs apply on the ticked configs"
+    grep -qE 'Run .*loadout config apply zsh' tui-configs.done || fail_frame tui-configs "enter runs apply on the ticked configs"
     grep -q " apply" "$CZ/log" || fail "chezmoi applied"
     ok "the home screen's configs subject applies drifted configs in the run panel"
 
     printf 'MM .config/zsh/.zshrc\n' > "$CZ/status"
-    cz_loadout --repo repo --machine m1 status >/dev/null
+    cz_loadout --repo repo --machine m1 machine status >/dev/null
     : > "$CZ/log"
     { wait_settled tui-edited; wait_frame tui-edited 'configs +1 drifted'
       printf '3'; sleep 0.3; printf 'l'; sleep 0.3; printf '\r'; wait_frame tui-edited 'edited on this machine' 'Edited here' && cp tui-edited.screen tui-edited.refused

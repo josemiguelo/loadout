@@ -5,7 +5,7 @@ import { contains, custom, data, machine, pm, profile, programs } from "./testhe
 import { declaredNames, draftOver } from "./draftover.ts";
 
 // A child repo's draft over its parent's declarations (contract 18), as
-// `loadout compile` builds it.
+// `loadout repo compile` builds it.
 
 /** parentDraft is the parent: a program, a profile, a machine of its own and a data schema. */
 function parentDraft(): ManifestDraft {

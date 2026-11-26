@@ -17,11 +17,11 @@ import { Style } from "./style.ts";
 /**
  * newInstallProgramCmd is the targeted installer: named programs (or --all, this
  * machine's whole mapped membership), dependencies first. Scripts are
- * `run-script`'s job; programs *and* scripts together are `setup-new-machine`'s.
+ * `script run`'s job; programs *and* scripts together are `loadout machine new`'s.
  */
-export function newInstallProgramCmd(): Command {
+export function newInstallProgramCmd(name = "install"): Command {
   const cmd = subcommand(
-    "install-program",
+    name,
     commandHelp(
       "Install the named programs on this machine, dependencies first.",
       "<programs...>  programs from the manifest (+ depends-on)",
@@ -32,7 +32,7 @@ export function newInstallProgramCmd(): Command {
     [{ name: "programs", help: "Programs to install", optional: true, multiple: true }],
     (_cmd, args, flags) => runInstall(args, flags.bool("all"), flags.bool("dry-run"), flags.bool("yes")),
   );
-  boolFlag(cmd, "all", "", "Install every program mapped for this machine (same membership as setup-new-machine)");
+  boolFlag(cmd, "all", "", "Install every program mapped for this machine (same membership as loadout machine new)");
   boolFlag(cmd, "dry-run", "", "Show what would run without doing it");
   boolFlag(cmd, "yes", "y", "Don't ask for confirmation");
   return cmd;

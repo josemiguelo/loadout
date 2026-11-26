@@ -28,7 +28,7 @@ ts_file() {
 }
 
 # The repo <dir>: tsconfig.json (the SDKs' types are the
-# node_modules/@types/loadout compile writes) and loadout.ts, a repo named test with its state in
+# node_modules/@types/loadout repo compile writes) and loadout.ts, a repo named test with its state in
 # machines/state/; each [option] is one more line of repo({...})
 # (`'dotfiles: "configs"'`). stdin, when there is any, is root.loadout.ts:
 # declarations at the repo root.
@@ -73,10 +73,10 @@ repo_opt() {
     awk -v line="$2" '{ print } /^repo\(\{/ { print "  " line "," }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
 }
 
-# `loadout compile` repo <dir>, failing the test with its output when it
+# `loadout repo compile` repo <dir>, failing the test with its output when it
 # doesn't compile.
 compile_repo() {
-    out=$("$BIN" --repo "$1" compile 2>&1) || { echo "$out"; fail "fixture $1 compiles"; }
+    out=$("$BIN" --repo "$1" repo compile 2>&1) || { echo "$out"; fail "fixture $1 compiles"; }
 }
 
 # git init <dir> with an identity, so sync/commit tests can run.

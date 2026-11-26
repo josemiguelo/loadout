@@ -64,23 +64,23 @@ ok "compile builds each tool's home/ and root/ as symlinks, with the templates' 
 
 # --- a build behind its tool folders ------------------------------------------------
 echo 'x' > repo/tools/zsh/home/dot_zprofile
-OUT=$("$BIN" --repo repo --machine m1 explain git 2>&1) || fail "a build behind its tool folders is brought up to date, not refused: $OUT"
+OUT=$("$BIN" --repo repo --machine m1 program explain git 2>&1) || fail "a build behind its tool folders is brought up to date, not refused: $OUT"
 [ -L repo/.home/dot_zprofile ] || fail "any command adds what a tool gained"
 rm repo/tools/zsh/home/dot_zprofile
-"$BIN" --repo repo --machine m1 explain git >/dev/null 2>&1 || fail "the repo still loads"
+"$BIN" --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "the repo still loads"
 [ ! -e repo/.home/dot_zprofile ] || fail "any command removes what no tool has any more"
 rm -r repo/.home repo/.root
-"$BIN" --repo repo --machine m1 explain git >/dev/null 2>&1 || fail "builds that aren't there are made"
+"$BIN" --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "builds that aren't there are made"
 [ -L repo/.home/dot_zshenv ] && [ -f repo/.home/.chezmoidata/loadout.json ] && [ -L repo/.root/etc/udev/kb.rules ] ||
     fail "a fresh checkout gets both builds and the templates' data from any command"
 ok "every command brings the builds up to date, so they needn't be committed"
 
 # --- what chezmoi writes into a build ---------------------------------------------------
 rm repo/.home/dot_zshenv && echo 'edited here' > repo/.home/dot_zshenv
-OUT=$("$BIN" --repo repo --machine m1 explain git 2>&1) && fail "a chezmoi write in the build must be refused"
+OUT=$("$BIN" --repo repo --machine m1 program explain git 2>&1) && fail "a chezmoi write in the build must be refused"
 echo "$OUT" | grep -qF 'chezmoi wrote .home/dot_zshenv, not tools/zsh/home/dot_zshenv — keep it with `loadout chezmoi re-add ~/.zshenv` (or copy it over tools/zsh/home/dot_zshenv), or drop it by deleting .home/dot_zshenv' ||
     fail "the write is named with both ways out: $OUT"
-OUT=$(cd repo && "$BIN" compile 2>&1) && fail "compile must not overwrite a chezmoi write"
+OUT=$(cd repo && "$BIN" repo compile 2>&1) && fail "compile must not overwrite a chezmoi write"
 echo "$OUT" | grep -q 'chezmoi wrote .home/dot_zshenv' || fail "compile names the write: $OUT"
 grep -q 'edited here' repo/.home/dot_zshenv || fail "the write is still there"
 rm repo/.home/dot_zshenv && ln -s ../tools/zsh/home/dot_zshenv repo/.home/dot_zshenv
@@ -93,7 +93,7 @@ OUT=$(tf_loadout --repo repo --machine m1 chezmoi re-add "$TF/home/.zshenv" 2>&1
 [ -L repo/.home/dot_zshenv ] || fail "the build's symlink is back"
 echo "$OUT" | grep -q '~/.zshenv → tools/zsh/home/dot_zshenv' || fail "it says where the edit went: $OUT"
 grep -q -- "--source $PWD/repo/.home --no-pager re-add $TF/home/.zshenv" "$TF/log" || fail "chezmoi ran over the home build: $(cat "$TF/log")"
-"$BIN" --repo repo --machine m1 explain git >/dev/null 2>&1 || fail "the repo loads again"
+"$BIN" --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "the repo loads again"
 ok "loadout chezmoi re-add carries chezmoi's write over to the tool's folder"
 
 OUT=$(tf_loadout --repo repo --machine m1 chezmoi add "$TF/home/.newrc" 2>&1) && fail "add without --tool must fail"
@@ -102,13 +102,13 @@ rm repo/.home/dot_newrc
 OUT=$(tf_loadout --repo repo --machine m1 chezmoi add --tool zsh "$TF/home/.newrc" 2>&1) || fail "add --tool zsh: $OUT"
 [ "$(cat repo/tools/zsh/home/dot_newrc)" = new ] && [ -L repo/.home/dot_newrc ] || fail "the new file goes into zsh's home/, linked from the build"
 OUT=$(tf_loadout --repo repo chezmoi update 2>&1) && fail "update must be refused"
-echo "$OUT" | grep -q 'loadout chezmoi update: run: loadout sync' || fail "update says what to run: $OUT"
+echo "$OUT" | grep -q 'loadout chezmoi update: run: loadout machine sync' || fail "update says what to run: $OUT"
 ok "loadout chezmoi add puts a new file into --tool's folder, and refuses without one"
 
 # --- clashes ----------------------------------------------------------------------------
 mkdir -p repo/tools/bash/home
 echo x > repo/tools/bash/home/dot_zshenv
-OUT=$(cd repo && "$BIN" compile 2>&1) && fail "two tools landing one file must be refused"
+OUT=$(cd repo && "$BIN" repo compile 2>&1) && fail "two tools landing one file must be refused"
 echo "$OUT" | grep -q '~/.zshenv is in both bash and zsh' || fail "the clash names both tools: $OUT"
 rm -r repo/tools/bash
 compile_repo repo
@@ -121,31 +121,31 @@ printf '{"etc/udev/kb.rules":{"absolute":"%s/etc/udev/kb.rules","sourceRelative"
 printf '{"etc":{"absolute":"%s/etc","sourceRelative":"etc"},"etc/udev":{"absolute":"%s/etc/udev","sourceRelative":"etc/udev"}}' "$FAKEROOT" "$FAKEROOT" > "$TF/root-dirs"
 printf ' A etc/udev/kb.rules\n' > "$TF/root-status"
 : > "$TF/home-status"
-OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 status 2>&1)
+OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 machine status 2>&1)
 echo "$OUT" | grep -q '/kb .*drifted' || fail "a root config is a unit named after its tool: $OUT"
 : > "$TF/log"
-OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 apply-config /kb 2>&1) || fail "apply-config /kb: $OUT"
+OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 config apply /kb 2>&1) || fail "config apply /kb: $OUT"
 grep -q -- "apply --no-tty --include dirs --recursive=false $FAKEROOT/etc/udev$" "$TF/log" || fail "pass 1 applies only the folder not there yet: $(cat "$TF/log")"
 grep -q -- "apply --no-tty --exclude dirs $FAKEROOT/etc/udev/kb.rules" "$TF/log" || fail "pass 2 applies the rest without folders: $(cat "$TF/log")"
 grep -q -- "--destination $FAKEROOT --config /dev/null --config-format toml --persistent-state $FAKEROOT/" "$TF/log" ||
     fail "root's chezmoi runs with its own config and state: $(cat "$TF/log")"
 ! grep -q sudo "$TF/log" || fail "a stand-in for / is applied without sudo"
-echo "$OUT" | grep -q 'applied /kb' || fail "apply-config says what it applied: $OUT"
+echo "$OUT" | grep -q 'applied /kb' || fail "config apply says what it applied: $OUT"
 ok "a root config applies in two passes, folders already there left alone, as a unit named after its tool"
 
 printf ' A etc/udev/kb.rules\n' > "$TF/root-status"
-OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 setup-new-machine --dry-run 2>&1)
+OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 machine new --dry-run 2>&1)
 echo "$OUT" | grep -q '/kb *config' || fail "setup plans the root config: $OUT"
 [ "$(echo "$OUT" | grep -n '/kb *config' | cut -d: -f1)" -lt "$(echo "$OUT" | grep -n 'marker *script' | cut -d: -f1)" ] ||
     fail "the root config lands before the scripts: $OUT"
-ok "setup-new-machine applies root configs before the core scripts"
+ok "machine new applies root configs before the core scripts"
 
 # --- the dotfiles object's mistakes, caught where they're written ---------------------------
 mistake() { # mistake <what> <option> <expected error>
     rm -rf bad && basic_repo bad
     repo_opt bad/loadout.ts "$2"
     mkdir -p bad/tools/kb/root/etc bad/tools/zsh/home && echo r > bad/tools/kb/root/etc/x && echo z > bad/tools/zsh/home/dot_z
-    OUT=$(cd bad && "$BIN" compile 2>&1) && fail "$1 must be refused"
+    OUT=$(cd bad && "$BIN" repo compile 2>&1) && fail "$1 must be refused"
     echo "$OUT" | grep -qF -- "$3" || fail "$1 is named: $OUT"
 }
 mistake "an unknown dotfiles setting" 'dotfiles: { tools: "tools/*", home: ".home", rot: ".root" }' "repo's dotfiles has no setting 'rot' (its settings: tools, home, root, from)"

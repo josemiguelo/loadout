@@ -142,10 +142,23 @@ export function usageLine(cmd: Command): string {
   if (!cmd.hasParent()) {
     return s.helpTitle("Usage:") + " loadout " + s.helpMuted("[<options>]") + " " + s.helpMuted("<command> [<args>]...");
   }
-  let line = s.helpTitle("Usage:") + " loadout " + cmd.name;
+  let line = s.helpTitle("Usage:") + " loadout " + commandPath(cmd);
   if (cmd.opts.length > 0) line += " " + s.helpMuted("[<options>]");
+  if (verbsOf(cmd).length > 0) return line + " " + s.helpMuted("<command> [<args>]...");
   for (const a of cmd.args) line += " " + s.helpMuted(argUsage(a));
   return line;
+}
+
+/** commandPath is cmd's words after loadout: `installer upgrade`. */
+export function commandPath(cmd: Command): string {
+  const words: string[] = [];
+  for (let c: Command | undefined = cmd; c !== undefined && c.hasParent(); c = c.parent) words.unshift(c.name);
+  return words.join(" ");
+}
+
+/** verbsOf is a group's listed commands (`script`'s run and check); none for any other. */
+function verbsOf(cmd: Command): Command[] {
+  return cmd.commands.filter((sub) => !sub.hidden);
 }
 
 /**
@@ -170,17 +183,18 @@ export function renderHelp(cmd: Command): string {
     );
   }
 
-  if (!cmd.hasParent()) {
-    const subs = cmd.commands.filter((sub) => !sub.hidden);
-    if (subs.length > 0) {
-      b += "\n" + s.helpTitle("Commands:") + "\n";
-      b += definitionList(
-        subs.map((sub) => s.helpName(sub.name)),
-        subs.map((sub) => sub.name),
-        subs.map((sub) => sub.help),
-        width,
-      );
-    }
+  if (verbsOf(cmd).length > 0) {
+    // A group's verbs are listed by their whole name (`script run`), in the
+    // root's help too: nothing is hidden behind a group.
+    const subs = verbsOf(cmd).flatMap((sub) => (verbsOf(sub).length > 0 ? verbsOf(sub) : [sub]));
+    const names = subs.map((sub) => (cmd.hasParent() ? sub.name : commandPath(sub)));
+    b += "\n" + s.helpTitle("Commands:") + "\n";
+    b += definitionList(
+      names.map((n) => s.helpName(n)),
+      names,
+      subs.map((sub) => sub.help),
+      width,
+    );
   } else if (cmd.args.length > 0) {
     b += "\n" + s.helpTitle("Arguments:") + "\n";
     b += definitionList(

@@ -31,7 +31,7 @@ export interface Manifest {
   /** machines is every machine, keyed by hostname. */
   machines: Map<string, MachineConfig>;
   /**
-   * outdated holds the custom `loadout outdated` oracles beyond the
+   * outdated holds the custom `loadout machine outdated` oracles beyond the
    * installer ones — entries whose command prints one `<item> <current>
    * <candidate>` line per outdated item (nothing when current). The entry
    * name becomes the row's source tag. The built-in self-version row is
@@ -40,7 +40,7 @@ export interface Manifest {
   outdated: Map<string, OutdatedSource>;
   /**
    * builtinInstallers says which of installers came from installerLibrary
-   * rather than the repo — provenance for `explain`/`installers`, never
+   * rather than the repo — provenance for `explain`/`installer list`, never
    * behavior.
    */
   builtinInstallers: string[];
@@ -279,7 +279,7 @@ export interface UpgradeMechanism {
 
 /**
  * BatchOracle is one installer-wide `outdated-all` command: it prints a
- * `<pkg> <candidate>` line per outdated package, so `loadout outdated` asks
+ * `<pkg> <candidate>` line per outdated package, so `loadout machine outdated` asks
  * each remote once instead of once per program. regex extracts the version
  * from the candidate token, program by program.
  */
@@ -315,7 +315,7 @@ export interface Installer {
   /**
    * outdated is the pattern printing the version available from the remote
    * source for `{packageName}` (nothing when up to date); regex extracts it. Powers
-   * `loadout outdated`.
+   * `loadout machine outdated`.
    */
   outdated?: string;
   /**
@@ -329,7 +329,7 @@ export interface Installer {
    * there is no per-package form on purpose (contract 15): partial upgrades
    * are unsupported on Arch, discouraged on Fedora, and a package manager
    * resolves its own transaction anyway. Converge never runs this;
-   * `loadout upgrade` is the explicit verb.
+   * `loadout installer upgrade` is the explicit verb.
    */
   upgrade?: string;
   /**
@@ -729,7 +729,7 @@ export interface Program {
    */
   path: string[];
   /**
-   * later is why this program can wait (`canWait: "…"`): setup-new-machine
+   * later is why this program can wait (`canWait: "…"`): loadout machine new
    * installs it in its later phase, after every core program and script.
    * "" = core.
    */
@@ -824,17 +824,17 @@ export interface ScriptStep {
   after: string[];
   /**
    * modes is the execution surfaces this script participates in: "setup"
-   * (setup-new-machine's converge) and/or "maintain" (the home screen's
+   * (loadout machine new's converge) and/or "maintain" (the home screen's
    * scripts picker). undefined means the default, both (defaultModes); an
    * empty list is an empty list, which validation refuses. Governs
    * execution only — `status` observes every opted-in script regardless,
-   * and `run-script <name>` is the explicit escape hatch.
+   * and `script run <name>` is the explicit escape hatch.
    */
   modes?: string[];
   /** sudo says the script needs sudo's password without saying `sudo`; see Installer.sudo. */
   sudo: boolean;
   /**
-   * later is why this script can wait (`canWait: "…"`): setup-new-machine
+   * later is why this script can wait (`canWait: "…"`): loadout machine new
    * runs it in its later phase, after every core program and script. ""
    * = core.
    */

@@ -323,7 +323,7 @@ export function invalid(errors: readonly string[]): ManifestException {
 /**
  * withBuiltinInstallers merges loadout's shipped installers UNDER the
  * manifest's own: a repo definition of the same name replaces the built-in,
- * and what survived is recorded for `explain`/`installers`. The one place
+ * and what survived is recorded for `explain`/`installer list`. The one place
  * this happens.
  */
 function withBuiltinInstallers(manifest: Manifest): Manifest {

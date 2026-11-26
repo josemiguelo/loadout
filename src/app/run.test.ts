@@ -20,8 +20,8 @@ afterEach(() => {
 test("run command is the child loadout with the handoff env", () => {
   process.env.PAGER = "less";
   const a = appOf("/repo", "m1");
-  const cmd = a.childCommand("/bin/loadout", "install", ["a b", "--yes"]);
-  expect(cmd.argv).toEqual(["/bin/loadout", "--repo", "/repo", "--machine", "m1", "install", "a b", "--yes"]);
+  const cmd = a.childCommand("/bin/loadout", ["program", "install"], ["a b", "--yes"]);
+  expect(cmd.argv).toEqual(["/bin/loadout", "--repo", "/repo", "--machine", "m1", "program", "install", "a b", "--yes"]);
   for (const [k, v] of Object.entries({ LOADOUT_HANDOFF: "1", PAGER: "cat", GIT_PAGER: "cat" })) {
     expect(cmd.env?.[k]).toBe(v);
   }
@@ -31,7 +31,7 @@ test("run command is the child loadout with the handoff env", () => {
 test("run command runs closed's command", () => {
   const a = appOf("/repo");
   const cmd = a.runCommand({ action: ActionHandOff, handoff: { kind: PaneScripts, args: ["s1"] } });
-  expect(cmd?.argv.slice(1)).toEqual(["--repo", "/repo", "run-script", "s1", "--force"]);
+  expect(cmd?.argv.slice(1)).toEqual(["--repo", "/repo", "script", "run", "s1", "--force"]);
   expect(a.runCommand({ action: ActionNone })).toBeUndefined();
 });
 

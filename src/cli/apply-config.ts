@@ -10,10 +10,10 @@ import { appCtx, subcommand } from "./root.ts";
 import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
-/** newApplyConfigCmd is `loadout apply-config`. */
-export function newApplyConfigCmd(): Command {
+/** newApplyConfigCmd is `loadout config apply`. */
+export function newApplyConfigCmd(name = "apply"): Command {
   const cmd = subcommand(
-    "apply-config",
+    name,
     commandHelp(
       "Write the repo's configs to this machine (chezmoi apply), then refresh its state.",
       "<configs...>  config names as status lists them (default: all)",
@@ -36,7 +36,7 @@ async function runApply(names: string[], force: boolean): Promise<void> {
   const { targets, apply } = await withSudo(a.runner, async () => {
     const units = await configs.units();
     const unknown = names.filter((name) => !units.some((u) => u.name === name));
-    if (unknown.length > 0) throw usageErr("Unknown configs: " + unknown.join(", ") + " (loadout status lists them)");
+    if (unknown.length > 0) throw usageErr("Unknown configs: " + unknown.join(", ") + " (loadout machine status lists them)");
     let targets: string[] | undefined;
     if (names.length > 0) {
       targets = [];
@@ -93,6 +93,6 @@ export async function refuseEdited(configs: engine.ConfigEngine, targets: readon
   if (edited.length === 0) return;
   throw new engine.ConfigException(
     edited.length + " config file(s) edited on this machine: " + edited.join(", ") + " — " +
-      "keep your edits with `loadout chezmoi re-add`, or replace them with `loadout apply-config --force`",
+      "keep your edits with `loadout chezmoi re-add`, or replace them with `loadout config apply --force`",
   );
 }

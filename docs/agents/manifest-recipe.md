@@ -5,7 +5,7 @@ top-down, first fit wins:
 
 1. Standard package → `canBeInstalled: [withDnf, withBrew, …]` listing ONLY installers
    where the claim is true (it's unverified; a false entry is a mappable
-   lie). The installer usually ships with loadout (`loadout installers`;
+   lie). The installer usually ships with loadout (`loadout installer list`;
    the SDK exports it); declare one only to add a mechanism or replace a
    built-in.
 2. Different package id → that installer configured where it's named:
@@ -48,9 +48,9 @@ expected, not a bug); a repo script (`runFile`, `module`) for every script file 
 load); plain values over abstraction (contract 11): a const for a shared
 list, a function for repeated arguments, never one that generates
 declarations. Every declaration is `export const x = program(…)`, so other
-files import it. Verify loop: `explain` → install it in a machine or
-profile → `loadout compile` (and the editor's type check) →
-`setup-new-machine --dry-run` → `status`.
+files import it. Verify loop: `program explain` (or `script explain`) → install it in a machine or
+profile → `loadout repo compile` (and the editor's type check) →
+`machine new --dry-run` → `machine status`.
 
 Where the check lives: loadout never trusts "it ran once"; everything
 converges against a re-askable check, declared where the truth lives via

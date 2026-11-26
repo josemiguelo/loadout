@@ -365,8 +365,8 @@ export class AppContext {
   }
 
   /** childCommand is run.ts's childCommand over this context. */
-  childCommand(self: string, name: string, args: readonly string[]): ChildCommand {
-    return childCommand(this, self, name, args);
+  childCommand(self: string, words: readonly string[], args: readonly string[]): ChildCommand {
+    return childCommand(this, self, words, args);
   }
 
   /** selfArgv is run.ts's selfArgv over this context. */

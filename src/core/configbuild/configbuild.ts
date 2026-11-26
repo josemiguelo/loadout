@@ -212,7 +212,7 @@ function plan(
     entries.set(p, { kind: "link", source, generated: true });
   }
   for (const [name, list] of joinedText) {
-    entries.set(name, { kind: "joined", text: "# Written by loadout compile from these; don't edit.\n" + list.join("\n") });
+    entries.set(name, { kind: "joined", text: "# Written by loadout repo compile from these; don't edit.\n" + list.join("\n") });
   }
   return { side, out, entries, keep };
 }
@@ -352,7 +352,7 @@ export function driftMessage(d: Drift): string | undefined {
       "move it into a tool's home/ or root/, or delete it"
     );
   }
-  if (d.stale.length > 0) return d.stale[0] + " doesn't match the tool folders — run: loadout compile";
+  if (d.stale.length > 0) return d.stale[0] + " doesn't match the tool folders — run: loadout repo compile";
   return undefined;
 }
 

@@ -15,11 +15,11 @@ import { Style } from "./style.ts";
  * -y`, not a package list. Converge installs what's MISSING and never
  * upgrades (contract 15).
  */
-export function newUpgradeCmd(): Command {
+export function newUpgradeCmd(name = "upgrade"): Command {
   const cmd = subcommand(
-    "upgrade",
+    name,
     commandHelp(
-      "Upgrade everything a package manager on this machine manages — the whole mechanism, never single packages (the binary itself is `self-upgrade`).",
+      "Upgrade everything a package manager on this machine manages — the whole mechanism, never single packages (the binary itself is `loadout self upgrade`).",
       "<installers...>  which mechanisms to upgrade (dnf, brew, flatpak, ...)",
       "--all            every mechanism this machine's mapping uses",
       "--item <source>/<name>  one item of an outdated.<source> (a tmux plugin, a pinned tool); repeatable",

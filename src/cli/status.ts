@@ -19,10 +19,10 @@ import { echo, echoErr, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 import { attention, echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
-/** newStatusCmd is `loadout status`. */
-export function newStatusCmd(): Command {
+/** newStatusCmd is `loadout machine status`. */
+export function newStatusCmd(name = "status"): Command {
   const cmd = subcommand(
-    "status",
+    name,
     commandHelp(
       "Observe this machine: every program version and script check re-asked, drift explained, state file updated.",
       "--json      print the full state as JSON",
@@ -79,7 +79,7 @@ async function runStatus(a: AppContext, jsonOut: boolean, noWrite: boolean): Pro
   const latest = await behindRelease(a.runner, true);
   if (latest !== "") {
     echo("");
-    echo(" " + Style.warn("↑") + "  loadout " + VERSION + " — " + latest + " available " + Style.dim("(run: loadout self-upgrade)"));
+    echo(" " + Style.warn("↑") + "  loadout " + VERSION + " — " + latest + " available " + Style.dim("(run: loadout self upgrade)"));
   }
   if (!noWrite) echo(Style.dim("\nState written to " + store.pathFor(system.machine)));
 }

@@ -20,10 +20,10 @@ function flagsOf(row: diff.ProgramRow): string {
   return flags.join(",");
 }
 
-/** newDiffCmd is `loadout diff`. */
-export function newDiffCmd(): Command {
+/** newDiffCmd is `loadout machine diff`. */
+export function newDiffCmd(name = "diff"): Command {
   const cmd = subcommand(
-    "diff",
+    name,
     commandHelp(
       "Compare all machines' state files: missing installs, version drift and drifted configs. Exits 1 when something is off.",
       "--machines a,b  narrow the comparison to those machines",
@@ -65,7 +65,7 @@ async function runDiff(machines: string, given: boolean): Promise<void> {
 
   if (states.length === 0) {
     const layout = a.layout();
-    echo("No machine state files found in " + joinPath(a.repoRoot, layout.state) + ". Run `status` or `sync` on your machines first.");
+    echo("No machine state files found in " + joinPath(a.repoRoot, layout.state) + ". Run `loadout machine status` or `loadout machine sync` on your machines first.");
     throw exitWith(1);
   }
 

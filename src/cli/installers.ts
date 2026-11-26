@@ -14,9 +14,9 @@ import { padEnd, codePointCount } from "./table.ts";
  * you see which definition won. To own a built-in, declare an installer of
  * the same name.
  */
-export function newInstallersCmd(): Command {
+export function newInstallersCmd(name = "list"): Command {
   return subcommand(
-    "installers",
+    name,
     commandHelp(
       "Show the install mechanisms available to this repo: loadout's built-ins plus your own.",
       "[name]     print one installer's full definition",
@@ -35,7 +35,7 @@ async function runInstallers(args: string[]): Promise<void> {
   if (args.length === 1) {
     const single = args[0]!;
     const installer = manifest.installers.get(single);
-    if (installer === undefined) throw usageErr("Unknown installer '" + single + "' (see: loadout installers)");
+    if (installer === undefined) throw usageErr("Unknown installer '" + single + "' (see: loadout installer list)");
     echo(Style.header("installer ") + Style.bold(single) + "  " + source(single, 0));
     const rows: Row[] = [];
     const add = (label: string, value: string | undefined) => {

@@ -79,7 +79,7 @@ test("reading the layout puts the SDKs' types in the repo, rewriting stale ones"
 
 test("a layout that can't be read fails every use the same way", () => {
   const a = appOf("/nonexistent/repo");
-  expect(() => a.layout()).toThrow("no loadout.lock.json in /nonexistent/repo — run: loadout compile");
+  expect(() => a.layout()).toThrow("no loadout.lock.json in /nonexistent/repo — run: loadout repo compile");
   expect(() => a.stateStore()).toThrow("no loadout.lock.json");
   expect(a.hasConfigs()).toBe(false);
   expect(a.fleetWarnings()).toEqual([]);

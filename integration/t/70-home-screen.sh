@@ -40,7 +40,7 @@ fi
 
 # --- moving: subjects, the inspector, the palette, help --------------------
 scripts_repo nrepo
-"$BIN" --repo nrepo --machine m1 status >/dev/null
+"$BIN" --repo nrepo --machine m1 machine status >/dev/null
 if has_pty; then
     { wait_settled tui-nav
       wait_frame tui-nav '× mytool +missing · via fake' && cp tui-nav.screen tui-nav.programs
@@ -98,8 +98,8 @@ machine("m1", { install: [alpha] });
 TS
 compile_repo orepo
 compile_repo frepo
-"$BIN" --repo orepo --machine m1 status >/dev/null
-"$BIN" --repo frepo --machine m1 status >/dev/null
+"$BIN" --repo orepo --machine m1 machine status >/dev/null
+"$BIN" --repo frepo --machine m1 machine status >/dev/null
 if has_pty; then
     # 3 shows the remote tree; l goes into it, h folds the group the cursor
     # is in. The tool is named after its probe: sh.
@@ -124,9 +124,9 @@ fi
 
 # --- a run: the command's output in the run panel ---------------------------
 scripts_repo srepo
-"$BIN" --repo srepo --machine m1 setup-new-machine --yes >/dev/null
+"$BIN" --repo srepo --machine m1 machine new --yes >/dev/null
 rm -f srepo/bootstrap-marker.txt
-"$BIN" --repo srepo --machine m1 status >/dev/null
+"$BIN" --repo srepo --machine m1 machine status >/dev/null
 if has_pty; then
     # 2 shows the scripts, l goes into the list, a ticks every script, enter
     # asks, enter runs them in the panel; q quits once it's done.
@@ -140,11 +140,11 @@ if has_pty; then
     [ -f tui-scripts.ask ] || fail_frame tui-scripts "the confirm dialog asks before running scripts"
     grep -qa "bootstrap-only" tui-scripts.ask && fail "the picker must not list setup-only scripts"
     [ -f tui-scripts.done ] || fail_frame tui-scripts "the run ends with a toast"
-    grep -qE 'Run .*loadout run-script drifted healthy --force .*✓ done' tui-scripts.done || fail_frame tui-scripts "the panel names the command and its verdict"
+    grep -qE 'Run .*loadout script run drifted healthy --force .*✓ done' tui-scripts.done || fail_frame tui-scripts "the panel names the command and its verdict"
     grep -q "ran drifted (exit 0)" tui-scripts.done || fail_frame tui-scripts "the command's output is in the panel"
     grep -q "still not done: drifted (missing: nodejs 16" tui-scripts.done \
         || fail "run re-checks and names what is still not done, with what its check printed"
-    grep -qE '✓ run-script drifted healthy' tui-scripts.done || fail "the run is in the sidebar's Runs"
+    grep -qE '✓ script run drifted healthy' tui-scripts.done || fail "the run is in the sidebar's Runs"
     grep -q '"drifted"' srepo/machines/state/m1.json || fail "the run records the scripts in the state file"
     grep -q '"status": "pending"' srepo/machines/state/m1.json || fail "the recorded status comes from the rerun check"
     [ "$(grep -ao "$(printf '\033')\[?1049l" tui-scripts.log | wc -l)" -eq 1 ] \
@@ -154,7 +154,7 @@ if has_pty; then
     grep -qE 'gg/G start/end' tui-scripts.kept || fail_frame tui-scripts "with the run panel's own keys on the help line"
     [ -f tui-scripts.closed ] || fail_frame tui-scripts "esc closes it"
     grep -qE 'Run .*✓ done' tui-scripts.closed && fail_frame tui-scripts "esc right after a run closes its panel"
-    grep -qE '✓ run-script drifted healthy' tui-scripts.closed || fail "a closed run stays in the sidebar's Runs"
+    grep -qE '✓ script run drifted healthy' tui-scripts.closed || fail "a closed run stays in the sidebar's Runs"
     ok "esc closes a finished run's panel, wherever the focus is"
 
     # A state write that fails must be said out loud, not swallowed.
@@ -192,7 +192,7 @@ outdated("tmux-plugins", {
 machine("m1", { install: [tpack] });
 TS
 compile_repo crepo
-"$BIN" --repo crepo --machine m1 status >/dev/null
+"$BIN" --repo crepo --machine m1 machine status >/dev/null
 if has_pty; then
     # jjj walks the tool line, the package under it and the source heading
     # to the source's OWN tpack row: space ticks it, enter asks, enter runs.
@@ -233,7 +233,7 @@ machine("m1", { install: [alpha, beta] });
 TS
 compile_repo irepo
 fake_sudo
-"$BIN" --repo irepo --machine m1 status >/dev/null
+"$BIN" --repo irepo --machine m1 machine status >/dev/null
 if has_pty; then
     # l goes into the programs (both missing, both ticked), enter asks,
     # enter installs in the panel; sudo asks there: a wrong password, then
@@ -271,8 +271,8 @@ sudo sh -c "echo installed-$1 > fake-$1.txt"
 SH
 compile_repo hrepo
 fake_sudo
-"$BIN" --repo hrepo --machine m1 status >/dev/null
-OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
+"$BIN" --repo hrepo --machine m1 machine status >/dev/null
+OUT=$("$BIN" --repo hrepo --machine m1 program explain gamma)
 echo "$OUT" | grep -q "needsSudo.hidden" || fail "explain shows the sudo declaration"
 if has_pty; then
     { wait_settled tui-hidden; printf 'l'; sleep 0.3; printf '\r'; wait_frame tui-hidden 'These programs will install'
@@ -301,7 +301,7 @@ const alpha = program("alpha", { canBeInstalled: [asks] });
 machine("m1", { install: [alpha] });
 TS
 compile_repo arepo
-"$BIN" --repo arepo --machine m1 status >/dev/null
+"$BIN" --repo arepo --machine m1 machine status >/dev/null
 if has_pty; then
     { wait_settled tui-asks; printf '3'; sleep 0.3; printf 'l'; wait_frame tui-asks '1 update'
       printf 'a'; sleep 0.3; printf '\r'; wait_frame tui-asks 'These will upgrade'
@@ -404,13 +404,13 @@ fi
 
 # --- U and an S that upgraded end the screen --------------------------------
 if has_pty; then
-    # The cached latest release (0.0.1) is older: self-upgrade has nothing
+    # The cached latest release (0.0.1) is older: self upgrade has nothing
     # to install, and the screen ends anyway, printing the run's output.
     { wait_settled tui-self; printf 'U'; wait_frame tui-self 'Upgrade loadout  '; printf '\r'; sleep 3; } \
         | XDG_CACHE_HOME=$FAKE_CACHE screen_run tui-self --repo nrepo --machine m1
     plain_screen tui-self.log | sed -n '/already on the latest release/,$p' | grep -q "run loadout again" \
         || fail "U ends the screen with the run's output and what to do next: $(plain_screen tui-self.log | tail -5)"
-    ok "U runs self-upgrade and ends the screen"
+    ok "U runs self upgrade and ends the screen"
 
     # A sync whose pull needs a newer loadout upgrades it (a fake curl, as in
     # 50-diff-sync) and the screen ends: the binary on disk changed.
@@ -423,7 +423,7 @@ if has_pty; then
     repo_opt uother/loadout.ts 'minLoadoutVersion: "999.0.0"'
     compile_repo uother
     git -C uother add -A && git -C uother commit -qm floor && git -C uother push -q 2>/dev/null
-    "$BIN" --repo urepo --machine m1 status >/dev/null
+    "$BIN" --repo urepo --machine m1 machine status >/dev/null
     mkdir -p self fakecurl
     cp "$BIN" self/loadout
     cat > fakecurl/curl <<EOF2

@@ -1,4 +1,4 @@
-// compile is `loadout compile`: a repo's manifests are TypeScript, run by
+// compile is `loadout repo compile`: a repo's manifests are TypeScript, run by
 // bun, and what loadout.ts prints (the draft) is assembled, checked and
 // written to loadout.lock.json, which every other command reads.
 
@@ -97,7 +97,7 @@ export interface ParentRef {
 }
 
 /**
- * compile is `loadout compile` for the repo at root: loadout.ts run with
+ * compile is `loadout repo compile` for the repo at root: loadout.ts run with
  * bun (a child's parent too, contract 18), the draft assembled and checked,
  * the lock (and with configs, the templates' data and partial) written when
  * it changed. The warnings (what no machine uses, transitional scripts
@@ -112,7 +112,7 @@ export async function compile(root: string): Promise<string[]> {
     // A path that can't be resolved stays absolute.
   }
   if (!isFile(path.join(root, entryFile))) {
-    throw new ManifestException(root + " has no " + entryFile + " — a config repo starts there (see: loadout init)");
+    throw new ManifestException(root + " has no " + entryFile + " — a config repo starts there (see: loadout repo init)");
   }
   const bunDir = bun.ensure();
   for (const f of typesFiles) writeIfChanged(root, path.join(root, f.path), f.content);
@@ -456,7 +456,7 @@ async function loadParent(bunDir: string, ref: ParentRef, childRoot: string): Pr
     text = fs.readFileSync(path.join(root, lockFileName), "utf8");
   } catch (e) {
     if ((e as { code?: string }).code === "ENOENT") {
-      throw new ManifestException(`parent ${ref.name} (${ref.path}) has no ${lockFileName} — run: loadout compile there first`);
+      throw new ManifestException(`parent ${ref.name} (${ref.path}) has no ${lockFileName} — run: loadout repo compile there first`);
     }
     throw e;
   }
@@ -470,7 +470,7 @@ async function loadParent(bunDir: string, ref: ParentRef, childRoot: string): Pr
   const parentFS = dirFS(root);
   const hash = sourcesHash(parentFS, lock.manifest.layout.sources);
   if (hash !== lock.sources) {
-    throw new ManifestException(`parent ${ref.name}: ${lockFileName} is older than its manifests — run: loadout compile there first`);
+    throw new ManifestException(`parent ${ref.name}: ${lockFileName} is older than its manifests — run: loadout repo compile there first`);
   }
   let d: Draft;
   try {

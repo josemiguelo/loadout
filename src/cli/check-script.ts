@@ -9,10 +9,10 @@ import { appCtx, subcommand } from "./root.ts";
 import { echo } from "./spinner.ts";
 import { Style } from "./style.ts";
 
-/** newCheckScriptCmd is `loadout check-script`. */
-export function newCheckScriptCmd(): Command {
+/** newCheckScriptCmd is `loadout script check`. */
+export function newCheckScriptCmd(name = "check"): Command {
   const cmd = subcommand(
-    "check-script",
+    name,
     commandHelp(
       "Ask scripts whether they're done, without running them.",
       "<scripts...>  script names (must be opted in by this machine)",

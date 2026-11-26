@@ -7,7 +7,7 @@
 basic_repo repo
 ESC=$(printf '\033')
 
-OUT=$("$BIN" --repo repo --machine m1 status) || fail "status exits 0"
+OUT=$("$BIN" --repo repo --machine m1 machine status) || fail "status exits 0"
 printf '%s' "$OUT" | grep -q "$ESC" && fail "piped output must stay plain" || true
 printf '%s' "$OUT" | grep -q ']11;?' && fail "piped output must never query the terminal" || true
 ok "piped output is plain text and asks the terminal nothing"
@@ -32,7 +32,7 @@ if has_pty; then
     ok "LOADOUT_THEME picks the palette without asking the terminal"
 fi
 
-LOADOUT_THEME=lite "$BIN" --repo repo --machine m1 status >lite.out 2>&1 && fail "an unreadable LOADOUT_THEME must refuse"
+LOADOUT_THEME=lite "$BIN" --repo repo --machine m1 machine status >lite.out 2>&1 && fail "an unreadable LOADOUT_THEME must refuse"
 grep -q 'error: LOADOUT_THEME must be dark or light, not "lite"' lite.out || fail "and say so in one clean line: $(cat lite.out)"
 grep -qE '^ +at .+:[0-9]+:[0-9]+\)?$' lite.out && fail "never as a stack trace" || true
 ok "an unreadable LOADOUT_THEME is refused in one line, not ignored"

@@ -138,7 +138,7 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
       if (program.dependsOn.length > 0) add("dependsOn", program.dependsOn.join(", "));
       if (program.path.length > 0) add("searchPath", program.path.join(":") + "  (first on PATH for its commands)");
       if (program.tags.length > 0) add("tags", program.tags.join(", "));
-      if (program.later !== "") add("canWait", program.later + "  (setup-new-machine installs it after everything else)");
+      if (program.later !== "") add("canWait", program.later + "  (loadout machine new installs it after everything else)");
       if (program.install.size === 0) add("canBeInstalled", "(none — not installable anywhere)");
       const mappedKey = mapping.get(name);
       const isMapped = mappedKey !== undefined;
@@ -203,8 +203,8 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
       const modes = modeList(script);
       if (slicesEqual(modes, ["setup"])) add("setupOnly", "yes");
       else if (slicesEqual(modes, ["maintain"])) add("notDuringSetup", "yes");
-      else if (!slicesEqual(modes, ["setup", "maintain"])) add("modes", modes.length > 0 ? modes.join(", ") : "(none — nothing runs it but run-script)");
-      if (script.later !== "") add("canWait", script.later + "  (setup-new-machine runs it after everything else)");
+      else if (!slicesEqual(modes, ["setup", "maintain"])) add("modes", modes.length > 0 ? modes.join(", ") : "(none — nothing runs it but loadout script run)");
+      if (script.later !== "") add("canWait", script.later + "  (loadout machine new runs it after everything else)");
       if (script.sudo) add("needsSudo", "yes — a run that runs it asks for the password first");
       const run = machine?.scripts.find((r) => r.name === name);
       if (!declared || run === undefined) {

@@ -115,7 +115,7 @@ test("the lock round-trips", () => {
 test("a newer lock format is refused by name", () => {
   const err = errorOf(() => decodeLock(`{"format": 99, "toolVersion": "9.0.0", "sources": "", "manifest": {}}`));
   expect(err).toBeInstanceOf(ManifestException);
-  expect(err.message).toBe("loadout.lock.json was written by a newer loadout (lock format 99) — run: loadout self-upgrade");
+  expect(err.message).toBe("loadout.lock.json was written by a newer loadout (lock format 99) — run: loadout self upgrade");
 });
 
 test("the tool version is checked before the body", () => {
@@ -130,13 +130,13 @@ test("the tool version is checked before the body", () => {
   expect(err.message).toBe("too old");
   const err2 = errorOf(() => decodeLock(`{"toolVersion": "9.0.0", "sources": "", "manifest": {"future": 1}}`, "x.json"));
   expect(err2.message.startsWith("x.json can't be read (Encountered an unknown key 'future'")).toBe(true);
-  expect(err2.message.endsWith("— run: loadout compile")).toBe(true);
+  expect(err2.message.endsWith("— run: loadout repo compile")).toBe(true);
 });
 
 test("an unreadable lock says so", () => {
   const cases: Record<string, string> = {
     "{": "loadout.lock.json is not valid JSON (",
-    "[]": "loadout.lock.json is not a lock file — run: loadout compile",
+    "[]": "loadout.lock.json is not a lock file — run: loadout repo compile",
     '{"sources": "", "manifest": {}}': "loadout.lock.json can't be read (Field 'toolVersion' is required",
   };
   for (const [text, want] of Object.entries(cases)) {

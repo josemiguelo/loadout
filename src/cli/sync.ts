@@ -31,10 +31,10 @@ const syncRecompiled = "LOADOUT_SYNC_RECOMPILED";
  */
 export class SyncException extends Refusal {}
 
-/** newSyncCmd is `loadout sync`. */
-export function newSyncCmd(): Command {
+/** newSyncCmd is `loadout machine sync`. */
+export function newSyncCmd(name = "sync"): Command {
   const cmd = subcommand(
-    "sync",
+    name,
     commandHelp(
       "Pull the config repo, apply its configs, refresh this machine's state, commit only its state file, push. " +
         "When the pulled repo needs a newer loadout, upgrade loadout first and carry on with it. " +
@@ -65,12 +65,12 @@ function attempt<T>(f: () => T): { value: T } | { tooOld: ToolTooOldException } 
 async function runSync(a: AppContext, noPush: boolean, message: string | undefined): Promise<void> {
   const repo = newGitClient(a.runner, a.repoRoot);
   if (!(await repo.isRepo())) {
-    throw new GitException(a.repoRoot + " is not a git repository (run `loadout init` or `git init` first)");
+    throw new GitException(a.repoRoot + " is not a git repository (run `loadout repo init` or `git init` first)");
   }
 
   // The repo is pulled before anything reads its lock: the one here may be
   // an older loadout's, which this one can't read, and the pull brings the
-  // one it can (the upgrade path is self-upgrade, then sync).
+  // one it can (the upgrade path is self upgrade, then sync).
   const hasUpstream = await repo.hasUpstream();
   if (hasUpstream) await spin("pulling latest changes…", () => repo.pullRebase());
   else echo(Style.dim("No upstream configured; skipping pull."));
@@ -182,7 +182,7 @@ function parentName(a: AppContext): string {
  * upgradeAndSyncAgain: the pulled repo needs a newer loadout, so install the
  * latest release, then run this same sync with it. The second run pulls
  * again (nothing new) and carries on; syncUpgraded keeps it from upgrading a
- * second time when the binary it runs is still too old (one self-upgrade
+ * second time when the binary it runs is still too old (one self upgrade
  * didn't replace). recompiled: this sync compiled the lock, so the one it
  * starts commits it.
  */
@@ -210,7 +210,7 @@ async function upgradeAndSyncAgain(
   const installed = await a.runner.inherit(line(installCommand, ""));
   if (installed !== 0) throw exitWith(installed);
   echo(" " + Style.ok("✔") + "  loadout upgraded; syncing with it");
-  const args = ["sync"];
+  const args = ["machine", "sync"];
   if (noPush) args.push("--no-push");
   if (message !== undefined) args.push("--message", message);
   const argv = a.selfArgv(self, ...args);

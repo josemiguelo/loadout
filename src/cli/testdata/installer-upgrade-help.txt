@@ -1,7 +1,8 @@
-Usage: loadout upgrade [<options>] [<installers>]...
+Usage: loadout installer upgrade [<options>] [<installers>]...
 
   Upgrade everything a package manager on this machine manages — the whole
-  mechanism, never single packages (the binary itself is `self-upgrade`).
+  mechanism, never single packages (the binary itself is `loadout self
+  upgrade`).
     <installers...>         which mechanisms to upgrade (dnf, brew, flatpak,
   ...)
     --all                   every mechanism this machine's mapping uses

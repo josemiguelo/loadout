@@ -9,10 +9,10 @@ import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 import { echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
-/** newOutdatedCmd is `loadout outdated`. */
-export function newOutdatedCmd(): Command {
+/** newOutdatedCmd is `loadout machine outdated`. */
+export function newOutdatedCmd(name = "outdated"): Command {
   return subcommand(
-    "outdated",
+    name,
     commandHelp("Ask each program's remote source (dnf/brew/flathub/...) for newer versions — the loadout binary included."),
     [],
     () => runOutdated(appCtx()),
@@ -25,7 +25,7 @@ async function runOutdated(a: AppContext): Promise<void> {
   const store = a.stateStore();
   const observed = store.read(system.machine);
   if (observed === undefined) {
-    echo("error: no state for " + system.machine + " yet — run `loadout status` first");
+    echo("error: no state for " + system.machine + " yet — run `loadout machine status` first");
     throw exitWith(1);
   }
 
@@ -48,7 +48,7 @@ async function runOutdated(a: AppContext): Promise<void> {
       if (t.total === 0) what = Style.dim("up to date");
       else if (t.declared.length === 0) what = count + Style.dim(" · none in your loadout");
       else what = count + Style.dim(" · " + t.declared.length + " in your loadout");
-      const how = t.command !== undefined ? Style.dim("  loadout upgrade " + t.installers[0] + "  →  " + t.command) : "";
+      const how = t.command !== undefined ? Style.dim("  loadout installer upgrade " + t.installers[0] + "  →  " + t.command) : "";
       echo(" " + mark + "  " + padEnd(t.tool, toolWidth) + what + how);
     }
     echo("");
@@ -90,8 +90,8 @@ async function runOutdated(a: AppContext): Promise<void> {
         // Converge adds what's MISSING; a newer version of something
         // already installed is the package manager's business.
         Style.dim(
-          " — neither `setup-new-machine` nor `install-program --all` upgrades them; both only install what's MISSING. " +
-            "Upgrade with the package manager, or `loadout upgrade <program>` for one that declares its own upgrade; then `loadout status`",
+          " — neither `loadout machine new` nor `loadout program install --all` upgrades them; both only install what's MISSING. " +
+            "Upgrade with the package manager, or `loadout installer upgrade <program>` for one that declares its own upgrade; then `loadout machine status`",
         ),
     );
   }

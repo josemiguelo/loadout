@@ -35,7 +35,7 @@ export const ActionShowDiff = 5;
 
 // Whole-machine verbs, on their own keys — they belong to no single row.
 export const ActionSync = 6;
-/** ActionUpgrade is self-upgrade: ends the loop afterwards. */
+/** ActionUpgrade is self upgrade: ends the loop afterwards. */
 export const ActionUpgrade = 7;
 export const ActionSetup = 8;
 
@@ -83,9 +83,9 @@ export interface Closed {
   handoff?: Handoff;
 }
 
-/** ClosedCommand is a subcommand and its arguments. */
+/** ClosedCommand is a command (its words: `script run`) and its arguments. */
 export interface ClosedCommand {
-  name: string;
+  words: string[];
   args: string[];
 }
 
@@ -97,25 +97,25 @@ export interface ClosedCommand {
 export function closedCommand(c: Closed): ClosedCommand | undefined {
   switch (c.action) {
     case ActionUpgrade:
-      return { name: "self-upgrade", args: [] };
+      return { words: ["self", "upgrade"], args: [] };
     case ActionSync:
-      return { name: "sync", args: [] };
+      return { words: ["machine", "sync"], args: [] };
     case ActionSetup:
-      return { name: "setup-new-machine", args: [] };
+      return { words: ["machine", "new"], args: [] };
     case ActionHandOff: {
       if (c.handoff === undefined) return undefined;
       const args = [...c.handoff.args];
       switch (c.handoff.kind) {
         case PaneInstall:
-          return { name: "install-program", args: [...args, "--yes"] };
+          return { words: ["program", "install"], args: [...args, "--yes"] };
         case PaneScripts:
-          // `run-script` has no confirmation; --force runs a ticked script even when done.
-          return { name: "run-script", args: [...args, "--force"] };
+          // `script run` has no confirmation; --force runs a ticked script even when done.
+          return { words: ["script", "run"], args: [...args, "--force"] };
         case PaneConfigs:
           // The screen already refused files edited here; never --force from it.
-          return { name: "apply-config", args };
+          return { words: ["config", "apply"], args };
         default:
-          return { name: "upgrade", args: [...args, "--yes"] };
+          return { words: ["installer", "upgrade"], args: [...args, "--yes"] };
       }
     }
   }
@@ -137,7 +137,7 @@ export interface Screen {
 
 /**
  * Ended is how the screen ended: message (may be empty) is printed on the
- * normal screen afterwards, and code is loadout's exit code (a self-upgrade
+ * normal screen afterwards, and code is loadout's exit code (a self upgrade
  * that failed ends the screen with its code).
  */
 export interface Ended {

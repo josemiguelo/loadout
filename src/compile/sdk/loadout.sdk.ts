@@ -7,7 +7,7 @@
 // Each declaration returns a typed reference: a name that doesn't exist is a
 // type error where it's used, and "go to definition" finds it. The entry
 // file, loadout.ts, imports the machines (which import what they use) and
-// calls `repo()`, which prints the draft `loadout compile` assembles into
+// calls `repo()`, which prints the draft `loadout repo compile` assembles into
 // loadout.lock.json.
 //
 // A mistake the manifest language catches is thrown as one line naming the
@@ -101,7 +101,7 @@ function split(given: object, params: readonly string[]) {
   return { settings: settings as VariantSpec, values };
 }
 
-/** The built-in installers: shipped with loadout, `loadout installers` lists them. */
+/** The built-in installers: shipped with loadout, `loadout installer list` lists them. */
 export const withApt = installerRef("apt");
 export const withBrew = installerRef("brew");
 export const withBrewCask = installerRef("brew-cask");
@@ -472,7 +472,7 @@ export type ProgramSpec<W extends Way = Way> = {
   upgradeCommand?: string;
   /** The repo module that says whether it's behind, and updates it: `() => import("./.loadout/x.ts")`. */
   updates?: () => Promise<ProgramUpdates>;
-  /** Why setup-new-machine can do it last. */
+  /** Why loadout machine new can do it last. */
   canWait?: string;
   /** Why it stays although nothing uses it. */
   keepUnused?: string;
@@ -590,13 +590,13 @@ export type Oracle = { name?: string; command: string; upgradeCommand?: string; 
 export type ScriptSpec = StepSpec & {
   description?: string;
   needsSudo?: boolean;
-  /** Only setup-new-machine runs it (a one-time bootstrap). */
+  /** Only loadout machine new runs it (a one-time bootstrap). */
   setupOnly?: boolean;
-  /** setup-new-machine never runs it. */
+  /** loadout machine new never runs it. */
   notDuringSetup?: boolean;
   /** Only until every machine has done it: compile says when to delete it. */
   deleteOnceDone?: boolean;
-  /** Why setup-new-machine can do it last. */
+  /** Why loadout machine new can do it last. */
   canWait?: string;
   /**
    * The repo module that says what of this script's is behind, and updates
@@ -735,7 +735,7 @@ export function script(name: string, spec: ScriptSpec & { module?: () => Promise
   onlyKnown(what, spec, scriptSettings, at);
   const origin = originOf(at.file);
   conflict(what, spec, ["setupOnly", "notDuringSetup"], at);
-  if (spec.canWait !== undefined && spec.notDuringSetup) fail(`${what}: canWait orders a script within setup-new-machine, which a notDuringSetup script isn't part of: drop one`, at);
+  if (spec.canWait !== undefined && spec.notDuringSetup) fail(`${what}: canWait orders a script within loadout machine new, which a notDuringSetup script isn't part of: drop one`, at);
   const { module, rules } = spec;
   if (rules !== undefined && module === undefined) fail(`${what}: rules are a module's: give it one`, at);
   for (const other of ["runCommand", "checkCommand"]) conflict(what, spec, ["module", other], at);
@@ -990,7 +990,7 @@ const entries = (m: Map<string, Entry>) => (m.size ? Object.fromEntries([...m].m
 
 /**
  * The repo itself: the last thing loadout.ts does, once its imports have
- * declared everything. Under `loadout compile` it prints the draft.
+ * declared everything. Under `loadout repo compile` it prints the draft.
  */
 export function repo<Data>(spec: RepoSpec<Data>): void {
   const unknown = Object.keys(spec).filter((k) => !repoSettings.includes(k));

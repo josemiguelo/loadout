@@ -99,10 +99,10 @@ function fill(text: string, vars: ScaffoldVars): string {
   });
 }
 
-/** newInitCmd is `loadout init`. */
-export function newInitCmd(): Command {
+/** newInitCmd is `loadout repo init`. */
+export function newInitCmd(name = "init"): Command {
   const cmd = subcommand(
-    "init",
+    name,
     commandHelp(
       "Scaffold a new config repo (TypeScript manifests, machines/state/) and git init it.",
       "[path]     where to scaffold (default: current directory)",
@@ -217,12 +217,12 @@ export async function initRepo(a: AppContext, root: string, configs: boolean): P
     echo("     in loadouts/.etc/<concern>/, like loadouts/.etc/dnf/)");
   }
   echo("  2. Say what this machine installs in machines/machines.loadout.ts");
-  echo("  3. loadout --repo " + root + " compile   # writes " + lockFileName);
+  echo("  3. loadout --repo " + root + " repo compile   # writes " + lockFileName);
   if (configs) {
     echo("     (and loadouts/.chezmoidata/loadout.json + .chezmoitemplates/loadout/machine:");
     echo('     templates read this machine\'s data with includeTemplate "loadout/machine" . | fromJson)');
   }
-  echo("  4. loadout --repo " + root + " status");
+  echo("  4. loadout --repo " + root + " machine status");
   echo("  5. Commit (the lock too), add a remote and push, then clone it on your other machines");
 }
 
@@ -281,6 +281,6 @@ export async function initChild(a: AppContext, root: string, parentPath: string,
   echo("");
   echo(Style.header("Next steps:"));
   echo("  1. Say what this machine installs in machines/" + hostname + ".loadout.ts (import " + parentName + "'s from \"parent/…\")");
-  echo("  2. loadout --repo " + root + " compile");
-  echo("  3. Point LOADOUT_REPO at " + root + " on this machine, then: loadout status");
+  echo("  2. loadout --repo " + root + " repo compile");
+  echo("  3. Point LOADOUT_REPO at " + root + " on this machine, then: loadout machine status");
 }

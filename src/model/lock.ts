@@ -67,13 +67,13 @@ export function decodeLock(text: string, label = "", checkToolVersion?: (version
   const errs: Errs = {};
   const lock = readLockTree(tree, errs);
   if (errs.err !== undefined) {
-    throw new ManifestException(`${label} can't be read (${errs.err.message}) — run: loadout compile`);
+    throw new ManifestException(`${label} can't be read (${errs.err.message}) — run: loadout repo compile`);
   }
   return lock;
 }
 
 function notALock(label: string): ManifestException {
-  return new ManifestException(label + " is not a lock file — run: loadout compile");
+  return new ManifestException(label + " is not a lock file — run: loadout repo compile");
 }
 
 /** lockHeader is text as a JSON object whose format this binary reads. */
@@ -82,7 +82,7 @@ function lockHeader(text: string, label: string): JSONObject {
   try {
     v = parseJSON(text);
   } catch (e) {
-    throw new ManifestException(`${label} is not valid JSON (${(e as Error).message}) — run: loadout compile`);
+    throw new ManifestException(`${label} is not valid JSON (${(e as Error).message}) — run: loadout repo compile`);
   }
   if (!isJSONObject(v)) throw notALock(label);
   let format = lockFormat;
@@ -94,10 +94,10 @@ function lockHeader(text: string, label: string): JSONObject {
     format = n;
   }
   if (format > lockFormat) {
-    throw new ManifestException(`${label} was written by a newer loadout (lock format ${format}) — run: loadout self-upgrade`);
+    throw new ManifestException(`${label} was written by a newer loadout (lock format ${format}) — run: loadout self upgrade`);
   }
   if (format < lockFormat) {
-    throw new ManifestException(`${label} was written by an older loadout (lock format ${format}) — run: loadout compile`);
+    throw new ManifestException(`${label} was written by an older loadout (lock format ${format}) — run: loadout repo compile`);
   }
   return v;
 }

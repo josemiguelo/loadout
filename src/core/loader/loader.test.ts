@@ -103,17 +103,17 @@ test("a current lock loads", () => {
 test("the templates' data must match the lock", () => {
   const missing = repo();
   rmSync(missing + "/configs/.chezmoidata/loadout.json");
-  contains(refusal(missing), "configs/.chezmoidata/loadout.json is missing — run: loadout compile");
+  contains(refusal(missing), "configs/.chezmoidata/loadout.json is missing — run: loadout repo compile");
 
   const edited = repo();
   put(edited + "/configs/.chezmoidata/loadout.json", "{}\n");
-  contains(refusal(edited), "configs/.chezmoidata/loadout.json doesn't match loadout.lock.json — run: loadout compile");
+  contains(refusal(edited), "configs/.chezmoidata/loadout.json doesn't match loadout.lock.json — run: loadout repo compile");
 });
 
 test("the partial must be loadout's", () => {
   const missing = repo();
   rmSync(missing + "/configs/.chezmoitemplates/loadout/machine");
-  contains(refusal(missing), "configs/.chezmoitemplates/loadout/machine is missing — run: loadout compile");
+  contains(refusal(missing), "configs/.chezmoitemplates/loadout/machine is missing — run: loadout repo compile");
 
   const edited = repo();
   put(edited + "/configs/.chezmoitemplates/loadout/machine", "{{ .chezmoi.hostname }}\n");
@@ -132,18 +132,18 @@ test("the templates' data holds the defaults and every machine", () => {
 
 test("no lock says to compile", () => {
   const root = tempDir();
-  contains(refusal(root), "no loadout.lock.json in " + root + " — run: loadout compile");
+  contains(refusal(root), "no loadout.lock.json in " + root + " — run: loadout repo compile");
 });
 
 test("an edit the lock hasn't seen is refused", () => {
   const root = repo();
   put(root + "/programs/cli.loadout.ts", "# edited\n");
-  contains(refusal(root), "the manifests changed since loadout.lock.json was written — run: loadout compile");
+  contains(refusal(root), "the manifests changed since loadout.lock.json was written — run: loadout repo compile");
 
   // A new source file counts too.
   const added = repo();
   put(added + "/programs/new.loadout.ts", "\n");
-  contains(refusal(added), "run: loadout compile");
+  contains(refusal(added), "run: loadout repo compile");
 
   // Files no source glob matches don't.
   const other = repo();
@@ -155,20 +155,20 @@ test("a newer lock format says to upgrade", () => {
   const root = repo();
   const path = root + "/loadout.lock.json";
   put(path, readFileSync(path, "utf8").replace(`"format": 2`, `"format": 3`));
-  contains(refusal(root), "lock format 3", "run: loadout self-upgrade");
+  contains(refusal(root), "lock format 3", "run: loadout self upgrade");
 });
 
 test("an older lock format says to compile", () => {
   const root = repo();
   const path = root + "/loadout.lock.json";
   put(path, readFileSync(path, "utf8").replace(`"format": 2`, `"format": 1`));
-  contains(refusal(root), "lock format 1", "run: loadout compile");
+  contains(refusal(root), "lock format 1", "run: loadout repo compile");
 });
 
 test("a lock from a newer minor is refused and a newer patch is not", () => {
   const [major, minor, patch] = versions();
   const newer = `${major}.${minor + 1}.0`;
-  contains(refusal(repo({ toolVersion: newer })), `loadout.lock.json was compiled by loadout ${newer} (you have ${VERSION})`, "run: loadout self-upgrade");
+  contains(refusal(repo({ toolVersion: newer })), `loadout.lock.json was compiled by loadout ${newer} (you have ${VERSION})`, "run: loadout self upgrade");
   load(repo({ toolVersion: `${major}.${minor}.${patch + 1}` }), "");
   load(repo({ toolVersion: "0.1.0" }), "");
 });
@@ -179,7 +179,7 @@ test("a newer minor's field is refused by version, not by the field", () => {
   const root = repo({ toolVersion: newer });
   const path = root + "/loadout.lock.json";
   put(path, readFileSync(path, "utf8").replace(`"manifest": {`, `"manifest": {\n    "fromTheFuture": true,`));
-  contains(refusal(root), "was compiled by loadout " + newer, "run: loadout self-upgrade");
+  contains(refusal(root), "was compiled by loadout " + newer, "run: loadout self upgrade");
 });
 
 // ─── a child repo's parent (contract 18) ─────────────────────────
@@ -227,7 +227,7 @@ test("a child loads with its parent at its path", () => {
 test("a parent edit the child hasn't compiled is refused", () => {
   const [root, home] = child();
   put(home + "/dots/loadout.ts", "# edited\n");
-  contains(childRefusal(root, home), "parent dotfiles: the manifests changed since loadout.lock.json was written — run: loadout compile");
+  contains(childRefusal(root, home), "parent dotfiles: the manifests changed since loadout.lock.json was written — run: loadout repo compile");
   expect(parentChanged(root, home)).toBe(true);
 });
 
@@ -242,7 +242,7 @@ test("a missing parent or parent file is named", () => {
 });
 
 test("the repo's version floor is enforced", () => {
-  contains(refusal(repo({ manifest: manifest("999.0.0") })), "requires loadout >= 999.0.0", "run: loadout self-upgrade");
+  contains(refusal(repo({ manifest: manifest("999.0.0") })), "requires loadout >= 999.0.0", "run: loadout self upgrade");
   load(repo({ manifest: manifest(VERSION) }), "");
 });
 
@@ -271,7 +271,7 @@ test("a file the lock names must still exist", () => {
 test("not a lock is refused cleanly", () => {
   const root = repo();
   put(root + "/loadout.lock.json", "not a lock\n");
-  contains(refusal(root), "run: loadout compile");
+  contains(refusal(root), "run: loadout repo compile");
 });
 
 test("every loadout failure reports as a clean one-liner", () => {

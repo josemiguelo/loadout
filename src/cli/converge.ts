@@ -1,5 +1,5 @@
-// The program half of converging, shared by `install-program` and
-// `setup-new-machine` — observe, plan, show, confirm, execute. The two
+// The program half of converging, shared by `program install` and
+// `loadout machine new` — observe, plan, show, confirm, execute. The two
 // commands differ in what they target and in what ELSE they do (scripts are
 // setup's alone), never in this sequence; keeping it in one place is what
 // stops one of them quietly growing a behavior the other lacks.

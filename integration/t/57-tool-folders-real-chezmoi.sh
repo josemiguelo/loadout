@@ -30,16 +30,16 @@ real_chezmoi_tests() {
     ok "loadout chezmoi apply --dry-run writes neither \$HOME nor /"
 
     # --- one umask for observing and applying -----------------------------------------
-    (umask 002 && rc --repo repo --machine m1 apply-config >/dev/null 2>&1) || fail "apply-config under umask 002"
+    (umask 002 && rc --repo repo --machine m1 config apply >/dev/null 2>&1) || fail "config apply under umask 002"
     [ "$(mode "$R/etc/udev/kb.rules")" = 644 ] || fail "a / config is 0644 whatever the umask: $(mode "$R/etc/udev/kb.rules")"
-    OUT=$(umask 077 && rc --repo repo --machine m1 status 2>&1)
+    OUT=$(umask 077 && rc --repo repo --machine m1 machine status 2>&1)
     echo "$OUT" | grep -qE '/kb +applied' || fail "observed under another umask, a / config still reads applied: $OUT"
     [ "$(mode "$R_STATE")" = 644 ] || fail "root's state is left readable: $(mode "$R_STATE")"
     ok "a / config is applied and observed under one umask, and root's state stays readable"
 
     # --- a / file this user can't read takes down only its own unit ----------------------
     chmod 000 "$R/etc/udev/kb.rules"
-    OUT=$(rc --repo repo --machine m1 status 2>&1)
+    OUT=$(rc --repo repo --machine m1 machine status 2>&1)
     chmod 644 "$R/etc/udev/kb.rules"
     echo "$OUT" | grep -qE '/kb +not checked' || fail "the unreadable / config is not checked: $OUT"
     # Observed (the umask changed between apply and status above, which only a / config is immune to).
@@ -50,44 +50,44 @@ real_chezmoi_tests() {
     mkdir -p repo/tools/kb/root/.chezmoiscripts
     printf '#!/bin/sh\nexit 3\n' > repo/tools/kb/root/.chezmoiscripts/run_onchange_after_fail.sh
     chmod 600 "$R_STATE"
-    rc --repo repo --machine m1 apply-config >/dev/null 2>&1 && fail "an apply whose script fails fails"
+    rc --repo repo --machine m1 config apply >/dev/null 2>&1 && fail "an apply whose script fails fails"
     [ "$(mode "$R_STATE")" = 644 ] || fail "root's state is readable after a failed apply: $(mode "$R_STATE")"
     rm -r repo/tools/kb/root/.chezmoiscripts
-    rc --repo repo --machine m1 explain git >/dev/null 2>&1 || fail "the repo loads after the script is gone"
+    rc --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "the repo loads after the script is gone"
     ok "a failed / apply still leaves root's state readable"
 
     # --- what a plain chezmoi re-add left in a build ------------------------------------------
     echo 'edited here' >> "$H/.zshenv"
     cz --source "$PWD/$S" re-add "$H/.zshenv" >/dev/null 2>&1 || fail "plain chezmoi re-add"
     [ ! -L "$S/dot_zshenv" ] || fail "plain chezmoi re-add writes into the build"
-    OUT=$(rc --repo repo --machine m1 explain git 2>&1) && fail "a chezmoi write in the build is refused"
+    OUT=$(rc --repo repo --machine m1 program explain git 2>&1) && fail "a chezmoi write in the build is refused"
     echo "$OUT" | grep -qF "keep it with \`loadout chezmoi re-add ~/.zshenv\` (or copy it over tools/zsh/home/dot_zshenv), or drop it by deleting .home/dot_zshenv" ||
         fail "the refusal names both ways out: $OUT"
     OUT=$(rc --repo repo --machine m1 chezmoi re-add "$H/.zshenv" 2>&1) || fail "loadout chezmoi re-add carries the left write: $OUT"
     grep -q 'edited here' repo/tools/zsh/home/dot_zshenv || fail "the edit is in the tool's file"
     [ -L "$S/dot_zshenv" ] || fail "and the build's symlink is back"
-    rc --repo repo --machine m1 explain git >/dev/null 2>&1 || fail "the repo loads again"
+    rc --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "the repo loads again"
     echo 'dropped' >> "$H/.zshenv"
     cz --source "$PWD/$S" re-add "$H/.zshenv" >/dev/null 2>&1
     rm "$S/dot_zshenv"
-    rc --repo repo --machine m1 explain git >/dev/null 2>&1 || fail "deleting the build's file drops the edit"
+    rc --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "deleting the build's file drops the edit"
     ! grep -q dropped repo/tools/zsh/home/dot_zshenv && [ -L "$S/dot_zshenv" ] || fail "the tool's file is untouched and relinked"
     ok "what a plain chezmoi re-add left is kept by loadout chezmoi re-add, or dropped by deleting it"
 
     # --- a tool's last .chezmoiignore goes ----------------------------------------------------
     rm repo/tools/zsh/home/.chezmoiignore
-    OUT=$(rc --repo repo --machine m1 explain git 2>&1) || fail "removing a tool's last .chezmoiignore doesn't block the repo: $OUT"
+    OUT=$(rc --repo repo --machine m1 program explain git 2>&1) || fail "removing a tool's last .chezmoiignore doesn't block the repo: $OUT"
     [ ! -e "$S/.chezmoiignore" ] || fail "and the build's joined copy goes"
     ok "a tool's last .chezmoiignore going removes the build's copy, blocking nothing"
 
     # --- setup plans / configs before chezmoi is installed --------------------------------------
     mkdir -p nochezmoi && printf '#!/bin/sh\necho "sh: chezmoi: not found" >&2\nexit 127\n' > nochezmoi/chezmoi && chmod +x nochezmoi/chezmoi
     echo 'more' >> repo/tools/kb/root/etc/udev/kb.rules
-    OUT=$(PATH="$PWD/nochezmoi:$PATH" rc --repo repo --machine m1 setup-new-machine --dry-run 2>&1) || fail "setup plans without chezmoi: $OUT"
+    OUT=$(PATH="$PWD/nochezmoi:$PATH" rc --repo repo --machine m1 machine new --dry-run 2>&1) || fail "setup plans without chezmoi: $OUT"
     echo "$OUT" | grep -q 'configs outside \$HOME *config' || fail "the / configs are one row until chezmoi is there: $OUT"
-    OUT=$(rc --repo repo --machine m1 setup-new-machine --dry-run 2>&1)
+    OUT=$(rc --repo repo --machine m1 machine new --dry-run 2>&1)
     echo "$OUT" | grep -qE '/kb +config' || fail "with chezmoi, the drifted / config by name: $OUT"
-    ok "setup-new-machine plans / configs before chezmoi is installed, and names them once it is"
+    ok "machine new plans / configs before chezmoi is installed, and names them once it is"
 
     # --- a child reached through a symlink, its parent with tool folders --------------------------
     local P; P=$(cd repo && pwd -P)
@@ -95,10 +95,10 @@ real_chezmoi_tests() {
     ts_file kid/machines/work.loadout.ts <<'TS'
 machine("work", {});
 TS
-    OUT=$("$BIN" --repo kid compile 2>&1) || fail "the child compiles: $OUT"
+    OUT=$("$BIN" --repo kid repo compile 2>&1) || fail "the child compiles: $OUT"
     # At another depth than the checkout (/home -> /var/home, a symlinked ~/dots).
     mkdir -p via/deeper && ln -s ../../kid via/deeper/kid
-    OUT=$(rc --repo via/deeper/kid --machine work explain 2>&1) || fail "a child reached through a symlink loads: $OUT"
+    OUT=$(rc --repo via/deeper/kid --machine work machine explain 2>&1) || fail "a child reached through a symlink loads: $OUT"
     ok "a child of a tool-folders parent loads through a symlinked path"
 }
 
@@ -146,7 +146,7 @@ safety_tests() {
     echo 'vpn' > safe/tools/vpn/root/etc/vpn/vpn.conf
     echo 'x' > safe/tools/sec/root/etc/private_secure/sub/x.conf
     compile_repo safe
-    rc --repo safe --machine m1 apply-config >/dev/null 2>&1 || fail "the first apply"
+    rc --repo safe --machine m1 config apply >/dev/null 2>&1 || fail "the first apply"
 
     # A bare relative path is a path: under ~/.config, zsh is ~/.config/zsh, not every / config.
     echo 'edited' >> "$H/.config/zsh/.zshrc"
@@ -158,14 +158,14 @@ safety_tests() {
 
     # One tool's / config creates only its own folders.
     rm -r "$R/etc/vpn"
-    only_changes "apply-config --force /kb" '\./etc/udev(/.*)?' rc --repo safe --machine m1 apply-config --force /kb
+    only_changes "config apply --force /kb" '\./etc/udev(/.*)?' rc --repo safe --machine m1 config apply --force /kb
     [ ! -e "$R/etc/vpn" ] || fail "another tool's folder was created"
     ok "applying one tool's / config creates no other tool's folders"
 
     # An existing folder under one named private_ keeps its mode.
     chmod 770 "$R/etc/secure/sub"
     echo 'edited' >> "$R/etc/secure/sub/x.conf"
-    only_changes "apply-config --force /sec" '\./etc/secure/sub/x\.conf' rc --repo safe --machine m1 apply-config --force /sec
+    only_changes "config apply --force /sec" '\./etc/secure/sub/x\.conf' rc --repo safe --machine m1 config apply --force /sec
     [ "$(stat -c '%a' "$R/etc/secure/sub" 2>/dev/null || stat -f '%Lp' "$R/etc/secure/sub")" = 770 ] || fail "the existing subfolder kept 0770"
     ok "an existing folder inside a private_ one keeps its mode"
 
@@ -173,7 +173,7 @@ safety_tests() {
     OUT=$(rc --repo safe chezmoi push 2>&1) && fail "push must be refused"
     echo "$OUT" | grep -q 'loadout chezmoi push:' || fail "push says why: $OUT"
     OUT=$(rc --repo safe chezmoi --color off update 2>&1) && fail "update behind a flag's value must be refused"
-    echo "$OUT" | grep -q 'loadout chezmoi update: run: loadout sync' || fail "update says what to run: $OUT"
+    echo "$OUT" | grep -q 'loadout chezmoi update: run: loadout machine sync' || fail "update says what to run: $OUT"
     OUT=$(rc --repo safe chezmoi --source /tmp diff 2>&1) && fail "--source must be refused"
     echo "$OUT" | grep -q -- '--source' || fail "--source says why: $OUT"
     ok "loadout chezmoi refuses push, a refused command behind a flag's value, and --source"
@@ -207,14 +207,14 @@ safety_tests() {
     [ -f safe/tools/zsh/home/dot_zprofile ] || fail "manage put the file in the tool"
     OUT=$(rc --repo safe --machine m1 chezmoi unmanage --force "$H/.zprofile" 2>&1) || fail "unmanage: $OUT"
     [ ! -e safe/tools/zsh/home/dot_zprofile ] || fail "unmanage took it out of the tool"
-    rc --repo safe --machine m1 explain git >/dev/null 2>&1 || fail "the repo loads after"
+    rc --repo safe --machine m1 program explain git >/dev/null 2>&1 || fail "the repo loads after"
     ok "loadout chezmoi manage and unmanage carry over like add and forget"
 
     # An unknown --tool is refused before chezmoi writes anything.
     echo 'x' > "$H/.zzz"
     OUT=$(rc --repo safe --machine m1 chezmoi add --tool nope "$H/.zzz" 2>&1) && fail "an unknown --tool is refused"
     echo "$OUT" | grep -q 'no tool folder nope' || fail "and named: $OUT"
-    rc --repo safe --machine m1 explain git >/dev/null 2>&1 || fail "nothing was left in the build"
+    rc --repo safe --machine m1 program explain git >/dev/null 2>&1 || fail "nothing was left in the build"
     ok "loadout chezmoi add --tool <unknown> is refused before chezmoi writes anything"
 
     # From a child, apply covers the child's own configs, not its parent's /.
@@ -225,7 +225,7 @@ safety_tests() {
     ts_file kid/machines/work.loadout.ts <<'TS'
 machine("work", {});
 TS
-    OUT=$("$BIN" --repo kid compile 2>&1) || fail "the child compiles: $OUT"
+    OUT=$("$BIN" --repo kid repo compile 2>&1) || fail "the child compiles: $OUT"
     echo 'edited' >> "$R/etc/udev/kb.rules"
     only_changes "loadout chezmoi apply, from a child" '\./\.workrc|\./etc/work\.conf' rc --repo kid --machine work chezmoi apply --force
     grep -q edited "$R/etc/udev/kb.rules" || fail "the parent's / config is as it was"

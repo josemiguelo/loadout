@@ -15,9 +15,9 @@ const mytool = program("mytool", { canBeInstalled: [fake] });
 machine("m1", { install: [mytool] });
 TS
 compile_repo instrepo
-OUT=$("$BIN" --repo instrepo --machine m1 setup-new-machine --dry-run)
+OUT=$("$BIN" --repo instrepo --machine m1 machine new --dry-run)
 echo "$OUT" | grep -q "echo installed-mytool > fake-install.txt" || fail "installer pattern substitutes {packageName}"
-"$BIN" --repo instrepo --machine m1 setup-new-machine --yes >/dev/null || fail "installer-backed install exits 0"
+"$BIN" --repo instrepo --machine m1 machine new --yes >/dev/null || fail "installer-backed install exits 0"
 grep -q "installed-mytool" instrepo/fake-install.txt || fail "installer command ran"
 grep -q '"version": "1.0"' instrepo/machines/state/m1.json || fail "installer check observed the version"
 ok "installers supply install/check/probe mechanics via {packageName}"
@@ -58,8 +58,8 @@ machine("m1", { install: [mytool, othertool, batchtool, uptodate] });
 TS
 printf '#!/bin/sh\necho upgraded\n' > instrepo/upgrade-fake3.sh
 compile_repo instrepo
-"$BIN" --repo instrepo --machine m1 status >/dev/null || fail "status before outdated"
-OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated exits 0"
+"$BIN" --repo instrepo --machine m1 machine status >/dev/null || fail "status before outdated"
+OUT=$("$BIN" --repo instrepo --machine m1 machine outdated) || fail "outdated exits 0"
 echo "$OUT" | grep -qE "mytool +1.0 +-> 2.0" || fail "outdated reports the newer candidate"
 echo "$OUT" | grep -q "othertool" && fail "up-to-date program must not be listed" || true
 echo "$OUT" | grep -qE "batchtool +1.0 +-> 3.0" || fail "batch oracle (outdated-all) reports its candidate"
@@ -68,7 +68,7 @@ echo "$OUT" | grep -q "uptodate" && fail "batch-covered up-to-date program must 
 # much of it is in the loadout — the whole picture an upgrade would touch.
 echo "$OUT" | grep -qE "sh +2 updates · 1 in your loadout" || fail "outdated leads with the tool's whole count (fake3's probe is sh)"
 # The hint shows the command that runs, not the manifest's file: shorthand.
-echo "$OUT" | grep -qF "loadout upgrade fake3  →  upgrade-fake3.sh --all" || fail "the upgrade hint is the script and its arguments: $OUT"
+echo "$OUT" | grep -qF "loadout installer upgrade fake3  →  upgrade-fake3.sh --all" || fail "the upgrade hint is the script and its arguments: $OUT"
 ok "outdated uses per-pkg oracles and installer-wide outdated-all batches"
 
 # --- the shipped pacman mechanism: pacman -Q + checkupdates ---------------
@@ -95,9 +95,9 @@ const barapp = program("barapp", { canBeInstalled: [withPacman] });
 machine("m1", { install: [fooapp, barapp] });
 TS
 compile_repo pacrepo
-PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 status >/dev/null || fail "status through the built-in pacman"
+PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 machine status >/dev/null || fail "status through the built-in pacman"
 grep -q '"version": "1.2.0"' pacrepo/machines/state/m1.json || fail "pacman -Q's version is observed past the epoch"
-OUT=$(PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 outdated) || fail "outdated through the built-in pacman"
+OUT=$(PATH="$PWD/pacbin:$PATH" "$BIN" --repo pacrepo --machine m1 machine outdated) || fail "outdated through the built-in pacman"
 echo "$OUT" | grep -qE "fooapp +1.2.0 +-> 1.3.0" || fail "checkupdates' candidate is reported"
 echo "$OUT" | grep -q "barapp" && fail "a package checkupdates doesn't list is up to date" || true
 echo "$OUT" | grep -qE "pacman +2 updates · 1 in your loadout" || fail "the pacman sweep counts every package checkupdates listed"
@@ -108,7 +108,7 @@ ts_file instrepo/programs/sources.loadout.ts <<'TS'
 outdated("plugin-pins", { command: "printf 'javaplug aaa1111 bbb2222\\n'" });
 TS
 compile_repo instrepo
-OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with custom source exits 0"
+OUT=$("$BIN" --repo instrepo --machine m1 machine outdated) || fail "outdated with custom source exits 0"
 echo "$OUT" | grep -qE "javaplug +aaa1111 +-> bbb2222" || fail "custom source rows appear"
 echo "$OUT" | grep -q "plugin-pins" || fail "custom source name is the row tag"
 prog_line=$(echo "$OUT" | grep -n "mytool" | cut -d: -f1 | head -1)
@@ -124,7 +124,7 @@ outdated("plugin-pins", { command: "printf 'javaplug aaa1111 bbb2222\\n'" });
 outdated("flaky", { command: "echo boom >&2; exit 3" });
 TS
 compile_repo instrepo
-OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a failing source still exits 0"
+OUT=$("$BIN" --repo instrepo --machine m1 machine outdated) || fail "outdated with a failing source still exits 0"
 echo "$OUT" | grep -qE "outdated source \[flaky\] failed: exited 3" || fail "failing custom source is surfaced loud"
 echo "$OUT" | grep -q "boom" || fail "failing source shows its stderr detail"
 echo "$OUT" | grep -q "│" || fail "a failing source is boxed, like other attention rows"
@@ -143,17 +143,17 @@ outdated("linked-pins", {
 });
 TS
 compile_repo instrepo
-OUT=$("$BIN" --repo instrepo --machine m1 outdated) || fail "outdated with a linked source exits 0"
+OUT=$("$BIN" --repo instrepo --machine m1 machine outdated) || fail "outdated with a linked source exits 0"
 echo "$OUT" | grep -q "1 commit behind" || fail "the note survives having its URL lifted out"
 echo "$OUT" | grep -q "https://example.test/compare/aaa1111...bbb2222" || fail "a URL in the note is printed as the row's page"
 ok "a custom source's row keeps the page its note pointed at"
 
 # --- status: script checks with their detail output, structured ---------
 scripts_repo scriptsrepo
-OUT=$("$BIN" --repo scriptsrepo --machine m1 setup-new-machine --dry-run)
+OUT=$("$BIN" --repo scriptsrepo --machine m1 machine new --dry-run)
 echo "$OUT" | grep -qE "~ bootstrap-only +script" || fail "setup converges setup-only scripts"
-"$BIN" --repo scriptsrepo --machine m1 run-script bootstrap-only >/dev/null || fail "run ignores modes"
-OUT=$("$BIN" --repo scriptsrepo --machine m1 status) || fail "status exits 0 even with pending scripts"
+"$BIN" --repo scriptsrepo --machine m1 script run bootstrap-only >/dev/null || fail "run ignores modes"
+OUT=$("$BIN" --repo scriptsrepo --machine m1 machine status) || fail "status exits 0 even with pending scripts"
 echo "$OUT" | grep -qE "bootstrap-only +done" || fail "status observes setup-only scripts"
 echo "$OUT" | grep -qE "healthy +done" || fail "status lists passing scripts"
 echo "$OUT" | grep -qE "drifted +pending" || fail "status lists failing scripts"

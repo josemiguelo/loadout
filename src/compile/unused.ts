@@ -5,7 +5,7 @@ import type { ManifestDraft } from "../assemble/index.ts";
 import { compareStrings, dependenciesOf, distinct, type MachineConfig, type Manifest, sortStrings, sortedStrings } from "../model/index.ts";
 
 /**
- * unusedWarnings is what no machine uses, for `loadout compile` to warn
+ * unusedWarnings is what no machine uses, for `loadout repo compile` to warn
  * about: a program no machine installs, a script none runs (or a variant
  * none picks), a profile none extends, a repo installer that installs
  * nothing in use. A way to install a program that no machine picks is
@@ -151,7 +151,7 @@ export function unusedWarnings(
 
 /**
  * transitionalWarnings is the transitional scripts every machine that runs
- * them reports done, for `loadout compile` to say they can be deleted. done
+ * them reports done, for `loadout repo compile` to say they can be deleted. done
  * is each machine's scripts whose state says done; a machine without a state
  * file has done nothing. A script no machine runs is left to unusedWarnings.
  */

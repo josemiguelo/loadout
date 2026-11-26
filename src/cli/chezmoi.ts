@@ -37,13 +37,13 @@ const loadoutsFlags = ["--source", "-S", "--config", "-c", "--persistent-state",
 
 /** These don't fit a repo loadout keeps: each with what to run instead. */
 const refused: Record<string, string> = {
-  init: "the repo is set up already: chezmoi's source is the repo's dotfiles (loadout init scaffolds one)",
-  update: "run: loadout sync",
+  init: "the repo is set up already: chezmoi's source is the repo's dotfiles (loadout repo init scaffolds one)",
+  update: "run: loadout machine sync",
   upgrade: "upgrade chezmoi with the machine's package manager (loadout upgrade)",
   purge: "it deletes chezmoi's source: remove the dotfiles from loadout.ts instead",
   git: "run git in the repo itself",
-  push: "run git in the repo itself (or: loadout sync)",
-  destroy: "remove the file from its tool's folder, add it to .chezmoiremove, and run loadout apply-config",
+  push: "run git in the repo itself (or: loadout machine sync)",
+  destroy: "remove the file from its tool's folder, add it to .chezmoiremove, and run loadout config apply",
   import: "unpack the archive into a tool's home/ or root/",
 };
 

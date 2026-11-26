@@ -10,7 +10,7 @@
 // `upgrade` upgrades EVERYTHING the mechanism manages — loadout has no
 // per-package form, because partial upgrades are unsupported on Arch and
 // discouraged on Fedora, and a package manager resolves its own transaction
-// regardless. Converge never runs it; `loadout upgrade` is the explicit verb.
+// regardless. Converge never runs it; `loadout installer upgrade` is the explicit verb.
 //
 // `outdated-all` asks the remote ONCE for everything ("<pkg> <candidate>"
 // lines) — that is the only oracle these need. A batch oracle always wins
@@ -155,7 +155,7 @@ export function installerLibrary(): Map<string, Installer> {
     // pacman -Q). The AUR is community build recipes, not Omarchy's repo:
     // map a program here only after deciding to trust it. The upgrade is
     // the same `omarchy update -y` (it upgrades AUR packages too), so
-    // `loadout upgrade` runs it once for both. The oracle is yay's AUR
+    // `loadout installer upgrade` runs it once for both. The oracle is yay's AUR
     // check, "<pkg> <installed> -> <candidate>". yay runs sudo from inside.
     [
       "omarchy-aur",
@@ -170,7 +170,7 @@ export function installerLibrary(): Map<string, Installer> {
       }),
     ],
     // --- best effort: install/check only, no update oracle -----------
-    // Not exercised by the maintainer; `loadout outdated` reports "no
+    // Not exercised by the maintainer; `loadout machine outdated` reports "no
     // oracle" for programs mapped here. Override in your repo to add one.
     [
       "apt",

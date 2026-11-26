@@ -67,8 +67,8 @@
   later phase under its own heading, one column width), `confirmOrAbort`,
   `askForSudoUpfront` (once for both phases), `installPrograms` /
   `installProgramsAfter` (the later phase, skipping what the core one
-  failed). `install-program` and
-  `setup-new-machine` are thin shells over it; scripts are setup's alone.
+  failed). `program install` and
+  `machine new` are thin shells over it; scripts are setup's alone.
   Add converge behavior here, not in one command.
 - **Slow steps wear the spinner**: anything that can look like a hang
   (version checks, state refresh/write, git pull/push, compile) goes
