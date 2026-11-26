@@ -69,8 +69,9 @@ src/
                    writeBuild, refreshBuilds (every command, from
                    AppContext.layout; a child's builds of its parent's
                    folders: parentPlan, .loadout-parent/), drift (chezmoi's
-                   writes, strays, stale) and driftMessage, snapshot (what
-                   `loadout chezmoi` compares)
+                   writes, strays, stale) and driftMessage, snapshot and
+                   carryOver (what `loadout chezmoi` carries from a build to
+                   the tool folders)
     loader/        loadRepo: reads the lock: missing/newer/stale/floor
                    refusals, file: paths re-checked; readLayout reads it
                    alone; toolTooOld

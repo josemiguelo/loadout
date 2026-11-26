@@ -323,9 +323,10 @@ declare module "loadout" {
   /**
    * Dotfiles kept with their tools: every folder `tools` matches is a tool
    * (named after its folder), and in it `home/` is chezmoi source rooted at
-   * `$HOME` and `root/` chezmoi source rooted at `/`, both optional. Compile
+   * `$HOME` and `root/` chezmoi source rooted at `/`, both optional. loadout
    * builds every tool's `home/` into `home` and every `root/` into `root`
-   * (files as symlinks, committed like the lock); loadout applies `home` as
+   * (files as symlinks, kept current by every command: add both to
+   * `.gitignore`); loadout applies `home` as
    * you and `root` as root. `from` is a chezmoi source tree merged into
    * `home` as it stands, for what hasn't moved into a tool folder yet.
    *

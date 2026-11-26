@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { newManifest, newRepoLayout, type RepoLayout } from "../../model/index.ts";
-import { drift, driftMessage, globDirs, parentPlan, planBuild, refreshBuilds, snapshot, targetName, targetOf, writeBuild } from "./configbuild.ts";
+import { carryOver, drift, driftMessage, globDirs, parentPlan, planBuild, refreshBuilds, snapshot, type Snapshot, targetName, targetOf, writeBuild } from "./configbuild.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -96,7 +96,10 @@ test("drift tells chezmoi's writes and strays from a build that's behind", () =>
   const d = drift(root, plan);
   expect(d.writes).toEqual([{ build: ".home/dot_zshenv", source: "tools/zsh/home/dot_zshenv", target: "~/.zshenv" }]);
   expect(d.strays).toEqual([".home/dot_newrc"]);
-  expect(driftMessage(d)).toContain("keep it with `loadout chezmoi re-add ~/.zshenv`, or drop it with `git restore .home/dot_zshenv`");
+  // Both ways out work with an ignored build: re-add carries it, deleting it relinks.
+  expect(driftMessage(d)).toContain(
+    "keep it with `loadout chezmoi re-add ~/.zshenv` (or copy it over tools/zsh/home/dot_zshenv), or drop it by deleting .home/dot_zshenv",
+  );
   // A new tool file the build hasn't seen: compile's to fix.
   const fresh = repo(kit);
   const p2 = planBuild(fresh, layout())!;
@@ -182,4 +185,108 @@ test("a child builds its parent's tool folders into its own .loadout-parent/, wr
   );
   expect(fs.existsSync(path.join(child, ".loadout-parent/home/.chezmoidata/loadout.json"))).toBe(true);
   expect(drift(parent, parentPlan(m, parent, child)!)).toEqual({ writes: [], strays: [], stale: [] });
+});
+
+test("a joined file no part has any more is a leftover writeBuild removes, not a stray that blocks the repo", () => {
+  const root = repo(kit);
+  writeBuild(root, planBuild(root, layout())!);
+  expect(fs.existsSync(path.join(root, ".home/.chezmoiignore"))).toBe(true);
+  fs.rmSync(path.join(root, "tools/zsh/home/.chezmoiignore"));
+  const plan = planBuild(root, layout())!;
+  const d = drift(root, plan);
+  expect(d.strays).toEqual([]);
+  expect(d.stale).toEqual([".home/.chezmoiignore"]);
+  writeBuild(root, plan);
+  expect(fs.existsSync(path.join(root, ".home/.chezmoiignore"))).toBe(false);
+  expect(driftMessage(drift(root, plan))).toBeUndefined();
+});
+
+// carryOver: what a chezmoi command did to a build, brought to the tool folders.
+
+const snaps = (root: string, plan: ReturnType<typeof planBuild>): Map<"home" | "root", Snapshot> =>
+  new Map([["home", snapshot(root, plan!.home)], ["root", snapshot(root, plan!.root!)]]);
+const replaceLink = (root: string, rel: string, text: string) => {
+  fs.rmSync(path.join(root, rel));
+  fs.writeFileSync(path.join(root, rel), text);
+};
+
+test("carryOver: a symlink turned file is the tool file's new content, and so is one a plain chezmoi re-add left", () => {
+  const root = repo(kit);
+  let plan = planBuild(root, layout())!;
+  writeBuild(root, plan);
+  // A plain `chezmoi re-add` before: already a file when the command starts.
+  replaceLink(root, ".home/dot_zshenv", "left by plain chezmoi\n");
+  const before = snaps(root, plan);
+  // This command's own write.
+  replaceLink(root, ".root/etc/udev/rules.d/50-k.rules", "new rule\n");
+  const done = carryOver(root, plan, before, undefined);
+  expect(done.homeless).toEqual([]);
+  expect(done.done.sort()).toEqual([
+    "/etc/udev/rules.d/50-k.rules → tools/keychron/root/etc/udev/rules.d/50-k.rules",
+    "~/.zshenv → tools/zsh/home/dot_zshenv",
+  ]);
+  expect(fs.readFileSync(path.join(root, "tools/zsh/home/dot_zshenv"), "utf8")).toBe("left by plain chezmoi\n");
+  expect(fs.readFileSync(path.join(root, "tools/keychron/root/etc/udev/rules.d/50-k.rules"), "utf8")).toBe("new rule\n");
+  plan = planBuild(root, layout())!;
+  writeBuild(root, plan);
+  expect(driftMessage(drift(root, plan))).toBeUndefined();
+});
+
+test("carryOver: a folder renamed (chattr) renames the tool's files, and the emptied folder goes", () => {
+  const root = repo(kit);
+  let plan = planBuild(root, layout())!;
+  writeBuild(root, plan);
+  const before = snaps(root, plan);
+  fs.renameSync(path.join(root, ".home/private_dot_config/zsh"), path.join(root, ".home/private_dot_config/private_zsh"));
+  const done = carryOver(root, plan, before, undefined);
+  expect(done.done).toEqual(["tools/zsh/home/private_dot_config/zsh/dot_zshrc.tmpl → tools/zsh/home/private_dot_config/private_zsh/dot_zshrc.tmpl"]);
+  expect(fs.existsSync(path.join(root, "tools/zsh/home/private_dot_config/zsh"))).toBe(false);
+  plan = planBuild(root, layout())!; // no "two names for ~/.config/zsh"
+  writeBuild(root, plan);
+  expect(driftMessage(drift(root, plan))).toBeUndefined();
+});
+
+test("carryOver: a symlink gone (forget) deletes the tool file, and the folders it emptied, never a tool's home/", () => {
+  const root = repo(kit);
+  let plan = planBuild(root, layout())!;
+  writeBuild(root, plan);
+  const before = snaps(root, plan);
+  fs.rmSync(path.join(root, ".home/private_dot_config/zsh/dot_zshrc.tmpl"));
+  fs.rmSync(path.join(root, ".home/dot_zshenv"));
+  const done = carryOver(root, plan, before, undefined);
+  expect(done.done.sort()).toEqual(["removed tools/zsh/home/dot_zshenv", "removed tools/zsh/home/private_dot_config/zsh/dot_zshrc.tmpl"]);
+  expect(fs.existsSync(path.join(root, "tools/zsh/home/private_dot_config"))).toBe(false);
+  expect(fs.existsSync(path.join(root, "tools/zsh/home"))).toBe(true);
+  plan = planBuild(root, layout())!;
+  writeBuild(root, plan);
+  expect(driftMessage(drift(root, plan))).toBeUndefined();
+});
+
+test("carryOver never removes a from tree, even emptied", () => {
+  const root = repo({ ...kit, "legacy/dot_vimrc": "x\n" });
+  const l = layout({ build: { tools: "tools/*", from: "legacy" } });
+  const plan = planBuild(root, l)!;
+  writeBuild(root, plan);
+  const before = snaps(root, plan);
+  fs.rmSync(path.join(root, ".home/dot_vimrc"));
+  carryOver(root, plan, before, undefined);
+  expect(fs.existsSync(path.join(root, "legacy"))).toBe(true);
+});
+
+test("carryOver: a new file goes into the tool's folder; with no tool nothing is touched", () => {
+  const root = repo(kit);
+  const plan = planBuild(root, layout())!;
+  writeBuild(root, plan);
+  let before = snaps(root, plan);
+  fs.writeFileSync(path.join(root, ".home/dot_newrc"), "new\n");
+  // The same command also re-added a file: with a homeless file, that waits too.
+  replaceLink(root, ".home/dot_zshenv", "edited\n");
+  const none = carryOver(root, plan, before, undefined);
+  expect(none).toEqual({ done: [], homeless: [".home/dot_newrc"] });
+  expect(fs.readFileSync(path.join(root, "tools/zsh/home/dot_zshenv"), "utf8")).toBe("export ZDOTDIR\n");
+  expect(() => carryOver(root, plan, before, "nope")).toThrow("no tool folder nope");
+  before = snaps(root, plan);
+  const done = carryOver(root, plan, new Map([["home", new Map()], ["root", before.get("root")!]]), "git");
+  expect(done.done).toContain("~/.newrc → tools/git/home/dot_newrc");
+  expect(fs.readFileSync(path.join(root, "tools/git/home/dot_newrc"), "utf8")).toBe("new\n");
 });

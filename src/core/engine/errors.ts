@@ -17,3 +17,10 @@ export class UpgradeException extends Refusal {}
  * unit doesn't exist, or files were edited in place.
  */
 export class ConfigException extends Refusal {}
+
+/**
+ * ConfigNeedsSudoException is a root config chezmoi can't read without sudo
+ * (a target only root reads, root's state): status calls it unknown; a
+ * command that applies asks for the password and tries again.
+ */
+export class ConfigNeedsSudoException extends ConfigException {}

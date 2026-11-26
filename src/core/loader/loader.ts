@@ -80,9 +80,12 @@ export function loadRepo(repoRoot: string, home: string): Manifest {
   // A repo with tool folders: its chezmoi sources are compile's builds, and
   // chezmoi never reads one that's behind its tool folders, or holds what a
   // chezmoi command wrote there.
+  // Compared as refreshBuilds made them: from the canonical root (a repo
+  // reached through a symlink builds the same links).
+  const canonical = realpathSync(repoRoot);
   for (const [where, build] of [
-    [repoRoot, planBuild(repoRoot, manifest.layout)],
-    [root, parentPlan(manifest, root, repoRoot)],
+    [canonical, planBuild(canonical, manifest.layout)],
+    [root, parentPlan(manifest, root, canonical)],
   ] as const) {
     if (build === undefined) continue;
     const message = driftMessage(drift(where, build));

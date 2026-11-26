@@ -41,7 +41,13 @@
   files are sourced into one shell, so an exported PATH would leak),
   answering from files and logging its calls; a real chezmoi would read
   and write the developer's own dotfiles, so "chezmoi missing" is the
-  stub's exit 127, never a PATH without it.
+  stub's exit 127, never a PATH without it. The exception is
+  `t/57-tool-folders-real-chezmoi.sh`: what only the real chezmoi shows
+  (modes and umasks, chezmoi's own writes into a build, a failing apply)
+  runs it with a scratch `HOME` and `XDG_CONFIG_HOME`/`XDG_DATA_HOME`/
+  `XDG_STATE_HOME` and a stand-in `/` (`LOADOUT_ROOT_DESTINATION`) on every
+  command, and the file skips itself where chezmoi isn't installed. A bug
+  found there gets a case that fails on the code before the fix.
 - TUI: the model's reducers (`handleKey`, `handleText`, `runExited`,
   `followUp`) and pure builders (`sectionsOf`, `scriptRowsOf`,
   `programRowsOf`, `preselect`, `selectionKey`, `remoteLines`, `listOf`,

@@ -78,7 +78,7 @@ ok "every command brings the builds up to date, so they needn't be committed"
 # --- what chezmoi writes into a build ---------------------------------------------------
 rm repo/.home/dot_zshenv && echo 'edited here' > repo/.home/dot_zshenv
 OUT=$("$BIN" --repo repo --machine m1 explain git 2>&1) && fail "a chezmoi write in the build must be refused"
-echo "$OUT" | grep -q 'chezmoi wrote .home/dot_zshenv, not tools/zsh/home/dot_zshenv — keep it with `loadout chezmoi re-add ~/.zshenv`, or drop it with `git restore .home/dot_zshenv`' ||
+echo "$OUT" | grep -qF 'chezmoi wrote .home/dot_zshenv, not tools/zsh/home/dot_zshenv — keep it with `loadout chezmoi re-add ~/.zshenv` (or copy it over tools/zsh/home/dot_zshenv), or drop it by deleting .home/dot_zshenv' ||
     fail "the write is named with both ways out: $OUT"
 OUT=$(cd repo && "$BIN" compile 2>&1) && fail "compile must not overwrite a chezmoi write"
 echo "$OUT" | grep -q 'chezmoi wrote .home/dot_zshenv' || fail "compile names the write: $OUT"

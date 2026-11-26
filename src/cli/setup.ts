@@ -17,7 +17,7 @@ import {
   type ProgramPlan,
 } from "./converge.ts";
 import { exitWith } from "./errors.ts";
-import { refuseEdited } from "./apply-config.ts";
+import { refuseEdited, withSudo } from "./apply-config.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, spin } from "./spinner.ts";
@@ -77,10 +77,23 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
   }
   // What tool folders put outside $HOME lands after the core programs (so
   // no package overwrites it) and before the core scripts (which may read it).
+  // Asked before anything is installed, chezmoi may not be there yet, or
+  // reading them may need sudo: then they're one row, worked out after the
+  // core programs.
   const configs = a.configs();
-  const rootDrift = configs !== undefined ? await configs.rootDrift() : new Map<string, string[]>();
-  const rootTargets = [...rootDrift.values()].flat();
-  const configRows: ExtraRow[] = [...rootDrift.keys()].map((name) => ({ name, label: "config" }));
+  const hasRoot = configs !== undefined && configs.sourceList().some((s) => s.root !== undefined);
+  let rootDrift: Map<string, string[]> | undefined = new Map();
+  if (hasRoot) {
+    try {
+      rootDrift = await configs!.rootDrift();
+    } catch (e) {
+      if (!(e instanceof engine.ConfigException)) throw e;
+      rootDrift = undefined;
+    }
+  }
+  const rootTargets = rootDrift === undefined ? [] : [...rootDrift.values()].flat();
+  const configRows: ExtraRow[] =
+    rootDrift === undefined ? [{ name: "configs outside $HOME", label: "config" }] : [...rootDrift.keys()].map((name) => ({ name, label: "config" }));
   const laterTitle = skipLater ? "Later, skipped (--skip-later):" : "Later, after everything above:";
   echoSections(system.machine, [
     { title: "", items: core.items, extra: [...configRows, ...scriptRows(coreScripts)] },
@@ -93,7 +106,7 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
 
   if (
     planInstalls(core).length === 0 && planInstalls(later).length === 0 && coreScripts.length === 0 && laterScripts.length === 0 &&
-    rootTargets.length === 0
+    rootTargets.length === 0 && rootDrift !== undefined
   ) {
     echo("\nNothing to do.");
     return;
@@ -101,8 +114,9 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
   if (dryRun) return;
   confirmOrAbort(yes);
   // One password for both phases, kept fresh until the later phase ends.
-  if (configs !== undefined && rootTargets.length > 0) await refuseEdited(configs, rootTargets);
-  let needsSudo = configs !== undefined && rootTargets.length > 0 && (await configs.rootNeedsSudo(rootTargets));
+  if (configs !== undefined && rootTargets.length > 0) await withSudo(a.runner, () => refuseEdited(configs, rootTargets));
+  let needsSudo =
+    rootDrift === undefined || (configs !== undefined && rootTargets.length > 0 && (await withSudo(a.runner, () => configs.rootNeedsSudo(rootTargets))));
   for (const item of [...planInstalls(core), ...planInstalls(later)]) needsSudo = needsSudo || item.sudo;
   for (const name of [...coreScripts, ...laterScripts]) {
     if (needsSudo) break;
@@ -126,10 +140,16 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
   };
 
   let outcomes = await installPrograms(core, manifest);
-  if (configs !== undefined && rootTargets.length > 0) {
-    echo("\n" + Style.accent("==> configs " + [...rootDrift.keys()].join(", ")));
-    const code = await a.runner.inherit(await configs.applyCommand(rootTargets, false));
-    if (code !== 0) throw new engine.ConfigException("chezmoi apply failed (exit " + code + ")");
+  if (configs !== undefined && hasRoot) {
+    // Worked out now when it couldn't be before (chezmoi just installed).
+    const drift = rootDrift ?? (await withSudo(a.runner, () => configs.rootDrift()));
+    const targets = [...drift.values()].flat();
+    if (targets.length > 0) {
+      if (rootDrift === undefined) await refuseEdited(configs, targets);
+      echo("\n" + Style.accent("==> configs " + [...drift.keys()].join(", ")));
+      const code = await a.runner.inherit(await configs.applyCommand(targets, false));
+      if (code !== 0) throw new engine.ConfigException("chezmoi apply failed (exit " + code + ")");
+    }
   }
   await runScripts(coreScripts);
   if (planInstalls(later).length > 0 || laterScripts.length > 0) {

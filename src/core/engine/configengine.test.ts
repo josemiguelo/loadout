@@ -4,7 +4,10 @@ import { manifestOf, pm, runs, via } from "../coretest/coretest.ts";
 import { exit, newRunner, type Runner, stderr, stdout } from "../exec/fakeexec/fakeexec.ts";
 import { mapOf } from "../../model/index.ts";
 import { type ConfigEngine, newConfigEngine, newSingleConfigEngine } from "./configengine.ts";
-import { ConfigException } from "./errors.ts";
+import { ConfigException, ConfigNeedsSudoException } from "./errors.ts";
+import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { newStatusEngine, toolDownMessage } from "./statusengine.ts";
 import { contains, laptop, refused, repoFrame } from "./testhelpers.ts";
 import { newVersionChecker } from "./versionchecker.ts";
@@ -180,10 +183,12 @@ test("a refresh names the tools and configs that could not answer", async () => 
 
 // ─── a root source: tool folders' root/, applied to / (contract 17) ──
 
-const rootCz =
+const rootArgs =
   "chezmoi --source '/repo/.root' --destination '/' --config /dev/null --config-format toml" +
   " --persistent-state '/var/lib/loadout/chezmoistate.boltdb' --cache '/var/cache/loadout/chezmoi' --no-pager";
-const sudoRootCz = "sudo env HOME='/home/u' LOADOUT_REPO='/repo' LOADOUT_MACHINE='laptop' " + rootCz;
+// Both sides pin one umask: chezmoi computes a file's mode from it.
+const rootCz = "umask 022 && " + rootArgs;
+const sudoRootCz = `sudo sh -c 'umask 022 && exec env "$@"' sh HOME='/home/u' LOADOUT_REPO='/repo' LOADOUT_MACHINE='laptop' ` + rootArgs;
 
 function withRoot(runner: Runner, there: string[] = ["/etc", "/etc/udev"]): ConfigEngine {
   return newConfigEngine(
@@ -226,7 +231,8 @@ function rootRunner(rootStatus: string): Runner {
     .onCommand(rootCz + " managed --include files,symlinks --path-style all --format json", stdout(rootManaged))
     .onCommand(rootCz + " managed --include dirs --path-style all --format json", stdout(rootDirs))
     .onCommand(rootCz + " status --include files,symlinks", stdout(rootStatus))
-    .onCommand(rootCz + " status --exclude dirs", stdout(rootStatus));
+    .onCommand(rootCz + " status --exclude dirs", stdout(rootStatus))
+    .onCommand(rootCz + " status --exclude dirs '/etc/udev/rules.d/50-k.rules'", stdout(rootStatus));
 }
 
 test("a root source's units are the tools its files came from, its targets absolute", async () => {
@@ -243,20 +249,38 @@ test("a root source's units are the tools its files came from, its targets absol
 });
 
 test("a root source applies as root in two passes, leaving folders already there alone", async () => {
-  const runner = rootRunner(" A etc/udev/rules.d/50-k.rules\n").onCommand(
-    rootCz + " status --exclude dirs '/etc/udev/rules.d/50-k.rules'",
-    stdout(" A etc/udev/rules.d/50-k.rules\n"),
-  );
-  const engine = withRoot(runner);
+  const engine = withRoot(rootRunner(" A etc/udev/rules.d/50-k.rules\n"));
   expect(await engine.rootNeedsSudo(undefined)).toBe(true);
   const apply = await engine.applyCommand(["/etc/udev/rules.d/50-k.rules"], false);
-  const steps = apply.line.split(" && ");
-  expect(steps[0]).toBe("sudo mkdir -p '/var/lib/loadout' '/var/cache/loadout/chezmoi'");
-  // Pass 1: the folders not there yet, and the one whose source name carries an attribute.
-  expect(steps[1]).toBe(sudoRootCz + " apply --no-tty --include dirs '/etc/udev/rules.d' '/etc/modprobe.d'");
-  // Pass 2: everything else, without folders.
-  expect(steps[2]).toBe(sudoRootCz + " apply --no-tty --exclude dirs '/etc/udev/rules.d/50-k.rules'");
-  expect(steps[3]).toBe("if [ -e '/var/lib/loadout/chezmoistate.boltdb' ]; then sudo chmod 0644 '/var/lib/loadout/chezmoistate.boltdb'; fi");
+  expect(apply.line).toBe(
+    "( sudo mkdir -p '/var/lib/loadout' '/var/cache/loadout/chezmoi'" +
+      // Pass 1: the folders not there yet, and the one whose source name carries an attribute.
+      " && " + sudoRootCz + " apply --no-tty --include dirs '/etc/udev/rules.d' '/etc/modprobe.d'" +
+      // Pass 2: everything else, without folders.
+      " && " + sudoRootCz + " apply --no-tty --exclude dirs '/etc/udev/rules.d/50-k.rules'" +
+      // The state left readable even when a pass failed, and the apply's own exit kept.
+      "; rc=$?; if [ -e '/var/lib/loadout/chezmoistate.boltdb' ]; then sudo chmod 0755 '/var/lib/loadout'; sudo chmod 0644 '/var/lib/loadout/chezmoistate.boltdb'; fi; exit $rc )",
+  );
+});
+
+test("the state stays readable after a failed apply, and the exit is the apply's", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rootapply-"));
+  const state = join(dir, "state");
+  writeFileSync(state, "");
+  chmodSync(state, 0o600);
+  const line = "( false; rc=$?; if [ -e '" + state + "' ]; then chmod 0644 '" + state + "'; fi; exit $rc ) && echo next";
+  const r = Bun.spawnSync(["sh", "-c", line]);
+  expect(r.exitCode).toBe(1);
+  expect(r.stdout.toString()).toBe("");
+  expect((statSync(state).mode & 0o777).toString(8)).toBe("644");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("apply's own flags (--dry-run, --verbose) go to both root passes", async () => {
+  const engine = withRoot(rootRunner(" A etc/udev/rules.d/50-k.rules\n"));
+  const line = (await engine.applyCommand(["/etc/udev/rules.d/50-k.rules"], false, ["--dry-run", "-v"])).line;
+  expect(line).toContain(" apply --no-tty '--dry-run' '-v' --include dirs ");
+  expect(line).toContain(" apply --no-tty '--dry-run' '-v' --exclude dirs ");
 });
 
 test("a root source with nothing to do isn't applied, so nothing asks for sudo", async () => {
@@ -268,7 +292,30 @@ test("a root source with nothing to do isn't applied, so nothing asks for sudo",
 test("a root target this user can't read is observed with sudo when that needs no password", async () => {
   const runner = rootRunner("")
     .onCommand(rootCz + " status --include files,symlinks", stderr("chezmoi: open /etc/sudoers.d/x: permission denied"), exit(1))
+    .onCommand("sudo -n true", stdout(""))
     .onCommand(sudoRootCz.replace(/^sudo /, "sudo -n ") + " status --include files,symlinks", stdout(" M etc/modprobe.d/t2.conf\n"));
   const observed = await withRoot(runner).observe(new Map());
   configEq({ status: "drifted", files: ["/etc/modprobe.d/t2.conf"] }, observed.get("/t2"));
+});
+
+test("a root source that needs sudo's password leaves the other units observed, and its own unknown", async () => {
+  const runner = rootRunner("")
+    .onCommand(czStatus, stdout(" M .zshenv\n"))
+    .onCommand(rootCz + " status --include files,symlinks", stderr("chezmoi: open /etc/sudoers.d/x: permission denied"), exit(1))
+    .onCommand("sudo -n true", stderr("sudo: a password is required"), exit(1));
+  const engine = withRoot(runner);
+  const observed = await engine.observe(mapOf(["/t2", applied()], [".zshenv", applied()]));
+  configEq({ status: "drifted", files: [".zshenv"] }, observed.get(".zshenv"));
+  expect(observed.get("/t2")?.status).toBe("unknown");
+  expect(observed.get("/t2")?.reason).toContain("permission denied (it needs sudo)");
+  expect(engine.lastReason()).toContain("(it needs sudo)");
+  // Applying asks for the password: the command can tell.
+  await expect(engine.edited(undefined)).rejects.toBeInstanceOf(ConfigNeedsSudoException);
+});
+
+test("a root source's template error is chezmoi's answer, never retried as root", async () => {
+  const runner = rootRunner("").onCommand(rootCz + " status --include files,symlinks", stderr("chezmoi: template: x:1: boom"), exit(1));
+  const observed = await withRoot(runner).observe(mapOf(["/t2", applied()]));
+  expect(observed.get("/t2")?.reason).toBe("chezmoi: template: x:1: boom");
+  expect(runner.executed().some((c) => c.startsWith("sudo"))).toBe(false);
 });

@@ -7,7 +7,7 @@ import * as loader from "../core/loader/loader.ts";
 import { envVar, selfExecutable } from "../core/platform/platform.ts";
 import { chezmoiDataFiles, lockFileName, Refusal, ToolTooOldException, trimSpace } from "../model/index.ts";
 import { atLeast, installCommand, VERSION } from "../version.ts";
-import { refuseEdited } from "./apply-config.ts";
+import { refuseEdited, withSudo } from "./apply-config.ts";
 import { askForSudoUpfront } from "./converge.ts";
 import type { Command } from "./args.ts";
 import { compileRepo } from "./compile.ts";
@@ -114,9 +114,11 @@ async function runSync(a: AppContext, noPush: boolean, message: string | undefin
   // anything is written: only the user knows which version wins.
   const configs = a.configs();
   if (configs !== undefined) {
-    await refuseEdited(configs, undefined);
-    await askForSudoUpfront(a.runner, await configs.rootNeedsSudo(undefined));
-    const apply = await configs.applyCommand(undefined, false);
+    const apply = await withSudo(a.runner, async () => {
+      await refuseEdited(configs, undefined);
+      await askForSudoUpfront(a.runner, await configs.rootNeedsSudo(undefined));
+      return configs.applyCommand(undefined, false);
+    });
     const result = await spinning("applying configs…", () => a.runner.capture(apply));
     if (!success(result)) {
       let why = " (exit " + result.exitCode + ")";

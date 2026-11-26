@@ -63,6 +63,8 @@ export interface Plan {
   root: Build | undefined;
   tools: Tool[];
   warnings: string[];
+  /** parts is every folder a build is made from (each tool's home/ and root/, and from): carryOver never removes one. */
+  parts: string[];
 }
 
 /** joined is the special files each part may have, joined into one per build. */
@@ -128,7 +130,8 @@ export function planBuild(root: string, layout: RepoLayout, outs?: Outs): Plan |
     rootBuild = plan(root, "root", rootOut, parts, [], links, (target) => (/^(home|Users)(\/|$)/.test(target) ? "is in a home: it goes in home/" : undefined), problems);
   }
   if (problems.length > 0) throw new ManifestException(problems.join("; "));
-  return { home, root: rootBuild, tools, warnings };
+  const parts = [...homeParts.map((pt) => pt.dir), ...roots.map((t) => t.dir + "/root")];
+  return { home, root: rootBuild, tools, warnings, parts };
 }
 
 interface Part {
@@ -308,7 +311,8 @@ export function drift(root: string, p: Plan): Drift {
       const e = b.entries.get(rel);
       if (h.kind === "file" && e?.kind === "link" && !e.generated) {
         out.writes.push({ build: b.out + "/" + rel, source: e.source, target: targetOf(b, rel) });
-      } else if (h.kind === "file" && e === undefined) {
+      } else if (h.kind === "file" && e === undefined && !joined.includes(rel)) {
+        // A joined file no part has any more is compile's leftover, not a stray.
         out.strays.push(b.out + "/" + rel);
       } else if (!fits(root, b, rel, h)) {
         out.stale.push(b.out + "/" + rel);
@@ -325,14 +329,14 @@ export function driftMessage(d: Drift): string | undefined {
     const w = d.writes[0]!;
     const more = d.writes.length > 1 ? " (and " + (d.writes.length - 1) + " more)" : "";
     return (
-      "chezmoi wrote " + w.build + more + ", not " + w.source + " — keep it with `loadout chezmoi re-add " + w.target + "`, " +
-      "or drop it with `git restore " + w.build + "`"
+      "chezmoi wrote " + w.build + more + ", not " + w.source + " — keep it with `loadout chezmoi re-add " + w.target + "` " +
+      "(or copy it over " + w.source + "), or drop it by deleting " + w.build
     );
   }
   if (d.strays.length > 0) {
     return (
-      d.strays[0] + " is from no tool (chezmoi add writes there) — move it into a tool's home/ or root/, " +
-      "or add it again with `loadout chezmoi add --tool <tool> …`"
+      d.strays[0] + " is from no tool (chezmoi add writes there) — add it again with `loadout chezmoi add --tool <tool> …`, " +
+      "move it into a tool's home/ or root/, or delete it"
     );
   }
   if (d.stale.length > 0) return d.stale[0] + " doesn't match the tool folders — run: loadout compile";
@@ -350,6 +354,88 @@ export function snapshot(root: string, b: Build): Snapshot {
     else out.set(rel, { kind: h.kind });
   }
   return out;
+}
+
+/** Carried is what carryOver did, as lines for the user, and the files it couldn't place (from no tool). */
+export interface Carried {
+  done: string[];
+  homeless: string[];
+}
+
+/**
+ * carryOver brings what a chezmoi command did to p's builds over to the
+ * tool folders (contract 3: the user ran that command). before is each
+ * build's snapshot from before the command. A symlink turned file is the
+ * tool file's new content (re-add, merge, an editor that replaces files),
+ * also when chezmoi wrote it before this command (a plain `chezmoi
+ * re-add`); a symlink renamed is the tool file renamed (chattr, a folder's
+ * too); one gone is the tool file deleted (forget); a new file goes into
+ * tool's folder (add). Every change is worked out before any is made: a
+ * new file with no tool to go to leaves everything as it is (homeless).
+ * Folders a rename or deletion empties in a tool folder are removed, or
+ * they'd still be chezmoi source. The caller rebuilds afterwards.
+ */
+export function carryOver(root: string, p: Plan, before: ReadonlyMap<"home" | "root", Snapshot>, tool: string | undefined): Carried {
+  type Change = { kind: "write" | "move" | "delete" | "add"; from: string; to: string; say: string };
+  const changes: Change[] = [];
+  const homeless: string[] = [];
+  const owner = tool === undefined ? undefined : p.tools.find((t) => t.name === tool);
+  if (tool !== undefined && owner === undefined) throw new ManifestException("no tool folder " + tool);
+  for (const b of [p.home, p.root]) {
+    if (b === undefined) continue;
+    const was = before.get(b.side) ?? new Map();
+    const now = snapshot(root, b);
+    const nowSources = new Map<string, string>();
+    for (const [rel, e] of now) if (e.kind === "link") nowSources.set(e.source, rel);
+    for (const [rel, e] of now) {
+      const planned = b.entries.get(rel);
+      if (e.kind !== "file") continue;
+      if (planned?.kind === "link" && !planned.generated) {
+        changes.push({ kind: "write", from: b.out + "/" + rel, to: planned.source, say: targetOf(b, rel) + " → " + planned.source });
+      } else if (planned === undefined && !joined.includes(rel)) {
+        if (owner === undefined) homeless.push(b.out + "/" + rel);
+        else {
+          const to = owner.dir + "/" + b.side + "/" + rel;
+          changes.push({ kind: "add", from: b.out + "/" + rel, to, say: targetOf(b, rel) + " → " + to });
+        }
+      }
+    }
+    for (const [rel, e] of was) {
+      if (e.kind !== "link") continue;
+      const n = now.get(rel);
+      if (n?.kind === "file" || (n?.kind === "link" && n.source === e.source)) continue;
+      const movedTo = nowSources.get(e.source);
+      if (movedTo !== undefined && movedTo !== rel) {
+        const partRoot = e.source.slice(0, e.source.length - rel.length - 1);
+        const to = partRoot + "/" + movedTo;
+        changes.push({ kind: "move", from: e.source, to, say: e.source + " → " + to });
+      } else if (n === undefined) {
+        changes.push({ kind: "delete", from: e.source, to: "", say: "removed " + e.source });
+      }
+    }
+  }
+  if (homeless.length > 0) return { done: [], homeless };
+  const emptied = new Set<string>();
+  for (const c of changes) {
+    const from = path.join(root, c.from);
+    const to = path.join(root, c.to);
+    if (c.kind === "write") fs.copyFileSync(from, to);
+    else if (c.kind === "delete") fs.rmSync(from, { force: true });
+    else {
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.renameSync(from, to);
+    }
+    if (c.kind === "move" || c.kind === "delete") emptied.add(path.dirname(c.from));
+  }
+  // Folders left empty in a tool folder, up to its home/ or root/ (or from).
+  for (const start of emptied) {
+    for (let d = start; ; d = path.posix.dirname(d)) {
+      if (p.parts.includes(d) || d === "." || !p.parts.some((pt) => d.startsWith(pt + "/")) || !fs.existsSync(path.join(root, d))) break;
+      if (fs.readdirSync(path.join(root, d)).length > 0) break;
+      fs.rmdirSync(path.join(root, d));
+    }
+  }
+  return { done: changes.map((c) => c.say), homeless: [] };
 }
 
 /** targetOf is where a build path lands, as the user names it: `~/.zshrc`, `/etc/x`. */

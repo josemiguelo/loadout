@@ -1,7 +1,7 @@
 import { type ConfigState, configApplied, configDrifted, configUnknown } from "../coremodel/coremodel.ts";
 import { type ProcessRunner, type ShellCommand, success } from "../exec/index.ts";
 import { compareStrings, distinct, isBlank, sortedMap, sortedStrings, sortStrings, trimSpace } from "../../model/index.ts";
-import { ConfigException } from "./errors.ts";
+import { ConfigException, ConfigNeedsSudoException } from "./errors.ts";
 import { lines, shellQuote } from "./text.ts";
 
 /** ConfigUnit is one config unit and the targets chezmoi manages in it, relative to the destination. */
@@ -110,18 +110,19 @@ export class ConfigEngine {
   /** managed is each source's managed targets, in source order. */
   private async managed(): Promise<ManagedBy[]> {
     const out: ManagedBy[] = [];
-    for (const source of this.sources) {
-      if (source.root === undefined) {
-        const text = await this.ask(source, "managed --include files,symlinks");
-        out.push({ source, targets: lines(text).filter((line) => !isBlank(line)), units: new Map() });
-        continue;
-      }
-      const listed = await this.managedJSON(source, "files,symlinks");
-      const units = new Map<string, string>();
-      for (const [target, m] of listed) units.set("/" + target, "/" + source.root.toolOf(m.sourceRelative));
-      out.push({ source, targets: [...units.keys()], units });
-    }
+    for (const source of this.sources) out.push(await this.managedBy(source));
     return out;
+  }
+
+  private async managedBy(source: ConfigSource): Promise<ManagedBy> {
+    if (source.root === undefined) {
+      const text = await this.ask(source, "managed --include files,symlinks");
+      return { source, targets: lines(text).filter((line) => !isBlank(line)), units: new Map() };
+    }
+    const listed = await this.managedJSON(source, "files,symlinks");
+    const units = new Map<string, string>();
+    for (const [target, m] of listed) units.set("/" + target, "/" + source.root.toolOf(m.sourceRelative));
+    return { source, targets: [...units.keys()], units };
   }
 
   /** managedJSON is chezmoi's managed entries of the kinds given, target -> source path. */
@@ -155,12 +156,16 @@ export class ConfigEngine {
   /** entries is every target `chezmoi status` reports, over every source. */
   async entries(): Promise<ConfigEntry[]> {
     const entries: ConfigEntry[] = [];
-    for (const source of this.sources) {
-      const text = await this.ask(source, "status --include files,symlinks");
-      const prefix = source.root !== undefined ? "/" : "";
-      for (const line of lines(text)) {
-        if (line.length > 3) entries.push({ target: prefix + line.slice(3), edited: line[0] !== " ", drifted: line[1] !== " " });
-      }
+    for (const source of this.sources) entries.push(...(await this.entriesOf(source)));
+    return entries;
+  }
+
+  private async entriesOf(source: ConfigSource): Promise<ConfigEntry[]> {
+    const entries: ConfigEntry[] = [];
+    const text = await this.ask(source, "status --include files,symlinks");
+    const prefix = source.root !== undefined ? "/" : "";
+    for (const line of lines(text)) {
+      if (line.length > 3) entries.push({ target: prefix + line.slice(3), edited: line[0] !== " ", drifted: line[1] !== " " });
     }
     return entries;
   }
@@ -184,17 +189,25 @@ export class ConfigEngine {
    */
   async observe(previous: ReadonlyMap<string, ConfigState>): Promise<Map<string, ConfigState>> {
     this.reason = undefined;
-    let managed: ManagedBy[];
-    let entries: ConfigEntry[];
-    try {
-      managed = await this.managed();
-      entries = await this.entries();
-    } catch (e) {
-      if (!(e instanceof ConfigException)) throw e;
-      const reason = e.message;
-      this.reason = reason;
+    // A source chezmoi can't answer for (a root config only root reads)
+    // takes down its own units, not the others'.
+    const managed: ManagedBy[] = [];
+    const entries: ConfigEntry[] = [];
+    const down: { root: boolean; reason: string }[] = [];
+    for (const source of this.sources) {
+      try {
+        const m = await this.managedBy(source);
+        entries.push(...(await this.entriesOf(source)));
+        managed.push(m);
+      } catch (e) {
+        if (!(e instanceof ConfigException)) throw e;
+        down.push({ root: source.root !== undefined, reason: e.message });
+      }
+    }
+    if (down.length > 0) this.reason = down[0]!.reason;
+    if (managed.length === 0) {
       const out = new Map<string, ConfigState>();
-      for (const name of sortedStrings(previous.keys())) out.set(name, { status: configUnknown, files: [], reason });
+      for (const name of sortedStrings(previous.keys())) out.set(name, { status: configUnknown, files: [], reason: this.reason! });
       return out;
     }
     const names: string[] = [];
@@ -229,7 +242,13 @@ export class ConfigEngine {
         out.set(name, { status: configDrifted, files });
       }
     }
-    return out;
+    // What the sources that couldn't answer had last time: unknown, with why.
+    for (const d of down) {
+      for (const name of sortedStrings(previous.keys())) {
+        if (!out.has(name) && name.startsWith("/") === d.root) out.set(name, { status: configUnknown, files: [], reason: d.reason });
+      }
+    }
+    return sortedMap(out);
   }
 
   /**
@@ -237,9 +256,10 @@ export class ConfigEngine {
    * without a terminal: it fails instead of asking. force overwrites files
    * edited in place.
    */
-  async applyCommand(targets: readonly string[] | undefined, force: boolean): Promise<ShellCommand> {
+  async applyCommand(targets: readonly string[] | undefined, force: boolean, extra: readonly string[] = []): Promise<ShellCommand> {
     let flags = " apply --no-tty";
     if (force) flags += " --force";
+    for (const f of extra) flags += " " + shellQuote(f);
     if (this.sources.length === 1 && this.sources[0]!.root === undefined) {
       const source = this.sources[0]!;
       const paths = targets !== undefined ? await this.paths(source, targets) : "";
@@ -287,15 +307,20 @@ export class ConfigEngine {
       if (!root.exists(m.absolute) || sourceName !== name) folders.push(m.absolute);
     }
     const run = (args: string) => rootChezmoi(source, root, this.env, root.sudo) + args;
+    const sudo = root.sudo ? "sudo " : "";
     const steps: string[] = [];
-    const dirs = [dirOf(root.state), root.cache].map(shellQuote).join(" ");
-    steps.push((root.sudo ? "sudo " : "") + "mkdir -p " + dirs);
+    const dir = shellQuote(dirOf(root.state));
+    steps.push(sudo + "mkdir -p " + dir + " " + shellQuote(root.cache));
     if (folders.length > 0) steps.push(run(flags + " --include dirs" + folders.map((f) => " " + shellQuote(f)).join("")));
     const paths = targets === undefined ? "" : targets.map((t) => " " + shellQuote(rootPath(root, t))).join("");
     steps.push(run(flags + " --exclude dirs" + paths));
+    // The state stays readable whatever the apply did (observing reads it
+    // as the user), in a subshell so the next source's apply still chains.
     const state = shellQuote(root.state);
-    steps.push("if [ -e " + state + " ]; then " + (root.sudo ? "sudo " : "") + "chmod 0644 " + state + "; fi");
-    return steps.join(" && ");
+    return (
+      "( " + steps.join(" && ") + "; rc=$?; if [ -e " + state + " ]; then " + sudo + "chmod 0755 " + dir + "; " + sudo + "chmod 0644 " + state +
+      "; fi; exit $rc )"
+    );
   }
 
   /**
@@ -352,24 +377,19 @@ export class ConfigEngine {
     const base = root === undefined ? chezmoi(source) : rootChezmoi(source, root, this.env, false);
     let result = await this.runner.capture({ line: base + " " + args, cwd: "", env: this.env });
     if (success(result)) return result.stdout;
-    // A root target this user can't read: sudo, when it needs no password.
-    if (root !== undefined && root.sudo && result.exitCode !== 127) {
+    // A root target (or root's state) this user can't read: again as root,
+    // when sudo needs no password; otherwise the caller may ask for it. Any
+    // other failure (a template's) is chezmoi's answer, never retried as root.
+    if (root !== undefined && root.sudo && /permission denied/i.test(result.stderr)) {
+      if (!success(await this.runner.capture({ line: "sudo -n true", cwd: "", env: undefined }))) {
+        throw new ConfigNeedsSudoException(firstLine(result) + " (it needs sudo)");
+      }
       const asRoot = rootChezmoi(source, root, this.env, true).replace(/^sudo /, "sudo -n ");
-      const again = await this.runner.capture({ line: asRoot + " " + args, cwd: "", env: this.env });
-      if (success(again)) return again.stdout;
-      // sudo wanting a password says nothing about chezmoi: keep chezmoi's own reason.
-      if (!/password/.test(again.stderr)) result = again;
+      result = await this.runner.capture({ line: asRoot + " " + args, cwd: "", env: this.env });
+      if (success(result)) return result.stdout;
     }
     if (result.exitCode === 127) throw new ConfigException("chezmoi is not on PATH");
-    let line = "exit " + result.exitCode;
-    for (const l of [...lines(result.stderr), ...lines(result.stdout)]) {
-      if (!isBlank(l)) {
-        line = trimSpace(l);
-        break;
-      }
-    }
-    if (!line.startsWith("chezmoi")) line = "chezmoi: " + line;
-    throw new ConfigException(line);
+    throw new ConfigException(firstLine(result));
   }
 }
 
@@ -381,6 +401,18 @@ export function newConfigEngine(runner: ProcessRunner, sources: readonly ConfigS
 /** newSingleConfigEngine is chezmoi over one source directory, this repo's. */
 export function newSingleConfigEngine(runner: ProcessRunner, sourceDir: string): ConfigEngine {
   return new ConfigEngine(runner, [{ dir: sourceDir, label: "" }], undefined);
+}
+
+/** firstLine is a failed chezmoi's reason, one line: its first words on stderr, else stdout, else the exit code. */
+function firstLine(result: { exitCode: number; stdout: string; stderr: string }): string {
+  let line = "exit " + result.exitCode;
+  for (const l of [...lines(result.stderr), ...lines(result.stdout)]) {
+    if (!isBlank(l)) {
+      line = trimSpace(l);
+      break;
+    }
+  }
+  return line.startsWith("chezmoi") ? line : "chezmoi: " + line;
 }
 
 /** chezmoiLine is chezmoi over source, as this user: a root source too (reading needs no root). */
@@ -402,9 +434,11 @@ function rootChezmoi(source: ConfigSource, root: RootSide, env: Record<string, s
     "chezmoi --source " + shellQuote(source.dir) + " --destination " + shellQuote(root.destination) +
     " --config /dev/null --config-format toml --persistent-state " + shellQuote(root.state) +
     " --cache " + shellQuote(root.cache) + " --no-pager";
-  if (!asRoot) return args;
+  // One umask on both sides: chezmoi computes a file's mode from it, so an
+  // observer with another umask would see every file drifted.
+  if (!asRoot) return "umask 022 && " + args;
   const vars = { HOME: root.home, ...(env ?? {}) };
-  return "sudo env " + Object.entries(vars).map(([k, v]) => k + "=" + shellQuote(v)).join(" ") + " " + args;
+  return "sudo sh -c 'umask 022 && exec env \"$@\"' sh " + Object.entries(vars).map(([k, v]) => k + "=" + shellQuote(v)).join(" ") + " " + args;
 }
 
 /** rootPath is a root target (`/etc/x`) on the root side's destination. */

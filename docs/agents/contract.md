@@ -475,9 +475,15 @@ Explicit user decisions; don't "improve" them away.
       command wrote into a build (a symlink turned file: re-add, merge;
       a file from no tool: add) is never overwritten: the refresh leaves
       that build alone and every load refuses it, naming `loadout chezmoi
-      re-add <target>` (or a move into a tool's folder); compile refuses
-      it too. A build left behind (a checkout loadout can't write) is
-      refused with "run: loadout compile".
+      re-add <target>` (which carries it, from the plan, even when chezmoi
+      wrote it before this command) or deleting the build's file (the next
+      command relinks it; never `git restore`: builds aren't tracked);
+      compile refuses it too. A joined `.chezmoiignore`/`.chezmoiremove` no
+      part has any more is a leftover the refresh removes, never a stray.
+      A build left behind (a checkout loadout can't write) is refused with
+      "run: loadout compile". The loader compares builds from the canonical
+      repo root, as the refresh makes them, so a checkout reached through a
+      symlink loads.
     - **Root configs**: a root build is one more `ConfigEngine` source
       (the parent's, then the child's), after `$HOME`'s. Its targets are
       absolute (`/etc/…`) and its units are the tools they came from
@@ -485,17 +491,31 @@ Explicit user decisions; don't "improve" them away.
       config and root's state (left readable) and cache (`/var/lib/loadout`,
       `/var/cache/loadout`; macOS `/var/db/loadout`, `/Library/Caches/loadout`),
       retrying with `sudo -n` for a target the user can't read, else
-      `unknown`. Applying runs it as root (`sudo env HOME=… LOADOUT_*`, so
-      `.chezmoi.homeDir` is the user's) in two passes: chezmoi sets every
+      `unknown`; only a `permission denied` is retried as root (a template
+      error is chezmoi's answer, never re-run as root), and when sudo wants
+      a password the source is `unknown` with "(it needs sudo)"
+      (`ConfigNeedsSudoException`): one source chezmoi can't answer for takes
+      down its own units only. A command that applies (`apply-config`,
+      `sync`, setup) asks for the password on that and tries again
+      (`withSudo`). Both sides run under `umask 022`, since chezmoi computes
+      a file's mode from the umask: an observer with another umask would
+      see every file drifted. Applying runs it as root (`sudo sh -c 'umask
+      022 && exec env HOME=… LOADOUT_* chezmoi …'`, so `.chezmoi.homeDir` is
+      the user's) in two passes: chezmoi sets every
       folder in its source to its own mode and replaces a symlinked
       folder (macOS `/etc`), so pass one applies only the folders not
       there yet and those whose source name carries an attribute, pass
-      two everything else with `--exclude dirs`. A root source with
+      two everything else with `--exclude dirs`, in a subshell that leaves
+      root's state (and its folder) readable whatever the passes did. A
+      root source with
       nothing pending isn't applied, so nothing asks for sudo;
       `apply-config` and `sync` ask once, first (askForSudoUpfront).
       `setup-new-machine` applies drifted root configs after the core
       programs (no package overwrites them) and before the core scripts
-      (which may read them), shown as `config` rows in its plan. Every
+      (which may read them), shown as `config` rows in its plan; when the
+      plan can't read them (chezmoi not installed yet, or sudo needed) they
+      are one "configs outside $HOME" row, worked out after the core
+      programs, and sudo is asked up front. Every
       machine gets them; a tool's `.chezmoiignore` keeps them off one.
       `LOADOUT_ROOT_DESTINATION` stands a folder in for `/`, applied
       without sudo: for the integration suite.
@@ -505,13 +525,18 @@ Explicit user decisions; don't "improve" them away.
       path outside `$HOME` goes to the root source, one inside to
       `$HOME`'s; with neither, the commands about every target (apply,
       diff, status, managed, verify, re-add, merge-all…) run over both.
-      `apply` to `/` goes through `applyCommand` (two passes, sudo first).
-      re-add, add, merge, merge-all, chattr, forget and edit are wrapped:
-      each build is snapshotted before and compared after, and what
-      chezmoi did is carried over (a symlink turned file is the tool
-      file's content, renamed is the tool file renamed, gone is the tool
-      file deleted, a new file goes into `--tool <name>`'s folder and is
-      refused without one), then the builds are rewritten. `source-path`
+      `apply` to `/` goes through `applyCommand` (two passes, sudo first),
+      with the user's flags (`--dry-run`, `--verbose`, `--force`) on both;
+      `--include`/`--exclude` are refused there, the passes choose. re-add,
+      add, merge, merge-all, chattr, forget and edit are wrapped: each build
+      is snapshotted before and compared after (configbuild.carryOver), and
+      what chezmoi did is carried over (a file where the plan has a symlink
+      is the tool file's content, a symlink renamed is the tool file renamed,
+      gone is the tool file deleted, a new file goes into `--tool <name>`'s
+      folder, checked before chezmoi runs), every change worked out before
+      any is made: a new file with no tool leaves everything as it is.
+      Folders a rename or deletion empties are pruned up to the tool's
+      `home/`/`root/` (or `from`); then the builds are rewritten. `source-path`
       prints the tool's file, `cd` opens the tools' folder. init, update,
       upgrade, purge, git, destroy and import are refused, each with what
       to run instead. Every

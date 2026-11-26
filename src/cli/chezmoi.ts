@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type Build, drift, driftMessage, planBuild, type Plan, snapshot, type Snapshot, targetOf, writeBuild } from "../core/configbuild/configbuild.ts";
+import { carryOver, drift, driftMessage, planBuild, type Plan, snapshot, type Snapshot, writeBuild } from "../core/configbuild/configbuild.ts";
 import * as engine from "../core/engine/index.ts";
 import { envVar } from "../core/platform/platform.ts";
 import type { Command } from "./args.ts";
@@ -93,6 +93,9 @@ async function runChezmoi(given: string[]): Promise<number> {
   if (home === undefined && !runRoot) throw new engine.ConfigException("this repo has no $HOME configs");
 
   const plan = wrapped.includes(sub ?? "") ? planBuild(root, layout) : undefined;
+  if (tool !== undefined && plan !== undefined && !plan.tools.some((t) => t.name === tool)) {
+    throw new engine.ConfigException("no tool folder " + tool + " (dotfiles' tools: " + layout.build!.tools + ")");
+  }
   const before = plan === undefined ? undefined : snapshots(root, plan);
 
   let code = 0;
@@ -103,22 +106,31 @@ async function runChezmoi(given: string[]): Promise<number> {
   }
   if (runRoot && code === 0) {
     const rootArgs = args.filter((x) => !homePaths.includes(x));
-    if (sub === "apply") code = await applyRoot(configs, rootPaths, rootArgs.includes("--force"));
+    if (sub === "apply") code = await applyRoot(configs, rootPaths, rootArgs.filter((x) => x !== "apply" && !rootPaths.includes(x)));
     else if (sub === "source-path") code = await sourcePath(a.runner, engine.chezmoiLine(rootSource!, env) + words(rootArgs), env);
     else code = await a.runner.inherit({ line: engine.chezmoiLine(rootSource!, env) + words(rootArgs), cwd: "", env });
   }
 
-  if (plan !== undefined && before !== undefined && !carryOver(root, plan, before, tool, layout.build!.tools) && code === 0) code = 1;
+  if (plan !== undefined && before !== undefined && !carry(root, plan, before, tool) && code === 0) code = 1;
   return code;
 }
 
-/** applyRoot is `apply` for the / configs: as root, folders already there left alone (ConfigEngine.applyCommand). */
-async function applyRoot(configs: engine.ConfigEngine, paths: string[], force: boolean): Promise<number> {
+/** rootApplyRefused is apply's flags the / configs can't take: their two passes choose what's applied. */
+const rootApplyRefused = ["--include", "-i", "--exclude", "-x"];
+
+/**
+ * applyRoot is `apply` for the / configs: as root, folders already there
+ * left alone (ConfigEngine.applyCommand), with the user's flags (--dry-run,
+ * --verbose, --force…) on both passes.
+ */
+async function applyRoot(configs: engine.ConfigEngine, paths: string[], flags: string[]): Promise<number> {
   const a = appCtx();
+  const refused = flags.find((f) => rootApplyRefused.some((r) => f === r || f.startsWith(r + "=")));
+  if (refused !== undefined) throw new engine.ConfigException("loadout chezmoi apply: " + refused + " doesn't go with the / configs: name their files instead");
   const targets = (await configs.units()).flatMap((u) => u.targets).filter((t) => t.startsWith("/") && (paths.length === 0 || paths.includes(t)));
   if (targets.length === 0) return 0;
   await askForSudoUpfront(a.runner, await configs.rootNeedsSudo(targets));
-  const apply = await configs.applyCommand(targets, force);
+  const apply = await configs.applyCommand(targets, flags.includes("--force"), flags.filter((f) => f !== "--force"));
   return apply.line === "true" ? 0 : a.runner.inherit(apply);
 }
 
@@ -142,65 +154,24 @@ async function sourcePath(runner: import("../core/exec/index.ts").ProcessRunner,
   return 0;
 }
 
-function snapshots(root: string, plan: Plan): Map<Build, Snapshot> {
-  const out = new Map<Build, Snapshot>();
-  for (const b of [plan.home, plan.root]) if (b !== undefined) out.set(b, snapshot(root, b));
+function snapshots(root: string, plan: Plan): Map<"home" | "root", Snapshot> {
+  const out = new Map<"home" | "root", Snapshot>();
+  for (const b of [plan.home, plan.root]) if (b !== undefined) out.set(b.side, snapshot(root, b));
   return out;
 }
 
 /**
- * carryOver brings what a chezmoi command did to a build over to the tool
- * folders, then rebuilds: a symlink become a file is the tool file's new
- * content (re-add, merge, an editor that replaces files), a symlink renamed
- * is the tool file renamed (chattr), one gone is the tool file deleted
- * (forget), and a new file goes into --tool's folder (add). A new file
- * without --tool stays where it is, and every command refuses until it's
- * moved. False when something is left for the user.
+ * carry brings what the chezmoi command did over to the tool folders
+ * (configbuild.carryOver), says what moved, and rebuilds. False when
+ * something is left for the user: a new file from no tool, or a build
+ * still off.
  */
-function carryOver(root: string, plan: Plan, before: Map<Build, Snapshot>, tool: string | undefined, toolsGlob: string): boolean {
-  const homeless: string[] = [];
-  for (const [b, was] of before) {
-    const now = snapshot(root, b);
-    const nowSources = new Map<string, string>();
-    for (const [rel, e] of now) if (e.kind === "link") nowSources.set(e.source, rel);
-    for (const [rel, e] of was) {
-      if (e.kind !== "link") continue;
-      const n = now.get(rel);
-      if (n?.kind === "file") {
-        fs.copyFileSync(path.join(root, b.out, rel), path.join(root, e.source));
-        echo(" " + Style.ok("✔") + "  " + targetOf(b, rel) + " → " + e.source);
-        continue;
-      }
-      if (n?.kind === "link" && n.source === e.source) continue;
-      const movedTo = nowSources.get(e.source);
-      const partRoot = e.source.slice(0, e.source.length - rel.length - 1);
-      if (movedTo !== undefined && movedTo !== rel) {
-        const dest = partRoot + "/" + movedTo;
-        fs.mkdirSync(path.dirname(path.join(root, dest)), { recursive: true });
-        fs.renameSync(path.join(root, e.source), path.join(root, dest));
-        echo(" " + Style.ok("✔") + "  " + e.source + " → " + dest);
-      } else if (n === undefined) {
-        fs.rmSync(path.join(root, e.source), { force: true });
-        echo(" " + Style.ok("✔") + "  removed " + e.source);
-      }
-    }
-    for (const [rel, e] of now) {
-      if (e.kind !== "file" || was.get(rel)?.kind === "link" || b.entries.get(rel)?.kind === "joined") continue;
-      if (tool === undefined) {
-        homeless.push(b.out + "/" + rel);
-        continue;
-      }
-      const owner = plan.tools.find((t) => t.name === tool);
-      if (owner === undefined) throw new engine.ConfigException("no tool folder " + tool + " (dotfiles' tools: " + toolsGlob + ")");
-      const dest = owner.dir + "/" + b.side + "/" + rel;
-      fs.mkdirSync(path.dirname(path.join(root, dest)), { recursive: true });
-      fs.renameSync(path.join(root, b.out, rel), path.join(root, dest));
-      echo(" " + Style.ok("✔") + "  " + targetOf(b, rel) + " → " + dest);
-    }
-  }
-  if (homeless.length > 0) {
+function carry(root: string, plan: Plan, before: Map<"home" | "root", Snapshot>, tool: string | undefined): boolean {
+  const done = carryOver(root, plan, before, tool);
+  for (const line of done.done) echo(" " + Style.ok("✔") + "  " + line);
+  if (done.homeless.length > 0) {
     echoErr(
-      " " + Style.error("✘") + "  from no tool: " + homeless.join(", ") +
+      " " + Style.error("✘") + "  from no tool: " + done.homeless.join(", ") +
         " — add it with `loadout chezmoi add --tool <tool> …`, or move it into a tool's home/ or root/",
     );
     return false;
