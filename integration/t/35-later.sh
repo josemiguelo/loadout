@@ -101,8 +101,8 @@ echo "$OUT" | grep -q "skipping big" || { echo "$OUT"; fail "the later phase ski
 ok "a later install whose dependency failed in the core phase is skipped"
 
 # --- explain and compile -----------------------------------------------------
-"$BIN" --repo repo --machine m1 explain later-prog | grep -q "later .*a big download" || fail "explain shows a program's later"
-"$BIN" --repo repo --machine m1 explain later-script | grep -q "later .*gigabytes of models" || fail "explain shows a script's later"
+"$BIN" --repo repo --machine m1 explain later-prog | grep -q "canWait .*a big download" || fail "explain shows a program's canWait"
+"$BIN" --repo repo --machine m1 explain later-script | grep -q "canWait .*gigabytes of models" || fail "explain shows a script's canWait"
 ok "explain shows why a step is later"
 
 ts_root bad <<'TS'

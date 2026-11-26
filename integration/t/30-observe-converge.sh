@@ -114,7 +114,7 @@ OUT=$("$BIN" --repo providesrepo --machine m1 install-program app --dry-run 2>&1
 echo "$OUT" | grep -q "flat-runtime" || fail "provider not planned: $OUT"
 echo "$OUT" | grep -q "loadout-test-flat install app" || fail "app not planned: $OUT"
 OUT=$("$BIN" --repo providesrepo --machine m1 explain flat-runtime)
-echo "$OUT" | grep -q "provides.custom.*loadout-test-flat" || fail "explain shows provides: $OUT"
+echo "$OUT" | grep -q "addsToPath.custom.*loadout-test-flat" || fail "explain shows addsToPath: $OUT"
 ok "a probe binary a program earlier in the plan provides isn't required up front"
 
 # --- a provided tool off PATH, where its variant says it lands -------------
@@ -162,9 +162,9 @@ ok "a provided tool off PATH is found, checked and run where its variant says it
 # --- explain ------------------------------------------------------------
 OUT=$("$BIN" --repo repo --machine m1 explain git marker)
 echo "$OUT" | grep -q "program git" || fail "explain prints the program"
-echo "$OUT" | grep -qE "install\.manual +echo install git yourself && false +<- m1" || fail "explain marks this machine's mapped key"
+echo "$OUT" | grep -qE "installCommand\.manual +echo install git yourself && false +<- m1" || fail "explain marks this machine's mapped key"
 echo "$OUT" | grep -q "script marker" || fail "explain prints the script"
-echo "$OUT" | grep -qE "run +file:scripts/marker.sh" || fail "explain prints the script file"
+echo "$OUT" | grep -qE "runCommand +file:scripts/marker.sh" || fail "explain prints the script file"
 "$BIN" --repo repo explain ghost-name >/dev/null 2>&1 && fail "explain of unknown name should fail" || true
 OUT=$("$BIN" --repo repo --machine m1 explain)
 echo "$OUT" | grep -q "program git" && echo "$OUT" | grep -q "script marker" || fail "bare explain covers the whole manifest"
@@ -227,7 +227,7 @@ echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is plann
 OUT=$("$BIN" --repo vdeps --machine m2 install-program tool --dry-run) || fail "the other variant needs no mapping for it"
 echo "$OUT" | grep -q "prereq" && fail "another variant's dependency must not be planned" || true
 OUT=$("$BIN" --repo vdeps --machine m1 explain tool)
-echo "$OUT" | grep -qE "depends-on.withprereq +prereq" || fail "explain shows a variant's depends-on"
+echo "$OUT" | grep -qE "dependsOn.withprereq +prereq" || fail "explain shows a variant's dependsOn"
 ok "a variant's depends-on is planned only on machines mapping that variant"
 
 # --- a failed install skips what needs it -----------------------------------

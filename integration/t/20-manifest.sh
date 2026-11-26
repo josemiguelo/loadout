@@ -300,7 +300,7 @@ compile_repo moved
 "$BIN" --repo moved --machine m1 run-script hello --force >/dev/null || fail "the moved script runs with no edit"
 [ -f moved/maintenance/greetings/hello/hello-ran.txt ] || fail "the moved script ran in its new folder"
 OUT=$("$BIN" --repo moved explain hello)
-echo "$OUT" | grep -qE "run +file:hello.sh" || fail "explain shows the path as written: $OUT"
+echo "$OUT" | grep -qE "runCommand +file:hello.sh" || fail "explain shows the path as written: $OUT"
 ok "a file's declarations take its folder, so moving it needs no edit"
 
 # --- no lock, and a custom state directory ----------------------------------

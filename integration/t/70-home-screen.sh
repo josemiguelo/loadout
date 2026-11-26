@@ -56,7 +56,7 @@ if has_pty; then
     grep -q 'programs  *0/1' tui-nav.programs || fail_frame tui-nav "the sidebar counts what is installed"
     grep -qE '● drifted +pending' tui-nav.scripts || fail_frame tui-nav "moving in the sidebar shows that subject's list"
     grep -qE 'program mytool' tui-nav.inspect || fail_frame tui-nav "i explains the row: $(cat tui-nav.inspect)"
-    grep -qE 'install\.fake +echo installed-mytool' tui-nav.inspect || fail "the inspector shows how it installs"
+    grep -qE 'installCommand\.fake +echo installed-mytool' tui-nav.inspect || fail "the inspector shows how it installs"
     grep -qE '← m1' tui-nav.inspect || fail "and marks this machine's variant"
     grep -qE 'program +missing' tui-nav.inspect || fail "and this machine's verdict"
     grep -qE 'leave the terminal' tui-nav.help || fail "ctrl+g shows every key"
@@ -273,7 +273,7 @@ compile_repo hrepo
 fake_sudo
 "$BIN" --repo hrepo --machine m1 status >/dev/null
 OUT=$("$BIN" --repo hrepo --machine m1 explain gamma)
-echo "$OUT" | grep -q "sudo.hidden" || fail "explain shows the sudo declaration"
+echo "$OUT" | grep -q "needsSudo.hidden" || fail "explain shows the sudo declaration"
 if has_pty; then
     { wait_settled tui-hidden; printf 'l'; sleep 0.3; printf '\r'; wait_frame tui-hidden 'These programs will install'
       printf '\r'; wait_frame tui-hidden 'A step needs your sudo password' '\[sudo\] password for tester'; printf 'secret\r'

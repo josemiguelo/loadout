@@ -41,16 +41,16 @@ async function runInstallers(args: string[]): Promise<void> {
     const add = (label: string, value: string | undefined) => {
       if (value !== undefined) rows.push({ label, value });
     };
-    add("probe", installer.probe);
-    if (installer.params.length > 0) rows.push({ label: "params", value: installer.params.join(", ") });
-    add("install", installer.install);
-    add("upgrade", installer.upgrade);
-    if (installer.sudo) rows.push({ label: "sudo", value: "yes — a run that installs or upgrades through it asks for the password first" });
-    add("check", installer.check);
-    add("regex", installer.regex);
-    add("outdated", installer.outdated);
-    add("outdated-all", installer.outdatedAll);
-    if (installer.requires.length > 0) rows.push({ label: "requires", value: installer.requires.join(", ") });
+    add("neededBinary", installer.probe);
+    if (installer.params.length > 0) rows.push({ label: "installerParams", value: installer.params.join(", ") });
+    add("installCommand", installer.install);
+    add("upgradeCommand", installer.upgrade);
+    if (installer.sudo) rows.push({ label: "needsSudo", value: "yes — a run that installs or upgrades through it asks for the password first" });
+    add("checkCommand", installer.check);
+    add("versionRegex", installer.regex === undefined ? undefined : "/" + installer.regex + "/");
+    add("outdatedCommand", installer.outdated);
+    add("allOutdatedCommand", installer.outdatedAll);
+    if (installer.requires.length > 0) rows.push({ label: "needs", value: installer.requires.join(", ") });
     echoLabelled(rows);
     return;
   }

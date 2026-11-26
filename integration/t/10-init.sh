@@ -184,7 +184,7 @@ import { ripgrep } from "parent/programs/cli.loadout.ts";
 machine("kidbox", { install: [withDnf(ripgrep)] });
 TS
 OUT=$("$BIN" --repo kid compile 2>&1) || fail "a child machine importing from parent/… compiles: $OUT"
-"$BIN" --repo kid --machine kidbox explain ripgrep | grep -qE "install\.dnf +sudo dnf install -y ripgrep .*<- kidbox" || fail "the child installs the parent's program"
+"$BIN" --repo kid --machine kidbox explain ripgrep | grep -qE "installCommand\.dnf +sudo dnf install -y ripgrep .*<- kidbox" || fail "the child installs the parent's program"
 ok "init --parent scaffolds a child repo that compiles against its parent"
 
 "$BIN" --machine kidbox init --parent "$PWD/dad" --name dad --configs kiddots >/dev/null || fail "init --parent --configs scaffolds"

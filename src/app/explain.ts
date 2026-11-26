@@ -133,13 +133,13 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
       const add = (label: string, value: string) => rows.push(row(label, value));
       const from = fromParent(program.origin);
       if (from !== undefined) add("from", from);
-      if (program.version !== undefined) add("version", describeCheck(program.version));
-      else add("version", "(none — status will always be 'unknown')");
-      if (program.dependsOn.length > 0) add("depends-on", program.dependsOn.join(", "));
-      if (program.path.length > 0) add("path", program.path.join(":") + "  (first on PATH for its commands)");
+      if (program.version !== undefined) add("versionCommand", describeCheck(program.version));
+      else add("versionCommand", "(none — status will always be 'unknown')");
+      if (program.dependsOn.length > 0) add("dependsOn", program.dependsOn.join(", "));
+      if (program.path.length > 0) add("searchPath", program.path.join(":") + "  (first on PATH for its commands)");
       if (program.tags.length > 0) add("tags", program.tags.join(", "));
-      if (program.later !== "") add("later", program.later + "  (setup-new-machine installs it after everything else)");
-      if (program.install.size === 0) add("install", "(none — not installable anywhere)");
+      if (program.later !== "") add("canWait", program.later + "  (setup-new-machine installs it after everything else)");
+      if (program.install.size === 0) add("canBeInstalled", "(none — not installable anywhere)");
       const mappedKey = mapping.get(name);
       const isMapped = mappedKey !== undefined;
       for (const [key, variant] of program.install) {
@@ -156,18 +156,18 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
           via = "  [installer: " + installer + " (" + origin + ")]";
         }
         const command = resolved.command ?? "null";
-        const r = row("install." + key, command + via);
+        const r = row("installCommand." + key, command + via);
         if (isMapped && key === mappedKey) r.machine = system.machine;
         rows.push(r);
         if (resolved.check !== undefined && !versionCheckEqual(resolved.check, program.version)) {
-          add("check." + key, describeCheck(resolved.check));
+          add("checkCommand." + key, describeCheck(resolved.check));
         }
-        if (resolved.probe !== undefined) add("probe." + key, resolved.probe);
-        if (resolved.sudo) add("sudo." + key, "yes — a run that installs it asks for the password first");
-        if (variant.dependsOn.length > 0) add("depends-on." + key, variant.dependsOn.join(", "));
+        if (resolved.probe !== undefined) add("neededBinary." + key, resolved.probe);
+        if (resolved.sudo) add("needsSudo." + key, "yes — a run that installs it asks for the password first");
+        if (variant.dependsOn.length > 0) add("dependsOn." + key, variant.dependsOn.join(", "));
         if (variant.provides.length > 0) {
           const provides = variant.provides.map((p) => (p.at !== undefined ? p.binary + " (in " + p.at + ")" : p.binary));
-          add("provides." + key, provides.join(", "));
+          add("addsToPath." + key, provides.join(", "));
         }
       }
       if (!isMapped) {
@@ -197,13 +197,15 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
       if (from !== undefined) add("from", from);
       if (script.module !== undefined) add("module", script.module);
       if (script.rules !== undefined) add("rules", script.rules);
-      if (script.run !== undefined) add("run", script.run);
-      if (script.check !== undefined) add("check", script.check);
-      if (script.after.length > 0) add("after", script.after.join(", "));
+      if (script.run !== undefined) add("runCommand", script.run);
+      if (script.check !== undefined) add("checkCommand", script.check);
+      if (script.after.length > 0) add("runAfter", script.after.join(", "));
       const modes = modeList(script);
-      if (!slicesEqual(modes, ["setup", "maintain"])) add("modes", modes.join(", "));
-      if (script.later !== "") add("later", script.later + "  (setup-new-machine runs it after everything else)");
-      if (script.sudo) add("sudo", "yes — a run that runs it asks for the password first");
+      if (slicesEqual(modes, ["setup"])) add("setupOnly", "yes");
+      else if (slicesEqual(modes, ["maintain"])) add("notDuringSetup", "yes");
+      else if (!slicesEqual(modes, ["setup", "maintain"])) add("modes", modes.length > 0 ? modes.join(", ") : "(none — nothing runs it but run-script)");
+      if (script.later !== "") add("canWait", script.later + "  (setup-new-machine runs it after everything else)");
+      if (script.sudo) add("needsSudo", "yes — a run that runs it asks for the password first");
       const run = machine?.scripts.find((r) => r.name === name);
       if (!declared || run === undefined) {
         add("enabled", "no — run it in machine '" + system.machine + "' or a profile it extends");

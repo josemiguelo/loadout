@@ -168,13 +168,13 @@ test("explain shows a program's variants, marks this machine's, and stops at an 
   expect(git.kind).toBe("program");
   expect(git.description).toBe("vcs");
   expect(git.rows).toEqual([
-    { label: "version", value: "git --version  =~ /" + defaultRegex + "/", machine: "" },
-    { label: "install.dnf", value: "dnf install git  [installer: dnf (repo)]", machine: "m1" },
-    { label: "probe.dnf", value: "dnf", machine: "" },
+    { label: "versionCommand", value: "git --version  =~ /" + defaultRegex + "/", machine: "" },
+    { label: "installCommand.dnf", value: "dnf install git  [installer: dnf (repo)]", machine: "m1" },
+    { label: "neededBinary.dnf", value: "dnf", machine: "" },
   ]);
   expect(git.notes).toEqual([]);
   expect(explained[1]!.items[0]!.rows).toEqual([
-    { label: "run", value: "file:dots.sh", machine: "" },
+    { label: "runCommand", value: "file:dots.sh", machine: "" },
     { label: "enabled", value: "yes (m1)", machine: "" },
   ]);
   try {

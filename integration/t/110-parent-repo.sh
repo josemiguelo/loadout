@@ -176,13 +176,13 @@ ok "a child's diff shows its machines beside the parent's"
 snapshot() { (cd dots && find . -type f ! -name '.stub-*' | LC_ALL=C sort | while read -r f; do printf '%s ' "$f"; cksum < "$f"; done); }
 snapshot > parent.before
 "$BIN" --repo work compile >/dev/null 2>&1 || fail "the child compiles"
-for args in "status" "explain" "explain git" "run where-child" "apply" "diff" "outdated"; do
+for args in "status" "explain" "explain git" "run-script where-child" "apply-config" "diff" "outdated"; do
     # shellcheck disable=SC2086
     cz_loadout --repo work --machine work $args >/dev/null 2>&1 || true
 done
 snapshot > parent.after
 cmp -s parent.before parent.after || fail "no command run on the child writes into the parent: $(diff parent.before parent.after)"
-ok "compile, status, explain, run, apply, diff and outdated on a child leave every file of the parent as it was"
+ok "compile, status, explain, run-script, apply-config, diff and outdated on a child leave every file of the parent as it was"
 
 # --- sync: pull the parent, recompile on its change, push the child only ------
 gitid() { git -C "$1" config user.email test@example.com && git -C "$1" config user.name "Integration Test"; }

@@ -31,7 +31,7 @@ echo "$OUT" | grep -q "sudo" && fail "a run with nothing needing sudo asks nothi
 ok "a run with no step needing sudo doesn't ask for it"
 
 OUT=$("$BIN" --repo srepo --machine m1 explain needs)
-echo "$OUT" | grep -q "sudo .*asks for the password first" || fail "explain shows a script's sudo declaration"
+echo "$OUT" | grep -q "needsSudo .*asks for the password first" || fail "explain shows a script's needsSudo"
 ok "explain shows a declared sudo"
 
 if has_pty; then
