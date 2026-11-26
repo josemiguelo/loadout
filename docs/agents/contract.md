@@ -465,8 +465,13 @@ Explicit user decisions; don't "improve" them away.
       each part's `.chezmoiignore`/`.chezmoiremove` joined into one, the
       root build linking the templates' data from the home build. A
       target two tools land, two names for one target, a tool's `root/`
-      under `/home` or `/Users`, and `from` overlapping a tool are
-      refused. The builds and their data are never committed: compile
+      under `/home` or `/Users`, `from` overlapping a tool, a build inside
+      `from`, the state folder or a tool folder (it would build itself), a
+      dangling symlink and a tool shipping loadout's own data are refused.
+      Names are read as chezmoi reads them (attr.go: each prefix once, in
+      its order, `run_`'s and `create_`'s only after them; the encrypted
+      suffix kept, since it goes only with an encryption loadout doesn't
+      read), so a clash is a real one. The builds and their data are never committed: compile
       writes them, and so does every command as it reads the layout
       (`AppContext.layout`, configbuild.refreshBuilds), so a fresh
       checkout or a pulled change needs no step of its own, and plain
@@ -505,7 +510,16 @@ Explicit user decisions; don't "improve" them away.
       folder in its source to its own mode and replaces a symlinked
       folder (macOS `/etc`), so pass one applies only the folders not
       there yet and those whose source name carries an attribute, pass
-      two everything else with `--exclude dirs`, in a subshell that leaves
+      two everything else with `--exclude dirs`. Pass 1 takes only the
+      folders on the way to the targets asked for (another tool's aren't
+      this apply's), each with `--recursive=false` (chezmoi would descend
+      into folders already there); a folder this user can't look at counts
+      as there (`pathThere`), so it's left alone, never applied as root.
+      chezmoi runs by the path the user finds it at, since sudo's
+      `secure_path` may not have it. Both sides get `LOADOUT_USER`, so a
+      `root/` template names the user the same applied (as root) and
+      observed (as the user), which `.chezmoi.username` doesn't. The two
+      passes run in a subshell that leaves
       root's state (and its folder) readable whatever the passes did. A
       root source with
       nothing pending isn't applied, so nothing asks for sudo;
@@ -520,11 +534,24 @@ Explicit user decisions; don't "improve" them away.
       `LOADOUT_ROOT_DESTINATION` stands a folder in for `/`, applied
       without sudo: for the integration suite.
     - **`loadout chezmoi <command> [args…]`** (cli/chezmoi.ts): chezmoi
-      over this repo's own sources, with the source, `LOADOUT_REPO` and
-      `LOADOUT_MACHINE` given, so a worktree works as everywhere else. A
-      path outside `$HOME` goes to the root source, one inside to
-      `$HOME`'s; with neither, the commands about every target (apply,
-      diff, status, managed, verify, re-add, merge-all…) run over both.
+      over this repo's own sources (never a parent's), with the source,
+      `LOADOUT_REPO` and `LOADOUT_MACHINE` given, so a worktree works as
+      everywhere else. Its arguments are read knowing chezmoi's flags that
+      take a value, so a value is never the command or a path (`--color off
+      update` is refused as update). A target argument of a command that
+      takes them is a path, `~/` and relative ones resolved from the
+      working directory: outside `$HOME` it goes to the root source, inside
+      to `$HOME`'s; with none, the commands about every target (apply,
+      diff, status, managed, verify, re-add, merge-all…) run over both. The
+      flags that point chezmoi elsewhere (`--source`, `--config`,
+      `--persistent-state`, `--cache`, `--working-tree`, `--destination`)
+      are loadout's and refused. A path to `/` names a target or a folder of
+      them, on the destination (a stand-in's too); one that names none is
+      refused. Other commands on `/` run as the user over a temporary copy of
+      root's state, which isn't the user's to write; `edit` runs with
+      `--hardlink=false` (a hard link to a build's relative symlink dangles
+      in chezmoi's temporary folder). `manage` and `unmanage` are add's and
+      forget's aliases, carried the same way.
       `apply` to `/` goes through `applyCommand` (two passes, sudo first),
       with the user's flags (`--dry-run`, `--verbose`, `--force`) on both;
       `--include`/`--exclude` are refused there, the passes choose. re-add,
@@ -538,8 +565,8 @@ Explicit user decisions; don't "improve" them away.
       Folders a rename or deletion empties are pruned up to the tool's
       `home/`/`root/` (or `from`); then the builds are rewritten. `source-path`
       prints the tool's file, `cd` opens the tools' folder. init, update,
-      upgrade, purge, git, destroy and import are refused, each with what
-      to run instead. Every
+      upgrade, purge, git, push, destroy and import are refused, each with
+      what to run instead (push would commit and push from a build). Every
       scaffold has a `tsconfig.json`, the SDKs' types (`node_modules/@types/loadout`), a `.gitignore` for node_modules, and a
       `package.json` whose `@types/bun` only the editor needs.
 

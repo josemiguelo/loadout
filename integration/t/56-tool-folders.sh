@@ -125,7 +125,7 @@ OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 sta
 echo "$OUT" | grep -q '/kb .*drifted' || fail "a root config is a unit named after its tool: $OUT"
 : > "$TF/log"
 OUT=$(LOADOUT_ROOT_DESTINATION=$FAKEROOT tf_loadout --repo repo --machine m1 apply-config /kb 2>&1) || fail "apply-config /kb: $OUT"
-grep -q -- "apply --no-tty --include dirs $FAKEROOT/etc/udev$" "$TF/log" || fail "pass 1 applies only the folder not there yet: $(cat "$TF/log")"
+grep -q -- "apply --no-tty --include dirs --recursive=false $FAKEROOT/etc/udev$" "$TF/log" || fail "pass 1 applies only the folder not there yet: $(cat "$TF/log")"
 grep -q -- "apply --no-tty --exclude dirs $FAKEROOT/etc/udev/kb.rules" "$TF/log" || fail "pass 2 applies the rest without folders: $(cat "$TF/log")"
 grep -q -- "--destination $FAKEROOT --config /dev/null --config-format toml --persistent-state $FAKEROOT/" "$TF/log" ||
     fail "root's chezmoi runs with its own config and state: $(cat "$TF/log")"
@@ -139,3 +139,24 @@ echo "$OUT" | grep -q '/kb *config' || fail "setup plans the root config: $OUT"
 [ "$(echo "$OUT" | grep -n '/kb *config' | cut -d: -f1)" -lt "$(echo "$OUT" | grep -n 'marker *script' | cut -d: -f1)" ] ||
     fail "the root config lands before the scripts: $OUT"
 ok "setup-new-machine applies root configs before the core scripts"
+
+# --- the dotfiles object's mistakes, caught where they're written ---------------------------
+mistake() { # mistake <what> <option> <expected error>
+    rm -rf bad && basic_repo bad
+    repo_opt bad/loadout.ts "$2"
+    mkdir -p bad/tools/kb/root/etc bad/tools/zsh/home && echo r > bad/tools/kb/root/etc/x && echo z > bad/tools/zsh/home/dot_z
+    OUT=$(cd bad && "$BIN" compile 2>&1) && fail "$1 must be refused"
+    echo "$OUT" | grep -qF -- "$3" || fail "$1 is named: $OUT"
+}
+mistake "an unknown dotfiles setting" 'dotfiles: { tools: "tools/*", home: ".home", rot: ".root" }' "repo's dotfiles has no setting 'rot' (its settings: tools, home, root, from)"
+mistake "dotfiles without home" 'dotfiles: { tools: "tools/*", root: ".root" }' "repo's dotfiles needs home"
+mistake "a tool's root/ with no root build" 'dotfiles: { tools: "tools/*", home: ".home" }' "tool kb has root/, and dotfiles has no root to build it into"
+mistake "from overlapping a tool" 'dotfiles: { tools: "tools/*", home: ".home", root: ".root", from: "tools/zsh" }' "overlaps from tools/zsh"
+mistake "a build inside from" 'dotfiles: { tools: "tools/*", home: "dots/build", root: ".root", from: "dots" }' "layout 'dots/build' is inside from 'dots'"
+mistake "a build in the state folder" 'dotfiles: { tools: "tools/*", home: "machines/state/home", root: ".root" }' "is inside the state folder"
+mistake "a build in a tool folder" 'dotfiles: { tools: "tools/*", home: "tools/built", root: ".root" }' "layout 'tools/built' is in a tool folder (tools/*)"
+ok "the dotfiles object's mistakes are refused by compile, each named"
+
+OUT=$("$BIN" --help chezmoi 2>&1) || fail "loadout --help chezmoi: $OUT"
+echo "$OUT" | grep -q 'Run chezmoi over this repo' || fail "loadout --help chezmoi prints its help: $OUT"
+ok "loadout --help chezmoi prints its help"

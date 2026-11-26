@@ -10,6 +10,7 @@ import {
   dependenciesOf,
   distinct,
   globHasWildcard,
+  globMatches,
   globProblem,
   hasSpace,
   installerLibrary,
@@ -127,6 +128,23 @@ function assembleWith(draft: ManifestDraft, files: Files | undefined): Manifest 
     const named = [layout.configs, layout.rootConfigs, layout.build.from].filter((d): d is string => d !== undefined);
     for (const [i, d] of named.entries()) {
       if (named.indexOf(d) !== i) errors.push("layout '" + d + "' is named twice: home, root and from are three folders");
+    }
+    // A build inside what it's built from (or the state) would build itself, deeper each time.
+    const within = (a: string, b: string) => a === b || a.startsWith(b + "/");
+    for (const build of [layout.configs, layout.rootConfigs]) {
+      if (build === undefined) continue;
+      for (const [what, d] of [["from", layout.build.from], ["the state folder", state]] as const) {
+        if (d !== undefined && trimSpace(d) !== "" && (within(build, d) || within(d, build))) {
+          errors.push("layout '" + build + "' is inside " + what + " '" + d + "' (or holds it): a build stays apart");
+        }
+      }
+      const segs = build.split("/");
+      for (let n = 1; n <= segs.length; n++) {
+        if (globMatches(layout.build.tools, segs.slice(0, n).join("/"))) {
+          errors.push("layout '" + build + "' is in a tool folder (" + layout.build.tools + "): a build stays apart");
+          break;
+        }
+      }
     }
   }
   if (layout.rootConfigs !== undefined && layout.build === undefined) errors.push("layout root-configs needs tool folders (dotfiles: { tools, home, root })");

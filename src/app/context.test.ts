@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { installed, missing, newMachineState } from "../core/coremodel/coremodel.ts";
 import { custom, defaultRegex, manifestOf, pm, runs, version, via } from "../core/coretest/coretest.ts";
 import { newDetection } from "../core/detect/detect.ts";
@@ -9,7 +9,7 @@ import { exit, newRunner, type Runner, stderr, stdout } from "../core/exec/fakee
 import { dirFS, encodeLock, type Manifest, mapFS, newInstallVariant, newRepoLayout, sourcesHash } from "../model/index.ts";
 import { typesFile, typesFiles } from "../compile/compile.ts";
 import { VERSION } from "../version.ts";
-import { type AppContext, newAppWith } from "./context.ts";
+import { type AppContext, newAppWith, pathThere } from "./context.ts";
 import { NoSuchItemError } from "./explain.ts";
 import { latestRelease } from "./selfversion.ts";
 
@@ -198,4 +198,19 @@ test("the latest release is cached for 6h, and a stale cache beats nothing", asy
   utimesSync(cacheHome + "/loadout/latest-release", old, old);
   expect(await latestRelease(offline, true)).toBe("9.1.0");
   expect(offline.executed()).toEqual([curl]);
+});
+
+test("pathThere: a path this user can't look at counts as there, so a root apply leaves it alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "paththere-"));
+  mkdirSync(join(dir, "locked/inside"), { recursive: true });
+  expect(pathThere(join(dir, "locked/inside"))).toBe(true);
+  expect(pathThere(join(dir, "missing"))).toBe(false);
+  chmodSync(join(dir, "locked"), 0o000);
+  try {
+    // root reads anything: the test only means something as a user.
+    if (process.getuid?.() !== 0) expect(pathThere(join(dir, "locked/inside"))).toBe(true);
+  } finally {
+    chmodSync(join(dir, "locked"), 0o755);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

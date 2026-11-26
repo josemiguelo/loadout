@@ -4,7 +4,8 @@
 // the home screen implements. Neither side owns these twice, and neither
 // imports the other.
 
-import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { userInfo } from "node:os";
 import { basename, dirname, relative, resolve } from "node:path";
 import { refreshTypes } from "../compile/compile.ts";
 import * as bun from "../core/bun/bun.ts";
@@ -106,21 +107,25 @@ export class AppContext {
       refreshTypes(this.repoRoot);
       // chezmoi's sources built from tool folders aren't committed: every
       // command brings them up to date before chezmoi reads them.
-      if (layout.build !== undefined || layout.parent?.build !== undefined) {
-        let parentRoot = "";
-        try {
-          parentRoot = loader.parentRoot(this.repoRoot, layout, home());
-        } catch {
-          // A missing parent: the load says so.
-        }
-        try {
-          refreshBuilds(this.canonicalRoot(), loader.readManifest(this.repoRoot), parentRoot === "" ? "" : parentRoot);
-        } catch {
-          // The load says what's wrong.
-        }
-      }
+      this.refreshBuildsNow(layout);
       return layout;
     });
+  }
+
+  /** refreshBuildsNow brings the builds of tool folders up to date (configbuild.refreshBuilds); best effort, the load reports what's off. */
+  private refreshBuildsNow(layout: RepoLayout): void {
+    if (layout.build === undefined && layout.parent?.build === undefined) return;
+    let parentRoot = "";
+    try {
+      parentRoot = loader.parentRoot(this.repoRoot, layout, home());
+    } catch {
+      // A missing parent: the load says so.
+    }
+    try {
+      refreshBuilds(this.canonicalRoot(), loader.readManifest(this.repoRoot), parentRoot);
+    } catch {
+      // The load says what's wrong.
+    }
   }
 
   /** stateStore is this repo's state directory. */
@@ -183,8 +188,9 @@ export class AppContext {
    * variants picked): the lock, checked (contract 10).
    */
   loadManifest(): Manifest {
-    // The layout first: reading it brings the builds up to date, which the load checks.
-    this.layout();
+    // The builds up to date first, which the load checks: every load, since
+    // the home screen keeps one layout while the tool folders change.
+    this.refreshBuildsNow(this.layout());
     const manifest = loader.loadRepo(this.repoRoot, home());
     return forMachine(manifest, this.detectSystem().machine);
   }
@@ -266,7 +272,9 @@ export class AppContext {
         sources.push({ dir, label: "", root: rootSide(dir) });
       }
       if (sources.length === 0) return undefined;
-      const env = { LOADOUT_REPO: root, LOADOUT_MACHINE: this.detectSystem().machine };
+      // LOADOUT_USER is the same on both sides of a root config (observed as
+      // the user, applied as root): templates use it, not .chezmoi.username.
+      const env = { LOADOUT_REPO: root, LOADOUT_MACHINE: this.detectSystem().machine, LOADOUT_USER: userInfo().username };
       return engine.newConfigEngine(this.runner, sources, env);
     });
   }
@@ -444,6 +452,21 @@ function rootSide(dir: string): engine.RootSide {
       }
       return sourceRelative.split("/")[0]!;
     },
-    exists: (p: string) => existsSync(p),
+    bin: Bun.which("chezmoi") ?? "chezmoi",
+    exists: pathThere,
   };
+}
+
+/**
+ * pathThere says whether p is there, for a root apply's first pass: a path
+ * this user can't look at (under /root, /var/lib/bluetooth) counts as there,
+ * so it's left alone, never applied as root to a mode the source names.
+ */
+export function pathThere(p: string): boolean {
+  try {
+    lstatSync(p);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== "ENOENT" && (e as NodeJS.ErrnoException).code !== "ENOTDIR";
+  }
 }

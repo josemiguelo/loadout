@@ -49,6 +49,8 @@ export interface RootSide {
   sudo: boolean;
   /** home is the user's HOME, for the templates. */
   home: string;
+  /** bin is chezmoi as this user finds it, absolute when it can be: sudo's PATH may not have it (secure_path). */
+  bin: string;
   /** toolOf is the tool a source path (relative to dir) was built from. */
   toolOf(sourceRelative: string): string;
   /** exists says whether an absolute path is there (a folder chezmoi would create or leave alone). */
@@ -123,6 +125,11 @@ export class ConfigEngine {
     const units = new Map<string, string>();
     for (const [target, m] of listed) units.set("/" + target, "/" + source.root.toolOf(m.sourceRelative));
     return { source, targets: [...units.keys()], units };
+  }
+
+  /** targetsOf is the targets one source manages (a root source's absolute, `/etc/…`). */
+  async targetsOf(source: ConfigSource): Promise<string[]> {
+    return (await this.managedBy(source)).targets;
   }
 
   /** managedJSON is chezmoi's managed entries of the kinds given, target -> source path. */
@@ -300,18 +307,22 @@ export class ConfigEngine {
    * targets: undefined for all. The state is left readable for observing.
    */
   private async rootApply(source: ConfigSource, root: RootSide, flags: string, targets: readonly string[] | undefined): Promise<string> {
+    // Only the folders on the way to the targets asked for (another tool's
+    // aren't this apply's), each alone: chezmoi applying a folder would
+    // descend into the ones already there, which keep their modes.
     const folders: string[] = [];
     for (const [target, m] of await this.managedJSON(source, "dirs")) {
       const name = target.split("/").pop()!;
       const sourceName = m.sourceRelative.split("/").pop()!;
-      if (!root.exists(m.absolute) || sourceName !== name) folders.push(m.absolute);
+      const onTheWay = targets === undefined || targets.some((t) => t.startsWith("/" + target + "/"));
+      if (onTheWay && (!root.exists(m.absolute) || sourceName !== name)) folders.push(m.absolute);
     }
     const run = (args: string) => rootChezmoi(source, root, this.env, root.sudo) + args;
     const sudo = root.sudo ? "sudo " : "";
     const steps: string[] = [];
     const dir = shellQuote(dirOf(root.state));
     steps.push(sudo + "mkdir -p " + dir + " " + shellQuote(root.cache));
-    if (folders.length > 0) steps.push(run(flags + " --include dirs" + folders.map((f) => " " + shellQuote(f)).join("")));
+    if (folders.length > 0) steps.push(run(flags + " --include dirs --recursive=false" + folders.map((f) => " " + shellQuote(f)).join("")));
     const paths = targets === undefined ? "" : targets.map((t) => " " + shellQuote(rootPath(root, t))).join("");
     steps.push(run(flags + " --exclude dirs" + paths));
     // The state stays readable whatever the apply did (observing reads it
@@ -348,8 +359,13 @@ export class ConfigEngine {
   async rootNeedsSudo(targets: readonly string[] | undefined): Promise<boolean> {
     for (const source of this.sources) {
       if (source.root?.sudo !== true) continue;
-      const mine = targets === undefined ? undefined : targets.filter((t) => t.startsWith("/"));
-      if (mine !== undefined && mine.length === 0) continue;
+      // Each source asked about its own targets only: chezmoi refuses a path it doesn't manage.
+      let mine: string[] | undefined;
+      if (targets !== undefined) {
+        const its = await this.targetsOf(source);
+        mine = targets.filter((t) => its.includes(t));
+        if (mine.length === 0) continue;
+      }
       if (await this.rootWork(source, source.root, mine)) return true;
     }
     return false;
@@ -431,7 +447,7 @@ function chezmoi(source: ConfigSource): string {
  */
 function rootChezmoi(source: ConfigSource, root: RootSide, env: Record<string, string> | undefined, asRoot: boolean): string {
   const args =
-    "chezmoi --source " + shellQuote(source.dir) + " --destination " + shellQuote(root.destination) +
+    shellQuote(root.bin) + " --source " + shellQuote(source.dir) + " --destination " + shellQuote(root.destination) +
     " --config /dev/null --config-format toml --persistent-state " + shellQuote(root.state) +
     " --cache " + shellQuote(root.cache) + " --no-pager";
   // One umask on both sides: chezmoi computes a file's mode from it, so an

@@ -131,16 +131,68 @@ test("a snapshot names each symlink's tool file, repo-relative", () => {
   });
 });
 
-test("names land as chezmoi lands them", () => {
-  expect(targetName("private_dot_config", true)).toBe(".config");
-  expect(targetName("exact_private_dot_ssh", true)).toBe(".ssh");
-  expect(targetName("executable_dot_x.tmpl", false)).toBe(".x");
-  expect(targetName("run_onchange_after_reload.sh", false)).toBe("reload.sh");
-  expect(targetName("literal_dot_x", false)).toBe("dot_x");
+test("names land as chezmoi lands them: its own answers, from chezmoi managed", () => {
+  // Each pair is what chezmoi 2.73 said for that source name (no encryption configured).
+  const files: [string, string][] = [
+    ["after_install.sh", "after_install.sh"],
+    ["before_x.txt", "before_x.txt"],
+    ["create_empty_dot_ce", ".ce"],
+    ["create_private_dot_c.tmpl", ".c"],
+    ["dot_l.literal", ".l"],
+    ["dot_t.tmpl", ".t"],
+    ["dot_t2.tmpl.literal", ".t2.tmpl"],
+    ["empty_dot_e", ".e"],
+    ["encrypted_dot_ag.age", ".ag.age"],
+    ["encrypted_private_dot_z.asc", ".z.asc"],
+    ["executable_dot_x.tmpl", ".x"],
+    ["executable_empty_dot_ee", "empty_dot_ee"],
+    ["executable_private_y", "private_y"],
+    ["literal_dot_lit", "dot_lit"],
+    ["modify_private_dot_m", ".m"],
+    ["once_upon.txt", "once_upon.txt"],
+    ["onchange_x.txt", "onchange_x.txt"],
+    ["private_executable_dot_pe", ".pe"],
+    ["private_private_x", "private_x"],
+    ["pubkey.asc", "pubkey.asc"],
+    ["readonly_dot_ro", ".ro"],
+    ["remove_dot_r", ".r"],
+    ["run_once_before_init.sh", "init.sh"],
+    ["run_onchange_after_reload.sh", "reload.sh"],
+    ["run_x.sh", "x.sh"],
+    ["symlink_dot_s.tmpl", ".s"],
+  ];
+  for (const [source, target] of files) expect([source, targetName(source, false)]).toEqual([source, target]);
+  const dirs: [string, string][] = [
+    ["exact_private_dot_dd", ".dd"],
+    ["external_dot_xd", ".xd"],
+    ["literal_dot_ld", "dot_ld"],
+    ["private_exact_pe", "exact_pe"],
+    ["readonly_private_dot_rp", "private_dot_rp"],
+    ["remove_dot_rd", ".rd"],
+    ["private_dot_config", ".config"],
+  ];
+  for (const [source, target] of dirs) expect([source, targetName(source, true)]).toEqual([source, target]);
   const root = repo(kit);
   const plan = planBuild(root, layout())!;
   expect(targetOf(plan.home, "private_dot_config/zsh/dot_zshrc.tmpl")).toBe("~/.config/zsh/.zshrc");
   expect(targetOf(plan.root!, "etc/udev/rules.d/50-k.rules")).toBe("/etc/udev/rules.d/50-k.rules");
+});
+
+test("names chezmoi keeps apart aren't a clash: after_install.sh beside install.sh, pubkey.asc beside pubkey", () => {
+  const root = repo({ ...kit, "tools/zsh/home/after_install.sh": "", "tools/zsh/home/install.sh": "", "tools/zsh/home/pubkey.asc": "", "tools/zsh/home/pubkey": "" });
+  expect(() => planBuild(root, layout())).not.toThrow();
+});
+
+test("what can't be built is refused by name: a dangling symlink, loadout's own data, one .chezmoi file in two tools", () => {
+  const dangling = repo(kit);
+  fs.symlinkSync("nowhere", path.join(dangling, "tools/zsh/home/dot_gone"));
+  expect(() => planBuild(dangling, layout())).toThrow("tools/zsh/home/dot_gone is a symlink to nothing");
+  expect(() => planBuild(repo({ ...kit, "tools/zsh/home/.chezmoidata/loadout.json": "{}" }), layout())).toThrow(
+    "tools/zsh/home/.chezmoidata/loadout.json is loadout's own (the templates' data): rename it",
+  );
+  expect(() => planBuild(repo({ ...kit, "tools/zsh/home/.chezmoiexternal.toml": "", "tools/git/home/.chezmoiexternal.toml": "" }), layout())).toThrow(
+    ".chezmoiexternal.toml is in both git and zsh: one tool keeps it",
+  );
 });
 
 test("the tools glob matches folders, dot folders too", () => {

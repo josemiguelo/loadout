@@ -67,6 +67,9 @@ export interface Plan {
   parts: string[];
 }
 
+/** keepsOwn is what loadout writes into a home build itself: no tool may have it. */
+const keepsOwn = [".chezmoidata/loadout.json", ".chezmoitemplates/loadout/machine"];
+
 /** joined is the special files each part may have, joined into one per build. */
 const joined = [".chezmoiignore", ".chezmoiremove"];
 
@@ -159,7 +162,17 @@ function plan(
       const relPath = rel === "" ? name : rel + "/" + name;
       if (!chezmoiReads(name) || part.skip.includes(relPath)) continue;
       const src = part.dir + "/" + relPath;
-      const stat = fs.statSync(path.join(root, src));
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(path.join(root, src));
+      } catch {
+        problems.push(src + " is a symlink to nothing");
+        continue;
+      }
+      if (part.label !== part.dir && keepsOwn.includes(relPath)) {
+        problems.push(src + " is loadout's own (the templates' data): rename it");
+        continue;
+      }
       if (rel === "" && joined.includes(name)) {
         const list = joinedText.get(name) ?? [];
         list.push("# " + src + "\n" + fs.readFileSync(path.join(root, src), "utf8").replace(/\n?$/, "\n"));
@@ -185,7 +198,7 @@ function plan(
         owner.set(relPath, part.label);
         walk(part, relPath, tPath);
       } else if (prev !== undefined) {
-        problems.push(display(side, tPath) + " is in both " + owner.get(relPath) + " and " + part.label);
+        problems.push((name.startsWith(".chezmoi") ? relPath : display(side, tPath)) + " is in both " + owner.get(relPath) + " and " + part.label + (name.startsWith(".chezmoi") ? ": one tool keeps it" : ""));
       } else {
         entries.set(relPath, { kind: "link", source: src, generated: false });
         owner.set(relPath, part.label);
@@ -491,24 +504,45 @@ function chezmoiReads(name: string): boolean {
   return !name.startsWith(".") || name.startsWith(".chezmoi");
 }
 
-const dirAttrs = ["remove_", "external_", "exact_", "private_", "readonly_"];
-const fileAttrs = ["after_", "before_", "onchange_", "once_", "run_", "create_", "modify_", "remove_", "symlink_", "encrypted_", "private_", "readonly_", "empty_", "executable_"];
-
-/** targetName is the name a source entry lands as, chezmoi's attributes taken off (private_dot_config → .config). */
+/**
+ * targetName is the name a source entry lands as, as chezmoi parses it
+ * (internal/chezmoi/attr.go): a folder's remove_, external_, exact_,
+ * private_, readonly_, each at most once in that order, then dot_ or
+ * literal_; a file's create_, remove_, run_ (once_/onchange_, then
+ * before_/after_), symlink_ or modify_, or else encrypted_, private_,
+ * readonly_, empty_, executable_, each with the prefixes it takes, in
+ * order; then dot_ or literal_, and a .literal or else .tmpl suffix taken
+ * off. An encrypted file keeps its suffix: it goes only with an encryption
+ * set in chezmoi's config, which loadout doesn't read.
+ */
 export function targetName(name: string, isDirectory: boolean): string {
   let n = name;
-  for (let again = true; again; ) {
-    again = false;
-    for (const a of isDirectory ? dirAttrs : fileAttrs) {
-      if (n.startsWith(a)) {
-        n = n.slice(a.length);
-        again = true;
-      }
-    }
+  const take = (prefix: string) => {
+    if (!n.startsWith(prefix)) return false;
+    n = n.slice(prefix.length);
+    return true;
+  };
+  const inOrder = (...prefixes: string[]) => {
+    for (const p of prefixes) take(p);
+  };
+  if (isDirectory) inOrder("remove_", "external_", "exact_", "private_", "readonly_");
+  else if (take("create_")) inOrder("encrypted_", "private_", "readonly_", "empty_", "executable_");
+  else if (take("remove_")) {
+    // A file to remove: no other attributes.
+  } else if (take("run_")) {
+    if (!take("once_")) take("onchange_");
+    if (!take("before_")) take("after_");
+  } else if (take("symlink_")) {
+    // A symlink: no other attributes.
+  } else if (take("modify_")) inOrder("encrypted_", "private_", "readonly_", "executable_");
+  else inOrder("encrypted_", "private_", "readonly_", "empty_", "executable_");
+  if (n.startsWith("dot_")) n = "." + n.slice(4);
+  else take("literal_");
+  if (!isDirectory) {
+    if (n.endsWith(".literal")) n = n.slice(0, -".literal".length);
+    else if (n.endsWith(".tmpl")) n = n.slice(0, -".tmpl".length);
   }
-  if (!isDirectory) n = n.replace(/\.(tmpl|literal|age|asc)$/, "");
-  if (n.startsWith("literal_")) return n.slice("literal_".length);
-  return n.startsWith("dot_") ? "." + n.slice(4) : n;
+  return n;
 }
 
 /** globDirs is the repo folders pattern matches, path-sorted (`.git` and `node_modules` never entered). */

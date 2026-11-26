@@ -183,12 +183,13 @@ test("a refresh names the tools and configs that could not answer", async () => 
 
 // ─── a root source: tool folders' root/, applied to / (contract 17) ──
 
+// chezmoi by the path this user finds it at: sudo's PATH may not have it.
 const rootArgs =
-  "chezmoi --source '/repo/.root' --destination '/' --config /dev/null --config-format toml" +
+  "'chezmoi' --source '/repo/.root' --destination '/' --config /dev/null --config-format toml" +
   " --persistent-state '/var/lib/loadout/chezmoistate.boltdb' --cache '/var/cache/loadout/chezmoi' --no-pager";
 // Both sides pin one umask: chezmoi computes a file's mode from it.
 const rootCz = "umask 022 && " + rootArgs;
-const sudoRootCz = `sudo sh -c 'umask 022 && exec env "$@"' sh HOME='/home/u' LOADOUT_REPO='/repo' LOADOUT_MACHINE='laptop' ` + rootArgs;
+const sudoRootCz = `sudo sh -c 'umask 022 && exec env "$@"' sh HOME='/home/u' LOADOUT_REPO='/repo' LOADOUT_MACHINE='laptop' LOADOUT_USER='u' ` + rootArgs;
 
 function withRoot(runner: Runner, there: string[] = ["/etc", "/etc/udev"]): ConfigEngine {
   return newConfigEngine(
@@ -204,12 +205,13 @@ function withRoot(runner: Runner, there: string[] = ["/etc", "/etc/udev"]): Conf
           cache: "/var/cache/loadout/chezmoi",
           sudo: true,
           home: "/home/u",
+          bin: "chezmoi",
           toolOf: (rel) => (rel.startsWith("etc/udev") ? "keychron" : "t2"),
           exists: (p) => there.includes(p),
         },
       },
     ],
-    { LOADOUT_REPO: "/repo", LOADOUT_MACHINE: "laptop" },
+    { LOADOUT_REPO: "/repo", LOADOUT_MACHINE: "laptop", LOADOUT_USER: "u" },
   );
 }
 
@@ -254,8 +256,9 @@ test("a root source applies as root in two passes, leaving folders already there
   const apply = await engine.applyCommand(["/etc/udev/rules.d/50-k.rules"], false);
   expect(apply.line).toBe(
     "( sudo mkdir -p '/var/lib/loadout' '/var/cache/loadout/chezmoi'" +
-      // Pass 1: the folders not there yet, and the one whose source name carries an attribute.
-      " && " + sudoRootCz + " apply --no-tty --include dirs '/etc/udev/rules.d' '/etc/modprobe.d'" +
+      // Pass 1: the folders on the way to the target that aren't there yet (or
+      // carry an attribute), each alone; t2's modprobe.d isn't this apply's.
+      " && " + sudoRootCz + " apply --no-tty --include dirs --recursive=false '/etc/udev/rules.d'" +
       // Pass 2: everything else, without folders.
       " && " + sudoRootCz + " apply --no-tty --exclude dirs '/etc/udev/rules.d/50-k.rules'" +
       // The state left readable even when a pass failed, and the apply's own exit kept.
@@ -279,7 +282,7 @@ test("the state stays readable after a failed apply, and the exit is the apply's
 test("apply's own flags (--dry-run, --verbose) go to both root passes", async () => {
   const engine = withRoot(rootRunner(" A etc/udev/rules.d/50-k.rules\n"));
   const line = (await engine.applyCommand(["/etc/udev/rules.d/50-k.rules"], false, ["--dry-run", "-v"])).line;
-  expect(line).toContain(" apply --no-tty '--dry-run' '-v' --include dirs ");
+  expect(line).toContain(" apply --no-tty '--dry-run' '-v' --include dirs --recursive=false ");
   expect(line).toContain(" apply --no-tty '--dry-run' '-v' --exclude dirs ");
 });
 
@@ -318,4 +321,39 @@ test("a root source's template error is chezmoi's answer, never retried as root"
   const observed = await withRoot(runner).observe(mapOf(["/t2", applied()]));
   expect(observed.get("/t2")?.reason).toBe("chezmoi: template: x:1: boom");
   expect(runner.executed().some((c) => c.startsWith("sudo"))).toBe(false);
+});
+
+test("applying every root config takes every folder not there yet, or attributed, into pass 1", async () => {
+  const runner = rootRunner(" A etc/udev/rules.d/50-k.rules\n");
+  const line = (await withRoot(runner).applyCommand(undefined, false)).line;
+  expect(line).toContain(" apply --no-tty --include dirs --recursive=false '/etc/udev/rules.d' '/etc/modprobe.d' && ");
+});
+
+test("each root source is asked about its own targets only, a parent's and a child's", async () => {
+  const parentArgs = rootArgs.replace("'/repo/.root'", "'/kid/.loadout-parent/root'");
+  const side = (dir: string) => ({
+    destination: "/",
+    state: "/var/lib/loadout/chezmoistate.boltdb",
+    cache: "/var/cache/loadout/chezmoi",
+    sudo: true,
+    home: "/home/u",
+    bin: "chezmoi",
+    toolOf: (rel: string) => (dir.includes("parent") ? "kb" : "vpn") + (rel ? "" : ""),
+    exists: () => true,
+  });
+  const runner = newRunner()
+    .onCommand("umask 022 && " + parentArgs + " managed --include files,symlinks --path-style all --format json", stdout(JSON.stringify({ "etc/kb": { absolute: "/etc/kb", sourceRelative: "etc/kb" } })))
+    .onCommand(rootCz + " managed --include files,symlinks --path-style all --format json", stdout(JSON.stringify({ "etc/vpn": { absolute: "/etc/vpn", sourceRelative: "etc/vpn" } })))
+    .onCommand(rootCz + " status --exclude dirs '/etc/vpn'", stdout(" M etc/vpn\n"));
+  const engine = newConfigEngine(
+    runner,
+    [
+      { dir: "/kid/.loadout-parent/root", label: "parent dots", root: side("/kid/.loadout-parent/root") },
+      { dir: "/repo/.root", label: "", root: side("/repo/.root") },
+    ],
+    { LOADOUT_REPO: "/repo", LOADOUT_MACHINE: "laptop", LOADOUT_USER: "u" },
+  );
+  expect(await engine.rootNeedsSudo(["/etc/vpn"])).toBe(true);
+  // The parent was never asked about /etc/vpn, which it doesn't manage.
+  expect(runner.executed().some((c) => c.includes(".loadout-parent") && c.includes("status"))).toBe(false);
 });

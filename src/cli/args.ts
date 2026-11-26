@@ -404,6 +404,10 @@ export async function executeCommand(root: Command, args: readonly string[], hoo
       try {
         flags = parseFlags(cmd, args.slice(0, args.length - own.length - 1)).flags;
       } catch (e) {
+        if (e instanceof HelpRequested) {
+          hooks.printHelp(cmd);
+          return;
+        }
         if (e instanceof FlagError) throw hooks.flagError(cmd, e.message);
         throw e;
       }
