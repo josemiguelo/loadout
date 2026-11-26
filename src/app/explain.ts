@@ -220,7 +220,8 @@ export async function explain(a: AppContext, names: readonly string[]): Promise<
       named.items.push(item);
     }
     if (unit !== undefined) {
-      const configsDir = layout.configs ?? "null";
+      // A / config (named /<tool>) comes from the root source, not the home one.
+      const configsDir = (name.startsWith("/") ? layout.rootConfigs : layout.configs) ?? "null";
       const item: Explained = { kind: "config", name, description: "", folder: configsDir + "/", rows: [], notes: [] };
       unit.targets.forEach((target, i) => item.rows.push(row(i === 0 ? "targets" : "", target)));
       const c = observed?.configs.get(name);

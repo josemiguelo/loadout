@@ -37,6 +37,14 @@ real_chezmoi_tests() {
     [ "$(mode "$R_STATE")" = 644 ] || fail "root's state is left readable: $(mode "$R_STATE")"
     ok "a / config is applied and observed under one umask, and root's state stays readable"
 
+    # --- config explain names where each config comes from ---------------------------
+    OUT=$(rc --repo repo --machine m1 config explain 2>&1) || fail "config explain lists every config: $OUT"
+    echo "$OUT" | grep -qE '^config /kb +\.root/$' || fail "a / config comes from the root build: $OUT"
+    echo "$OUT" | grep -qE '^config \.zshenv +\.home/$' || fail "a \$HOME config from the home build: $OUT"
+    OUT=$(rc --repo repo --machine m1 config explain /kb 2>&1) || fail "config explain /kb: $OUT"
+    echo "$OUT" | grep -qE 'observed +applied' || fail "and says it's applied: $OUT"
+    ok "config explain names the / build for a / config and the home build for the rest"
+
     # --- a / file this user can't read takes down only its own unit ----------------------
     chmod 000 "$R/etc/udev/kb.rules"
     OUT=$(rc --repo repo --machine m1 machine status 2>&1)
