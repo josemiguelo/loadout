@@ -59,6 +59,10 @@ export class LiveView {
   private frame = 0;
   private queue: Promise<void> = Promise.resolve();
   private dirty = false;
+  /** repaint says the terminal changed size: the old frame reflowed, so the next draw starts over. */
+  private repaint = false;
+  /** recent is the last keptAbove finished steps' lines, reprinted when the screen starts over. */
+  private recent: string[] = [];
 
   constructor(
     private cols: number,
@@ -97,12 +101,19 @@ export class LiveView {
     this.queue = this.queue.then(() => this.draw());
   }
 
-  /** resize follows the terminal to cols x rows. */
+  /**
+   * resize follows the terminal to cols x rows. The terminal re-wraps what
+   * was drawn at the old width into a different number of rows, so the old
+   * frame can't be found by counting back: the visible screen starts over,
+   * with the last finished steps on top (what came before stays in the
+   * scrollback).
+   */
   resize(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
     this.queue = this.queue.then(() => {
       this.emu.resize(ptyColumns(cols), rows);
+      this.repaint = true;
       this.draw();
     });
   }
@@ -198,6 +209,7 @@ export class LiveView {
       this.pending.push(...lines.map((l) => "  " + Style.dim("│") + " " + l));
     }
     this.pending.push(endLine(step.name, status, note, seconds));
+    this.recent = [...this.recent, endLine(step.name, status, note, seconds)].slice(-keptAbove);
     // The log keeps every step's output, a successful one's too.
     this.logRows(step.startLine, end);
     this.log(plain(endLine(step.name, status, note, seconds)));
@@ -264,7 +276,15 @@ export class LiveView {
     if (this.step === undefined) this.flushPlain();
     const live = this.live();
     let s = "\x1b[?25l";
-    if (this.shown > 0) s += "\r" + (this.at > 0 ? `\x1b[${this.at}A` : "") + "\x1b[J";
+    if (this.repaint) {
+      // The visible screen starts over: home, clear, the last finished steps.
+      s += "\x1b[H\x1b[2J";
+      const fresh = new Set(this.pending);
+      for (const l of this.recent) if (!fresh.has(l)) s += l + "\x1b[K\r\n";
+      this.repaint = false;
+    } else if (this.shown > 0) {
+      s += "\r" + (this.at > 0 ? `\x1b[${this.at}A` : "") + "\x1b[J";
+    }
     for (const l of this.pending) s += l + "\x1b[K\r\n";
     this.pending = [];
     s += live.lines.join("\r\n");

@@ -147,3 +147,35 @@ test("a tall terminal shows more of the running step: all but a few rows", async
   expect(shown.length).toBe(55);
   expect(shown[shown.length - 1]).toBe("  │ line 80");
 });
+
+test("after the terminal shrinks, the screen starts over: one header, no old frame left", async () => {
+  const term = new Emulator({ cols: 120, rows: 30, scrollback: 1000, allowProposedApi: true });
+  let writes: string[] = [];
+  const view = new LiveView(120, 30, (s) => writes.push(s), () => 0);
+  const flush = async () => {
+    for (const w of writes) await new Promise<void>((done) => term.write(w, done));
+    writes = [];
+  };
+  for (const [i, name] of ["a", "b", "c", "d"].entries()) {
+    await view.feed(start(name, i + 1, 5));
+    await view.feed(end("ok"));
+  }
+  await view.feed(start("big", 5, 5, "a long description of what this step does, wide enough to wrap"));
+  await view.feed(Array.from({ length: 40 }, (_, i) => "output line " + (i + 1) + " " + "x".repeat(90)).join("\r\n") + "\r\n");
+  view.tick();
+  await view.feed("");
+  await flush();
+  term.resize(60, 30);
+  view.resize(60, 30);
+  view.tick();
+  await view.feed("");
+  await flush();
+  const b = term.buffer.active;
+  const visible = Array.from({ length: 30 }, (_, y) => b.getLine(b.viewportY + y)!.translateToString(true).trimEnd());
+  expect(visible.filter((l) => / big /.test(l) || /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] big/.test(l)).length).toBe(1);
+  expect(visible.filter((l) => l.includes("5/5")).length).toBe(1);
+  expect(visible.some((l) => /✔ c/.test(l)) && visible.some((l) => /✔ d/.test(l))).toBe(true);
+  expect(visible.some((l) => /✔ a/.test(l))).toBe(false);
+  expect(visible[visible.length - 1]).toMatch(/^ {2}│ /);
+  expect(visible.every((l) => l.length <= 60)).toBe(true);
+});
