@@ -68,7 +68,8 @@ TS
     rm -f live.log
     { wait_screen live.log 'slow-started'; printf '\003'; sleep 3; } | run_live --repo crepo --machine m1 script run --all
     SCREEN=$(plain_screen live.log)
-    echo "$SCREEN" | grep -q "tty-is-pts/" || fail "the step has a controlling terminal: $SCREEN"
+    # A pseudo-terminal: pts/N on Linux, ttysN on macOS (none is ? or ??).
+    echo "$SCREEN" | grep -qE "tty-is-(pts/[0-9]+|ttys[0-9]+)" || fail "the step has a controlling terminal: $SCREEN"
     echo "$SCREEN" | grep -qE "✘ slow +stopped" || fail "Ctrl-C stops the running step: $SCREEN"
     echo "$SCREEN" | grep -q "slow-finished" && fail "before it finishes"
     pgrep -f "sleep 30" >/dev/null 2>&1 && pgrep -a -x sleep | grep -q " 30$" && fail "and leaves nothing running"
