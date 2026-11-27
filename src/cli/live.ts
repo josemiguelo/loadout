@@ -331,13 +331,23 @@ export async function runLive(): Promise<number | undefined> {
   const decoder = new TextDecoder();
   let closed: () => void = () => {};
   const ended = new Promise<void>((done) => (closed = done));
-  const term = new Bun.Terminal({
-    cols: view.ptyCols,
-    rows: stdout.rows ?? 24,
-    data: (_t, data) => void view.feed(decoder.decode(data, { stream: true })),
-    exit: () => closed(),
+  // The terminal's options inline, as the home screen's run panel passes
+  // them: Bun then starts the child in a session of its own with the
+  // pseudo-terminal as its controlling terminal (a Bun.Terminal object,
+  // shareable between spawns, leaves it on ours). So /dev/tty prompts (sudo)
+  // go through the view, and Ctrl-C, typed as a key, makes the
+  // pseudo-terminal signal the inner loadout and its step, as a terminal does.
+  const proc = Bun.spawn([self, ...process.argv.slice(2)], {
+    terminal: {
+      cols: view.ptyCols,
+      rows: stdout.rows ?? 24,
+      name: "xterm-256color",
+      data: (_t, data) => void view.feed(decoder.decode(data, { stream: true })),
+      exit: () => closed(),
+    },
+    env: { ...terminalEnv(process.env), [liveEnv]: "1" },
   });
-  const proc = Bun.spawn([self, ...process.argv.slice(2)], { terminal: term, env: { ...terminalEnv(process.env), [liveEnv]: "1" } });
+  const term = proc.terminal!;
   const stdin = process.stdin;
   const keys = (d: Buffer) => term.write(d);
   stdin.setRawMode(true);
@@ -350,7 +360,8 @@ export async function runLive(): Promise<number | undefined> {
   stdout.on("resize", onResize);
   const timer = setInterval(() => view.tick(), 80);
   try {
-    const code = await proc.exited;
+    // Stopped by a signal (Ctrl-C), it has no exit code: 130, as a shell says.
+    const code = (await proc.exited) ?? 130;
     // The last of its output arrives after it exits.
     await Promise.race([ended, Bun.sleep(1000)]);
     await view.finish();

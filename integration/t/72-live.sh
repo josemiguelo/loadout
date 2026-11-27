@@ -56,4 +56,21 @@ if has_pty; then
     grep -qE "^━━ [12]/2 chatty" "$LOG" || fail "with each step's start line"
     grep -q "$(printf '\033')" "$LOG" && fail "as plain text"
     ok "a live run's log keeps every step's whole output, as plain text, and the run names it"
+
+    # The inner loadout's step has the pseudo-terminal as its controlling
+    # terminal (sudo's /dev/tty, Ctrl-C), and Ctrl-C stops the run.
+    ts_root crepo <<'TS'
+const tty = script("a-tty", { runCommand: "echo tty-is-$(ps -o tty= -p $$ | tr -d ' '); exit 1", checkCommand: "false" });
+const slow = script("slow", { runCommand: "echo slow-started; sleep 30; echo slow-finished", checkCommand: "false" });
+machine("m1", { run: [tty, slow] });
+TS
+    compile_repo crepo
+    rm -f live.log
+    { wait_screen live.log 'slow-started'; printf '\003'; sleep 3; } | run_live --repo crepo --machine m1 script run --all
+    SCREEN=$(plain_screen live.log)
+    echo "$SCREEN" | grep -q "tty-is-pts/" || fail "the step has a controlling terminal: $SCREEN"
+    echo "$SCREEN" | grep -qE "✘ slow +stopped" || fail "Ctrl-C stops the running step: $SCREEN"
+    echo "$SCREEN" | grep -q "slow-finished" && fail "before it finishes"
+    pgrep -f "sleep 30" >/dev/null 2>&1 && pgrep -a -x sleep | grep -q " 30$" && fail "and leaves nothing running"
+    ok "a live step has a terminal of its own, and Ctrl-C stops the run"
 fi
