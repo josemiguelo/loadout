@@ -48,7 +48,7 @@ fi
 
 # An upgrade or a first install? Asked BEFORE overwriting, because the
 # closing instructions ("clone your config repo") are wrong for someone who
-# already has one — `loadout self-upgrade` runs this same script.
+# already has one — `loadout self upgrade` runs this same script.
 previous=""
 if [ -x "$INSTALL_DIR/loadout" ]; then
   previous=$("$INSTALL_DIR/loadout" --version 2>/dev/null | awk '{print $NF}')
@@ -87,9 +87,9 @@ if [ -z "$previous" ]; then
   echo ""
   echo "Next steps:"
   echo "  1. git clone <your config repo> <dir>, then export LOADOUT_REPO=<dir>"
-  echo "     (no repo yet? loadout init <dir>)"
+  echo "     (no repo yet? loadout repo init <dir>)"
   echo "  2. Add machine \"\$(hostname)\" { … } to its machines file, and run"
-  echo "     loadout compile (skip it on a machine that only reads the lock)"
-  echo "  3. loadout setup-new-machine"
-  echo "  4. loadout sync"
+  echo "     loadout repo compile (skip it on a machine that only reads the lock)"
+  echo "  3. loadout machine new"
+  echo "  4. loadout machine sync"
 fi
