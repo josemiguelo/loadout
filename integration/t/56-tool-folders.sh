@@ -92,7 +92,8 @@ OUT=$(tf_loadout --repo repo --machine m1 chezmoi re-add "$TF/home/.zshenv" 2>&1
 [ "$(cat repo/tools/zsh/home/dot_zshenv)" = edited ] || fail "re-add's write lands in the tool's folder: $(cat repo/tools/zsh/home/dot_zshenv)"
 [ -L repo/.home/dot_zshenv ] || fail "the build's symlink is back"
 echo "$OUT" | grep -q '~/.zshenv → tools/zsh/home/dot_zshenv' || fail "it says where the edit went: $OUT"
-grep -q -- "--source $PWD/repo/.home --no-pager re-add $TF/home/.zshenv" "$TF/log" || fail "chezmoi ran over the home build: $(cat "$TF/log")"
+# The repo by its real path, as loadout resolves it (macOS's /var is /private/var).
+grep -q -- "--source $(cd repo && pwd -P)/.home --no-pager re-add $TF/home/.zshenv" "$TF/log" || fail "chezmoi ran over the home build: $(cat "$TF/log")"
 "$BIN" --repo repo --machine m1 program explain git >/dev/null 2>&1 || fail "the repo loads again"
 ok "loadout chezmoi re-add carries chezmoi's write over to the tool's folder"
 
