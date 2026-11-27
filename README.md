@@ -104,7 +104,9 @@ through, stand alone.
 On a terminal, the commands that run steps (`machine new`, `program install`, `script run`,
 `installer upgrade`) show them live: one line per finished step, the running one with a spinner
 and its last lines (a prompt it asks shows there, and what you type goes to it), a failed one's
-whole output kept. `LOADOUT_PLAIN=1` prints every step's output as it comes instead.
+whole output kept. Every step's whole output also goes to the run's log, in
+`~/.local/state/loadout/runs/`, which the run names when it ends. `LOADOUT_PLAIN=1` prints every
+step's output as it comes instead.
 
 ## Quickstart
 

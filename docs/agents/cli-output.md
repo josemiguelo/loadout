@@ -91,9 +91,11 @@
   and a step's prompts work; `Progress` then writes its events as OSC
   sequences, which the outer loadout reads out of the stream. It feeds
   the rest to @xterm/headless and draws: a finished step is one line,
-  the running one a spinner with its last ten lines (where a prompt
-  shows; keys typed go to it), a failed one keeps its whole output, and
-  what's printed between steps (the plan, the confirmation) passes
-  through. Not with `--dry-run`, without a TTY, inside the home screen's
+  the running one a spinner with its last lines (a third of the rows, at
+  least ten; where a prompt shows; keys typed go to it), a failed one
+  keeps its whole output, and what's printed between steps (the plan,
+  the confirmation) passes through. The run's log keeps it all as plain
+  text, every step's output included ($XDG_STATE_HOME/loadout/runs/,
+  the newest 20), and the run ends naming it. Not with `--dry-run`, without a TTY, inside the home screen's
   run panel (LOADOUT_HANDOFF) or with LOADOUT_PLAIN=1 (the integration
   suite sets it; `t/72-live.sh` unsets it).

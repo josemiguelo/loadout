@@ -3,8 +3,10 @@
 // the whole run: sudo's password, asked once, holds for every step, and a
 // step's prompts work as they would on the real terminal), and this outer
 // loadout draws it. A finished step is one line; the step running now shows
-// a spinner and its last lines, where any prompt it asks appears; a failed
-// step's whole output stays. What the inner loadout prints between steps
+// a spinner and its last lines (a third of the terminal's rows, at least
+// ten), where any prompt it asks appears; a failed step's whole output
+// stays. Everything, a successful step's output too, goes to the run's log
+// ($XDG_STATE_HOME/loadout/runs/, the newest 20 kept), named at the end. What the inner loadout prints between steps
 // (the plan, the confirmation) passes through as it is. The inner loadout
 // marks where steps start and end with events (progress.ts) and is
 // otherwise unchanged; keys typed here go to it.
@@ -12,6 +14,8 @@
 // Only on a terminal, and not inside the home screen's run panel (it has its
 // own) or a live run's inner loadout; LOADOUT_PLAIN=1 turns it off.
 
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { Terminal as Emulator } from "@xterm/headless";
 import { selfExecutable } from "../core/platform/platform.ts";
 import { renderRows, terminalEnv } from "../tui/term/term.ts";
@@ -23,8 +27,13 @@ import { codePointCount } from "./table.ts";
 
 /** gutter is what a step's lines are indented by: "  │ ". */
 const gutter = 4;
-/** tailMax is how many of the running step's last lines show. */
-const tailMax = 10;
+/** tailMin is the fewest of the running step's last lines that show; a tall terminal shows a third of its rows. */
+const tailMin = 10;
+/** keptLogs is how many run logs stay (runs/ in loadout's state folder). */
+const keptLogs = 20;
+
+/** plain is s without its SGR escapes: what the run log gets. */
+const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 interface Step {
   name: string;
@@ -56,6 +65,7 @@ export class LiveView {
     private rows: number,
     private readonly out: (s: string) => void,
     private readonly now: () => number = () => performance.now(),
+    private readonly log: (line: string) => void = () => {},
   ) {
     this.emu = new Emulator({ cols: ptyColumns(cols), rows, scrollback: 100_000, allowProposedApi: true });
   }
@@ -102,7 +112,10 @@ export class LiveView {
     this.queue = this.queue.then(() => {
       if (this.step !== undefined) this.endStep("failed", "stopped", (this.now() - this.step.started) / 1000);
       const last = this.lastLine();
-      if (last >= this.flushed) this.pending.push(...this.render(this.flushed, last + 1));
+      if (last >= this.flushed) {
+        this.pending.push(...this.render(this.flushed, last + 1));
+        this.logRows(this.flushed, last + 1);
+      }
       this.flushed = last + 1;
       this.draw();
       this.out("\x1b[?25h");
@@ -129,6 +142,16 @@ export class LiveView {
     return renderRows(this.emu, from, to, this.buffer());
   }
 
+  /** logRows writes rows [from, to) of the normal buffer to the run log, as plain text. */
+  private logRows(from: number, to: number): void {
+    for (let y = from; y < to; y++) this.log(this.buffer().getLine(y)?.translateToString(true) ?? "");
+  }
+
+  /** tail is how many of the running step's last lines show: a third of the rows, at least tailMin, room left for the header. */
+  private tail(): number {
+    return Math.max(1, Math.min(Math.max(tailMin, Math.floor(this.rows / 3)), this.rows - 3));
+  }
+
   private blank(line: number): boolean {
     return (this.buffer().getLine(line)?.translateToString(true) ?? "").trim() === "";
   }
@@ -145,6 +168,8 @@ export class LiveView {
           started: this.now(),
           startLine: this.cursorLine(),
         };
+        this.log("");
+        this.log("━━ " + ev.index + "/" + ev.total + " " + ev.name + (ev.detail === "" ? "" : "  " + ev.detail));
         return;
       case "end":
         this.endStep(ev.status, ev.note, ev.seconds);
@@ -152,6 +177,8 @@ export class LiveView {
       case "phase":
         this.flushPlain();
         this.pending.push("", Style.header("── " + ev.name) + (ev.note === "" ? "" : Style.dim(" (" + ev.note + ")")));
+        this.log("");
+        this.log("── " + ev.name + (ev.note === "" ? "" : " (" + ev.note + ")"));
         return;
     }
   }
@@ -168,6 +195,9 @@ export class LiveView {
       this.pending.push(...lines.map((l) => "  " + Style.dim("│") + " " + l));
     }
     this.pending.push(endLine(step.name, status, note, seconds));
+    // The log keeps every step's output, a successful one's too.
+    this.logRows(step.startLine, end);
+    this.log(plain(endLine(step.name, status, note, seconds)));
     this.flushed = end;
     this.step = undefined;
   }
@@ -176,7 +206,10 @@ export class LiveView {
   private flushPlain(): void {
     if (this.step !== undefined || this.emu.buffer.active !== this.buffer()) return;
     const c = this.cursorLine();
-    if (c > this.flushed) this.pending.push(...this.render(this.flushed, c));
+    if (c > this.flushed) {
+      this.pending.push(...this.render(this.flushed, c));
+      this.logRows(this.flushed, c);
+    }
     this.flushed = Math.max(this.flushed, c);
   }
 
@@ -200,7 +233,7 @@ export class LiveView {
     const lines = [this.header(step)];
     let last = c;
     if (x === 0 && this.blank(c)) last--;
-    const from = Math.max(step.startLine, last - tailMax + 1);
+    const from = Math.max(step.startLine, last - this.tail() + 1);
     if (from > step.startLine) lines.push("  " + Style.dim("│ … " + (from - step.startLine) + " more line(s)"));
     let cursor: [number, number] | undefined;
     for (const [i, l] of this.render(from, last + 1).entries()) {
@@ -270,7 +303,8 @@ export async function runLive(): Promise<number | undefined> {
   const self = selfExecutable();
   if (self === "") return undefined;
   const stdout = process.stdout;
-  const view = new LiveView(stdout.columns ?? 80, stdout.rows ?? 24, (s) => stdout.write(s));
+  const log = openRunLog();
+  const view = new LiveView(stdout.columns ?? 80, stdout.rows ?? 24, (s) => stdout.write(s), undefined, log?.line);
   const decoder = new TextDecoder();
   let closed: () => void = () => {};
   const ended = new Promise<void>((done) => (closed = done));
@@ -297,6 +331,10 @@ export async function runLive(): Promise<number | undefined> {
     // The last of its output arrives after it exits.
     await Promise.race([ended, Bun.sleep(1000)]);
     await view.finish();
+    if (log !== undefined) {
+      await log.close();
+      stdout.write(Style.dim("Full output: " + log.path) + "\n");
+    }
     return code;
   } finally {
     clearInterval(timer);
@@ -305,6 +343,34 @@ export async function runLive(): Promise<number | undefined> {
     stdin.setRawMode(false);
     stdin.pause();
     term.close();
+  }
+}
+
+/**
+ * openRunLog starts this run's log in loadout's state folder
+ * ($XDG_STATE_HOME/loadout/runs/<date>-<time>.log), keeping the newest
+ * keptLogs; undefined when it can't be written (the run goes on without).
+ */
+function openRunLog(): { path: string; line: (s: string) => void; close: () => Promise<void> } | undefined {
+  try {
+    const state = process.env.XDG_STATE_HOME || join(process.env.HOME ?? "", ".local", "state");
+    const dir = join(state, "loadout", "runs");
+    mkdirSync(dir, { recursive: true });
+    const old = readdirSync(dir).filter((f) => f.endsWith(".log")).sort();
+    for (const f of old.slice(0, Math.max(0, old.length - (keptLogs - 1)))) rmSync(join(dir, f), { force: true });
+    const stamp = new Date().toISOString().replace(/[:T]/g, "-").replace(/\..*$/, "");
+    const path = join(dir, stamp + ".log");
+    const writer = Bun.file(path).writer();
+    writer.write("loadout " + process.argv.slice(2).join(" ") + "\n");
+    return {
+      path,
+      line: (s) => void writer.write(s + "\n"),
+      close: async () => {
+        await writer.end();
+      },
+    };
+  } catch {
+    return undefined;
   }
 }
 

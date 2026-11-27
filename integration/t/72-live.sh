@@ -47,4 +47,13 @@ if has_pty; then
     echo "$SCREEN" | grep -qE "✘ asks +exit 3" || fail "the failed step's line says how: $SCREEN"
     echo "$SCREEN" | grep -qE "━━ " && fail "no plain start lines in a live run: $SCREEN"
     ok "on a terminal, steps run live: one line each when done, a failed one's output kept, keys reach its prompt"
+
+    LOG=$(ls "$XDG_STATE_HOME"/loadout/runs/*.log 2>/dev/null | tail -1)
+    [ -n "$LOG" ] || fail "a live run writes its log in the state folder"
+    echo "$SCREEN" | grep -qF "Full output: $LOG" || fail "and names it at the end: $SCREEN"
+    grep -q "chatty-line-3" "$LOG" || fail "the log keeps a successful step's output: $(cat "$LOG")"
+    grep -q "hi-bob" "$LOG" || fail "and a failed one's"
+    grep -qE "^━━ [12]/2 chatty" "$LOG" || fail "with each step's start line"
+    grep -q "$(printf '\033')" "$LOG" && fail "as plain text"
+    ok "a live run's log keeps every step's whole output, as plain text, and the run names it"
 fi
