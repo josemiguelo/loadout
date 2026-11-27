@@ -1,0 +1,321 @@
+# Child repos (contract 18): a repo whose machines use a parent repo's
+# programs, scripts and profiles by name. The parent is basic_repo plus a
+# script that says where it ran; the child declares one machine that
+# installs the parent's git, runs a script of each repo, and installs a
+# program of its own.
+
+basic_repo dots
+# In root.loadout.ts, so it runs from the parent's root.
+cat >> dots/root.loadout.ts <<'TS'
+
+export const whereParent = script("where-parent", {
+  runCommand: "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/parent.txt\"",
+  checkCommand: "test -f \"$WHERE_OUT/parent.txt\"",
+});
+TS
+compile_repo dots
+PARENT=$(cd dots && pwd -P)
+
+# <dir>: the child of dots, uncompiled (the tests compile it themselves). Its
+# machine imports the parent's declarations from the parent's checkout.
+child_repo() {
+    ts_root "$1" "parent: { name: \"dots\", path: \"$PARENT\" }" <<'TS'
+export const whereChild = script("where-child", {
+  runCommand: "printf '%s|%s|%s\\n' \"$LOADOUT_REPO\" \"$PWD\" \"$LOADOUT_PARENT\" > \"$WHERE_OUT/child.txt\"",
+  checkCommand: "test -f \"$WHERE_OUT/child.txt\"",
+});
+TS
+    # Unquoted for $PARENT.
+    ts_file "$1/machines/work.loadout.ts" <<TS
+import { git, whereParent } from "$PARENT/root.loadout.ts";
+import { whereChild } from "../root.loadout.ts";
+
+const worktool = program("worktool", {
+  versionCommand: "echo worktool 1.0",
+  versionRegex: /worktool ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })],
+});
+
+program("forgotten", { canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })] });
+
+machine("work", {
+  install: [git("manual"), worktool],
+  run: [whereParent, whereChild],
+});
+TS
+}
+
+# --- compile -----------------------------------------------------------------
+child_repo work
+OUT=$("$BIN" --repo work repo compile 2>&1) || fail "a child compiles against its parent: $OUT"
+LOCK=work/loadout.lock.json
+grep -q '"parent": {' "$LOCK" && grep -q '"name": "dots"' "$LOCK" || fail "the lock names the parent: $(cat "$LOCK")"
+grep -q '"origin": "parent:' "$LOCK" || fail "the parent's declarations carry parent: origins"
+grep -q '"work": {' "$LOCK" || fail "the child's machine is in the lock"
+grep -qE '"m[12]": \{' "$LOCK" && fail "the parent's machines are not in the child's lock"
+echo "$OUT" | grep -q "program 'forgotten' isn't installed on any machine" || fail "the child's own unused program is reported: $OUT"
+echo "$OUT" | grep -q "warning:.*'marker'" && fail "the parent's declarations are the parent's to judge: $OUT"
+ok "a child repo compiles against its parent: the lock names it, holds the child's machines only, and warns about the child's own"
+
+# --- run: each repo's command in its own checkout ---------------------------
+mkdir -p where
+WHERE_OUT=$PWD/where
+export WHERE_OUT
+CHILD=$(cd work && pwd -P)
+OUT=$("$BIN" --repo work --machine work script run where-parent where-child 2>&1) || fail "the child runs both repos' scripts: $OUT"
+[ "$(cat where/parent.txt)" = "$PARENT|$PARENT|$PARENT" ] ||
+    fail "a parent's script runs in the parent with the parent's LOADOUT_REPO: $(cat where/parent.txt)"
+[ "$(cat where/child.txt)" = "$CHILD|$CHILD|$PARENT" ] ||
+    fail "a child's script runs in the child, and sees LOADOUT_PARENT: $(cat where/child.txt)"
+OUT=$("$BIN" --repo work --machine work machine status 2>&1) || fail "status runs in a child: $OUT"
+echo "$OUT" | grep -q "worktool" && echo "$OUT" | grep -q "git" || fail "status shows both repos' programs: $OUT"
+OUT=$("$BIN" --repo work --machine work script explain where-parent 2>&1) || fail "explain names a parent's script: $OUT"
+echo "$OUT" | grep -qE "from +parent dots \(its root\)" || fail "explain says the script is the parent's: $OUT"
+OUT=$("$BIN" --repo work --machine work machine explain 2>&1)
+echo "$OUT" | grep -qE "parent +dots \($PARENT\)" || fail "explain's machine block names the parent: $OUT"
+[ -f work/machines/state/work.json ] || fail "the child machine's state is in the child"
+[ -e dots/machines/state/work.json ] && fail "and never in the parent"
+ok "a parent's command runs in the parent's checkout with its LOADOUT_REPO; a child's in the child"
+
+# --- staleness and a missing parent -----------------------------------------
+cp dots/root.loadout.ts where.bak
+printf '\n// edited\n' >> dots/root.loadout.ts
+OUT=$("$BIN" --repo work --machine work machine status 2>&1) && fail "a parent edit the child hasn't compiled must be refused"
+echo "$OUT" | grep -q "parent dots: the manifests changed since loadout.lock.json was written — run: loadout repo compile" ||
+    fail "the parent edit is named: $OUT"
+OUT=$("$BIN" --repo work repo compile 2>&1) && fail "a child can't compile against a parent whose own lock is stale"
+echo "$OUT" | grep -q "parent dots: loadout.lock.json is older than its manifests — run: loadout repo compile there first" ||
+    fail "the stale parent lock is named: $OUT"
+cp where.bak dots/root.loadout.ts
+"$BIN" --repo work --machine work machine status >/dev/null 2>&1 || fail "the parent restored, the child loads again"
+mv dots dots.away
+OUT=$("$BIN" --repo work --machine work machine status 2>&1) && fail "a missing parent must be refused"
+echo "$OUT" | grep -q "parent dots is not at $PARENT — clone it there" || fail "the missing parent is named with its path: $OUT"
+mv dots.away dots
+ok "a parent edit, a stale parent lock and a missing parent are each refused by name"
+
+# --- one name, two repos ------------------------------------------------------
+cat >> work/machines/work.loadout.ts <<'TS'
+
+program("git", { canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })] });
+TS
+OUT=$("$BIN" --repo work repo compile 2>&1) && fail "a name both repos declare must be refused"
+echo "$OUT" | grep -q "^error: machines/work.loadout.ts:[0-9]*,[0-9]*: program 'git' is declared twice; first at \.\./dots/root.loadout.ts:[0-9]*,[0-9]*" ||
+    fail "the clash names both declarations, the parent's first: $OUT"
+ok "a program both repos declare is refused, naming where the parent declares it"
+
+# --- configs: the parent's source and the child's ---------------------------
+# A stub chezmoi that answers per source (the --source folder's own files),
+# logs every call with the LOADOUT_REPO and LOADOUT_MACHINE it saw.
+sed -i.bak '/^program("git"/,$d' work/machines/work.loadout.ts && rm -f work/machines/work.loadout.ts.bak
+CZ=$PWD/cz
+mkdir -p "$CZ/bin"
+cat > "$CZ/bin/chezmoi" <<'SH'
+#!/bin/sh
+src=
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --source) src=$2; shift 2 ;;
+    --no-pager) shift ;;
+    *) break ;;
+    esac
+done
+# A source folder that isn't there fails, as chezmoi's stat does.
+[ -z "$src" ] || [ -d "$src" ] || { echo "chezmoi: stat $src: no such file or directory" >&2; exit 1; }
+echo "$(basename "$(dirname "$src")") $* repo=$LOADOUT_REPO machine=$LOADOUT_MACHINE" >> "$CZ/log"
+case "$1" in
+managed) cat "$src/.stub-managed" 2>/dev/null || true ;;
+status) cat "$src/.stub-status" 2>/dev/null || true ;;
+target-path) echo "$CZ/home" ;;
+apply) : > "$src/.stub-status" ;;
+*) echo "stub chezmoi: unexpected $*" >&2; exit 2 ;;
+esac
+SH
+chmod +x "$CZ/bin/chezmoi"
+export CZ
+cz_loadout() { PATH="$CZ/bin:$PATH" "$BIN" "$@"; }
+
+repo_opt dots/loadout.ts 'dotfiles: "configs"'
+grep -q 'dotfiles: "configs"' dots/loadout.ts || fail "the parent fixture declares configs"
+mkdir -p dots/configs
+"$BIN" --repo dots repo compile >/dev/null 2>&1 || fail "the parent compiles with configs"
+repo_opt work/loadout.ts 'dotfiles: "configs"'
+mkdir -p work/configs
+OUT=$("$BIN" --repo work repo compile 2>&1) || fail "the child compiles with configs: $OUT"
+[ "$(grep -c '"configs": "configs"' work/loadout.lock.json)" = 2 ] || fail "the child's lock records its configs and the parent's"
+printf '.config/zsh/.zshrc\n.zshenv\n' > dots/configs/.stub-managed
+printf '.config/zsh/conf.d/zz-work.zsh\n' > work/configs/.stub-managed
+printf ' M .config/zsh/conf.d/zz-work.zsh\n' > work/configs/.stub-status
+OUT=$(cz_loadout --repo work --machine work machine status 2>&1) || fail "status reads both sources: $OUT"
+echo "$OUT" | grep -qE "zsh +drifted" || fail "a unit spanning both repos drifts when the child's file would change: $OUT"
+echo "$OUT" | grep -qE "\.zshenv +applied" || fail "the parent's unit is there too: $OUT"
+grep -q "dots managed .* repo=$CHILD machine=work" "$CZ/log" || fail "chezmoi sees the child as LOADOUT_REPO and the machine: $(cat "$CZ/log")"
+: > "$CZ/log"
+cz_loadout --repo work --machine work config apply >/dev/null 2>&1 || fail "apply runs over both sources"
+grep -n ' apply ' "$CZ/log" | head -1 | grep -q '^[0-9]*:dots apply' || fail "the parent's source applies first: $(cat "$CZ/log")"
+grep -q '^work apply' "$CZ/log" || fail "then the child's: $(cat "$CZ/log")"
+ok "a child's configs are its parent's and its own: units span both, chezmoi sees the child, the parent applies first"
+
+printf '.config/git/config\n' >> work/configs/.stub-managed
+printf '.config/git/config\n' >> dots/configs/.stub-managed
+OUT=$(cz_loadout --repo work --machine work machine status 2>&1)
+echo "$OUT" | grep -q ".config/git/config is managed by parent dots and this repo — a file belongs to one repo" ||
+    fail "a file both repos manage is named in status: $OUT"
+OUT=$(cz_loadout --repo work --machine work config apply git 2>&1) && fail "applying a file both repos manage must be refused"
+echo "$OUT" | grep -q "a file belongs to one repo" || fail "and apply says why: $OUT"
+ok "a file both repos manage is reported and refused, naming both"
+
+# --- the fleet, and the parent left alone -------------------------------------
+sed -i.bak '/^\.config\/git\/config$/d' work/configs/.stub-managed && rm work/configs/.stub-managed.bak
+OUT=$(cz_loadout --repo dots --machine m1 machine status 2>&1); [ -f dots/machines/state/m1.json ] || fail "the parent records its own machine: $OUT"
+OUT=$(cz_loadout --repo work --machine work machine diff 2>&1) || fail "diff runs in a child: $OUT"
+echo "$OUT" | grep -q "work" && echo "$OUT" | grep -q "m1" || fail "the fleet is the parent's machines and the child's: $OUT"
+ok "a child's diff shows its machines beside the parent's"
+
+# Every file under the parent, as it is now (the stub's bookkeeping aside).
+snapshot() { (cd dots && find . -type f ! -name '.stub-*' | LC_ALL=C sort | while read -r f; do printf '%s ' "$f"; cksum < "$f"; done); }
+snapshot > parent.before
+"$BIN" --repo work repo compile >/dev/null 2>&1 || fail "the child compiles"
+for args in "status" "explain" "explain git" "script run where-child" "config apply" "diff" "outdated"; do
+    # shellcheck disable=SC2086
+    cz_loadout --repo work --machine work $args >/dev/null 2>&1 || true
+done
+snapshot > parent.after
+cmp -s parent.before parent.after || fail "no command run on the child writes into the parent: $(diff parent.before parent.after)"
+ok "compile, status, explain, script run, config apply, diff and outdated on a child leave every file of the parent as it was"
+
+# --- sync: pull the parent, recompile on its change, push the child only ------
+gitid() { git -C "$1" config user.email test@example.com && git -C "$1" config user.name "Integration Test"; }
+for repo in dots work; do
+    git -C "$repo" init -q
+    gitid "$repo"
+    git -C "$repo" add -A
+    git -C "$repo" commit -qm "initial" >/dev/null
+    git init -q --bare "$repo.git"
+    git -C "$repo" remote add origin "$PWD/$repo.git"
+    git -C "$repo" push -q -u origin HEAD 2>/dev/null
+done
+# Someone changes the parent elsewhere: a new script in a manifest it had
+# already, compiled and pushed.
+git clone -q dots.git dots-elsewhere
+gitid dots-elsewhere
+cat >> dots-elsewhere/root.loadout.ts <<'TS'
+
+script("later", { runCommand: "true", checkCommand: "true" });
+TS
+"$BIN" --repo dots-elsewhere repo compile >/dev/null 2>&1 || fail "the parent's change compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "a later script" && git -C dots-elsewhere push -q 2>/dev/null
+PARENT_HEAD=$(git -C dots.git rev-parse HEAD)
+OUT=$(cz_loadout --repo work --machine work machine sync 2>&1) || fail "sync pulls the parent and recompiles the child: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" || fail "sync says it recompiles: $OUT"
+grep -q '"later"' work/loadout.lock.json || fail "the child's lock has the parent's new script"
+git -C work.git log -1 --name-only --format=%s | grep -q "loadout.lock.json" || fail "the lock is committed and pushed with the state: $(git -C work.git log -1 --name-only)"
+[ "$(git -C dots.git rev-parse HEAD)" = "$PARENT_HEAD" ] || fail "the child never pushes the parent"
+[ -z "$(git -C dots status --porcelain)" ] || fail "nor leaves anything in the parent's checkout: $(git -C dots status --porcelain)"
+[ "$(git -C dots rev-parse HEAD)" = "$PARENT_HEAD" ] || fail "the parent's checkout is at what was pulled"
+ok "a child's sync pulls its parent, recompiles when the parent changed, and commits and pushes only itself"
+
+# The parent renames its configs folder: the child's sync recompiles and
+# applies from the new folder, not the one its lock named before the pull.
+git -C dots-elsewhere pull -q
+git -C dots-elsewhere mv configs dotfiles
+sed -i.bak 's|dotfiles: "configs"|dotfiles: "dotfiles"|' dots-elsewhere/loadout.ts && rm dots-elsewhere/loadout.ts.bak
+"$BIN" --repo dots-elsewhere repo compile >/dev/null 2>&1 || fail "the parent's rename compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "configs is dotfiles now" && git -C dots-elsewhere push -q 2>/dev/null
+: > "$CZ/log"
+OUT=$(cz_loadout --repo work --machine work machine sync 2>&1) || fail "a child's sync applies from the folder its parent renamed: $OUT"
+grep -q '"configs": "dotfiles"' work/loadout.lock.json || fail "the child's lock names the parent's new folder"
+grep -q '^dots apply' "$CZ/log" || fail "the parent's source is applied: $(cat "$CZ/log")"
+ok "a child's sync applies from a configs folder its parent renamed"
+
+# The parent raises the floor: the child's sync compiles against it, then
+# upgrades, and the sync the upgrade starts is told the lock was compiled.
+# Offline, as in 50-diff-sync: a fake curl answers the release check and an
+# install that swaps a copy of the binary for a stub saying how it was run.
+git -C dots-elsewhere pull -q
+repo_opt dots-elsewhere/loadout.ts 'minLoadoutVersion: "999.0.0"'
+"$BIN" --repo dots-elsewhere repo compile >/dev/null 2>&1 || fail "the parent's floor compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "floor" && git -C dots-elsewhere push -q 2>/dev/null
+mkdir -p self fakecurl
+cp "$BIN" self/loadout
+cat > fakecurl/curl <<EOF2
+#!/bin/sh
+case "\$*" in
+    *api.github.com*) echo '"tag_name": "v999.0.0"' ;;
+    *install.sh*) printf '%s\n' 'printf "#!/bin/sh\necho \\"new loadout: \\\$LOADOUT_SYNC_UPGRADED \\\$LOADOUT_SYNC_RECOMPILED\\"\n" > "$PWD/self/new" && chmod +x "$PWD/self/new" && mv "$PWD/self/new" "$PWD/self/loadout"' ;;
+    *) exit 22 ;;
+esac
+EOF2
+chmod +x fakecurl/curl
+OUT=$(PATH="$CZ/bin:$PWD/fakecurl:$PATH" self/loadout --repo work --machine work machine sync 2>&1) || fail "the child's sync compiles, then upgrades: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" || fail "it compiles first: $OUT"
+echo "$OUT" | grep -q "new loadout: 1 1" || fail "the upgraded sync is told the lock was compiled: $OUT"
+ok "a child's sync that compiles and then upgrades tells the next sync it compiled"
+
+# That next sync finds the lock compiled (parent unchanged since) and commits
+# it with the state.
+git -C dots-elsewhere pull -q
+sed -i.bak '/minLoadoutVersion: "999.0.0"/d' dots-elsewhere/loadout.ts && rm dots-elsewhere/loadout.ts.bak
+"$BIN" --repo dots-elsewhere repo compile >/dev/null 2>&1 || fail "the parent drops its floor"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "no floor" && git -C dots-elsewhere push -q 2>/dev/null
+git -C dots pull -q
+"$BIN" --repo work repo compile >/dev/null 2>&1 || fail "the child compiles against it, as the sync before the upgrade did"
+OUT=$(LOADOUT_SYNC_UPGRADED=1 LOADOUT_SYNC_RECOMPILED=1 cz_loadout --repo work --machine work machine sync 2>&1) || fail "the upgraded sync runs: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" && fail "nothing is compiled again: $OUT"
+git -C work.git log -1 --name-only --format=%s | grep -q "loadout.lock.json" || fail "the lock is committed and pushed with the state: $(git -C work.git log -1 --name-only)"
+[ -z "$(git -C work status --porcelain -- loadout.lock.json)" ] || fail "and nothing of it is left behind: $(git -C work status --porcelain)"
+ok "the sync an upgrade starts commits the lock the sync before it compiled"
+
+# A parent's new manifest, one its include() globs pick up, is a change too:
+# the child's sync recompiles against it.
+git -C dots-elsewhere pull -q
+ts_file dots-elsewhere/programs/newer.loadout.ts <<'TS'
+script("newer", { runCommand: "true", checkCommand: "true" });
+TS
+"$BIN" --repo dots-elsewhere repo compile >/dev/null 2>&1 || fail "the parent's new manifest compiles"
+git -C dots-elsewhere add -A && git -C dots-elsewhere commit -qm "a new manifest" && git -C dots-elsewhere push -q 2>/dev/null
+OUT=$(cz_loadout --repo work --machine work machine sync 2>&1) || fail "the child's sync runs: $OUT"
+echo "$OUT" | grep -q "parent dots changed: compiling" || fail "a parent's new manifest makes the child's sync recompile: $OUT"
+grep -q '"newer"' work/loadout.lock.json || fail "the child's lock has the script of the parent's new manifest"
+ok "a child's sync recompiles when its parent gained a manifest"
+
+# --- a parent with tool folders ---------------------------------------------------
+# Its builds aren't committed, and nothing writes under a parent: the child
+# builds the parent's tool folders into its own .loadout-parent/.
+basic_repo tfdots
+repo_opt tfdots/loadout.ts 'dotfiles: { tools: "tools/*", home: ".home", root: ".root" }'
+mkdir -p tfdots/tools/zsh/home tfdots/tools/kb/root/etc
+echo 'export ZDOTDIR' > tfdots/tools/zsh/home/dot_zshenv
+echo 'rule' > tfdots/tools/kb/root/etc/kb.rules
+cat >> tfdots/root.loadout.ts <<'TS'
+
+export const parentConfigs = script("parent-configs", {
+  runCommand: "printf '%s\\n' \"$LOADOUT_CONFIGS\" > \"$WHERE_OUT/configs.txt\"",
+  checkCommand: "false",
+});
+TS
+compile_repo tfdots
+TFP=$(cd tfdots && pwd -P)
+ts_root tfwork "parent: { name: \"tfdots\", path: \"$TFP\" }" </dev/null
+ts_file tfwork/machines/work.loadout.ts <<TS
+import { parentConfigs } from "$TFP/root.loadout.ts";
+machine("work", { run: [parentConfigs] });
+TS
+OUT=$("$BIN" --repo tfwork repo compile 2>&1) || fail "a child of a parent with tool folders compiles: $OUT"
+grep -q '"tools": "tools/\*"' tfwork/loadout.lock.json || fail "the child's lock records the parent's tool folders"
+before=$(cd tfdots && find . -path ./.git -prune -o -print | sort | xargs ls -ld 2>/dev/null | awk '{print $1, $NF}' | cksum)
+printf '.zshenv\n' > tfdots/tools/zsh/home/.stub-managed 2>/dev/null; rm -f tfdots/tools/zsh/home/.stub-managed
+OUT=$(cz_loadout --repo tfwork --machine work machine status 2>&1) || fail "the child's status runs: $OUT"
+after=$(cd tfdots && find . -path ./.git -prune -o -print | sort | xargs ls -ld 2>/dev/null | awk '{print $1, $NF}' | cksum)
+[ "$before" = "$after" ] || fail "nothing is written under the parent"
+CHILDP=$(cd tfwork && pwd -P)
+[ "$(cd tfwork && realpath .loadout-parent/home/dot_zshenv)" = "$TFP/tools/zsh/home/dot_zshenv" ] ||
+    fail "the child builds the parent's home/ files: $(ls -la tfwork/.loadout-parent/home 2>&1)"
+[ "$(cd tfwork && realpath .loadout-parent/root/etc/kb.rules)" = "$TFP/tools/kb/root/etc/kb.rules" ] || fail "and its root/ files"
+[ -f tfwork/.loadout-parent/home/.chezmoidata/loadout.json ] || fail "with the templates' data"
+grep -q "^loadout-parent managed\|^\.loadout-parent managed" "$CZ/log" || grep -q "loadout-parent" "$CZ/log" ||
+    fail "chezmoi reads the parent's configs from the child's build: $(tail -5 "$CZ/log")"
+mkdir -p where && export WHERE_OUT=$PWD/where
+"$BIN" --repo tfwork --machine work script run parent-configs >/dev/null 2>&1
+[ "$(cat where/configs.txt 2>/dev/null)" = "$CHILDP/.loadout-parent/home" ] || fail "a parent's script sees its configs where the child built them: $(cat where/configs.txt 2>&1)"
+ok "a child builds its parent's tool folders into its own .loadout-parent/, and writes nothing in the parent"

@@ -1,0 +1,95 @@
+#!/bin/sh
+# Install the latest loadout release into ~/.local/bin: one binary, with
+# bun inside it. A ~/.local/share/loadout it finds is left as it was. No
+# sudo.
+#
+#   curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh
+#
+# Environment overrides:
+#   LOADOUT_VERSION=v1.0.0   pin a release (default: latest)
+#   LOADOUT_INSTALL_DIR=...  install the binary somewhere else (default: ~/.local/bin)
+set -eu
+
+REPO="josemiguelo/loadout"
+INSTALL_DIR="${LOADOUT_INSTALL_DIR:-$HOME/.local/bin}"
+DOWNLOAD_BASE="${LOADOUT_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download}"
+
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) target="linux-x64" ;;
+  Linux-aarch64 | Linux-arm64) target="linux-arm64" ;;
+  Darwin-arm64) target="macos-arm64" ;;
+  Darwin-x86_64)
+    # uname lies under Rosetta; the real hardware is arm64.
+    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = "1" ]; then
+      target="macos-arm64"
+    else
+      target="macos-x64"
+    fi
+    ;;
+  *)
+    echo "error: no release for $(uname -s)/$(uname -m) (available: linux-x64, linux-arm64, macos-arm64, macos-x64)" >&2
+    exit 1
+    ;;
+esac
+
+# The Linux builds link glibc: on musl (Alpine and the like) the binary
+# would fail with a bare "not found".
+if [ "$(uname -s)" = Linux ] && { ls /lib/ld-musl-* >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; }; then
+  echo "error: loadout's Linux builds need glibc, and this system uses musl" >&2
+  exit 1
+fi
+
+version="${LOADOUT_VERSION:-}"
+if [ -z "$version" ]; then
+  version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+  [ -n "$version" ] || { echo "error: could not determine the latest release of $REPO" >&2; exit 1; }
+fi
+
+# An upgrade or a first install? Asked BEFORE overwriting, because the
+# closing instructions ("clone your config repo") are wrong for someone who
+# already has one — `loadout self upgrade` runs this same script.
+previous=""
+if [ -x "$INSTALL_DIR/loadout" ]; then
+  previous=$("$INSTALL_DIR/loadout" --version 2>/dev/null | awk '{print $NF}')
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+url="$DOWNLOAD_BASE/$version/loadout-$version-$target.tar.gz"
+echo "Downloading loadout $version ($target)..."
+curl -fsSL "$url" -o "$tmp/loadout.tar.gz"
+tar -xzf "$tmp/loadout.tar.gz" -C "$tmp"
+
+# Refuse to install a binary that can't even print its help.
+"$tmp/loadout" --help >/dev/null 2>&1 || {
+  echo "error: downloaded binary failed to run" >&2
+  exit 1
+}
+
+mkdir -p "$INSTALL_DIR"
+mv "$tmp/loadout" "$INSTALL_DIR/loadout"
+chmod +x "$INSTALL_DIR/loadout"
+if [ -n "$previous" ]; then
+  echo "Installed $INSTALL_DIR/loadout ($version, was v$previous)"
+else
+  echo "Installed $INSTALL_DIR/loadout ($version)"
+fi
+
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) echo "note: $INSTALL_DIR is not on your PATH — add it to your shell profile" ;;
+esac
+
+# First install only: someone upgrading already did all of this.
+if [ -z "$previous" ]; then
+  echo ""
+  echo "Next steps:"
+  echo "  1. git clone <your config repo> <dir>, then export LOADOUT_REPO=<dir>"
+  echo "     (no repo yet? loadout repo init <dir>)"
+  echo "  2. Add machine \"\$(hostname)\" { … } to its machines file, and run"
+  echo "     loadout repo compile (skip it on a machine that only reads the lock)"
+  echo "  3. loadout machine new"
+  echo "  4. loadout machine sync"
+fi

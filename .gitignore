@@ -1,0 +1,17 @@
+# Build output (bun run build: build/loadout)
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Claude Code local state
+.claude/settings.local.json*
+
+# Local debugging screenshots shared in-session
+debugging-images/
+node_modules/

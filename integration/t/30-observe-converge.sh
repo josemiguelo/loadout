@@ -1,0 +1,260 @@
+# status observes; machine new / install converge; explain resolves.
+
+basic_repo repo
+
+# --- status -------------------------------------------------------------
+"$BIN" --repo repo --machine m1 machine status >/dev/null || fail "status exits 0"
+[ -f repo/machines/state/m1.json ] || fail "status writes state file"
+grep -q '"status": "installed"' repo/machines/state/m1.json || fail "git detected as installed"
+grep -q '"machine": "m1"' repo/machines/state/m1.json || fail "machine name recorded"
+# The marker script never ran, but its check is observed -> pending.
+grep -q '"marker"' repo/machines/state/m1.json || fail "script check observed on status"
+grep -q '"status": "pending"' repo/machines/state/m1.json || fail "unrun script recorded as pending"
+ok "status detects git, observes script checks, and writes state"
+
+"$BIN" --repo repo --machine m1 machine status --json | grep -q '"schemaVersion": 1' || fail "status --json"
+ok "status --json emits the state document"
+
+# --- machine new (dry run + already installed) ----------------------
+OUT=$("$BIN" --repo repo --machine m1 machine new --dry-run)
+echo "$OUT" | grep -q "git" || fail "dry-run mentions git"
+echo "$OUT" | grep -qE "~ marker +script" || fail "dry-run lists the script"
+[ ! -f repo/marker.txt ] || fail "dry-run must not execute scripts"
+ok "machine new --dry-run plans without executing"
+
+"$BIN" --repo repo --machine m1 machine new --yes --skip-scripts >/dev/null || fail "install (all installed) exits 0"
+ok "machine new with everything installed is a no-op"
+
+# --- install (targeted programs; scripts are run's job) ------------------
+OUT=$("$BIN" --repo repo --machine m1 program install git --dry-run) || fail "install with names exits 0"
+echo "$OUT" | grep -q "git" || fail "install plans the named program"
+echo "$OUT" | grep -q "marker" && fail "install must not touch scripts" || true
+"$BIN" --repo repo --machine m1 program install ghost-prog --dry-run >/dev/null 2>&1 && fail "unknown program should fail" || true
+"$BIN" --repo repo --machine m1 machine new git --dry-run >/dev/null 2>&1 && fail "machine new must not accept names" || true
+ok "install targets named programs; machine new takes no names"
+
+OUT=$("$BIN" --repo repo --machine m1 program install --all --dry-run) || fail "install --all exits 0"
+echo "$OUT" | grep -q "git" || fail "install --all plans every mapped program"
+echo "$OUT" | grep -q "marker" && fail "install --all must not touch scripts" || true
+"$BIN" --repo repo --machine m1 program install --all git --dry-run >/dev/null 2>&1 && fail "--all with names should fail" || true
+"$BIN" --repo repo --machine m1 program install --dry-run >/dev/null 2>&1 && fail "install with no names and no --all should fail" || true
+ok "install --all covers this machine's mapped programs, and rejects names alongside it"
+
+# --- machine new runs eligible scripts -----------------------------
+"$BIN" --repo repo --machine m1 machine new --yes >/dev/null || fail "install with script exits 0"
+[ -f repo/marker.txt ] || fail "install ran the script"
+ok "machine new runs eligible scripts"
+
+# --- membership: a program no machine maps ------------------------------
+# Skipped by converge, an error when explicitly requested, not observed.
+ts_file repo/programs/never.loadout.ts <<'TS'
+program("never-mapped", {
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
+});
+TS
+compile_repo repo
+OUT=$("$BIN" --repo repo --machine m1 machine new --dry-run) || fail "converge with unmapped program should succeed"
+echo "$OUT" | grep -q "never-mapped" && fail "converge must skip unmapped programs" || true
+"$BIN" --repo repo --machine m1 program install never-mapped --dry-run >/dev/null 2>&1 && fail "explicit unmapped should fail" || true
+OUT=$("$BIN" --repo repo --machine m1 program install never-mapped --dry-run 2>&1 || true)
+echo "$OUT" | grep -q "program 'never-mapped' isn't installed on machine 'm1'" || fail "unmapped-program error message: $OUT"
+"$BIN" --repo repo --machine m1 machine status >/dev/null
+grep -q '"never-mapped"' repo/machines/state/m1.json && fail "unmapped program must not be observed" || true
+ok "unmapped programs are not part of the machine's loadout"
+
+# --- a machine the repo doesn't declare -----------------------------------
+OUT=$("$BIN" --repo repo --machine ghost machine new --dry-run 2>&1 || true)
+echo "$OUT" | grep -q "machine 'ghost' is not declared in the repo" || fail "undeclared-machine error message: $OUT"
+ok "machine new fails for a machine the repo doesn't declare"
+
+# --- mapped pm binary not present on this machine ------------------------
+ts_repo pmrepo
+ts_file pmrepo/programs/tool.loadout.ts <<'TS'
+const pacmanLike = installer("pacman-like", {
+  neededBinary: "pacman",
+  installCommand: "sudo pacman -S --noconfirm {packageName}",
+  checkCommand: "pacman -Q {packageName}",
+  versionRegex: /([0-9.]+)/,
+});
+
+const tool = program("tool", { canBeInstalled: [pacmanLike] });
+
+machine("m1", { install: [tool] });
+TS
+compile_repo pmrepo
+if ! command -v pacman >/dev/null 2>&1; then
+    OUT=$("$BIN" --repo pmrepo --machine m1 machine new --dry-run 2>&1 || true)
+    echo "$OUT" | grep -q "required binary 'pacman'" || fail "pm-not-installed error message"
+    ok "machine new fails when the mapped pm is not installed"
+else
+    ok "skipped pm-not-installed check (pacman present on host)"
+fi
+
+# --- a probe binary the plan installs first ---------------------------------
+ts_repo providesrepo
+ts_file providesrepo/programs/tool.loadout.ts <<'TS'
+const flat = installer("flat", {
+  neededBinary: "loadout-test-flat",
+  installCommand: "loadout-test-flat install {packageName}",
+  checkCommand: "loadout-test-flat info {packageName}",
+});
+
+const flatRuntime = program("flat-runtime", {
+  canBeInstalled: [withCustomSteps({ installCommand: "false", addsToPath: { "loadout-test-flat": true } })],
+});
+
+flat.needs(flatRuntime);
+
+const app = program("app", { canBeInstalled: [flat] });
+
+machine("m1", { install: [flatRuntime, app] });
+TS
+compile_repo providesrepo
+OUT=$("$BIN" --repo providesrepo --machine m1 program install app --dry-run 2>&1) || fail "provided probe refused: $OUT"
+echo "$OUT" | grep -q "flat-runtime" || fail "provider not planned: $OUT"
+echo "$OUT" | grep -q "loadout-test-flat install app" || fail "app not planned: $OUT"
+OUT=$("$BIN" --repo providesrepo --machine m1 program explain flat-runtime)
+echo "$OUT" | grep -q "addsToPath.custom.*loadout-test-flat" || fail "explain shows addsToPath: $OUT"
+ok "a probe binary a program earlier in the plan provides isn't required up front"
+
+# --- a provided tool off PATH, where its variant says it lands -------------
+LANDED="$PWD/landed/bin"
+mkdir -p "$LANDED"
+cat >"$LANDED/loadout-test-brewish" <<'SH'
+#!/bin/sh
+[ "$1" = list ] && [ "$2" = app ] && echo "app 1.2.3"
+SH
+chmod +x "$LANDED/loadout-test-brewish"
+ts_repo landedrepo
+# Unquoted: the shell puts $LANDED's path in, so TypeScript sees a plain string.
+ts_file landedrepo/programs/tool.loadout.ts <<TS
+const brewish = installer("brewish", {
+  neededBinary: "loadout-test-brewish",
+  installCommand: "loadout-test-brewish install {packageName}",
+  checkCommand: "loadout-test-brewish list {packageName}",
+});
+
+const setupBrewish = program("setup-brewish", {
+  canBeInstalled: [
+    withCustomSteps({
+      installCommand: "false",
+      isInstalled: "test -x $LANDED/loadout-test-brewish",
+      addsToPath: { "loadout-test-brewish": "$LANDED" },
+    }),
+  ],
+});
+
+brewish.needs(setupBrewish);
+
+const app = program("app", { canBeInstalled: [brewish] });
+const other = program("other", { canBeInstalled: [brewish] });
+
+machine("m1", { install: [setupBrewish, app] });
+machine("m2", { install: [setupBrewish, app, other] });
+TS
+compile_repo landedrepo
+OUT=$("$BIN" --repo landedrepo --machine m1 machine status 2>&1) || fail "status: $OUT"
+echo "$OUT" | grep -E "app .*1\.2\.3" >/dev/null || fail "check didn't run from where the tool lands: $OUT"
+OUT=$("$BIN" --repo landedrepo --machine m2 program install other --dry-run 2>&1) || fail "tool off PATH refused: $OUT"
+echo "$OUT" | grep -qF "PATH=\"$LANDED:" || fail "install doesn't put where it lands first on PATH: $OUT"
+ok "a provided tool off PATH is found, checked and run where its variant says it lands"
+
+# --- explain ------------------------------------------------------------
+OUT=$("$BIN" --repo repo --machine m1 program explain git)
+echo "$OUT" | grep -q "program git" || fail "explain prints the program"
+echo "$OUT" | grep -qE "installCommand\.manual +echo install git yourself && false +<- m1" || fail "explain marks this machine's mapped key"
+OUT=$("$BIN" --repo repo --machine m1 script explain marker)
+echo "$OUT" | grep -q "script marker" || fail "explain prints the script"
+echo "$OUT" | grep -qE "runCommand +file:scripts/marker.sh" || fail "explain prints the script file"
+OUT=$("$BIN" --repo repo program explain ghost-name 2>&1) && fail "explain of unknown name should fail"
+echo "$OUT" | grep -q "ghost-name" || fail "and names it: $OUT"
+OUT=$("$BIN" --repo repo --machine m1 program explain)
+echo "$OUT" | grep -q "program git" || fail "program explain covers every program"
+OUT=$("$BIN" --repo repo --machine m1 script explain)
+echo "$OUT" | grep -q "script marker" || fail "script explain covers every script"
+OUT=$("$BIN" --repo repo --machine m1 program explain marker 2>&1) && fail "a script's name is refused by program explain"
+echo "$OUT" | grep -q "marker is a script: loadout script explain marker" || fail "and pointed at script explain: $OUT"
+ok "each kind's explain prints its items (all of them with no names), and points elsewhere for another kind's"
+
+# --- a check whose TOOL is absent is "not checked", never "missing" ------
+# brew off PATH once reported every brew program missing. A check through
+# a mechanism (its installer has a probe) that dies with the shell's own
+# "command not found" is a question that couldn't be asked; a check that IS
+# the program (`rg --version`, no probe) means what it says.
+ts_repo probed
+ts_file probed/programs/probed.loadout.ts <<'TS'
+const ghostpm = installer("ghostpm", {
+  neededBinary: "ghostpm-definitely-not-here",
+  installCommand: "ghostpm-definitely-not-here install {packageName}",
+  checkCommand: "ghostpm-definitely-not-here query {packageName}",
+  versionRegex: /([0-9.]+)/,
+});
+
+const viapm = program("viapm", { canBeInstalled: [ghostpm] });
+
+const byitself = program("byitself", {
+  versionCommand: "byitself-definitely-not-here --version",
+  versionRegex: /([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
+});
+
+machine("m1", { install: [viapm, byitself] });
+TS
+compile_repo probed
+OUT=$("$BIN" --repo probed --machine m1 machine status) || fail "status exits 0 with an unrunnable check"
+echo "$OUT" | grep -qE "viapm +not checked" || fail "a check whose tool is absent is 'not checked'"
+# The shell's own words: bash says "command not found", dash (Ubuntu's sh) "not found".
+echo "$OUT" | grep -qE "ghostpm-definitely-not-here: (command )?not found" || fail "status says what wasn't there"
+echo "$OUT" | grep -qE "byitself +missing" || fail "a program's own check not found means missing"
+grep -q '"reason"' probed/machines/state/m1.json || fail "the reason is recorded in state"
+echo "$OUT" | grep -q "ghostpm-definitely-not-here is not on PATH — 1 program(s) not checked" || fail "status says, once and in words, which tool was missing"
+ok "a check whose tool is absent is 'not checked' with the reason, not 'missing'"
+
+# --- a variant's own depends-on comes only with that variant --------------
+ts_repo vdeps
+ts_file vdeps/programs/vdeps.loadout.ts <<'TS'
+const prereq = program("prereq", {
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "true" })],
+});
+
+const tool = program("tool", {
+  canBeInstalled: [
+    withCustomSteps("withprereq", { installCommand: "true", dependsOn: [prereq] }),
+    withCustomSteps("plain", { installCommand: "true" }),
+  ],
+});
+
+machine("m1", { install: [tool("withprereq"), prereq] });
+machine("m2", { install: [tool("plain")] });
+TS
+compile_repo vdeps
+OUT=$("$BIN" --repo vdeps --machine m1 program install tool --dry-run) || fail "dry-run with a variant dependency"
+echo "$OUT" | grep -q "prereq" || fail "the mapped variant's dependency is planned"
+OUT=$("$BIN" --repo vdeps --machine m2 program install tool --dry-run) || fail "the other variant needs no mapping for it"
+echo "$OUT" | grep -q "prereq" && fail "another variant's dependency must not be planned" || true
+OUT=$("$BIN" --repo vdeps --machine m1 program explain tool)
+echo "$OUT" | grep -qE "dependsOn.withprereq +prereq" || fail "explain shows a variant's dependsOn"
+ok "a variant's depends-on is planned only on machines mapping that variant"
+
+# --- a failed install skips what needs it -----------------------------------
+# (A program's command runs in its own directory: the markers land in programs/.)
+ts_repo skipdeps
+ts_file skipdeps/programs/tool.loadout.ts <<'TS'
+const base = program("base", { canBeInstalled: [withCustomSteps({ installCommand: "false" })] });
+
+const needsBase = program("needs-base", {
+  dependsOn: [base],
+  canBeInstalled: [withCustomSteps({ installCommand: "touch needs-base.ran" })],
+});
+
+const alone = program("alone", { canBeInstalled: [withCustomSteps({ installCommand: "touch alone.ran" })] });
+
+machine("m1", { install: [base, needsBase, alone] });
+TS
+compile_repo skipdeps
+OUT=$("$BIN" --repo skipdeps --machine m1 machine new --yes --skip-scripts 2>&1) && fail "a failed install exits non-zero: $OUT"
+[ -e skipdeps/programs/needs-base.ran ] && fail "needs-base ran after base failed"
+[ -e skipdeps/programs/alone.ran ] || fail "alone didn't run: $OUT"
+echo "$OUT" | grep -qE "– needs-base +needs base, which didn't install" || fail "the skip isn't announced: $OUT"
+echo "$OUT" | grep -q "skipped installs: needs-base (needs base)" || fail "the summary doesn't name the skip: $OUT"
+ok "a failed install skips the programs that need it, and only those"

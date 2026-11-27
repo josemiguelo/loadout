@@ -1,0 +1,97 @@
+# Version floors, newer locks and state files, and install.sh (the release
+# bootstrap).
+
+ts_root verrepo <<'TS'
+program("git", {
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
+});
+TS
+repo_opt verrepo/loadout.ts 'minLoadoutVersion: "999.0.0"'
+compile_repo verrepo
+OUT=$("$BIN" --repo verrepo machine status 2>&1 || true)
+echo "$OUT" | grep -q "requires loadout >= 999.0.0" || fail "minLoadoutVersion not enforced"
+echo "$OUT" | grep -q "run: loadout self upgrade" || fail "refusal should point at loadout self upgrade"
+"$BIN" --help | grep -q "self upgrade" || fail "self upgrade command should be registered"
+ok "a repo's minLoadoutVersion blocks an outdated binary with recovery hint"
+
+# A lock compiled by a newer minor's loadout is refused the same way: it
+# may say what this binary would misread.
+ts_root verrepo <<'TS'
+const git = program("git", {
+  versionCommand: "git --version",
+  versionRegex: /git version ([0-9.]+)/,
+  canBeInstalled: [withCustomSteps("manual", { installCommand: "false" })],
+});
+
+machine("m1", { install: [git] });
+TS
+compile_repo verrepo
+cp verrepo/loadout.lock.json lock.good
+sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/' lock.good > verrepo/loadout.lock.json
+OUT=$("$BIN" --repo verrepo machine status 2>&1) && fail "a lock from a newer loadout must be refused"
+echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "the newer lock is named: $OUT"
+echo "$OUT" | grep -q "run: loadout self upgrade" || fail "and points at self upgrade: $OUT"
+# A field the newer minor added is never reached: the version is read first.
+sed 's/"toolVersion": "[^"]*"/"toolVersion": "999.0.0"/; s/"manifest": {/"manifest": { "fromTheFuture": true,/' lock.good > verrepo/loadout.lock.json
+OUT=$("$BIN" --repo verrepo machine status 2>&1) && fail "a newer lock with a field this binary lacks must be refused"
+echo "$OUT" | grep -q "was compiled by loadout 999.0.0" || fail "it is refused by version, not by the field: $OUT"
+cp lock.good verrepo/loadout.lock.json
+ok "a lock compiled by a newer loadout is refused with recovery hint, before its body is read"
+
+cat > verrepo/machines/state/future.json <<'JSON'
+{"schemaVersion": 99, "machine": "future", "os": "linux", "arch": "x86_64",
+ "toolVersion": "9.9.9", "updatedAt": "2027-01-01T00:00:00Z"}
+JSON
+"$BIN" --repo verrepo --machine m1 machine status >/dev/null || fail "status works despite future state file"
+OUT=$("$BIN" --repo verrepo machine diff 2>&1 || true)
+echo "$OUT" | grep -q "newer loadout" || fail "future state file should warn"
+echo "$OUT" | grep -q "future" && echo "$OUT" | grep -q '"future"' && fail "future machine must not appear as data" || true
+ok "state files from a newer loadout are skipped with a warning"
+
+# --- install.sh: first install vs upgrade --------------------------------
+# Offline: a stub binary in a local "release" tarball. One tarball per
+# release name, so install.sh resolves the host's own target and finds it
+# — the test never repeats that mapping, which is the thing being trusted
+# (and repeating it would misread a Rosetta shell, where uname says x86_64
+# but install.sh correctly picks macos-arm64). A release is the binary
+# alone: it needs no share directory.
+mkdir -p rel/v9.9.9 relbuild prefix/bin
+printf '#!/bin/sh\ncase "$1" in --version) echo "loadout version 9.9.9";; *) echo help;; esac\n' > relbuild/loadout
+chmod +x relbuild/loadout
+for target in linux-x64 linux-arm64 macos-arm64 macos-x64; do
+    tar -czf "rel/v9.9.9/loadout-v9.9.9-$target.tar.gz" -C relbuild loadout
+done
+OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) ||
+    fail "a release of the binary alone installs: $OUT"
+echo "$OUT" | grep -q "Next steps:" || fail "a first install prints the setup steps"
+[ -x prefix/bin/loadout ] || fail "the binary lands in the install dir"
+[ -e prefix/share ] && fail "nothing but the binary is installed: $(find prefix/share)" || true
+OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH")
+echo "$OUT" | grep -q "Next steps:" && fail "an upgrade must not print first-install steps" || true
+echo "$OUT" | grep -q "was v9.9.9" || fail "an upgrade names the version it replaced"
+ok "install.sh installs the binary alone, and tells a first install from an upgrade"
+
+# A share directory install.sh finds is left as it was: install.sh never
+# deletes what it didn't write.
+mkdir -p prefix/share/loadout/old
+echo kept > prefix/share/loadout/VERSION
+OUT=$(LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) ||
+    fail "an upgrade over a share dir installs: $OUT"
+grep -qx kept prefix/share/loadout/VERSION && [ -d prefix/share/loadout/old ] || fail "the share dir is left alone"
+ok "install.sh leaves a share directory it finds alone"
+
+# The Linux builds link glibc: on musl install.sh refuses, rather than
+# leaving a binary that fails with a bare "not found".
+if [ "$(uname -s)" = Linux ]; then
+    mkdir -p muslbin
+    printf '#!/bin/sh\necho "musl libc (x86_64)" >&2\nexit 1\n' > muslbin/ldd
+    chmod +x muslbin/ldd
+    rm -f prefix/bin/loadout
+    OUT=$(PATH="$PWD/muslbin:$PATH" LOADOUT_VERSION=v9.9.9 LOADOUT_INSTALL_DIR="$PWD/prefix/bin" LOADOUT_DOWNLOAD_BASE="file://$PWD/rel" sh "$INSTALL_SH" 2>&1) &&
+        fail "install.sh installs on musl: $OUT"
+    echo "$OUT" | grep -q "error: loadout's Linux builds need glibc, and this system uses musl" || fail "the refusal says why: $OUT"
+    [ -e prefix/bin/loadout ] && fail "nothing is installed on musl" || true
+fi
+ok "install.sh refuses a musl system"

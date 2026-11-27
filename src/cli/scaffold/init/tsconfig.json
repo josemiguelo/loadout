@@ -1,0 +1,20 @@
+{
+  // "loadout" and "loadout/script", the SDKs inside loadout that manifests
+  // and scripts import, are typed by node_modules/@types/loadout, which
+  // loadout repo compile writes.
+  // bun's own types come from bun install.
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
+  },
+  // Manifests are often dot files (.ripgrep.loadout.ts), which a bare ** skips.
+  "include": ["**/*.ts", "**/.*.ts", "**/.*/**/*.ts", "**/.*/**/.*.ts"]
+}

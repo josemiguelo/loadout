@@ -1,0 +1,11 @@
+{{- /* Written by loadout compile; don't edit. This machine's settings (.chezmoidata/loadout.json): LOADOUT_MACHINE's, else the hostname's; for a machine this repo doesn't declare, the table in the lock of LOADOUT_REPO (a child repo declaring it), else the defaults. Use: includeTemplate "loadout/machine" . | fromJson */ -}}
+{{- $name := env "LOADOUT_MACHINE" | default .chezmoi.hostname -}}
+{{- $table := get .loadout.machines $name -}}
+{{- $repo := env "LOADOUT_REPO" -}}
+{{- if and (not $table) $repo -}}
+{{-   $lock := joinPath $repo "loadout.lock.json" -}}
+{{-   if stat $lock -}}
+{{-     $table = get (get (include $lock | fromJson).manifest.machines $name | default dict) "data" -}}
+{{-   end -}}
+{{- end -}}
+{{- $table | default .loadout.defaults | toJson -}}
