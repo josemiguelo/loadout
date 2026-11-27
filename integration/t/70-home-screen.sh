@@ -141,7 +141,7 @@ if has_pty; then
     grep -qa "bootstrap-only" tui-scripts.ask && fail "the picker must not list setup-only scripts"
     [ -f tui-scripts.done ] || fail_frame tui-scripts "the run ends with a toast"
     grep -qE 'Run .*loadout script run drifted healthy --force .*✓ done' tui-scripts.done || fail_frame tui-scripts "the panel names the command and its verdict"
-    grep -q "ran drifted (exit 0)" tui-scripts.done || fail_frame tui-scripts "the command's output is in the panel"
+    grep -qE "✔ drifted +[0-9]+s" tui-scripts.done || fail_frame tui-scripts "the command's output is in the panel"
     grep -q "still not done: drifted (missing: nodejs 16" tui-scripts.done \
         || fail "run re-checks and names what is still not done, with what its check printed"
     grep -qE '✓ script run drifted healthy' tui-scripts.done || fail "the run is in the sidebar's Runs"
@@ -200,7 +200,7 @@ if has_pty; then
       printf 'jjj'; sleep 0.4; printf ' '; sleep 0.3; printf '\r'; wait_frame tui-collide 'These will upgrade'
       printf '\r'; wait_done tui-collide; cp tui-collide.screen tui-collide.done; printf 'q'; sleep 1; } \
         | XDG_CACHE_HOME=$FAKE_CACHE screen_run tui-collide --repo crepo --machine m1
-    grep -q "upgrading tmux-plugins: tpack" tui-collide.done || fail_frame tui-collide "the panel upgrades the source's item"
+    grep -qE "━━ [0-9]+/[0-9]+ tmux-plugins: tpack" tui-collide.done || fail_frame tui-collide "the panel upgrades the source's item"
     [ -f crepo/pulled-tpack.txt ] || fail "the ticked row upgraded through its own source"
     [ -f crepo/the-tool-swept.txt ] && fail "a source's item must never run the tool's sweep"
     ok "a source's row upgrades through its source, not through a same-named program's tool"
@@ -393,7 +393,7 @@ if has_pty; then
         | PTY_SIZE=80x24 XDG_CACHE_HOME=$FAKE_CACHE screen_run tui-stackrun --repo nrepo --machine m1
     [ -f tui-stackrun.done ] || fail_frame tui-stackrun "the stacked run ends with a toast"
     grep -q 'loadout › scripts › run' tui-stackrun.done || fail_frame tui-stackrun "the run has its own page"
-    grep -q "ran drifted (exit 0)" tui-stackrun.done || fail "with the command's output"
+    grep -qE "✔ drifted +[0-9]+s" tui-stackrun.done || fail "with the command's output"
     grep -qE '(●|✓) (drifted|healthy) ' tui-stackrun.done && fail "and no list rows"
     grep -qE 'Run .*✓ done' tui-stackrun.later || fail_frame tui-stackrun "a finished run stays on its page"
     grep -q 'esc back' tui-stackrun.later || fail "and says esc goes back"
@@ -404,10 +404,19 @@ fi
 
 # --- U and an S that upgraded end the screen --------------------------------
 if has_pty; then
-    # The cached latest release (0.0.1) is older: self upgrade has nothing
-    # to install, and the screen ends anyway, printing the run's output.
+    # The latest release (0.0.1, from a fake curl: self upgrade asks fresh,
+    # never the cache) is older: self upgrade has nothing to install, and the
+    # screen ends anyway, printing the run's output. Fetching install.sh
+    # fails loudly, so a regression can't install anything.
+    mkdir -p selfcurl
+    printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+        '*api.github.com*) printf "\"tag_name\": \"v0.0.1\"\n" ;;' \
+        '*install.sh*) echo "fake curl: install.sh fetched" >&2; exit 22 ;;' \
+        '*) exit 22 ;;' 'esac' > selfcurl/curl
+    chmod +x selfcurl/curl
     { wait_settled tui-self; printf 'U'; wait_frame tui-self 'Upgrade loadout  '; printf '\r'; sleep 3; } \
-        | XDG_CACHE_HOME=$FAKE_CACHE screen_run tui-self --repo nrepo --machine m1
+        | PATH="$PWD/selfcurl:$PATH" XDG_CACHE_HOME=$FAKE_CACHE screen_run tui-self --repo nrepo --machine m1
+    plain_screen tui-self.log | grep -q "install.sh fetched" && fail "U must not fetch install.sh when nothing is newer"
     plain_screen tui-self.log | sed -n '/already on the latest release/,$p' | grep -q "run loadout again" \
         || fail "U ends the screen with the run's output and what to do next: $(plain_screen tui-self.log | tail -5)"
     ok "U runs self upgrade and ends the screen"

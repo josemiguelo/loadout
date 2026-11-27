@@ -10,9 +10,9 @@ import { echo } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newCheckScriptCmd is `loadout script check`. */
-export function newCheckScriptCmd(name = "check"): Command {
+export function newCheckScriptCmd(): Command {
   const cmd = subcommand(
-    name,
+    "check",
     commandHelp(
       "Ask scripts whether they're done, without running them.",
       "<scripts...>  script names (must be opted in by this machine)",

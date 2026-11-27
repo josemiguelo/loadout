@@ -98,8 +98,13 @@ TypeScript scripts run with.
 | **tools** | `chezmoi <command> [args…]` | chezmoi over this repo's configs, from any checkout; with tool folders, a path outside `$HOME` goes to the `/` configs, and what `re-add`, `add --tool <tool>`, `merge`, `chattr` and `forget` write lands in the tool's folder |
 | | `bun [args…]` | The bun built into loadout, the one scripts run with: `loadout bun --version`, `loadout bun run x.ts`; needs no repo |
 
-loadout 6.0's names (`status`, `sync`, `compile`, `explain`, `setup-new-machine`, `run-script`, and the
-rest) still work until 7.0, each saying what to run now.
+Every command is a noun and its verb; only `chezmoi` and `bun`, other tools' command lines passed
+through, stand alone.
+
+On a terminal, the commands that run steps (`machine new`, `program install`, `script run`,
+`installer upgrade`) show them live: one line per finished step, the running one with a spinner
+and its last lines (a prompt it asks shows there, and what you type goes to it), a failed one's
+whole output kept. `LOADOUT_PLAIN=1` prints every step's output as it comes instead.
 
 ## Quickstart
 

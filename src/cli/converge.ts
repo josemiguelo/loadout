@@ -10,6 +10,7 @@ import * as engine from "../core/engine/index.ts";
 import { line, type ProcessRunner } from "../core/exec/index.ts";
 import { checkFor, type Manifest, type MachineConfig, newMachineConfig, shownLine, type VersionCheck } from "../model/index.ts";
 import { exitWith } from "./errors.ts";
+import type { Progress } from "./progress.ts";
 import { echo, echoErr, echoNoNewline, readLine, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 import { padEnd, codePointCount } from "./table.ts";
@@ -143,9 +144,9 @@ export async function askForSudoUpfront(runner: ProcessRunner, needed: boolean):
   await engine.startSudoKeepalive(runner);
 }
 
-/** installPrograms runs the plan, announcing each install as it starts. */
-export function installPrograms(plan: ProgramPlan, manifest: Manifest): Promise<engine.InstallOutcome[]> {
-  return installProgramsAfter(plan, manifest, []);
+/** installPrograms runs the plan, reporting each install to progress as it starts and ends. */
+export function installPrograms(plan: ProgramPlan, manifest: Manifest, progress: Progress, phase = ""): Promise<engine.InstallOutcome[]> {
+  return installProgramsAfter(plan, manifest, [], progress, phase);
 }
 
 /**
@@ -156,14 +157,20 @@ export function installProgramsAfter(
   plan: ProgramPlan,
   manifest: Manifest,
   earlier: readonly engine.InstallOutcome[],
+  progress: Progress,
+  phase = "",
 ): Promise<engine.InstallOutcome[]> {
   return plan.engine.executeAfter(
     manifest,
     plan.items,
     earlier,
-    (item) => echo("\n" + Style.accent("==> installing " + item.program)),
-    (item, dependency) =>
-      echo("\n" + Style.accent("==> skipping " + item.program) + Style.dim(" (needs " + dependency + ", which didn't install)")),
+    (item) => progress.start("program", item.program, "[" + item.installKey + "] " + shownLine(item.command), phase),
+    (item, dependency) => progress.skip("program", item.program, "needs " + dependency + ", which didn't install", phase),
+    (_item, outcome) => {
+      if (engine.outcomeSuccess(outcome)) progress.end("ok", outcome.stateAfter?.version ?? "");
+      else if (outcome.exitCode !== 0) progress.end("failed", "exit " + outcome.exitCode);
+      else progress.end("failed", "still missing after its install");
+    },
   );
 }
 

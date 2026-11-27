@@ -100,9 +100,9 @@ function fill(text: string, vars: ScaffoldVars): string {
 }
 
 /** newInitCmd is `loadout repo init`. */
-export function newInitCmd(name = "init"): Command {
+export function newInitCmd(): Command {
   const cmd = subcommand(
-    name,
+    "init",
     commandHelp(
       "Scaffold a new config repo (TypeScript manifests, machines/state/) and git init it.",
       "[path]     where to scaffold (default: current directory)",

@@ -78,3 +78,22 @@
   isn't a TTY. Every write goes through `echo`/`echoNoNewline`, synchronous
   on fds 1 and 2, so a frame never lands inside a line, and the final erase (`\r` + `ESC[K`) is its own write: a shorter
   line printed next would keep the spinner line's tail.
+- **Steps report through `cli/progress.ts`**: the commands that run
+  steps (`machine new`, `program install`, `script run`, `installer
+  upgrade`) count them in one `Progress` and say when each starts and
+  ends (`start`/`end`/`skip`; `phase` for setup's later phase), never a
+  bare `echo` of their own. Plain, that's a start line (`━━ 12/57 name
+  what it runs`) and an end line (`✔ name 1.2.3  41s`, `✘ name exit 1`,
+  `–` skipped), with the step's output between them as it is.
+- **On a terminal they run live (`cli/live.ts`)**: the command runs
+  again as an inner loadout (LOADOUT_LIVE=1) on one pseudo-terminal for
+  the whole run, so sudo's password, asked once, holds for every step
+  and a step's prompts work; `Progress` then writes its events as OSC
+  sequences, which the outer loadout reads out of the stream. It feeds
+  the rest to @xterm/headless and draws: a finished step is one line,
+  the running one a spinner with its last ten lines (where a prompt
+  shows; keys typed go to it), a failed one keeps its whole output, and
+  what's printed between steps (the plan, the confirmation) passes
+  through. Not with `--dry-run`, without a TTY, inside the home screen's
+  run panel (LOADOUT_HANDOFF) or with LOADOUT_PLAIN=1 (the integration
+  suite sets it; `t/72-live.sh` unsets it).

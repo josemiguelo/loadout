@@ -17,6 +17,8 @@ import {
   type ProgramPlan,
 } from "./converge.ts";
 import { exitWith } from "./errors.ts";
+import { ranLive } from "./live.ts";
+import { Progress } from "./progress.ts";
 import { refuseEdited, withSudo } from "./apply-config.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
@@ -24,9 +26,9 @@ import { echo, spin } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newSetupCmd is `loadout machine new`. */
-export function newSetupCmd(name = "new"): Command {
+export function newSetupCmd(): Command {
   const cmd = subcommand(
-    name,
+    "new",
     commandHelp(
       "Set up this machine: install every missing program, then run its setup scripts; what's marked later comes last.",
       "--dry-run       print the plan, execute nothing",
@@ -51,6 +53,7 @@ export function newSetupCmd(name = "new"): Command {
  * step that waits on a later one, so the order holds.
  */
 async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, skipLater: boolean): Promise<void> {
+  if (!dryRun && await ranLive()) return;
   const a = appCtx();
   const manifest = a.loadManifest();
   const system = a.detectSystem();
@@ -126,41 +129,49 @@ async function runSetup(dryRun: boolean, yes: boolean, skipScripts: boolean, ski
   }
   await askForSudoUpfront(a.runner, needsSudo);
 
+  // One count for the whole run: both phases' programs and scripts, and the
+  // configs outside $HOME when there are (or may be) any.
+  const configsStep = hasRoot && (rootDrift === undefined || rootTargets.length > 0);
+  const progress = new Progress(
+    planInstalls(core).length + planInstalls(later).length + coreScripts.length + laterScripts.length + (configsStep ? 1 : 0),
+  );
   const results = new Map<string, ScriptState>();
-  const runScripts = async (names: readonly string[]) => {
+  const runScripts = async (names: readonly string[], phase: string) => {
     for (const name of names) {
-      const outcome = await scripts.run(manifest.scripts.get(name)!, false, enabled.get(name) ?? "");
+      const step = manifest.scripts.get(name)!;
+      progress.start("script", name, step.description, phase);
+      const outcome = await scripts.run(step, false, enabled.get(name) ?? "");
       if (outcome.alreadyDone) {
-        echo("\n" + Style.accent("==> script " + name + ":") + " already done " + Style.dim("(check passed)"));
+        progress.end("done", "already done");
         continue;
       }
-      echo("\n" + Style.accent("==> ran script " + name) + " (exit " + exitText(outcome.state!.exitCode) + ")");
+      const exit = outcome.state!.exitCode;
+      progress.end(exit === 0 ? "ok" : "failed", exit === 0 ? "" : "exit " + exitText(exit));
       results.set(name, outcome.state!);
     }
   };
 
-  let outcomes = await installPrograms(core, manifest);
+  let outcomes = await installPrograms(core, manifest, progress, "core");
   if (configs !== undefined && hasRoot) {
     // Worked out now when it couldn't be before (chezmoi just installed).
     const drift = rootDrift ?? (await withSudo(a.runner, () => configs.rootDrift()));
     const targets = [...drift.values()].flat();
     if (targets.length > 0) {
       if (rootDrift === undefined) await refuseEdited(configs, targets);
-      echo("\n" + Style.accent("==> configs " + [...drift.keys()].join(", ")));
+      progress.start("configs", "configs " + [...drift.keys()].join(", "), targets.length + " file(s) outside $HOME", "core");
       const code = await a.runner.inherit(await configs.applyCommand(targets, false));
+      progress.end(code === 0 ? "ok" : "failed", code === 0 ? "" : "exit " + code);
       if (code !== 0) throw new engine.ConfigException("chezmoi apply failed (exit " + code + ")");
+    } else if (configsStep) {
+      progress.skip("configs", "configs outside $HOME", "nothing to write", "core");
     }
   }
-  await runScripts(coreScripts);
+  await runScripts(coreScripts, "core");
   if (planInstalls(later).length > 0 || laterScripts.length > 0) {
-    echo(
-      "\n" +
-        Style.header("==> later: what can wait") +
-        Style.dim(" (the rest of the machine is set up; run this again to finish if you stop it)"),
-    );
-    const laterOutcomes = await installProgramsAfter(later, manifest, outcomes);
+    progress.phase("later: what can wait", "the rest of the machine is set up; run this again to finish if you stop it");
+    const laterOutcomes = await installProgramsAfter(later, manifest, outcomes, progress, "later");
     outcomes = [...outcomes, ...laterOutcomes];
-    await runScripts(laterScripts);
+    await runScripts(laterScripts, "later");
   }
 
   echo("");

@@ -160,12 +160,14 @@ echo "$OUT" | grep -qF "PATH=\"$LANDED:" || fail "install doesn't put where it l
 ok "a provided tool off PATH is found, checked and run where its variant says it lands"
 
 # --- explain ------------------------------------------------------------
-OUT=$("$BIN" --repo repo --machine m1 explain git marker)
+OUT=$("$BIN" --repo repo --machine m1 program explain git)
 echo "$OUT" | grep -q "program git" || fail "explain prints the program"
 echo "$OUT" | grep -qE "installCommand\.manual +echo install git yourself && false +<- m1" || fail "explain marks this machine's mapped key"
+OUT=$("$BIN" --repo repo --machine m1 script explain marker)
 echo "$OUT" | grep -q "script marker" || fail "explain prints the script"
 echo "$OUT" | grep -qE "runCommand +file:scripts/marker.sh" || fail "explain prints the script file"
-"$BIN" --repo repo explain ghost-name >/dev/null 2>&1 && fail "explain of unknown name should fail" || true
+OUT=$("$BIN" --repo repo program explain ghost-name 2>&1) && fail "explain of unknown name should fail"
+echo "$OUT" | grep -q "ghost-name" || fail "and names it: $OUT"
 OUT=$("$BIN" --repo repo --machine m1 program explain)
 echo "$OUT" | grep -q "program git" || fail "program explain covers every program"
 OUT=$("$BIN" --repo repo --machine m1 script explain)
@@ -253,6 +255,6 @@ compile_repo skipdeps
 OUT=$("$BIN" --repo skipdeps --machine m1 machine new --yes --skip-scripts 2>&1) && fail "a failed install exits non-zero: $OUT"
 [ -e skipdeps/programs/needs-base.ran ] && fail "needs-base ran after base failed"
 [ -e skipdeps/programs/alone.ran ] || fail "alone didn't run: $OUT"
-echo "$OUT" | grep -q "skipping needs-base (needs base, which didn't install)" || fail "the skip isn't announced: $OUT"
+echo "$OUT" | grep -qE "– needs-base +needs base, which didn't install" || fail "the skip isn't announced: $OUT"
 echo "$OUT" | grep -q "skipped installs: needs-base (needs base)" || fail "the summary doesn't name the skip: $OUT"
 ok "a failed install skips the programs that need it, and only those"

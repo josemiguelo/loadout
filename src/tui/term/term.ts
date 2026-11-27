@@ -639,9 +639,9 @@ function plainLines(emu: Emulator): string[] {
   return lines;
 }
 
-/** renderRows is the active buffer's rows [from, to) as styled lines. */
-function renderRows(emu: Emulator, from: number, to: number): string[] {
-  const b = emu.buffer.active;
+/** renderRows is the active buffer's rows [from, to) as styled lines (SGR escapes, no cursor moves). */
+export function renderRows(emu: Emulator, from: number, to: number, buffer = emu.buffer.active): string[] {
+  const b = buffer;
   const out: string[] = [];
   const cell = b.getNullCell();
   for (let y = from; y < to; y++) {

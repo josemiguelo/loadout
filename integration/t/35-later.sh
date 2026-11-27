@@ -71,7 +71,7 @@ OUT=$("$BIN" --repo repo --machine m1 machine new --yes 2>&1) || { echo "$OUT"; 
 core-script
 later-prog
 later-script" ] || { cat repo/order.log; fail "core programs, core scripts, later programs, later scripts"; }
-echo "$OUT" | grep -q "==> later: what can wait" || { echo "$OUT"; fail "the later phase is announced"; }
+echo "$OUT" | grep -q "── later: what can wait" || { echo "$OUT"; fail "the later phase is announced"; }
 ok "machine new runs the later phase after every core step"
 
 # Run again after a stop: only what's left, the core already done.
@@ -96,7 +96,7 @@ machine("m1", { install: [base, big] });
 TS
 compile_repo dep
 OUT=$("$BIN" --repo dep --machine m1 machine new --yes 2>&1) && { echo "$OUT"; fail "a failed install exits 1"; }
-echo "$OUT" | grep -q "skipping big" || { echo "$OUT"; fail "the later phase skips what the core phase failed"; }
+echo "$OUT" | grep -qE "– big +needs base" || { echo "$OUT"; fail "the later phase skips what the core phase failed"; }
 [ ! -f dep/big.done ] || fail "big must not install"
 ok "a later install whose dependency failed in the core phase is skipped"
 

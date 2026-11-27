@@ -18,20 +18,12 @@ const kindHelp: Record<ExplainKind, [string, string]> = {
   machine: ["Explain this machine: the profiles it extends, what it installs and runs, and its merged data (what its templates see).", ""],
 };
 
-/**
- * newExplainCmd is `loadout <kind> explain`: one kind's items, or this
- * machine's overview. Without a kind it's loadout 6.0's `explain`, every
- * kind at once (kept as an alias until 7.0).
- */
-export function newExplainCmd(name = "explain", kind?: ExplainKind): Command {
-  const [help, names] =
-    kind !== undefined ? kindHelp[kind] : ["Explain programs, scripts or configs: the fully expanded definition exactly as the engine sees it.", "programs, scripts or configs (default: every program and script)"];
+/** newExplainCmd is `loadout <kind> explain`: one kind's items, or this machine's overview. */
+export function newExplainCmd(kind: ExplainKind): Command {
+  const [help, names] = kindHelp[kind];
   const args = kind === "machine" ? [] : [{ name: "names", help: names, optional: true, multiple: true }];
-  return subcommand(
-    name,
-    kind === "machine" ? commandHelp(help) : commandHelp(help, "[names...]  " + names),
-    args,
-    (_cmd, given) => runExplain(appCtx(), given, kind),
+  return subcommand("explain", kind === "machine" ? commandHelp(help) : commandHelp(help, "[names...]  " + names), args, (_cmd, given) =>
+    runExplain(appCtx(), given, kind),
   );
 }
 
@@ -48,7 +40,7 @@ export function echoLabelled(rows: readonly Row[]): void {
   for (const r of rows) echo("  " + Style.dim(padEnd(r.label, width)) + "  " + r.value);
 }
 
-async function runExplain(a: AppContext, given: string[], kind: ExplainKind | undefined): Promise<void> {
+async function runExplain(a: AppContext, given: string[], kind: ExplainKind): Promise<void> {
   let names = given;
   const manifest = a.loadManifest();
   const layout = a.layout();
@@ -61,7 +53,7 @@ async function runExplain(a: AppContext, given: string[], kind: ExplainKind | un
   // Everything explained starts with the machine: the profiles it extends,
   // what it installs and runs (its profiles' included), and its merged
   // data (what its chezmoi templates see).
-  if ((kind === undefined && names.length === 0) || kind === "machine") {
+  if (kind === "machine") {
     echo(Style.header("machine ") + Style.bold(system.machine));
     if (!declared) echo("  " + Style.warn("! not declared in the repo — showing the data defaults"));
     const rows: Row[] = [];
@@ -88,7 +80,7 @@ async function runExplain(a: AppContext, given: string[], kind: ExplainKind | un
   if (kind === "machine") return;
   // One kind's verb: every item of that kind by default, and a name of
   // another kind points at its own verb.
-  if (kind !== undefined && names.length === 0) {
+  if (names.length === 0) {
     if (kind === "program") names = [...manifest.programs.keys()];
     else if (kind === "script") names = [...manifest.scripts.keys()];
     else names = (await (a.configs()?.units() ?? Promise.resolve([]))).map((u) => u.name);
@@ -106,7 +98,7 @@ async function runExplain(a: AppContext, given: string[], kind: ExplainKind | un
     unknown = e;
     explained = e.explained;
   }
-  if (kind !== undefined) {
+  {
     const elsewhere: string[] = [];
     explained = explained
       .map((named) => {

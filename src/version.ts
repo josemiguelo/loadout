@@ -1,5 +1,5 @@
 /** This binary's version: the ONE place it's written (the lock's toolVersion, --version, release tags). */
-export const VERSION = "6.1.0";
+export const VERSION = "1.0.0";
 
 /** installCommand is the curl|sh bootstrap — used by `loadout self upgrade` and the floor refusal. */
 export const installCommand = "curl -fsSL https://raw.githubusercontent.com/josemiguelo/loadout/master/install.sh | sh";

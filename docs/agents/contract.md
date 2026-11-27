@@ -331,12 +331,7 @@ Explicit user decisions; don't "improve" them away.
     `self` (upgrade); only `chezmoi` and `bun`, other tools' command lines
     passed through, stand alone. No command name is a compound. A bare
     group prints its verbs; a verb it doesn't have is refused; each kind's
-    `explain` points a name of another kind at its own. 6.0's names
-    (`status`, `outdated`, `sync`, `diff`, `explain`, `init`, `compile`,
-    `setup-new-machine`, `install-program`, `run-script`, `check-script`,
-    `apply-config`, `installers`, `upgrade`, `self-upgrade`) are hidden
-    aliases that work as before and say on stderr what to run now
-    (`renamed`); 7.0 drops them.
+    `explain` points a name of another kind at its own.
 15. **Converge installs; `installer upgrade` upgrades, a whole mechanism at a time.**
     `machine new`/`program install` add what's MISSING and never touch a
     version already there. Moving versions is its own verb, `loadout installer upgrade

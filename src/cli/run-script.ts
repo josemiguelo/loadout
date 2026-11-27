@@ -5,6 +5,8 @@ import { cut, scriptOptions, sortStrings } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import { askForSudoUpfront, machineOf } from "./converge.ts";
 import { exitWith, usageErr } from "./errors.ts";
+import { ranLive } from "./live.ts";
+import { Progress } from "./progress.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { exitText } from "./setup.ts";
@@ -12,9 +14,9 @@ import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newRunScriptCmd is `loadout script run`. */
-export function newRunScriptCmd(name = "run"): Command {
+export function newRunScriptCmd(): Command {
   const cmd = subcommand(
-    name,
+    "run",
     commandHelp(
       "Run the named scripts from the manifest.",
       "<scripts...>  script names (must be opted in by this machine)",
@@ -30,6 +32,7 @@ export function newRunScriptCmd(name = "run"): Command {
 }
 
 async function runScripts(names: string[], all: boolean, force: boolean): Promise<void> {
+  if (await ranLive()) return;
   const a = appCtx();
   const manifest = a.loadManifest();
   const system = a.detectSystem();
@@ -74,15 +77,17 @@ async function runScripts(names: string[], all: boolean, force: boolean): Promis
   }
   await askForSudoUpfront(a.runner, needsSudo);
   const results = new Map<string, ScriptState>();
+  const progress = new Progress(ordered.length);
   for (const name of ordered) {
-    const outcome = await runner.run(manifest.scripts.get(name)!, force, enabled.get(name) ?? "");
+    const step = manifest.scripts.get(name)!;
+    progress.start("script", name, step.description);
+    const outcome = await runner.run(step, force, enabled.get(name) ?? "");
     if (outcome.alreadyDone) {
-      echo(" " + Style.ok("✔") + "  skipped " + name + " " + Style.dim("(already done; use --force to run anyway)"));
+      progress.end("done", "already done; use --force to run anyway");
       continue;
     }
     const state = outcome.state!;
-    const mark = state.exitCode === 0 ? Style.ok("✔") : Style.error("✘");
-    echo(" " + mark + "  ran " + name + " (exit " + exitText(state.exitCode) + ")");
+    progress.end(state.exitCode === 0 ? "ok" : "failed", state.exitCode === 0 ? "" : "exit " + exitText(state.exitCode));
     results.set(name, state);
   }
 

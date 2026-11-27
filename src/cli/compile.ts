@@ -12,9 +12,9 @@ import { Style } from "./style.ts";
  * loadout as bun) into loadout.lock.json, the one thing every other
  * command reads.
  */
-export function newCompileCmd(name = "compile"): Command {
+export function newCompileCmd(): Command {
   return subcommand(
-    name,
+    "compile",
     commandHelp("Compile the repo's TypeScript manifests (loadout.ts) into " + lockFileName + "."),
     [],
     () => compileRepo(appCtx()),

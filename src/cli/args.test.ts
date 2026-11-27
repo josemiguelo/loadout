@@ -52,7 +52,7 @@ test("help wins over the arguments' check, and a flag error over help", async ()
 
 test("the command is found past persistent flags and their values", () => {
   const root = newRoot();
-  const [cmd, rest] = find(root, ["--repo", "status", "init", "--configs"]);
+  const [cmd, rest] = find(root, ["--repo", "status", "repo", "init", "--configs"]);
   expect(cmd.name).toBe("init");
   expect(rest).toEqual(["--repo", "status", "--configs"]);
   const parsed = parseFlags(cmd, rest);

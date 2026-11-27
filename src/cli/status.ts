@@ -20,9 +20,9 @@ import { Style } from "./style.ts";
 import { attention, echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
 /** newStatusCmd is `loadout machine status`. */
-export function newStatusCmd(name = "status"): Command {
+export function newStatusCmd(): Command {
   const cmd = subcommand(
-    name,
+    "status",
     commandHelp(
       "Observe this machine: every program version and script check re-asked, drift explained, state file updated.",
       "--json      print the full state as JSON",

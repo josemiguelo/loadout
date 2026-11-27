@@ -31,7 +31,19 @@ mkdir -p "$XDG_CACHE_HOME/loadout"
 echo 0.0.1 > "$XDG_CACHE_HOME/loadout/latest-release"
 # Its own data too: loadout's bun wrapper lands here, never in the developer's.
 XDG_DATA_HOME=$WORK/data
-export BIN INSTALL_SH WORK XDG_CACHE_HOME XDG_DATA_HOME
+# And its own home: whatever a test runs (a self upgrade's install.sh, an
+# init, a chezmoi apply) can't write into the developer's, and git there has
+# an identity of its own.
+HOME=$WORK/home
+XDG_CONFIG_HOME=$HOME/.config
+XDG_STATE_HOME=$HOME/.local/state
+mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+GIT_CONFIG_GLOBAL=$WORK/gitconfig
+printf '[user]\n\tname = loadout test\n\temail = test@example.com\n[init]\n\tdefaultBranch = master\n' > "$GIT_CONFIG_GLOBAL"
+# Plain output even on the pty tests' terminals: what they grep for. The
+# live view (src/cli/live.ts) has its own test, which unsets it.
+LOADOUT_PLAIN=1
+export BIN INSTALL_SH WORK XDG_CACHE_HOME XDG_DATA_HOME HOME XDG_CONFIG_HOME XDG_STATE_HOME GIT_CONFIG_GLOBAL LOADOUT_PLAIN
 # Compile and every script run with the binary itself as bun, as on a
 # user's machine: a developer's LOADOUT_BUN would hide that. A test that
 # wants the override sets it per command (42-bun).

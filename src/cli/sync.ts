@@ -32,9 +32,9 @@ const syncRecompiled = "LOADOUT_SYNC_RECOMPILED";
 export class SyncException extends Refusal {}
 
 /** newSyncCmd is `loadout machine sync`. */
-export function newSyncCmd(name = "sync"): Command {
+export function newSyncCmd(): Command {
   const cmd = subcommand(
-    name,
+    "sync",
     commandHelp(
       "Pull the config repo, apply its configs, refresh this machine's state, commit only its state file, push. " +
         "When the pulled repo needs a newer loadout, upgrade loadout first and carry on with it. " +

@@ -4,6 +4,8 @@ import { cut, shownLine, sortStrings } from "../model/index.ts";
 import type { Command } from "./args.ts";
 import { askForSudoUpfront, confirmOrAbort } from "./converge.ts";
 import { exitWith, usageErr } from "./errors.ts";
+import { ranLive } from "./live.ts";
+import { Progress } from "./progress.ts";
 import { boolFlag, commandHelp, stringsFlag } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, echoErr, spinning } from "./spinner.ts";
@@ -15,9 +17,9 @@ import { Style } from "./style.ts";
  * -y`, not a package list. Converge installs what's MISSING and never
  * upgrades (contract 15).
  */
-export function newUpgradeCmd(name = "upgrade"): Command {
+export function newUpgradeCmd(): Command {
   const cmd = subcommand(
-    name,
+    "upgrade",
     commandHelp(
       "Upgrade everything a package manager on this machine manages — the whole mechanism, never single packages (the binary itself is `loadout self upgrade`).",
       "<installers...>  which mechanisms to upgrade (dnf, brew, flatpak, ...)",
@@ -37,6 +39,7 @@ export function newUpgradeCmd(name = "upgrade"): Command {
 }
 
 async function runUpgrade(names: string[], all: boolean, items: string[], dryRun: boolean, yes: boolean): Promise<void> {
+  if (!dryRun && await ranLive()) return;
   const a = appCtx();
   if (all && names.length > 0) throw usageErr("Give installer names or --all, not both");
   if (!all && names.length === 0 && items.length === 0) throw usageErr("Give at least one installer, --all, or --item <source>/<name>");
@@ -104,9 +107,11 @@ async function runUpgrade(names: string[], all: boolean, items: string[], dryRun
   // mechanism doesn't stop the rest — they're independent.
   const frame = await a.frame(system);
   const failed: string[] = [];
+  const progress = new Progress(plan.length);
   for (const step of plan) {
-    echo("\n" + Style.accent("==> upgrading " + engine.stepLabel(step)));
+    progress.start("upgrade", engine.stepLabel(step), shownLine(step.command));
     const code = await a.runner.inherit(frame.command(step.command, step.origin));
+    progress.end(code === 0 ? "ok" : "failed", code === 0 ? "" : "exit " + code);
     if (code !== 0) failed.push(engine.stepLabel(step));
   }
 

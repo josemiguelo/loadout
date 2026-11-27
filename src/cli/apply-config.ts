@@ -11,9 +11,9 @@ import { echo, spinning } from "./spinner.ts";
 import { Style } from "./style.ts";
 
 /** newApplyConfigCmd is `loadout config apply`. */
-export function newApplyConfigCmd(name = "apply"): Command {
+export function newApplyConfigCmd(): Command {
   const cmd = subcommand(
-    name,
+    "apply",
     commandHelp(
       "Write the repo's configs to this machine (chezmoi apply), then refresh its state.",
       "<configs...>  config names as status lists them (default: all)",

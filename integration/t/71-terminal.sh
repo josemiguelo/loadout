@@ -13,7 +13,7 @@ printf '%s' "$OUT" | grep -q ']11;?' && fail "piped output must never query the 
 ok "piped output is plain text and asks the terminal nothing"
 
 if has_pty; then
-    printf '' | pty_run tty-status.log --repo repo --machine m1 status
+    printf '' | pty_run tty-status.log --repo repo --machine m1 machine status
     grep -qa ']11;?' tty-status.log || fail "on a TTY the palette comes from a real background-colour query"
     grep -qa "$ESC" tty-status.log || fail "on a TTY the output is styled"
     grep -qa "PROGRAM" tty-status.log || fail "a terminal that never answers the query still gets its table"
@@ -25,7 +25,7 @@ if has_pty; then
     # LOADOUT_THEME is the answer for those, and having been told, loadout
     # doesn't ask.
     export LOADOUT_THEME=light
-    printf '' | pty_run forced-theme.log --repo repo --machine m1 status
+    printf '' | pty_run forced-theme.log --repo repo --machine m1 machine status
     grep -qa ']11;?' forced-theme.log && fail "a told palette asks the terminal nothing" || true
     grep -qa "PROGRAM" forced-theme.log || fail "and the command still runs"
     unset LOADOUT_THEME

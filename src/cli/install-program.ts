@@ -9,6 +9,8 @@ import {
   planPrograms,
 } from "./converge.ts";
 import { exitWith, usageErr } from "./errors.ts";
+import { ranLive } from "./live.ts";
+import { Progress } from "./progress.ts";
 import { boolFlag, commandHelp } from "./help.ts";
 import { appCtx, subcommand } from "./root.ts";
 import { echo, spin } from "./spinner.ts";
@@ -19,9 +21,9 @@ import { Style } from "./style.ts";
  * machine's whole mapped membership), dependencies first. Scripts are
  * `script run`'s job; programs *and* scripts together are `loadout machine new`'s.
  */
-export function newInstallProgramCmd(name = "install"): Command {
+export function newInstallProgramCmd(): Command {
   const cmd = subcommand(
-    name,
+    "install",
     commandHelp(
       "Install the named programs on this machine, dependencies first.",
       "<programs...>  programs from the manifest (+ depends-on)",
@@ -39,6 +41,7 @@ export function newInstallProgramCmd(name = "install"): Command {
 }
 
 async function runInstall(names: string[], all: boolean, dryRun: boolean, yes: boolean): Promise<void> {
+  if (!dryRun && await ranLive()) return;
   const a = appCtx();
   const manifest = a.loadManifest();
   const system = a.detectSystem();
@@ -62,7 +65,7 @@ async function runInstall(names: string[], all: boolean, dryRun: boolean, yes: b
     installs.some((item) => item.sudo),
   );
 
-  const outcomes = await installPrograms(plan, manifest);
+  const outcomes = await installPrograms(plan, manifest, new Progress(installs.length));
 
   echo("");
   await spin("updating state…", async () => {

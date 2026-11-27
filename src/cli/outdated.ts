@@ -10,9 +10,9 @@ import { Style } from "./style.ts";
 import { echoRows, padEnd, codePointCount, severe, type TableRow } from "./table.ts";
 
 /** newOutdatedCmd is `loadout machine outdated`. */
-export function newOutdatedCmd(name = "outdated"): Command {
+export function newOutdatedCmd(): Command {
   return subcommand(
-    name,
+    "outdated",
     commandHelp("Ask each program's remote source (dnf/brew/flathub/...) for newer versions — the loadout binary included."),
     [],
     () => runOutdated(appCtx()),

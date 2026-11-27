@@ -13,11 +13,11 @@ echo "$OUT" | grep -q "already done" || fail "check gate skips a done script"
 ok "run respects the check gate"
 
 OUT=$("$BIN" --repo repo --machine m1 script run marker --force)
-echo "$OUT" | grep -q "ran marker" || fail "--force reruns"
+echo "$OUT" | grep -qE "✔ marker +[0-9]+s" || fail "--force reruns"
 ok "run --force ignores the check gate"
 
 OUT=$("$BIN" --repo repo --machine m1 script run --all --force)
-echo "$OUT" | grep -q "ran marker" || fail "run --all runs every opted-in script"
+echo "$OUT" | grep -qE "✔ marker +[0-9]+s" || fail "run --all runs every opted-in script"
 "$BIN" --repo repo --machine m1 script run --all marker >/dev/null 2>&1 && fail "--all with names should fail" || true
 "$BIN" --repo repo --machine m1 script run >/dev/null 2>&1 && fail "run with no names and no --all should fail" || true
 OUT=$("$BIN" --repo repo --machine m2 script run --all)
@@ -128,18 +128,13 @@ OUT=$("$BIN" --repo interp --machine m1 machine new --dry-run 2>&1)
 echo "$OUT" | grep -q "head -n 1" && fail "the plan shows the script, not how it's launched: $OUT" || true
 ok "a script file runs with its #! interpreter, found where a program provides it; without #!, with sh"
 
-# --- loadout 6.0's names ----------------------------------------------------------
-OUT=$("$BIN" --repo repo --machine m1 run-script marker --force 2>&1) || fail "run-script still runs: $OUT"
-echo "$OUT" | grep -q "loadout run-script is now loadout script run" || fail "run-script says what to run now: $OUT"
-echo "$OUT" | grep -q "marker" || fail "and runs the script: $OUT"
-OUT=$("$BIN" --repo repo --machine m1 setup-new-machine --dry-run 2>&1) || fail "setup-new-machine still plans: $OUT"
-echo "$OUT" | grep -q "loadout setup-new-machine is now loadout machine new" || fail "setup-new-machine says what to run now: $OUT"
-OUT=$("$BIN" --repo repo --machine m1 status --no-write 2>&1) || fail "status still observes: $OUT"
-echo "$OUT" | grep -q "loadout status is now loadout machine status" || fail "status says what to run now: $OUT"
-ok "loadout 6.0's command names still work, each saying what to run now"
 
 OUT=$("$BIN" --repo repo script 2>&1) || fail "a bare group shows its help: $OUT"
 echo "$OUT" | grep -q "Usage: loadout script" && echo "$OUT" | grep -qE '^  run ' && echo "$OUT" | grep -qE '^  check ' || fail "loadout script lists its verbs: $OUT"
+for old in setup-new-machine run-script install-program check-script apply-config installers upgrade self-upgrade status sync diff outdated explain compile init; do
+    OUT=$("$BIN" --repo repo $old 2>&1) && fail "$old is no command any more"
+    echo "$OUT" | grep -q "no such subcommand $old" || fail "$old is refused as unknown: $OUT"
+done
 OUT=$("$BIN" --repo repo script nope 2>&1) && fail "an unknown verb is refused"
 echo "$OUT" | grep -q "no such subcommand nope" || fail "and named: $OUT"
 ok "loadout script lists its verbs, and refuses one it doesn't have"

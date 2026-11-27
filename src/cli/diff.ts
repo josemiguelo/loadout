@@ -21,9 +21,9 @@ function flagsOf(row: diff.ProgramRow): string {
 }
 
 /** newDiffCmd is `loadout machine diff`. */
-export function newDiffCmd(name = "diff"): Command {
+export function newDiffCmd(): Command {
   const cmd = subcommand(
-    name,
+    "diff",
     commandHelp(
       "Compare all machines' state files: missing installs, version drift and drifted configs. Exits 1 when something is off.",
       "--machines a,b  narrow the comparison to those machines",

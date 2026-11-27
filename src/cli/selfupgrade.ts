@@ -8,9 +8,9 @@ import { appCtx, subcommand } from "./root.ts";
 import { echo } from "./spinner.ts";
 
 /** newSelfUpgradeCmd is `loadout self upgrade`: install.sh, unless already on the latest release. */
-export function newSelfUpgradeCmd(name = "upgrade"): Command {
+export function newSelfUpgradeCmd(): Command {
   return subcommand(
-    name,
+    "upgrade",
     commandHelp(
       "Replace the loadout binary with the latest release. Needs no config repo, so it works even under a minLoadoutVersion refusal (`loadout installer upgrade` is for programs).",
     ),

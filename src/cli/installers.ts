@@ -14,9 +14,9 @@ import { padEnd, codePointCount } from "./table.ts";
  * you see which definition won. To own a built-in, declare an installer of
  * the same name.
  */
-export function newInstallersCmd(name = "list"): Command {
+export function newInstallersCmd(): Command {
   return subcommand(
-    name,
+    "list",
     commandHelp(
       "Show the install mechanisms available to this repo: loadout's built-ins plus your own.",
       "[name]     print one installer's full definition",

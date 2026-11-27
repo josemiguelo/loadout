@@ -167,6 +167,7 @@ OUT=$("$BIN" --machine kidbox repo init --parent "$PWD/dad" --name dad kid) || f
 echo "$OUT" | grep -q "^Next steps:" && echo "$OUT" | grep -qF "machines/kidbox.loadout.ts (import dad's from \"parent/…\")" ||
     fail "init --parent's next steps name the machine's file: $OUT"
 [ -f kid/loadout.ts ] && [ -f kid/tsconfig.json ] && [ -f kid/node_modules/@types/loadout/index.d.ts ] || fail "the child's root file is loadout.ts, beside tsconfig.json and the SDKs' types"
+grep -qx '.loadout-parent/' kid/.gitignore || fail "a child keeps its build of the parent's tool folders out of git: $(cat kid/.gitignore)"
 grep -qF "name: \"dad\"" kid/loadout.ts && grep -qF "path: \"$PWD/dad\"" kid/loadout.ts ||
     fail "the child's repo() names its parent: $(cat kid/loadout.ts)"
 grep -q '^  parent: {' kid/loadout.ts || fail "as its parent: $(cat kid/loadout.ts)"

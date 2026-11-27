@@ -220,6 +220,7 @@ export class InstallEngine {
     earlier: readonly InstallOutcome[],
     onStart?: (item: InstallItem) => void,
     onSkip?: (item: InstallItem, dependency: string) => void,
+    onEnd?: (item: InstallItem, outcome: InstallOutcome) => void,
   ): Promise<InstallOutcome[]> {
     const outcomes: InstallOutcome[] = [];
     const failed = new Map<string, boolean>();
@@ -241,6 +242,7 @@ export class InstallEngine {
       const outcome: InstallOutcome = { program: item.program, exitCode: exit, stateAfter: after, skippedFor: "" };
       failed.set(item.program, !outcomeSuccess(outcome));
       outcomes.push(outcome);
+      onEnd?.(item, outcome);
     }
     return outcomes;
   }
