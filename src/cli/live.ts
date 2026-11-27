@@ -3,8 +3,8 @@
 // the whole run: sudo's password, asked once, holds for every step, and a
 // step's prompts work as they would on the real terminal), and this outer
 // loadout draws it. A finished step is one line; the step running now shows
-// a spinner and its last lines (a third of the terminal's rows, at least
-// ten), where any prompt it asks appears; a failed step's whole output
+// a spinner and its last lines (the terminal's whole height, but for the
+// last few finished steps), where any prompt it asks appears; a failed step's whole output
 // stays. Everything, a successful step's output too, goes to the run's log
 // ($XDG_STATE_HOME/loadout/runs/, the newest 20 kept), named at the end. What the inner loadout prints between steps
 // (the plan, the confirmation) passes through as it is. The inner loadout
@@ -27,8 +27,8 @@ import { codePointCount } from "./table.ts";
 
 /** gutter is what a step's lines are indented by: "  │ ". */
 const gutter = 4;
-/** tailMin is the fewest of the running step's last lines that show; a tall terminal shows a third of its rows. */
-const tailMin = 10;
+/** keptAbove is how many finished steps stay visible above the running one's box. */
+const keptAbove = 3;
 /** keptLogs is how many run logs stay (runs/ in loadout's state folder). */
 const keptLogs = 20;
 
@@ -147,9 +147,12 @@ export class LiveView {
     for (let y = from; y < to; y++) this.log(this.buffer().getLine(y)?.translateToString(true) ?? "");
   }
 
-  /** tail is how many of the running step's last lines show: a third of the rows, at least tailMin, room left for the header. */
+  /**
+   * tail is how many of the running step's last lines show: every row but
+   * its header, the "… more" line and the last keptAbove finished steps.
+   */
   private tail(): number {
-    return Math.max(1, Math.min(Math.max(tailMin, Math.floor(this.rows / 3)), this.rows - 3));
+    return Math.max(3, this.rows - 2 - keptAbove);
   }
 
   private blank(line: number): boolean {

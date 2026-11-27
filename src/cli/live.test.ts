@@ -68,18 +68,18 @@ test("a failed step keeps its output, under the mark", async () => {
 test("the running step shows a spinner, its name, where the run is, and its last lines", async () => {
   const { lines } = await screen(async (v) => {
     await v.feed(start("brave", 12, 57, "[omarchy-aur] omarchy pkg aur add brave-bin"));
-    await v.feed(Array.from({ length: 15 }, (_, i) => "line " + (i + 1)).join("\r\n") + "\r\n");
+    await v.feed(Array.from({ length: 40 }, (_, i) => "line " + (i + 1)).join("\r\n") + "\r\n");
     v.tick();
     await v.feed("");
   });
   const head = lines.find((l) => l.includes("brave"))!;
   expect(head).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] brave +\[omarchy-aur\]/);
   expect(head).toMatch(/12\/57 +\d+s$/);
-  // 40 rows: a third of them, 13 lines.
-  expect(lines).toContain("  │ … 2 more line(s)");
-  expect(lines).toContain("  │ line 3");
-  expect(lines).toContain("  │ line 15");
-  expect(lines).not.toContain("  │ line 2");
+  // 40 rows: all but the header, the "more" line and 3 finished steps' rows: 35 lines.
+  expect(lines).toContain("  │ … 5 more line(s)");
+  expect(lines).toContain("  │ line 6");
+  expect(lines).toContain("  │ line 40");
+  expect(lines).not.toContain("  │ line 5");
 });
 
 test("a step's prompt is in the live lines, the cursor after it", async () => {
@@ -133,17 +133,17 @@ test("the run log keeps everything as plain text, a successful step's output too
   expect(logged.join("\n")).not.toContain("\x1b");
 });
 
-test("a tall terminal shows more of the running step: a third of its rows", async () => {
+test("a tall terminal shows more of the running step: all but a few rows", async () => {
   const term = new Emulator({ cols: 60, rows: 60, scrollback: 1000, allowProposedApi: true });
   const writes: string[] = [];
   const view = new LiveView(60, 60, (s) => writes.push(s), () => 0);
   await view.feed(start("big"));
-  await view.feed(Array.from({ length: 40 }, (_, i) => "line " + (i + 1)).join("\r\n") + "\r\n");
+  await view.feed(Array.from({ length: 80 }, (_, i) => "line " + (i + 1)).join("\r\n") + "\r\n");
   view.tick();
   await view.feed("");
   for (const w of writes) await new Promise<void>((done) => term.write(w, done));
   const b = term.buffer.active;
   const shown = Array.from({ length: b.length }, (_, y) => b.getLine(y)!.translateToString(true).trimEnd()).filter((l) => l.startsWith("  │ line"));
-  expect(shown.length).toBe(20);
-  expect(shown[shown.length - 1]).toBe("  │ line 40");
+  expect(shown.length).toBe(55);
+  expect(shown[shown.length - 1]).toBe("  │ line 80");
 });

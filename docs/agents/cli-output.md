@@ -91,8 +91,9 @@
   and a step's prompts work; `Progress` then writes its events as OSC
   sequences, which the outer loadout reads out of the stream. It feeds
   the rest to @xterm/headless and draws: a finished step is one line,
-  the running one a spinner with its last lines (a third of the rows, at
-  least ten; where a prompt shows; keys typed go to it), a failed one
+  the running one a spinner with its last lines (the whole height, but
+  for the last three finished steps; where a prompt shows; keys typed go
+  to it), a failed one
   keeps its whole output, and what's printed between steps (the plan,
   the confirmation) passes through. The run's log keeps it all as plain
   text, every step's output included ($XDG_STATE_HOME/loadout/runs/,
